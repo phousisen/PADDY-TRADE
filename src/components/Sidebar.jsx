@@ -9,16 +9,17 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
   const { lang, setLang, t } = useLanguage();
   const { profile, logout } = useAuth();
   const isAdmin = profile?.role === "admin";
+  const isStaff = profile?.role === "staff";
 
   const nav = [
     { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
-    { id: "stock", label: t("nav_stock"), icon: Warehouse },
+    ...(!isStaff ? [{ id: "stock", label: t("nav_stock"), icon: Warehouse }] : []),
     { id: "transactions", label: t("nav_transactions"), icon: Receipt },
     ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
     { id: "suppliers", label: t("nav_suppliers"), icon: Users },
     { id: "buyers", label: t("nav_buyers"), icon: ShoppingCart },
     ...(isAdmin ? [{ id: "stations", label: t("nav_stations"), icon: MapPin }] : []),
-    ...(isAdmin ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
+    ...(!isStaff ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
   ];
 
   const isActive = (id) => page === id || (id === "stock" && page === "dashboard");
