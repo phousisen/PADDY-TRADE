@@ -27,14 +27,31 @@ export const api = {
     return data;
   },
 
-  async createParty({ name, type, phone, idNumber }) {
+  async createParty({ name, type, phone, idNumber, bankName, bankAccount, company, destination }) {
     const { data, error } = await supabase
       .from("parties")
-      .insert({ name, type, phone, id_number: idNumber })
+      .insert({
+        name,
+        type,
+        phone,
+        id_number: idNumber,
+        bank_name: bankName,
+        bank_account: bankAccount,
+        company,
+        destination,
+      })
       .select()
       .single();
     if (error) throw error;
     return data;
+  },
+
+  async getSettings() {
+    const { data, error } = await supabase.from("system_settings").select("*");
+    if (error) throw error;
+    const map = {};
+    data.forEach((s) => { map[s.key] = s.value; });
+    return map;
   },
 
   async getTransactions({ type, locationId } = {}) {
@@ -55,7 +72,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId }) {
+  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade }) {
     const amount = Math.round(quantityKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
       .from("transactions")
@@ -70,6 +87,7 @@ export const api = {
         amount,
         payment_status: paymentStatus,
         created_by: userId,
+        quality_grade: qualityGrade || null,
       })
       .select()
       .single();

@@ -45,6 +45,10 @@ export const translations = {
     reports_caveat: "Simplified model: inventory is valued at average purchase cost, and cost of goods sold is approximated from total purchases rather than matched item-by-item.",
     permission_denied: "This page is only visible to HQ Admin.",
     role_admin: "HQ Admin", role_manager: "Location Manager", role_staff: "Location Staff",
+    bank_name: "Bank Name", bank_account: "Bank Account Number", quality_grade: "Quality Grade",
+    grade_a: "Grade A — Premium", grade_b: "Grade B — Standard", grade_c: "Grade C — Low Quality",
+    company_name: "Company Name", destination: "Destination",
+    dest_hq: "Battambang HQ", dest_factory: "Phnom Penh Factory", dest_border: "Vietnam Border", dest_other: "Other",
   },
   km: {
     appName: "PADDYTRADE",
@@ -87,6 +91,10 @@ export const translations = {
     reports_caveat: "គំរូសាមញ្ញ៖ ស្តុកគិតតាមថ្លៃទិញជាមធ្យម ហើយថ្លៃដើមទំនិញលក់ត្រូវបានប៉ាន់ស្មានពីការទិញសរុប។",
     permission_denied: "ទំព័រនេះមើលឃើញសម្រាប់តែ HQ Admin ប៉ុណ្ណោះ។",
     role_admin: "HQ Admin", role_manager: "អ្នកគ្រប់គ្រងទីតាំង", role_staff: "បុគ្គលិកទីតាំង",
+    bank_name: "ធនាគារ", bank_account: "លេខគណនីធនាគារ", quality_grade: "ថ្នាក់គុណភាព",
+    grade_a: "ថ្នាក់ A — ល្អបំផុត", grade_b: "ថ្នាក់ B — ស្តង់ដារ", grade_c: "ថ្នាក់ C — គុណភាពទាប",
+    company_name: "ឈ្មោះក្រុមហ៊ុន", destination: "គោលដៅ",
+    dest_hq: "HQ បាត់ដំបង", dest_factory: "រោងចក្រ ភ្នំពេញ", dest_border: "ព្រំដែនវៀតណាម", dest_other: "ផ្សេងទៀត",
   },
 };
 
