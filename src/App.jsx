@@ -23,6 +23,13 @@ export default function App() {
     }
   }, [profile, page]);
 
+  // Staff don't have a stock/dashboard view — send them straight to transactions.
+  useEffect(() => {
+    if (profile?.role === "staff" && (page === "dashboard" || page === "stock")) {
+      setPage("transactions");
+    }
+  }, [profile, page]);
+
   if (loading) {
     return <div className="flex h-screen w-full items-center justify-center bg-slate-50 text-slate-400 text-sm">Loading…</div>;
   }
@@ -32,15 +39,19 @@ export default function App() {
   }
 
   const isAdmin = profile.role === "admin";
+  const isStaff = profile.role === "staff";
 
   function renderPage() {
+    if (isStaff && (page === "dashboard" || page === "stock" || page === "reports" || page === "stations")) {
+      return <PermissionDenied />;
+    }
     if (page === "dashboard" || page === "stock") return <StockInventory />;
     if (page === "transactions") return <Transactions setPage={setPage} />;
     if (page === "new-buy") return <TransactionForm type="BUY" setPage={setPage} />;
     if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} />;
     if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;
     if (page === "stations") return isAdmin ? <SimpleListPage title={t("nav_stations")} kind="stations" /> : <PermissionDenied />;
-    if (page === "reports") return isAdmin ? <FinancialReports /> : <PermissionDenied />;
+    if (page === "reports") return !isStaff ? <FinancialReports /> : <PermissionDenied />;
     if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" />;
     if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" />;
     return <StockInventory />;
