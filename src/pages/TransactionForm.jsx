@@ -20,7 +20,7 @@ export default function TransactionForm({ type, setPage }) {
   const [parties, setParties] = useState([]);
   const [settings, setSettings] = useState({});
   const [stationId, setStationId] = useState("");
-  const [productId, setProductId] = useState("");
+  const [productQuery, setProductQuery] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const [selectedParty, setSelectedParty] = useState(null);
   const [partyPhone, setPartyPhone] = useState("");
@@ -40,21 +40,24 @@ export default function TransactionForm({ type, setPage }) {
   const [savedTx, setSavedTx] = useState(null);
 
   useEffect(() => {
-    api.getLocations().then((st) => {
-      setStations(st);
-      setStationsLoaded(true);
-      if (!isAdmin && profile?.location_id) {
-        setStationId(profile.location_id);
-      } else if (isAdmin && st[0]) {
-        setStationId(st[0].id);
-      }
-    });
-    api.getProducts().then((p) => { setProducts(p); if (p[0]) setProductId(p[0].id); });
-    if (isBuy) api.getSettings().then(setSettings);
+    api.getLocations()
+      .then((st) => {
+        setStations(st);
+        if (!isAdmin && profile?.location_id) {
+          setStationId(profile.location_id);
+        } else if (isAdmin && st[0]) {
+          setStationId(st[0].id);
+        }
+      })
+      .catch((err) => setError(err.message || String(err)))
+      .finally(() => setStationsLoaded(true));
+
+    api.getProducts().then((p) => { setProducts(p); if (p[0]) setProductQuery(p[0].name); }).catch(() => {});
+    if (isBuy) api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
   useEffect(() => {
-    api.getParties({ type: isBuy ? "supplier" : "buyer", q: partyQuery }).then(setParties);
+    api.getParties({ type: isBuy ? "supplier" : "buyer", q: partyQuery }).then(setParties).catch(() => {});
   }, [partyQuery]);
 
   useEffect(() => {
@@ -78,11 +81,19 @@ export default function TransactionForm({ type, setPage }) {
     setDestination(p.destination || "dest_hq");
   }
 
+  async function resolveProductId() {
+    const name = productQuery.trim();
+    const existing = products.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
+    const created = await api.createProduct(name);
+    return created.id;
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     const effectiveStationId = isAdmin ? stationId : profile?.location_id;
-    if (!partyQuery.trim() || !effectiveStationId || !productId || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
+    if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
     setSaving(true);
     try {
       let party = selectedParty;
@@ -98,10 +109,11 @@ export default function TransactionForm({ type, setPage }) {
           destination: !isBuy ? destination : undefined,
         });
       }
+      const productId = await resolveProductId();
       const tx = await api.createTransaction({
         type, locationId: effectiveStationId, partyId: party.id, productId,
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
-        qualityGrade: isBuy ? qualityGrade : null,
+        qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
       });
       setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "" });
     } catch (err) {
@@ -136,6 +148,7 @@ export default function TransactionForm({ type, setPage }) {
                     ))}
                   </div>
                 )}
+                <p className="mt-1 text-[11px] text-slate-400">Type a name to search, or a new name to add them.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -151,12 +164,14 @@ export default function TransactionForm({ type, setPage }) {
                     <div><label className="mb-1 block text-xs text-slate-500">{t("company_name")}</label><input value={company} onChange={(e) => setCompany(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
                     <div>
                       <label className="mb-1 block text-xs text-slate-500">{t("destination")}</label>
-                      <select value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                      <input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                      <datalist id="destination-options">
                         <option value="dest_hq">{t("dest_hq")}</option>
                         <option value="dest_factory">{t("dest_factory")}</option>
                         <option value="dest_border">{t("dest_border")}</option>
                         <option value="dest_other">{t("dest_other")}</option>
-                      </select>
+                      </datalist>
                     </div>
                   </>
                 )}
@@ -169,25 +184,30 @@ export default function TransactionForm({ type, setPage }) {
                     </select>
                   ) : (
                     <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      {stationsLoaded ? (myStation?.name || "No location assigned to your account") : "Loading…"}
+                      {!stationsLoaded ? "Loading…" : (myStation?.name || "No location assigned to your account — ask HQ to assign one")}
                     </div>
                   )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
-                  <select value={productId} onChange={(e) => setProductId(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-                    {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  <input list="product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Type or pick a product"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  <datalist id="product-options">
+                    {products.map((p) => <option key={p.id} value={p.name} />)}
+                  </datalist>
                 </div>
 
                 {isBuy && (
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">{t("quality_grade")}</label>
-                    <select value={qualityGrade} onChange={(e) => { setQualityGrade(e.target.value); setPriceOverridden(false); }} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                    <input list="grade-options" value={qualityGrade} onChange={(e) => { setQualityGrade(e.target.value); setPriceOverridden(false); }}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                    <datalist id="grade-options">
                       <option value="A">{t("grade_a")}</option>
                       <option value="B">{t("grade_b")}</option>
                       <option value="C">{t("grade_c")}</option>
-                    </select>
+                    </datalist>
+                    <p className="mt-1 text-[11px] text-slate-400">A/B/C auto-fills the price — type anything else to set your own.</p>
                   </div>
                 )}
               </div>
@@ -211,6 +231,7 @@ export default function TransactionForm({ type, setPage }) {
                 <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
                   {isBuy ? (<><option value="pending">{t("pendingpay")}</option><option value="paid">{t("paid")}</option></>) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
                 </select>
+                <p className="mt-1 text-[11px] text-slate-400">Fixed choices — these exact values feed your Financial Reports.</p>
               </div>
               <div className="mt-4 rounded-lg bg-brand-50 p-4 text-center">
                 <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
