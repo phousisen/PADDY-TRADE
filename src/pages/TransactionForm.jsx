@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Save, ScanLine } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -14,6 +15,7 @@ export default function TransactionForm({ type, setPage }) {
   const isAdmin = profile?.role === "admin";
 
   const [stations, setStations] = useState([]);
+  const [stationsLoaded, setStationsLoaded] = useState(false);
   const [products, setProducts] = useState([]);
   const [parties, setParties] = useState([]);
   const [settings, setSettings] = useState({});
@@ -35,12 +37,17 @@ export default function TransactionForm({ type, setPage }) {
   const [paymentStatus, setPaymentStatus] = useState(isBuy ? "pending" : "paid");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [savedTx, setSavedTx] = useState(null);
 
   useEffect(() => {
     api.getLocations().then((st) => {
       setStations(st);
-      if (!isAdmin && profile?.location_id) setStationId(profile.location_id);
-      else if (st[0]) setStationId(st[0].id);
+      setStationsLoaded(true);
+      if (!isAdmin && profile?.location_id) {
+        setStationId(profile.location_id);
+      } else if (isAdmin && st[0]) {
+        setStationId(st[0].id);
+      }
     });
     api.getProducts().then((p) => { setProducts(p); if (p[0]) setProductId(p[0].id); });
     if (isBuy) api.getSettings().then(setSettings);
@@ -50,7 +57,6 @@ export default function TransactionForm({ type, setPage }) {
     api.getParties({ type: isBuy ? "supplier" : "buyer", q: partyQuery }).then(setParties);
   }, [partyQuery]);
 
-  // Auto-set price per kg from the selected quality grade (BUY only), unless the user typed their own price.
   useEffect(() => {
     if (isBuy && !priceOverridden && settings[`price_grade_${qualityGrade.toLowerCase()}_per_kg`]) {
       setPricePerKg(settings[`price_grade_${qualityGrade.toLowerCase()}_per_kg`]);
@@ -59,6 +65,7 @@ export default function TransactionForm({ type, setPage }) {
 
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const total = netKg * (parseFloat(pricePerKg) || 0);
+  const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
 
   function selectParty(p) {
     setSelectedParty(p);
@@ -74,7 +81,8 @@ export default function TransactionForm({ type, setPage }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    if (!partyQuery.trim() || !stationId || !productId || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
+    const effectiveStationId = isAdmin ? stationId : profile?.location_id;
+    if (!partyQuery.trim() || !effectiveStationId || !productId || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
     setSaving(true);
     try {
       let party = selectedParty;
@@ -90,17 +98,21 @@ export default function TransactionForm({ type, setPage }) {
           destination: !isBuy ? destination : undefined,
         });
       }
-      await api.createTransaction({
-        type, locationId: stationId, partyId: party.id, productId,
+      const tx = await api.createTransaction({
+        type, locationId: effectiveStationId, partyId: party.id, productId,
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
         qualityGrade: isBuy ? qualityGrade : null,
       });
-      setPage("transactions");
+      setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "" });
     } catch (err) {
       setError(err.message || String(err));
     } finally {
       setSaving(false);
     }
+  }
+
+  if (savedTx) {
+    return <Receipt tx={savedTx} onDone={() => setPage("transactions")} />;
   }
 
   return (
@@ -151,9 +163,15 @@ export default function TransactionForm({ type, setPage }) {
 
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("station")}</label>
-                  <select value={stationId} onChange={(e) => setStationId(e.target.value)} disabled={!isAdmin} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50">
-                    {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  {isAdmin ? (
+                    <select value={stationId} onChange={(e) => setStationId(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                      {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  ) : (
+                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      {stationsLoaded ? (myStation?.name || "No location assigned to your account") : "Loading…"}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
