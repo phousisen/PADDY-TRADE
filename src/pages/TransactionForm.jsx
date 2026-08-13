@@ -16,15 +16,22 @@ export default function TransactionForm({ type, setPage }) {
   const [stations, setStations] = useState([]);
   const [products, setProducts] = useState([]);
   const [parties, setParties] = useState([]);
+  const [settings, setSettings] = useState({});
   const [stationId, setStationId] = useState("");
   const [productId, setProductId] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const [selectedParty, setSelectedParty] = useState(null);
   const [partyPhone, setPartyPhone] = useState("");
   const [partyIdNumber, setPartyIdNumber] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankAccount, setBankAccount] = useState("");
+  const [company, setCompany] = useState("");
+  const [destination, setDestination] = useState("dest_hq");
+  const [qualityGrade, setQualityGrade] = useState("A");
   const [grossKg, setGrossKg] = useState("");
   const [tareKg, setTareKg] = useState("");
-  const [pricePerKg, setPricePerKg] = useState(isBuy ? "6.00" : "");
+  const [pricePerKg, setPricePerKg] = useState("");
+  const [priceOverridden, setPriceOverridden] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(isBuy ? "pending" : "paid");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -36,17 +43,32 @@ export default function TransactionForm({ type, setPage }) {
       else if (st[0]) setStationId(st[0].id);
     });
     api.getProducts().then((p) => { setProducts(p); if (p[0]) setProductId(p[0].id); });
+    if (isBuy) api.getSettings().then(setSettings);
   }, []);
 
   useEffect(() => {
     api.getParties({ type: isBuy ? "supplier" : "buyer", q: partyQuery }).then(setParties);
   }, [partyQuery]);
 
+  // Auto-set price per kg from the selected quality grade (BUY only), unless the user typed their own price.
+  useEffect(() => {
+    if (isBuy && !priceOverridden && settings[`price_grade_${qualityGrade.toLowerCase()}_per_kg`]) {
+      setPricePerKg(settings[`price_grade_${qualityGrade.toLowerCase()}_per_kg`]);
+    }
+  }, [qualityGrade, settings, isBuy, priceOverridden]);
+
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const total = netKg * (parseFloat(pricePerKg) || 0);
 
   function selectParty(p) {
-    setSelectedParty(p); setPartyQuery(p.name); setPartyPhone(p.phone || ""); setPartyIdNumber(p.id_number || "");
+    setSelectedParty(p);
+    setPartyQuery(p.name);
+    setPartyPhone(p.phone || "");
+    setPartyIdNumber(p.id_number || "");
+    setBankName(p.bank_name || "");
+    setBankAccount(p.bank_account || "");
+    setCompany(p.company || "");
+    setDestination(p.destination || "dest_hq");
   }
 
   async function handleSubmit(e) {
@@ -57,11 +79,21 @@ export default function TransactionForm({ type, setPage }) {
     try {
       let party = selectedParty;
       if (!party) {
-        party = await api.createParty({ name: partyQuery.trim(), type: isBuy ? "supplier" : "buyer", phone: partyPhone, idNumber: partyIdNumber });
+        party = await api.createParty({
+          name: partyQuery.trim(),
+          type: isBuy ? "supplier" : "buyer",
+          phone: partyPhone,
+          idNumber: partyIdNumber,
+          bankName: isBuy ? bankName : undefined,
+          bankAccount: isBuy ? bankAccount : undefined,
+          company: !isBuy ? company : undefined,
+          destination: !isBuy ? destination : undefined,
+        });
       }
       await api.createTransaction({
         type, locationId: stationId, partyId: party.id, productId,
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
+        qualityGrade: isBuy ? qualityGrade : null,
       });
       setPage("transactions");
     } catch (err) {
@@ -93,9 +125,30 @@ export default function TransactionForm({ type, setPage }) {
                   </div>
                 )}
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="mb-1 block text-xs text-slate-500">{t("phone")}</label><input value={partyPhone} onChange={(e) => setPartyPhone(e.target.value)} placeholder="+855 XX XXX XXX" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-                <div><label className="mb-1 block text-xs text-slate-500">{t("id_number")}</label><input value={partyIdNumber} onChange={(e) => setPartyIdNumber(e.target.value)} placeholder="F-XXX" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+
+                {isBuy ? (
+                  <>
+                    <div><label className="mb-1 block text-xs text-slate-500">{t("bank_name")}</label><input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="ABA / ACLEDA / ..." className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                    <div><label className="mb-1 block text-xs text-slate-500">{t("bank_account")}</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                  </>
+                ) : (
+                  <>
+                    <div><label className="mb-1 block text-xs text-slate-500">{t("company_name")}</label><input value={company} onChange={(e) => setCompany(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-500">{t("destination")}</label>
+                      <select value={destination} onChange={(e) => setDestination(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                        <option value="dest_hq">{t("dest_hq")}</option>
+                        <option value="dest_factory">{t("dest_factory")}</option>
+                        <option value="dest_border">{t("dest_border")}</option>
+                        <option value="dest_other">{t("dest_other")}</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("station")}</label>
                   <select value={stationId} onChange={(e) => setStationId(e.target.value)} disabled={!isAdmin} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50">
@@ -108,6 +161,17 @@ export default function TransactionForm({ type, setPage }) {
                     {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
+
+                {isBuy && (
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">{t("quality_grade")}</label>
+                    <select value={qualityGrade} onChange={(e) => { setQualityGrade(e.target.value); setPriceOverridden(false); }} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                      <option value="A">{t("grade_a")}</option>
+                      <option value="B">{t("grade_b")}</option>
+                      <option value="C">{t("grade_c")}</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -116,7 +180,13 @@ export default function TransactionForm({ type, setPage }) {
               <div className="grid grid-cols-3 gap-3">
                 <div><label className="mb-1 block text-xs text-slate-500">{t("gross_weight")}</label><input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
                 <div><label className="mb-1 block text-xs text-slate-500">{t("tare_weight")}</label><input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-                <div><label className="mb-1 block text-xs text-slate-500">{t("price_per_kg")}</label><input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="0.00" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">{t("price_per_kg")}</label>
+                  <input type="number" min="0" step="0.01" value={pricePerKg}
+                    onChange={(e) => { setPricePerKg(e.target.value); setPriceOverridden(true); }}
+                    placeholder="0.00" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  {isBuy && <p className="mt-1 text-[11px] text-slate-400">Auto-filled from grade — edit to override</p>}
+                </div>
               </div>
               <div className="mt-3">
                 <label className="mb-1 block text-xs text-slate-500">{t("payment_status")}</label>
