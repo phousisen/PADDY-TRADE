@@ -18,6 +18,12 @@ export const api = {
     return data;
   },
 
+  async createProduct(name) {
+    const { data, error } = await supabase.from("products").insert({ name }).select().single();
+    if (error) throw error;
+    return data;
+  },
+
   async getParties({ type, q } = {}) {
     let query = supabase.from("parties").select("*").order("name");
     if (type) query = query.eq("type", type);
