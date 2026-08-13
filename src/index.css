@@ -4,3 +4,13 @@
 
 html, body, #root { height: 100%; }
 body { @apply bg-slate-100 text-slate-800 font-sans; }
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; }
+  #receipt-root {
+    box-shadow: none !important;
+    border: none !important;
+    max-width: 100% !important;
+  }
+}
