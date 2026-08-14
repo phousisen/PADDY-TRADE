@@ -49,6 +49,7 @@ export const translations = {
     grade_a: "Grade A — Premium", grade_b: "Grade B — Standard", grade_c: "Grade C — Low Quality",
     company_name: "Company Name", destination: "Destination",
     dest_hq: "Battambang HQ", dest_factory: "Phnom Penh Factory", dest_border: "Vietnam Border", dest_other: "Other",
+    hq_confirmation: "HQ Confirmation", hq_processing: "Processing", hq_paid: "Paid", hq_cancelled: "Cancelled",
   },
   km: {
     appName: "PADDYTRADE",
@@ -95,6 +96,7 @@ export const translations = {
     grade_a: "ថ្នាក់ A — ល្អបំផុត", grade_b: "ថ្នាក់ B — ស្តង់ដារ", grade_c: "ថ្នាក់ C — គុណភាពទាប",
     company_name: "ឈ្មោះក្រុមហ៊ុន", destination: "គោលដៅ",
     dest_hq: "HQ បាត់ដំបង", dest_factory: "រោងចក្រ ភ្នំពេញ", dest_border: "ព្រំដែនវៀតណាម", dest_other: "ផ្សេងទៀត",
+    hq_confirmation: "ការបញ្ជាក់ពី HQ", hq_processing: "កំពុងដំណើរការ", hq_paid: "បានទូទាត់", hq_cancelled: "បានលុបចោល",
   },
 };
 

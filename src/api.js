@@ -130,4 +130,10 @@ export const api = {
     if (error) throw error;
     return data;
   },
+
+  async updateHqStatus(id, hqStatus) {
+    const { data, error } = await supabase.from("transactions").update({ hq_status: hqStatus }).eq("id", id).select().single();
+    if (error) throw error;
+    return data;
+  },
 };
