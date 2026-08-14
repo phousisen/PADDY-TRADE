@@ -7,6 +7,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
+function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
 export default function TransactionForm({ type, setPage }) {
   const isBuy = type === "BUY";
@@ -244,8 +245,8 @@ export default function TransactionForm({ type, setPage }) {
               <h3 className="mb-4 font-semibold text-slate-700">{t("summary")}</h3>
               <div className="mb-4 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-4 text-white">
                 <p className="text-xs text-brand-100/80">{t("total_amount")}</p>
-                <p className="mt-1 text-3xl font-bold">${fmt2(total)}</p>
-                <p className="mt-2 text-xs text-brand-100/70">{fmt2(netKg)} kg × ${fmt2(parseFloat(pricePerKg) || 0)}/kg</p>
+                <p className="mt-1 text-3xl font-bold">{fmtRiel(total)}</p>
+                <p className="mt-2 text-xs text-brand-100/70">{fmt2(netKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
               </div>
               <button type="submit" disabled={saving} className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
                 <Save size={16} /> {saving ? "..." : t("save_transaction")}

@@ -2,6 +2,7 @@ import { Printer, ArrowLeft } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
+function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
 export default function Receipt({ tx, onDone }) {
   const { t } = useLanguage();
@@ -44,12 +45,12 @@ export default function Receipt({ tx, onDone }) {
           <div className="mb-3 space-y-1 text-sm">
             <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium text-slate-700">{fmt2(tx.quantity_kg)} kg</span></div>
             {tx.quality_grade && <div className="flex justify-between"><span className="text-slate-500">Quality Grade</span><span className="font-medium text-slate-700">{tx.quality_grade}</span></div>}
-            <div className="flex justify-between"><span className="text-slate-500">Price per kg</span><span className="font-medium text-slate-700">${fmt2(tx.price_per_kg)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Price per kg</span><span className="font-medium text-slate-700">{fmtRiel(tx.price_per_kg)}</span></div>
           </div>
 
           <div className="mt-3 rounded-lg bg-brand-50 p-3 text-center">
             <p className="text-xs text-brand-700/70">Total Amount</p>
-            <p className="text-2xl font-bold text-brand-800">${fmt2(tx.amount)}</p>
+            <p className="text-2xl font-bold text-brand-800">{fmtRiel(tx.amount)}</p>
           </div>
 
           <p className="mt-4 text-center text-xs text-slate-400">Thank you for your business!</p>

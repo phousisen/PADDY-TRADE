@@ -52,7 +52,7 @@ export default function FinancialReports() {
   const Row = ({ label, value, bold, indent }) => (
     <div className={`flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""}`}>
       <span className={bold ? "font-semibold text-slate-800" : "text-slate-500"}>{label}</span>
-      <span className={bold ? "font-semibold text-slate-800" : "text-slate-700"}>{fmt(value)} Riel</span>
+      <span className={bold ? "font-semibold text-slate-800" : "text-slate-700"}>{fmt(value)} ៛</span>
     </div>
   );
 
