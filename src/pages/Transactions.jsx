@@ -135,8 +135,11 @@ export default function Transactions({ setPage }) {
   }, [rows, payments]);
 
   function exportCsv() {
-    const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Qty (kg)", "Amount (Riel)", "Remaining (Riel)", "HQ Status"];
-    const lines = rows.map((tx, i) => [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, remainingByTx[tx.id] || 0, tx.hq_status || "processing"]);
+    const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
+    const lines = rows.map((tx, i) => {
+      const remaining = remainingByTx[tx.id] || 0;
+      return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, Math.max(0, tx.amount - remaining), remaining, tx.hq_status || "processing"];
+    });
     const csv = [header, ...lines].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -214,6 +217,7 @@ export default function Transactions({ setPage }) {
                 <th className="px-3 py-3 font-medium">{t("col_party")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_qty")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_amount")}</th>
+                <th className="px-3 py-3 font-medium">Paid</th>
                 <th className="px-3 py-3 font-medium">Remaining</th>
                 <th className="px-3 py-3 font-medium">{t("col_status")}</th>
                 <th className="px-3 py-3 font-medium">{t("hq_confirmation")}</th>
@@ -238,6 +242,7 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}</td>
                     <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
                     <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(tx.amount)}</td>
+                    <td className="px-3 py-3 text-emerald-600">{fmtRiel(Math.max(0, tx.amount - remaining))}</td>
                     <td className="px-3 py-3">
                       {remaining > 0.01 ? (
                         <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
@@ -277,7 +282,7 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
-              {rows.length === 0 && !loading && <tr><td colSpan={12} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
+              {rows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
