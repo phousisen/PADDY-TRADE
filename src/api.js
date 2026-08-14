@@ -33,7 +33,7 @@ export const api = {
     return data;
   },
 
-  async createParty({ name, type, phone, idNumber, bankName, bankAccount, company, destination }) {
+  async createParty({ name, type, phone, idNumber, bankName, bankAccount, company, destination, locationId }) {
     const { data, error } = await supabase
       .from("parties")
       .insert({
@@ -45,6 +45,7 @@ export const api = {
         bank_account: bankAccount,
         company,
         destination,
+        location_id: locationId,
       })
       .select()
       .single();
