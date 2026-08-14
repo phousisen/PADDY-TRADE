@@ -167,6 +167,27 @@ export default function TransactionForm({ type, setPage }) {
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
       });
+
+      // If it was entered as already paid, record that cash movement immediately
+      // so it shows up correctly in Accounts Payable/Receivable and Cash Flow.
+      if (paymentStatus === "paid") {
+        try {
+          await api.createPayment({
+            type: isBuy ? "pay_supplier" : "receive_customer",
+            transactionId: tx.id,
+            locationId: effectiveStationId,
+            amount: tx.amount,
+            method: "cash",
+            payDate: tx.tx_date,
+            memo: "Paid at time of transaction",
+            userId: session.user.id,
+          });
+        } catch (payErr) {
+          // Don't block the receipt over this — the transaction itself saved fine.
+          console.error("Auto-payment record failed", payErr);
+        }
+      }
+
       setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "" });
       clearDraft();
     } catch (err) {

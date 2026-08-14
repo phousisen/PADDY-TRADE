@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, ShieldCheck, Wallet } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -27,6 +27,58 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   );
 }
 
+function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
+  const [amount, setAmount] = useState(String(remaining));
+  const [method, setMethod] = useState("cash");
+  const [memo, setMemo] = useState("");
+  const [saving, setSaving] = useState(false);
+  const isBuy = tx.type === "BUY";
+
+  async function submit() {
+    setSaving(true);
+    await onSubmit(parseFloat(amount), method, memo);
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
+          <Wallet size={16} className="text-brand-600" /> {isBuy ? "Pay Supplier" : "Receive Payment"}
+        </h3>
+        <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName} · Remaining: {fmtRiel(remaining)}</p>
+
+        <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
+        <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+
+        <label className="mb-1 block text-xs text-slate-500">Method</label>
+        <select value={method} onChange={(e) => setMethod(e.target.value)}
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+          <option value="cash">Cash</option>
+          <option value="check">Check</option>
+          <option value="bank">Bank Transfer</option>
+        </select>
+
+        <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
+        <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. partial payment"
+          className="mb-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
+          <button
+            disabled={saving || !amount || parseFloat(amount) <= 0}
+            onClick={submit}
+            className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
+          >
+            {saving ? "Saving..." : "Record Payment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const HQ_STATUS_STYLES = {
   processing: "bg-amber-50 text-amber-600 border-amber-200",
   paid: "bg-emerald-50 text-emerald-600 border-emerald-200",
@@ -38,22 +90,39 @@ export default function Transactions({ setPage }) {
   const { profile, session } = useAuth();
   const isAdmin = profile?.role === "admin";
   const [rows, setRows] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [type, setType] = useState("");
   const [requestTx, setRequestTx] = useState(null);
+  const [payTx, setPayTx] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     setLoading(true);
-    const data = await api.getTransactions({ type: type || undefined });
-    setRows(data);
+    const [txData, payData] = await Promise.all([
+      api.getTransactions({ type: type || undefined }),
+      api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
+    ]);
+    setRows(txData);
+    setPayments(payData);
     setLoading(false);
   }
 
   useEffect(() => { load(); }, [type]);
 
+  const remainingByTx = useMemo(() => {
+    const map = {};
+    rows.forEach((tx) => {
+      const paid = payments
+        .filter((p) => p.transaction_id === tx.id && p.type === (tx.type === "BUY" ? "pay_supplier" : "receive_customer"))
+        .reduce((s, p) => s + Number(p.amount), 0);
+      map[tx.id] = Math.max(0, Number(tx.amount) - paid);
+    });
+    return map;
+  }, [rows, payments]);
+
   function exportCsv() {
-    const header = ["#", "Transaction ID", "Date", "Location", "Party", "Qty (kg)", "Amount (Riel)", "HQ Status"];
-    const lines = rows.map((tx, i) => [i + 1, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, tx.hq_status || "processing"]);
+    const header = ["#", "Transaction ID", "Date", "Location", "Party", "Qty (kg)", "Amount (Riel)", "Remaining (Riel)", "HQ Status"];
+    const lines = rows.map((tx, i) => [i + 1, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, remainingByTx[tx.id] || 0, tx.hq_status || "processing"]);
     const csv = [header, ...lines].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -70,6 +139,21 @@ export default function Transactions({ setPage }) {
       reason,
     });
     setRequestTx(null);
+  }
+
+  async function submitPayment(amount, method, memo) {
+    await api.createPayment({
+      type: payTx.type === "BUY" ? "pay_supplier" : "receive_customer",
+      transactionId: payTx.id,
+      locationId: payTx.location_id,
+      amount,
+      method,
+      payDate: new Date().toISOString().slice(0, 10),
+      memo,
+      userId: session.user.id,
+    });
+    setPayTx(null);
+    load();
   }
 
   async function changeHqStatus(id, hqStatus) {
@@ -115,6 +199,7 @@ export default function Transactions({ setPage }) {
                 <th className="px-3 py-3 font-medium">{t("col_party")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_qty")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_amount")}</th>
+                <th className="px-3 py-3 font-medium">Remaining</th>
                 <th className="px-3 py-3 font-medium">{t("col_status")}</th>
                 <th className="px-3 py-3 font-medium">{t("hq_confirmation")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_action")}</th>
@@ -123,6 +208,7 @@ export default function Transactions({ setPage }) {
             <tbody>
               {rows.map((tx, i) => {
                 const hqStatus = tx.hq_status || "processing";
+                const remaining = remainingByTx[tx.id] || 0;
                 return (
                   <tr key={tx.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                     <td className="px-5 py-3 text-slate-400">{i + 1}</td>
@@ -132,6 +218,15 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}</td>
                     <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
                     <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(tx.amount)}</td>
+                    <td className="px-3 py-3">
+                      {remaining > 0.01 ? (
+                        <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
+                          <Wallet size={12} /> {fmtRiel(remaining)}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-emerald-600">Settled</span>
+                      )}
+                    </td>
                     <td className="px-3 py-3">{tx.status === "confirmed" ? <CheckCircle2 size={16} className="text-emerald-500" /> : <AlertTriangle size={16} className="text-amber-500" />}</td>
                     <td className="px-3 py-3">
                       {isAdmin ? (
@@ -162,12 +257,13 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
-              {rows.length === 0 && !loading && <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
+              {rows.length === 0 && !loading && <tr><td colSpan={11} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
       </main>
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
+      {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
     </div>
   );
 }
