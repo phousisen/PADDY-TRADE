@@ -121,8 +121,8 @@ export default function Transactions({ setPage }) {
   }, [rows, payments]);
 
   function exportCsv() {
-    const header = ["#", "Transaction ID", "Date", "Location", "Party", "Qty (kg)", "Amount (Riel)", "Remaining (Riel)", "HQ Status"];
-    const lines = rows.map((tx, i) => [i + 1, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, remainingByTx[tx.id] || 0, tx.hq_status || "processing"]);
+    const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Qty (kg)", "Amount (Riel)", "Remaining (Riel)", "HQ Status"];
+    const lines = rows.map((tx, i) => [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, remainingByTx[tx.id] || 0, tx.hq_status || "processing"]);
     const csv = [header, ...lines].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -193,6 +193,7 @@ export default function Transactions({ setPage }) {
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
                 <th className="px-5 py-3 font-medium">#</th>
+                <th className="px-3 py-3 font-medium">Type</th>
                 <th className="px-3 py-3 font-medium">{t("col_id")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_date")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_station")}</th>
@@ -212,6 +213,11 @@ export default function Transactions({ setPage }) {
                 return (
                   <tr key={tx.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                     <td className="px-5 py-3 text-slate-400">{i + 1}</td>
+                    <td className="px-3 py-3">
+                      <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"}`}>
+                        {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
+                      </span>
+                    </td>
                     <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-sky-50 text-sky-600"}`}>{tx.code}</span></td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{tx.tx_time}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
@@ -257,7 +263,7 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
-              {rows.length === 0 && !loading && <tr><td colSpan={11} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
+              {rows.length === 0 && !loading && <tr><td colSpan={12} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
