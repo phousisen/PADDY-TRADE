@@ -34,6 +34,10 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   const [saving, setSaving] = useState(false);
   const isBuy = tx.type === "BUY";
 
+  const paying = parseFloat(amount) || 0;
+  const newRemaining = Math.max(0, remaining - paying);
+  const overpaying = paying > remaining;
+
   async function submit() {
     setSaving(true);
     await onSubmit(parseFloat(amount), method, memo);
@@ -46,11 +50,21 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
           <Wallet size={16} className="text-brand-600" /> {isBuy ? "Pay Supplier" : "Receive Payment"}
         </h3>
-        <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName} · Remaining: {fmtRiel(remaining)}</p>
+        <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
         <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
         <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+
+        <div className="mb-3 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+          <div className="flex justify-between"><span className="text-slate-500">Currently owed</span><span className="font-medium text-slate-700">{fmtRiel(remaining)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">Paying now</span><span className="font-medium text-slate-700">− {fmtRiel(paying)}</span></div>
+          <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5">
+            <span className="font-medium text-slate-600">New remaining balance</span>
+            <span className={`font-bold ${newRemaining === 0 ? "text-emerald-600" : "text-slate-800"}`}>{fmtRiel(newRemaining)}</span>
+          </div>
+        </div>
+        {overpaying && <p className="mb-3 text-xs text-amber-600">This is more than what is owed — the balance will just be marked fully settled.</p>}
 
         <label className="mb-1 block text-xs text-slate-500">Method</label>
         <select value={method} onChange={(e) => setMethod(e.target.value)}
