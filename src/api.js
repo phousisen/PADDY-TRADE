@@ -12,6 +12,12 @@ export const api = {
     return data;
   },
 
+  async updateLocation(id, { name, nameKh }) {
+    const { data, error } = await supabase.from("locations").update({ name, name_kh: nameKh }).eq("id", id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
   async getProducts() {
     const { data, error } = await supabase.from("products").select("*").order("name");
     if (error) throw error;

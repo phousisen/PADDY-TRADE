@@ -10,11 +10,14 @@ import TransactionForm from "./pages/TransactionForm.jsx";
 import ChangeRequests from "./pages/ChangeRequests.jsx";
 import Reports from "./pages/Reports.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
+import LocationsPage from "./pages/LocationsPage.jsx";
+import LocationDetail from "./pages/LocationDetail.jsx";
 
 export default function App() {
   const { session, profile, loading } = useAuth();
   const { t } = useLanguage();
   const [page, setPage] = useState("dashboard");
+  const [selectedLocationId, setSelectedLocationId] = useState(null);
   const [pendingRequests, setPendingRequests] = useState(0);
 
   useEffect(() => {
@@ -40,7 +43,7 @@ export default function App() {
   const isStaff = profile.role === "staff";
 
   function renderPage() {
-    if (isStaff && (page === "reports" || page === "stations")) {
+    if (isStaff && (page === "reports" || page === "stations" || page === "station-detail")) {
       return <PermissionDenied />;
     }
     if (page === "dashboard" || page === "stock") return <StockInventory />;
@@ -48,7 +51,8 @@ export default function App() {
     if (page === "new-buy") return <TransactionForm type="BUY" setPage={setPage} />;
     if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} />;
     if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;
-    if (page === "stations") return isAdmin ? <SimpleListPage title={t("nav_stations")} kind="stations" /> : <PermissionDenied />;
+    if (page === "stations") return isAdmin ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
+    if (page === "station-detail") return isAdmin ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
     if (page === "reports") return !isStaff ? <Reports /> : <PermissionDenied />;
     if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" />;
     if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" />;
@@ -70,4 +74,3 @@ export default function App() {
     </div>
   );
 }
-
