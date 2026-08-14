@@ -108,6 +108,7 @@ export default function TransactionForm({ type, setPage }) {
           bankAccount: isBuy ? bankAccount : undefined,
           company: !isBuy ? company : undefined,
           destination: !isBuy ? destination : undefined,
+          locationId: effectiveStationId,
         });
       }
       const productId = await resolveProductId();
