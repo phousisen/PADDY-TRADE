@@ -24,10 +24,11 @@ export const api = {
     return data;
   },
 
-  async getParties({ type, q } = {}) {
+  async getParties({ type, q, phone } = {}) {
     let query = supabase.from("parties").select("*").order("name");
     if (type) query = query.eq("type", type);
     if (q) query = query.ilike("name", `%${q}%`);
+    if (phone) query = query.eq("phone", phone);
     const { data, error } = await query;
     if (error) throw error;
     return data;
