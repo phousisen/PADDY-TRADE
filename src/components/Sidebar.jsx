@@ -13,7 +13,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
 
   const nav = [
     { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
-    ...(!isStaff ? [{ id: "stock", label: t("nav_stock"), icon: Warehouse }] : []),
+    { id: "stock", label: t("nav_stock"), icon: Warehouse },
     { id: "transactions", label: t("nav_transactions"), icon: Receipt },
     ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
     { id: "suppliers", label: t("nav_suppliers"), icon: Users },
