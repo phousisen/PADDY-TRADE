@@ -144,6 +144,18 @@ export const api = {
     return data;
   },
 
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade }) {
+    const amount = Math.round(quantityKg * pricePerKg * 100) / 100;
+    const { data, error } = await supabase
+      .from("transactions")
+      .update({ quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: qualityGrade || null })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   async getPayments({ locationId, type } = {}) {
     let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
     if (locationId) query = query.eq("location_id", locationId);
