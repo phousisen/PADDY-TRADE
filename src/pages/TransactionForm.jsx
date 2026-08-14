@@ -93,6 +93,7 @@ export default function TransactionForm({ type, setPage }) {
     e.preventDefault();
     setError("");
     const effectiveStationId = isAdmin ? stationId : profile?.location_id;
+    if (!isAdmin && !effectiveStationId) { setError("Your account has no location assigned yet. Ask HQ to assign one to your login."); return; }
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
     setSaving(true);
     try {
@@ -177,18 +178,6 @@ export default function TransactionForm({ type, setPage }) {
                 )}
 
                 <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("station")}</label>
-                  {isAdmin ? (
-                    <select value={stationId} onChange={(e) => setStationId(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-                      {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  ) : (
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      {!stationsLoaded ? "Loading…" : (myStation?.name || "No location assigned to your account — ask HQ to assign one")}
-                    </div>
-                  )}
-                </div>
-                <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
                   <input list="product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Type or pick a product"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
@@ -196,6 +185,14 @@ export default function TransactionForm({ type, setPage }) {
                     {products.map((p) => <option key={p.id} value={p.name} />)}
                   </datalist>
                 </div>
+                {isAdmin && (
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-500">{t("station")}</label>
+                    <select value={stationId} onChange={(e) => setStationId(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                      {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
 
                 {isBuy && (
                   <div>
