@@ -148,6 +148,12 @@ export default function TransactionForm({ type, setPage }) {
     setSaving(true);
     try {
       let party = selectedParty;
+      if (!party && partyPhone.trim()) {
+        // Someone with this exact phone number may already exist —
+        // reuse them instead of creating a duplicate.
+        const matches = await api.getParties({ type: isBuy ? "supplier" : "buyer", phone: partyPhone.trim() });
+        if (matches.length > 0) party = matches[0];
+      }
       if (!party) {
         party = await api.createParty({
           name: partyQuery.trim(),
