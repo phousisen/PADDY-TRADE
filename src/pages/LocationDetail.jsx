@@ -28,15 +28,16 @@ export default function LocationDetail({ locationId, setPage }) {
   useEffect(() => { load(); }, [locationId]);
 
   const summary = useMemo(() => {
-    const buys = txs.filter((t) => t.type === "BUY");
-    const sells = txs.filter((t) => t.type === "SELL");
+    const active = txs.filter((t) => (t.hq_status || "processing") !== "cancelled");
+    const buys = active.filter((t) => t.type === "BUY");
+    const sells = active.filter((t) => t.type === "SELL");
     const totalBuy = buys.reduce((s, t) => s + Number(t.amount), 0);
     const totalSell = sells.reduce((s, t) => s + Number(t.amount), 0);
     return {
       totalBuy, totalSell, profit: totalSell - totalBuy,
       buyKg: buys.reduce((s, t) => s + Number(t.quantity_kg), 0),
       sellKg: sells.reduce((s, t) => s + Number(t.quantity_kg), 0),
-      txCount: txs.length,
+      txCount: active.length,
     };
   }, [txs]);
 

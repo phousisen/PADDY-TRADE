@@ -33,6 +33,7 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
     const start = periodStart(period);
     const map = {};
     txs.forEach((tx) => {
+      if ((tx.hq_status || "processing") === "cancelled") return;
       if (start && new Date(tx.tx_date) < start) return;
       if (!map[tx.location_id]) map[tx.location_id] = { boughtKg: 0, boughtAmt: 0, soldKg: 0, soldAmt: 0 };
       if (tx.type === "BUY") { map[tx.location_id].boughtKg += Number(tx.quantity_kg); map[tx.location_id].boughtAmt += Number(tx.amount); }

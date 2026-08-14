@@ -27,7 +27,9 @@ export default function ReportReceivables({ selectedLocationIds = [] }) {
     });
   }, []);
 
-  const rows = selectedLocationIds.length ? allRows.filter((r) => selectedLocationIds.includes(r.location_id)) : allRows;
+  const rows = allRows
+    .filter((r) => (r.hq_status || "processing") !== "cancelled")
+    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id));
 
   const outstanding = useMemo(() => {
     const today = new Date();

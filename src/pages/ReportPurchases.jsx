@@ -13,7 +13,9 @@ export default function ReportPurchases({ selectedLocationIds = [] }) {
     api.getTransactions({ type: "BUY" }).then(setAllRows);
   }, []);
 
-  const rows = selectedLocationIds.length ? allRows.filter((r) => selectedLocationIds.includes(r.location_id)) : allRows;
+  const rows = allRows
+    .filter((r) => (r.hq_status || "processing") !== "cancelled")
+    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id));
 
   const grouped = useMemo(() => {
     const key = groupBy === "party" ? "partyName" : groupBy === "product" ? "productName" : "stationName";

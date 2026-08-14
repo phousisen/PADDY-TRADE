@@ -34,17 +34,18 @@ export default function ReportOverview({ selectedLocationIds = [] }) {
   }, []);
 
   const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
-  const filteredTxs = selectedLocationIds.length ? txs.filter((t) => selectedLocationIds.includes(t.location_id)) : txs;
+  const activeTxs = txs.filter((t) => (t.hq_status || "processing") !== "cancelled");
+  const filteredTxs = selectedLocationIds.length ? activeTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : activeTxs;
 
   const calc = useMemo(() => computeFinancials(filteredTxs, filteredStations), [filteredTxs, filteredStations]);
 
   const byLocation = useMemo(() => {
     return filteredStations.map((s) => {
-      const stationTxs = txs.filter((x) => x.location_id === s.id);
+      const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
       const c = computeFinancials(stationTxs, [s]);
       return { station: s, ...c };
     });
-  }, [txs, filteredStations]);
+  }, [activeTxs, filteredStations]);
 
   const Row = ({ label, value, bold, indent }) => (
     <div className={`flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""}`}>

@@ -16,7 +16,9 @@ export default function ReportStock({ selectedLocationIds = [] }) {
   }, []);
 
   const stations = selectedLocationIds.length ? allStations.filter((s) => selectedLocationIds.includes(s.id)) : allStations;
-  const txs = selectedLocationIds.length ? allTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : allTxs;
+  const txs = allTxs
+    .filter((t) => (t.hq_status || "processing") !== "cancelled")
+    .filter((t) => !selectedLocationIds.length || selectedLocationIds.includes(t.location_id));
 
   // Running balance per location, built from the transaction history.
   // Note: this reconstructs the ledger from BUY(+)/SELL(-) movements only —

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, ShieldCheck, Wallet } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -93,6 +93,66 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   );
 }
 
+function EditTransactionModal({ tx, t, onClose, onSubmit }) {
+  const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg));
+  const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg));
+  const [paymentStatus, setPaymentStatus] = useState(tx.payment_status || "pending");
+  const [saving, setSaving] = useState(false);
+  const isBuy = tx.type === "BUY";
+
+  const newAmount = (parseFloat(quantityKg) || 0) * (parseFloat(pricePerKg) || 0);
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    await onSubmit({ quantityKg: parseFloat(quantityKg), pricePerKg: parseFloat(pricePerKg), paymentStatus, qualityGrade: tx.quality_grade });
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Edit Transaction</h3>
+        <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
+
+        <form onSubmit={submit}>
+          <div className="mb-3 grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Quantity (kg)</label>
+              <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
+              <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            </div>
+          </div>
+
+          <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
+          <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
+            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+            {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
+          </select>
+
+          <div className="mb-4 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
+          </div>
+
+          <p className="mb-4 text-xs text-amber-600">Changing the quantity will also adjust this location's stock level to match.</p>
+
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
+            <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 const HQ_STATUS_STYLES = {
   processing: "bg-amber-50 text-amber-600 border-amber-200",
   paid: "bg-emerald-50 text-emerald-600 border-emerald-200",
@@ -108,6 +168,7 @@ export default function Transactions({ setPage }) {
   const [type, setType] = useState("");
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
+  const [editTx, setEditTx] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -182,6 +243,12 @@ export default function Transactions({ setPage }) {
     }
   }
 
+  async function submitEdit(fields) {
+    await api.updateTransaction(editTx.id, fields);
+    setEditTx(null);
+    load();
+  }
+
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={t("tx_title")} subtitle={isAdmin ? t("all_locations") : t("my_location")} />
@@ -227,9 +294,10 @@ export default function Transactions({ setPage }) {
             <tbody>
               {rows.map((tx, i) => {
                 const hqStatus = tx.hq_status || "processing";
+                const isCancelled = hqStatus === "cancelled";
                 const remaining = remainingByTx[tx.id] || 0;
                 return (
-                  <tr key={tx.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                  <tr key={tx.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
                     <td className="px-5 py-3 text-slate-400">{i + 1}</td>
                     <td className="px-3 py-3">
                       <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"}`}>
@@ -244,7 +312,9 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(tx.amount)}</td>
                     <td className="px-3 py-3 text-emerald-600">{fmtRiel(Math.max(0, tx.amount - remaining))}</td>
                     <td className="px-3 py-3">
-                      {remaining > 0.01 ? (
+                      {isCancelled ? (
+                        <span className="text-xs text-slate-400">Excluded from reports</span>
+                      ) : remaining > 0.01 ? (
                         <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
                           <Wallet size={12} /> {fmtRiel(remaining)}
                         </button>
@@ -272,7 +342,9 @@ export default function Transactions({ setPage }) {
                     </td>
                     <td className="px-3 py-3">
                       {isAdmin ? (
-                        <span className="flex items-center gap-1 text-xs text-slate-400"><ShieldCheck size={13} /> HQ</span>
+                        <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
+                          <Pencil size={12} /> Edit
+                        </button>
                       ) : (
                         <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
                           <Flag size={12} /> {t("request_change")}
@@ -289,6 +361,7 @@ export default function Transactions({ setPage }) {
       </main>
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
+      {editTx && <EditTransactionModal tx={editTx} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
     </div>
   );
 }
