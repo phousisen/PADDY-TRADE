@@ -8,7 +8,7 @@ import StockInventory from "./pages/StockInventory.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import TransactionForm from "./pages/TransactionForm.jsx";
 import ChangeRequests from "./pages/ChangeRequests.jsx";
-import FinancialReports from "./pages/FinancialReports.jsx";
+import Reports from "./pages/Reports.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
 
 export default function App() {
@@ -48,7 +48,7 @@ export default function App() {
     if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} />;
     if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;
     if (page === "stations") return isAdmin ? <SimpleListPage title={t("nav_stations")} kind="stations" /> : <PermissionDenied />;
-    if (page === "reports") return !isStaff ? <FinancialReports /> : <PermissionDenied />;
+    if (page === "reports") return !isStaff ? <Reports /> : <PermissionDenied />;
     if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" />;
     if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" />;
     return <StockInventory />;

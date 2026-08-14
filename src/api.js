@@ -136,4 +136,32 @@ export const api = {
     if (error) throw error;
     return data;
   },
+
+  async getPayments({ locationId, type } = {}) {
+    let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
+    if (locationId) query = query.eq("location_id", locationId);
+    if (type) query = query.eq("type", type);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data.map((p) => ({ ...p, createdByName: p.profiles?.full_name || "—" }));
+  },
+
+  async createPayment({ type, transactionId, locationId, amount, method, payDate, memo, userId }) {
+    const { data, error } = await supabase
+      .from("payments")
+      .insert({
+        type,
+        transaction_id: transactionId || null,
+        location_id: locationId,
+        amount,
+        method,
+        pay_date: payDate,
+        memo,
+        created_by: userId,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
 };
