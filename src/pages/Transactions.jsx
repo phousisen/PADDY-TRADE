@@ -4,6 +4,7 @@ import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
+import { supabase } from "../supabaseClient.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -153,6 +154,54 @@ function EditTransactionModal({ tx, t, onClose, onSubmit }) {
   );
 }
 
+function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+    setChecking(true);
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
+    setChecking(false);
+    if (authError) {
+      setError("Incorrect password.");
+      return;
+    }
+    onConfirm();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><AlertTriangle size={16} className="text-rose-500" /> Confirm Cancellation</h3>
+        <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName} · {fmtRiel(tx.amount)}</p>
+
+        {alreadyPaid > 0.01 && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
+            {fmtRiel(alreadyPaid)} has already been recorded as paid against this transaction. Cancelling will NOT remove that from Cash Flow — it stays on record as real cash that moved. You may want to record a matching refund entry separately.
+          </div>
+        )}
+
+        <form onSubmit={submit}>
+          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus
+            className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
+          {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
+
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
+            <button type="submit" disabled={checking || !password} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
+              {checking ? "Checking..." : "Confirm Cancellation"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 const HQ_STATUS_STYLES = {
   processing: "bg-amber-50 text-amber-600 border-amber-200",
   paid: "bg-emerald-50 text-emerald-600 border-emerald-200",
@@ -169,6 +218,7 @@ export default function Transactions({ setPage }) {
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
+  const [cancelConfirmTx, setCancelConfirmTx] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -234,10 +284,25 @@ export default function Transactions({ setPage }) {
     load();
   }
 
-  async function changeHqStatus(id, hqStatus) {
+  async function changeHqStatus(id, hqStatus, tx) {
+    if (hqStatus === "cancelled") {
+      setCancelConfirmTx(tx);
+      return;
+    }
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, hq_status: hqStatus } : r)));
     try {
       await api.updateHqStatus(id, hqStatus);
+    } catch (err) {
+      load();
+    }
+  }
+
+  async function confirmCancel() {
+    const tx = cancelConfirmTx;
+    setCancelConfirmTx(null);
+    setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, hq_status: "cancelled" } : r)));
+    try {
+      await api.updateHqStatus(tx.id, "cancelled");
     } catch (err) {
       load();
     }
@@ -327,7 +392,7 @@ export default function Transactions({ setPage }) {
                       {isAdmin ? (
                         <select
                           value={hqStatus}
-                          onChange={(e) => changeHqStatus(tx.id, e.target.value)}
+                          onChange={(e) => changeHqStatus(tx.id, e.target.value, tx)}
                           className={`rounded-md border px-2 py-1 text-xs font-medium outline-none ${HQ_STATUS_STYLES[hqStatus]}`}
                         >
                           <option value="processing">{t("hq_processing")}</option>
@@ -362,6 +427,16 @@ export default function Transactions({ setPage }) {
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
       {editTx && <EditTransactionModal tx={editTx} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
+      {cancelConfirmTx && (
+        <ConfirmCancelModal
+          tx={cancelConfirmTx}
+          alreadyPaid={Math.max(0, cancelConfirmTx.amount - (remainingByTx[cancelConfirmTx.id] || 0))}
+          userEmail={session.user.email}
+          t={t}
+          onClose={() => setCancelConfirmTx(null)}
+          onConfirm={confirmCancel}
+        />
+      )}
     </div>
   );
 }
