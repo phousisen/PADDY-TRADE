@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, ChevronRight } from "lucide-react";
+import { Pencil, ChevronRight, Layers } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import { api } from "../api.js";
@@ -52,10 +52,13 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-800">All Locations</h2>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             {[{ v: "today", l: "Today" }, { v: "week", l: "This Week" }, { v: "month", l: "This Month" }, { v: "all", l: "All Time" }].map((o) => (
               <button key={o.v} onClick={() => setPeriod(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${period === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
             ))}
+            <button onClick={() => openDetail("all")} className="ml-2 flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
+              <Layers size={14} /> View All Combined
+            </button>
           </div>
         </div>
 
