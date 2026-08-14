@@ -3,17 +3,20 @@ import { api } from "../api.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 
-export default function ReportStock() {
-  const [stations, setStations] = useState([]);
-  const [txs, setTxs] = useState([]);
+export default function ReportStock({ selectedLocationIds = [] }) {
+  const [allStations, setAllStations] = useState([]);
+  const [allTxs, setAllTxs] = useState([]);
   const [view, setView] = useState("summary");
 
   useEffect(() => {
     Promise.all([api.getLocations(), api.getTransactions()]).then(([s, t]) => {
-      setStations(s);
-      setTxs(t.slice().sort((a, b) => (a.tx_date + a.tx_time > b.tx_date + b.tx_time ? 1 : -1)));
+      setAllStations(s);
+      setAllTxs(t.slice().sort((a, b) => (a.tx_date + a.tx_time > b.tx_date + b.tx_time ? 1 : -1)));
     });
   }, []);
+
+  const stations = selectedLocationIds.length ? allStations.filter((s) => selectedLocationIds.includes(s.id)) : allStations;
+  const txs = selectedLocationIds.length ? allTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : allTxs;
 
   // Running balance per location, built from the transaction history.
   // Note: this reconstructs the ledger from BUY(+)/SELL(-) movements only —

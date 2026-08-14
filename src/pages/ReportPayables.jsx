@@ -15,17 +15,19 @@ const TYPE = "BUY";
 const PAY_TYPE = "pay_supplier";
 const PARTY_LABEL = "Supplier";
 
-export default function ReportPayables() {
-  const [rows, setRows] = useState([]);
+export default function ReportPayables({ selectedLocationIds = [] }) {
+  const [allRows, setAllRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [view, setView] = useState("aging");
 
   useEffect(() => {
     Promise.all([api.getTransactions({ type: TYPE }), api.getPayments({ type: PAY_TYPE })]).then(([tx, pay]) => {
-      setRows(tx);
+      setAllRows(tx);
       setPayments(pay);
     });
   }, []);
+
+  const rows = selectedLocationIds.length ? allRows.filter((r) => selectedLocationIds.includes(r.location_id)) : allRows;
 
   const outstanding = useMemo(() => {
     const today = new Date();

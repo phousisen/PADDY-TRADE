@@ -4,14 +4,16 @@ import { api } from "../api.js";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function ReportSales() {
-  const [rows, setRows] = useState([]);
+export default function ReportSales({ selectedLocationIds = [] }) {
+  const [allRows, setAllRows] = useState([]);
   const [groupBy, setGroupBy] = useState("party");
   const [view, setView] = useState("summary");
 
   useEffect(() => {
-    api.getTransactions({ type: "SELL" }).then(setRows);
+    api.getTransactions({ type: "SELL" }).then(setAllRows);
   }, []);
+
+  const rows = selectedLocationIds.length ? allRows.filter((r) => selectedLocationIds.includes(r.location_id)) : allRows;
 
   const grouped = useMemo(() => {
     const key = groupBy === "party" ? "partyName" : groupBy === "product" ? "productName" : "stationName";

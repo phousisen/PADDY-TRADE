@@ -69,16 +69,18 @@ function AddEntryForm({ profile, onAdd }) {
   );
 }
 
-export default function ReportCashFlow() {
+export default function ReportCashFlow({ selectedLocationIds = [] }) {
   const { profile, session } = useAuth();
   const isAdmin = profile?.role === "admin";
-  const [payments, setPayments] = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
 
   async function load() {
     const data = await api.getPayments(isAdmin ? {} : { locationId: profile?.location_id });
-    setPayments(data);
+    setAllPayments(data);
   }
   useEffect(() => { load(); }, []);
+
+  const payments = selectedLocationIds.length ? allPayments.filter((p) => selectedLocationIds.includes(p.location_id)) : allPayments;
 
   const ledger = useMemo(() => {
     const sorted = payments.slice().sort((a, b) => (a.pay_date + a.created_at < b.pay_date + b.created_at ? -1 : 1));

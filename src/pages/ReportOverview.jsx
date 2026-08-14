@@ -25,7 +25,7 @@ function computeFinancials(txs, stations) {
   return { totalBuy, totalSell, grossProfit, accountsPayable, accountsReceivable, cashEstimate, inventoryValue, totalAssets, totalLiabilities, equity };
 }
 
-export default function ReportOverview() {
+export default function ReportOverview({ selectedLocationIds = [] }) {
   const [txs, setTxs] = useState([]);
   const [stations, setStations] = useState([]);
 
@@ -33,15 +33,18 @@ export default function ReportOverview() {
     Promise.all([api.getTransactions(), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
   }, []);
 
-  const calc = useMemo(() => computeFinancials(txs, stations), [txs, stations]);
+  const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
+  const filteredTxs = selectedLocationIds.length ? txs.filter((t) => selectedLocationIds.includes(t.location_id)) : txs;
+
+  const calc = useMemo(() => computeFinancials(filteredTxs, filteredStations), [filteredTxs, filteredStations]);
 
   const byLocation = useMemo(() => {
-    return stations.map((s) => {
+    return filteredStations.map((s) => {
       const stationTxs = txs.filter((x) => x.location_id === s.id);
       const c = computeFinancials(stationTxs, [s]);
       return { station: s, ...c };
     });
-  }, [txs, stations]);
+  }, [txs, filteredStations]);
 
   const Row = ({ label, value, bold, indent }) => (
     <div className={`flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""}`}>
