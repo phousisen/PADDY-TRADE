@@ -39,6 +39,55 @@ export default function TransactionForm({ type, setPage }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTx, setSavedTx] = useState(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  const draftKey = `paddytrade:draft:${type}`;
+
+  // Restore any unfinished entry from before a reload / lost connection.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const d = JSON.parse(raw);
+        setProductQuery(d.productQuery || "");
+        setPartyQuery(d.partyQuery || "");
+        setPartyPhone(d.partyPhone || "");
+        setPartyIdNumber(d.partyIdNumber || "");
+        setBankName(d.bankName || "");
+        setBankAccount(d.bankAccount || "");
+        setCompany(d.company || "");
+        setDestination(d.destination || "dest_hq");
+        setQualityGrade(d.qualityGrade || "A");
+        setGrossKg(d.grossKg || "");
+        setTareKg(d.tareKg || "");
+        setPricePerKg(d.pricePerKg || "");
+        setPriceOverridden(!!d.priceOverridden);
+        setPaymentStatus(d.paymentStatus || (isBuy ? "pending" : "paid"));
+        setDraftRestored(true);
+      }
+    } catch (e) {}
+  }, []);
+
+  // Save a draft as the person types, so a dropped connection or accidental
+  // reload doesn't lose what they entered.
+  useEffect(() => {
+    const draft = {
+      productQuery, partyQuery, partyPhone, partyIdNumber, bankName, bankAccount,
+      company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus,
+    };
+    const hasContent = partyQuery || grossKg || tareKg || pricePerKg;
+    const timeout = setTimeout(() => {
+      try {
+        if (hasContent) localStorage.setItem(draftKey, JSON.stringify(draft));
+        else localStorage.removeItem(draftKey);
+      } catch (e) {}
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [productQuery, partyQuery, partyPhone, partyIdNumber, bankName, bankAccount, company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus]);
+
+  function clearDraft() {
+    try { localStorage.removeItem(draftKey); } catch (e) {}
+  }
 
   useEffect(() => {
     api.getLocations()
@@ -119,8 +168,14 @@ export default function TransactionForm({ type, setPage }) {
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
       });
       setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "" });
+      clearDraft();
     } catch (err) {
-      setError(err.message || String(err));
+      const isNetworkError = err.message && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"));
+      setError(
+        isNetworkError
+          ? "Couldn't reach the server — check your connection and try again. Nothing you entered has been lost."
+          : (err.message || String(err))
+      );
     } finally {
       setSaving(false);
     }
@@ -134,6 +189,18 @@ export default function TransactionForm({ type, setPage }) {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isBuy ? t("new_buy_title") : t("new_sell_title")} />
       <main className="flex-1 overflow-y-auto p-6">
+        {draftRestored && (
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <span>Restored an unfinished entry from before — check it over before saving.</span>
+            <button
+              type="button"
+              onClick={() => { clearDraft(); window.location.reload(); }}
+              className="rounded-md border border-amber-300 px-2 py-1 text-amber-700 hover:bg-amber-100"
+            >
+              Discard & start blank
+            </button>
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-5">
           <div className="col-span-2 space-y-5">
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
