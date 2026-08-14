@@ -36,6 +36,7 @@ export default function App() {
 
   // Staff still can't edit/delete transactions or see admin-only pages,
   // but they can view the stock dashboard now.
+  const isAdmin = profile.role === "admin";
   const isStaff = profile.role === "staff";
 
   function renderPage() {
