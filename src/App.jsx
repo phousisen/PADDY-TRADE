@@ -24,11 +24,7 @@ export default function App() {
   }, [profile, page]);
 
   // Staff don't have a stock/dashboard view — send them straight to transactions.
-  useEffect(() => {
-    if (profile?.role === "staff" && (page === "dashboard" || page === "stock")) {
-      setPage("transactions");
-    }
-  }, [profile, page]);
+  // (removed: staff can now view the dashboard)
 
   if (loading) {
     return <div className="flex h-screen w-full items-center justify-center bg-slate-50 text-slate-400 text-sm">Loading…</div>;
@@ -38,11 +34,12 @@ export default function App() {
     return <Login />;
   }
 
-  const isAdmin = profile.role === "admin";
+  // Staff still can't edit/delete transactions or see admin-only pages,
+  // but they can view the stock dashboard now.
   const isStaff = profile.role === "staff";
 
   function renderPage() {
-    if (isStaff && (page === "dashboard" || page === "stock" || page === "reports" || page === "stations")) {
+    if (isStaff && (page === "reports" || page === "stations")) {
       return <PermissionDenied />;
     }
     if (page === "dashboard" || page === "stock") return <StockInventory />;
