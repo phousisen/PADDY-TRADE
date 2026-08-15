@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Warehouse, Receipt, Users, ShoppingCart, MapPin, BarChart3,
-  Settings, Languages, ClipboardList, LogOut, Wallet, UserCog,
+  Settings, Languages, ClipboardList, LogOut, Wallet, UserCog, ShieldCheck,
 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -10,6 +10,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
   const { profile, logout } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isStaff = profile?.role === "staff";
+  const isOwner = !!profile?.isOwner;
 
   const mainNav = [
     { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
@@ -26,6 +27,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
     ? [
         { id: "stations", label: t("nav_stations"), icon: MapPin },
         { id: "users", label: "Users", icon: UserCog },
+        { id: "roles", label: "Roles", icon: ShieldCheck },
         { id: "settings", label: t("nav_settings"), icon: Settings },
       ]
     : [];
@@ -61,7 +63,10 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
       {profile && (
         <div className="mb-4 rounded-lg border border-brand-700 bg-brand-950 p-2.5">
           <p className="text-xs font-medium text-white">{profile.full_name}</p>
-          <p className="text-[11px] text-brand-400">{t(`role_${profile.role}`)}</p>
+          <p className="flex items-center gap-1 text-[11px] text-brand-400">
+            {isOwner && <ShieldCheck size={11} className="text-amber-400" />}
+            {profile.roleName || t(`role_${profile.role}`)}
+          </p>
         </div>
       )}
 
