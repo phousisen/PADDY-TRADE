@@ -86,7 +86,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade }) {
+  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate }) {
     const amount = Math.round(quantityKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
       .from("transactions")
@@ -102,6 +102,8 @@ export const api = {
         payment_status: paymentStatus,
         created_by: userId,
         quality_grade: qualityGrade || null,
+        tax_applicable: !!taxApplicable,
+        tax_rate: taxApplicable ? (taxRate || 0) : 0,
       })
       .select()
       .single();
@@ -144,11 +146,14 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate }) {
     const amount = Math.round(quantityKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
       .from("transactions")
-      .update({ quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: qualityGrade || null })
+      .update({
+        quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: qualityGrade || null,
+        tax_applicable: !!taxApplicable, tax_rate: taxApplicable ? (taxRate || 0) : 0,
+      })
       .eq("id", id)
       .select()
       .single();
