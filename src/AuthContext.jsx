@@ -9,12 +9,22 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   async function loadProfile(userId) {
-    const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*, roles(id, name, scope, permissions)")
+      .eq("id", userId)
+      .single();
     if (error) {
       console.error("Failed to load profile", error);
       setProfile(null);
     } else {
-      setProfile(data);
+      setProfile({
+        ...data,
+        roleName: data.roles?.name || data.role,
+        permissions: data.roles?.permissions || [],
+        roleScope: data.roles?.scope || (data.role === "admin" ? "all" : "own_location"),
+        isOwner: (data.roles?.permissions || []).includes("manage_admins"),
+      });
     }
   }
 
@@ -46,8 +56,12 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut();
   }
 
+  function hasPermission(key) {
+    return Array.isArray(profile?.permissions) && profile.permissions.includes(key);
+  }
+
   return (
-    <AuthContext.Provider value={{ session, profile, loading, login, logout }}>
+    <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission }}>
       {children}
     </AuthContext.Provider>
   );

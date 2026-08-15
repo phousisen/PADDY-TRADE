@@ -13,9 +13,41 @@ export const api = {
   },
 
   async getProfiles() {
-    const { data, error } = await supabase.from("profiles").select("*, locations(name)").order("full_name");
+    const { data, error } = await supabase.from("profiles").select("*, locations(name), roles(id, name, scope, permissions)").order("full_name");
     if (error) throw error;
-    return data.map((p) => ({ ...p, locationName: p.locations?.name || "—" }));
+    return data.map((p) => ({ ...p, locationName: p.locations?.name || "—", roleObj: p.roles || null }));
+  },
+
+  async updateProfileRole(id, { roleId, locationId }) {
+    const patch = {};
+    if (roleId !== undefined) patch.role_id = roleId;
+    if (locationId !== undefined) patch.location_id = locationId;
+    const { data, error } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getRoles() {
+    const { data, error } = await supabase.from("roles").select("*").order("scope").order("name");
+    if (error) throw error;
+    return data;
+  },
+
+  async createRole({ name, scope, permissions }) {
+    const { data, error } = await supabase.from("roles").insert({ name, scope, permissions }).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateRole(id, { name, scope, permissions }) {
+    const { data, error } = await supabase.from("roles").update({ name, scope, permissions }).eq("id", id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteRole(id) {
+    const { error } = await supabase.from("roles").delete().eq("id", id);
+    if (error) throw error;
   },
 
   async updateLocation(id, { name, nameKh }) {

@@ -14,6 +14,7 @@ import SimpleListPage from "./pages/SimpleListPage.jsx";
 import LocationsPage from "./pages/LocationsPage.jsx";
 import LocationDetail from "./pages/LocationDetail.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
+import RolesPage from "./pages/RolesPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 
 export default function App() {
@@ -41,7 +42,7 @@ export default function App() {
   const isStaff = profile.role === "staff";
 
   function renderPage() {
-    if (isStaff && (page === "reports" || page === "payments" || page === "stations" || page === "station-detail" || page === "users" || page === "settings")) {
+    if (isStaff && (page === "reports" || page === "payments" || page === "stations" || page === "station-detail" || page === "users" || page === "roles" || page === "settings")) {
       return <PermissionDenied />;
     }
     if (page === "dashboard") return <Dashboard />;
@@ -55,6 +56,7 @@ export default function App() {
     if (page === "reports") return !isStaff ? <Reports /> : <PermissionDenied />;
     if (page === "payments") return !isStaff ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
     if (page === "users") return isAdmin ? <UsersPage /> : <PermissionDenied />;
+    if (page === "roles") return isAdmin ? <RolesPage /> : <PermissionDenied />;
     if (page === "settings") return isAdmin ? <SettingsPage /> : <PermissionDenied />;
     if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" />;
     if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" />;
