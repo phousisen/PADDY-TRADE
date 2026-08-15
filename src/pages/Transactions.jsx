@@ -379,7 +379,7 @@ export default function Transactions({ setPage }) {
       const paid = payments
         .filter((p) => p.transaction_id === tx.id && p.type === (tx.type === "BUY" ? "pay_supplier" : "receive_customer"))
         .reduce((s, p) => s + Number(p.amount), 0);
-      map[tx.id] = Math.max(0, Number(tx.amount) - paid);
+      map[tx.id] = Math.max(0, Number(tx.total_with_tax ?? tx.amount) - paid);
     });
     return map;
   }, [rows, payments]);
@@ -388,7 +388,7 @@ export default function Transactions({ setPage }) {
     const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
     const lines = rows.map((tx, i) => {
       const remaining = remainingByTx[tx.id] || 0;
-      return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, Math.max(0, tx.amount - remaining), remaining, tx.hq_status || "processing"];
+      return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.quantity_kg, tx.amount, Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining), remaining, tx.hq_status || "processing"];
     });
     const csv = [header, ...lines].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -522,10 +522,13 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}</td>
                     <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
-                    <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(tx.amount)}</td>
+                    <td className="px-3 py-3 font-medium text-slate-800">
+                      {fmtRiel(tx.total_with_tax ?? tx.amount)}
+                      {tx.tax_applicable && <p className="text-[10px] font-normal text-slate-400">incl. {tx.tax_rate}% VAT</p>}
+                    </td>
                     <td className="px-3 py-3">
                       <button onClick={() => setViewPaymentsTx(tx)} className="text-emerald-600 underline decoration-dotted hover:text-emerald-700">
-                        {fmtRiel(Math.max(0, tx.amount - remaining))}
+                        {fmtRiel(Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining))}
                       </button>
                     </td>
                     <td className="px-3 py-3">

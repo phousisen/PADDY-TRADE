@@ -36,6 +36,8 @@ export default function TransactionForm({ type, setPage }) {
   const [pricePerKg, setPricePerKg] = useState("");
   const [priceOverridden, setPriceOverridden] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(isBuy ? "pending" : "paid");
+  const [taxApplicable, setTaxApplicable] = useState(false);
+  const [taxRate, setTaxRate] = useState("10");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTx, setSavedTx] = useState(null);
@@ -118,6 +120,8 @@ export default function TransactionForm({ type, setPage }) {
 
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const total = netKg * (parseFloat(pricePerKg) || 0);
+  const taxAmount = taxApplicable ? Math.round(total * (parseFloat(taxRate) || 0)) / 100 : 0;
+  const totalWithTax = total + taxAmount;
   const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
 
   function selectParty(p) {
@@ -172,6 +176,7 @@ export default function TransactionForm({ type, setPage }) {
         type, locationId: effectiveStationId, partyId: party.id, productId,
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
+        taxApplicable, taxRate: parseFloat(taxRate) || 0,
       });
 
       // If it was entered as already paid, record that cash movement immediately
@@ -182,7 +187,7 @@ export default function TransactionForm({ type, setPage }) {
             type: isBuy ? "pay_supplier" : "receive_customer",
             transactionId: tx.id,
             locationId: effectiveStationId,
-            amount: tx.amount,
+            amount: tx.total_with_tax ?? tx.amount,
             method: "cash",
             payDate: tx.tx_date,
             memo: "Paid at time of transaction",
@@ -326,6 +331,21 @@ export default function TransactionForm({ type, setPage }) {
                 </select>
                 <p className="mt-1 text-[11px] text-slate-400">Fixed choices — these exact values feed your Financial Reports.</p>
               </div>
+
+              <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
+                  Apply VAT
+                </label>
+                {taxApplicable && (
+                  <div className="flex items-center gap-1.5">
+                    <input type="number" min="0" step="0.1" value={taxRate} onChange={(e) => setTaxRate(e.target.value)}
+                      className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                    <span className="text-sm text-slate-500">%</span>
+                  </div>
+                )}
+              </div>
+
               <div className="mt-4 rounded-lg bg-brand-50 p-4 text-center">
                 <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
                 <p className="text-4xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-lg font-medium text-brand-600">KG</span></p>
@@ -338,9 +358,21 @@ export default function TransactionForm({ type, setPage }) {
             <div className="sticky top-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-4 font-semibold text-slate-700">{t("summary")}</h3>
               <div className="mb-4 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-4 text-white">
-                <p className="text-xs text-brand-100/80">{t("total_amount")}</p>
+                <p className="text-xs text-brand-100/80">{taxApplicable ? "Subtotal" : t("total_amount")}</p>
                 <p className="mt-1 text-3xl font-bold">{fmtRiel(total)}</p>
                 <p className="mt-2 text-xs text-brand-100/70">{fmt2(netKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
+                {taxApplicable && (
+                  <div className="mt-3 border-t border-white/20 pt-3">
+                    <div className="flex justify-between text-xs text-brand-100/80">
+                      <span>VAT ({taxRate || 0}%)</span>
+                      <span>{fmtRiel(taxAmount)}</span>
+                    </div>
+                    <div className="mt-1 flex justify-between text-sm font-bold">
+                      <span>{t("total_amount")}</span>
+                      <span>{fmtRiel(totalWithTax)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
               <button type="submit" disabled={saving} className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
                 <Save size={16} /> {saving ? "..." : t("save_transaction")}

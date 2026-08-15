@@ -10,10 +10,10 @@ function computeFinancials(txs, stations) {
   const totalBuy = buys.reduce((s, x) => s + Number(x.amount), 0);
   const totalSell = sells.reduce((s, x) => s + Number(x.amount), 0);
   const grossProfit = totalSell - totalBuy;
-  const accountsPayable = buys.filter((x) => x.payment_status === "pending").reduce((s, x) => s + Number(x.amount), 0);
-  const accountsReceivable = sells.filter((x) => x.payment_status && x.payment_status !== "paid").reduce((s, x) => s + Number(x.amount), 0);
-  const paidBuy = buys.filter((x) => x.payment_status === "paid").reduce((s, x) => s + Number(x.amount), 0);
-  const paidSell = sells.filter((x) => !x.payment_status || x.payment_status === "paid").reduce((s, x) => s + Number(x.amount), 0);
+  const accountsPayable = buys.filter((x) => x.payment_status === "pending").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
+  const accountsReceivable = sells.filter((x) => x.payment_status && x.payment_status !== "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
+  const paidBuy = buys.filter((x) => x.payment_status === "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
+  const paidSell = sells.filter((x) => !x.payment_status || x.payment_status === "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
   const cashEstimate = paidSell - paidBuy;
   const totalBuyKg = buys.reduce((s, x) => s + Number(x.quantity_kg), 0) || 1;
   const avgCostPerKg = totalBuy / totalBuyKg;

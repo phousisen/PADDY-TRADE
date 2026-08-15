@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import { useLanguage } from "../i18n.jsx";
@@ -12,6 +12,7 @@ import ReportPayables from "./ReportPayables.jsx";
 import ReportReceivables from "./ReportReceivables.jsx";
 import ReportStock from "./ReportStock.jsx";
 import ReportCashFlow from "./ReportCashFlow.jsx";
+import ReportTax from "./ReportTax.jsx";
 import ReportAuditLog from "./ReportAuditLog.jsx";
 
 export default function Reports() {
@@ -34,6 +35,7 @@ export default function Reports() {
     { id: "receivables", label: "Accounts Receivable", icon: Wallet },
     { id: "stock", label: "Stock", icon: Boxes },
     { id: "cashflow", label: "Cash Flow", icon: Landmark },
+    { id: "tax", label: "Tax", icon: ReceiptText },
     ...(isAdmin ? [{ id: "auditlog", label: "Audit Log", icon: History }] : []),
   ];
 
@@ -68,6 +70,7 @@ export default function Reports() {
         {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} />}
         {tab === "stock" && <ReportStock selectedLocationIds={selectedLocationIds} />}
         {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} />}
+        {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} />}
         {tab === "auditlog" && isAdmin && <ReportAuditLog />}
       </main>
     </div>

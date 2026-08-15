@@ -36,7 +36,7 @@ export default function ReportReceivables({ selectedLocationIds = [] }) {
     return rows
       .map((tx) => {
         const paid = payments.filter((p) => p.transaction_id === tx.id).reduce((s, p) => s + Number(p.amount), 0);
-        const remaining = Math.max(0, Number(tx.amount) - paid);
+        const remaining = Math.max(0, Number(tx.total_with_tax ?? tx.amount) - paid);
         const days = Math.floor((today - new Date(tx.tx_date)) / (1000 * 60 * 60 * 24));
         return { ...tx, remaining, days, bucket: ageBucket(days) };
       })
