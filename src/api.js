@@ -12,6 +12,12 @@ export const api = {
     return data;
   },
 
+  async getProfiles() {
+    const { data, error } = await supabase.from("profiles").select("*, locations(name)").order("full_name");
+    if (error) throw error;
+    return data.map((p) => ({ ...p, locationName: p.locations?.name || "—" }));
+  },
+
   async updateLocation(id, { name, nameKh }) {
     const { data, error } = await supabase.from("locations").update({ name, name_kh: nameKh }).eq("id", id).select().single();
     if (error) throw error;

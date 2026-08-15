@@ -4,6 +4,7 @@ import { useLanguage } from "./i18n.jsx";
 import { api } from "./api.js";
 import Login from "./pages/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
+import Dashboard from "./pages/Dashboard.jsx";
 import StockInventory from "./pages/StockInventory.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import TransactionForm from "./pages/TransactionForm.jsx";
@@ -12,6 +13,8 @@ import Reports from "./pages/Reports.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
 import LocationsPage from "./pages/LocationsPage.jsx";
 import LocationDetail from "./pages/LocationDetail.jsx";
+import UsersPage from "./pages/UsersPage.jsx";
+import SettingsPage from "./pages/SettingsPage.jsx";
 
 export default function App() {
   const { session, profile, loading } = useAuth();
@@ -26,9 +29,6 @@ export default function App() {
     }
   }, [profile, page]);
 
-  // Staff don't have a stock/dashboard view — send them straight to transactions.
-  // (removed: staff can now view the dashboard)
-
   if (loading) {
     return <div className="flex h-screen w-full items-center justify-center bg-slate-50 text-slate-400 text-sm">Loading…</div>;
   }
@@ -37,16 +37,15 @@ export default function App() {
     return <Login />;
   }
 
-  // Staff still can't edit/delete transactions or see admin-only pages,
-  // but they can view the stock dashboard now.
   const isAdmin = profile.role === "admin";
   const isStaff = profile.role === "staff";
 
   function renderPage() {
-    if (isStaff && (page === "reports" || page === "stations" || page === "station-detail")) {
+    if (isStaff && (page === "reports" || page === "payments" || page === "stations" || page === "station-detail" || page === "users" || page === "settings")) {
       return <PermissionDenied />;
     }
-    if (page === "dashboard" || page === "stock") return <StockInventory />;
+    if (page === "dashboard") return <Dashboard />;
+    if (page === "stock") return <StockInventory />;
     if (page === "transactions") return <Transactions setPage={setPage} />;
     if (page === "new-buy") return <TransactionForm type="BUY" setPage={setPage} />;
     if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} />;
@@ -54,9 +53,12 @@ export default function App() {
     if (page === "stations") return isAdmin ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
     if (page === "station-detail") return isAdmin ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
     if (page === "reports") return !isStaff ? <Reports /> : <PermissionDenied />;
+    if (page === "payments") return !isStaff ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
+    if (page === "users") return isAdmin ? <UsersPage /> : <PermissionDenied />;
+    if (page === "settings") return isAdmin ? <SettingsPage /> : <PermissionDenied />;
     if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" />;
     if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" />;
-    return <StockInventory />;
+    return <Dashboard />;
   }
 
   function PermissionDenied() {
