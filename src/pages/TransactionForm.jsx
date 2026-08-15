@@ -235,8 +235,12 @@ export default function TransactionForm({ type, setPage }) {
         )}
         <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-5">
           <div className="col-span-2 space-y-5">
+            {/* Section 1: Party Information */}
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 font-semibold text-slate-700">{isBuy ? t("section1_seller") : t("section1_buyer")}</h3>
+              <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">1</span>
+                {isBuy ? t("section1_seller") : t("section1_buyer")}
+              </h3>
               <div className="relative mb-3">
                 <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder={t("search_party_placeholder")}
@@ -278,14 +282,6 @@ export default function TransactionForm({ type, setPage }) {
                   </>
                 )}
 
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
-                  <input list="product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Type or pick a product"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  <datalist id="product-options">
-                    {products.map((p) => <option key={p.id} value={p.name} />)}
-                  </datalist>
-                </div>
                 {isAdmin && (
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">{t("station")}</label>
@@ -294,7 +290,40 @@ export default function TransactionForm({ type, setPage }) {
                     </select>
                   </div>
                 )}
+              </div>
+            </section>
 
+            {/* Section 2: Weighbridge Data */}
+            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">2</span>
+                <ScanLine size={16} /> {t("section2_weighbridge")}
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="mb-1 block text-xs text-slate-500">{t("gross_weight")}</label><input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                <div><label className="mb-1 block text-xs text-slate-500">{t("tare_weight")}</label><input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              </div>
+              <div className="mt-4 rounded-lg bg-brand-50 p-4 text-center">
+                <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
+                <p className="text-4xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-lg font-medium text-brand-600">KG</span></p>
+              </div>
+            </section>
+
+            {/* Section 3: Quality & Pricing */}
+            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">3</span>
+                Quality &amp; Pricing
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
+                  <input list="product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Type or pick a product"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  <datalist id="product-options">
+                    {products.map((p) => <option key={p.id} value={p.name} />)}
+                  </datalist>
+                </div>
                 {isBuy && (
                   <div>
                     <label className="mb-1 block text-xs text-slate-500">{t("quality_grade")}</label>
@@ -308,14 +337,6 @@ export default function TransactionForm({ type, setPage }) {
                     <p className="mt-1 text-[11px] text-slate-400">A/B/C auto-fills the price — type anything else to set your own.</p>
                   </div>
                 )}
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700"><ScanLine size={16} /> {t("section2_weighbridge")}</h3>
-              <div className="grid grid-cols-3 gap-3">
-                <div><label className="mb-1 block text-xs text-slate-500">{t("gross_weight")}</label><input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-                <div><label className="mb-1 block text-xs text-slate-500">{t("tare_weight")}</label><input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("price_per_kg")}</label>
                   <input type="number" min="0" step="0.01" value={pricePerKg}
@@ -323,14 +344,14 @@ export default function TransactionForm({ type, setPage }) {
                     placeholder="0.00" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   {isBuy && <p className="mt-1 text-[11px] text-slate-400">Auto-filled from grade — edit to override</p>}
                 </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">{t("payment_status")}</label>
+                  <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                    {isBuy ? (<><option value="pending">{t("pendingpay")}</option><option value="paid">{t("paid")}</option></>) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
+                  </select>
+                </div>
               </div>
-              <div className="mt-3">
-                <label className="mb-1 block text-xs text-slate-500">{t("payment_status")}</label>
-                <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-                  {isBuy ? (<><option value="pending">{t("pendingpay")}</option><option value="paid">{t("paid")}</option></>) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
-                </select>
-                <p className="mt-1 text-[11px] text-slate-400">Fixed choices — these exact values feed your Financial Reports.</p>
-              </div>
+              <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.</p>
 
               <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -344,11 +365,6 @@ export default function TransactionForm({ type, setPage }) {
                     <span className="text-sm text-slate-500">%</span>
                   </div>
                 )}
-              </div>
-
-              <div className="mt-4 rounded-lg bg-brand-50 p-4 text-center">
-                <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
-                <p className="text-4xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-lg font-medium text-brand-600">KG</span></p>
               </div>
             </section>
             {error && <p className="text-sm text-rose-500">{error}</p>}

@@ -15,11 +15,11 @@ import ReportCashFlow from "./ReportCashFlow.jsx";
 import ReportTax from "./ReportTax.jsx";
 import ReportAuditLog from "./ReportAuditLog.jsx";
 
-export default function Reports() {
+export default function Reports({ initialTab = "overview" }) {
   const { t } = useLanguage();
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState(initialTab);
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
 
