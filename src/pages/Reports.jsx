@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import { useLanguage } from "../i18n.jsx";
+import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
 import ReportOverview from "./ReportOverview.jsx";
 import ReportPurchases from "./ReportPurchases.jsx";
@@ -11,9 +12,12 @@ import ReportPayables from "./ReportPayables.jsx";
 import ReportReceivables from "./ReportReceivables.jsx";
 import ReportStock from "./ReportStock.jsx";
 import ReportCashFlow from "./ReportCashFlow.jsx";
+import ReportAuditLog from "./ReportAuditLog.jsx";
 
 export default function Reports() {
   const { t } = useLanguage();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
   const [tab, setTab] = useState("overview");
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
@@ -30,6 +34,7 @@ export default function Reports() {
     { id: "receivables", label: "Accounts Receivable", icon: Wallet },
     { id: "stock", label: "Stock", icon: Boxes },
     { id: "cashflow", label: "Cash Flow", icon: Landmark },
+    ...(isAdmin ? [{ id: "auditlog", label: "Audit Log", icon: History }] : []),
   ];
 
   return (
@@ -63,6 +68,7 @@ export default function Reports() {
         {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} />}
         {tab === "stock" && <ReportStock selectedLocationIds={selectedLocationIds} />}
         {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} />}
+        {tab === "auditlog" && isAdmin && <ReportAuditLog />}
       </main>
     </div>
   );

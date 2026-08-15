@@ -94,19 +94,33 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   );
 }
 
-function EditTransactionModal({ tx, t, onClose, onSubmit }) {
-  const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg));
+function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
   const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg));
   const [paymentStatus, setPaymentStatus] = useState(tx.payment_status || "pending");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const isBuy = tx.type === "BUY";
 
-  const newAmount = (parseFloat(quantityKg) || 0) * (parseFloat(pricePerKg) || 0);
+  const newAmount = Number(tx.quantity_kg) * (parseFloat(pricePerKg) || 0);
 
   async function submit(e) {
     e.preventDefault();
+    setError("");
     setSaving(true);
-    await onSubmit({ quantityKg: parseFloat(quantityKg), pricePerKg: parseFloat(pricePerKg), paymentStatus, qualityGrade: tx.quality_grade });
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
+    if (authError) {
+      setError("Incorrect password.");
+      setSaving(false);
+      return;
+    }
+    await onSubmit({
+      quantityKg: Number(tx.quantity_kg),
+      pricePerKg: parseFloat(pricePerKg),
+      paymentStatus,
+      qualityGrade: tx.quality_grade,
+      oldData: { price_per_kg: tx.price_per_kg, amount: tx.amount, payment_status: tx.payment_status },
+    });
     setSaving(false);
   }
 
@@ -120,8 +134,9 @@ function EditTransactionModal({ tx, t, onClose, onSubmit }) {
           <div className="mb-3 grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-xs text-slate-500">Quantity (kg)</label>
-              <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                {fmt2(tx.quantity_kg)} <span className="ml-1 text-xs text-slate-400">(fixed — from weighbridge)</span>
+              </div>
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
@@ -140,12 +155,135 @@ function EditTransactionModal({ tx, t, onClose, onSubmit }) {
             <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
           </div>
 
-          <p className="mb-4 text-xs text-amber-600">Changing the quantity will also adjust this location's stock level to match.</p>
+          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm this change</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
 
           <div className="flex justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
-            <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+            <button type="submit" disabled={saving || !password} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
               {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editPayment, setEditPayment] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    const data = await api.getPaymentsForTransaction(tx.id);
+    setPayments(data);
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function saveEdit(newAmount) {
+    await api.updatePayment(editPayment.id, newAmount);
+    await api.logAudit({
+      action: "edit_payment", tableName: "payments", recordId: editPayment.id,
+      oldData: { amount: editPayment.amount }, newData: { amount: newAmount }, userId,
+    });
+    setEditPayment(null);
+    load();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 font-semibold text-slate-700">Payment History</h3>
+        <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
+
+        <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200">
+          {loading ? (
+            <p className="p-4 text-center text-sm text-slate-400">Loading…</p>
+          ) : payments.length === 0 ? (
+            <p className="p-4 text-center text-sm text-slate-400">No payments recorded yet.</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-400">
+                  <th className="px-3 py-2 font-medium">Date</th>
+                  <th className="px-3 py-2 font-medium">Amount</th>
+                  <th className="px-3 py-2 font-medium">By</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id} className="border-b border-slate-50 last:border-0">
+                    <td className="px-3 py-2 text-slate-500">{p.pay_date}</td>
+                    <td className="px-3 py-2 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
+                    <td className="px-3 py-2 text-slate-500">{p.createdByName}</td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => setEditPayment(p)} className="text-slate-400 hover:text-brand-600"><Pencil size={13} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close</button>
+        </div>
+      </div>
+
+      {editPayment && (
+        <EditPaymentModal payment={editPayment} userEmail={userEmail} t={t} onClose={() => setEditPayment(null)} onSubmit={saveEdit} />
+      )}
+    </div>
+  );
+}
+
+function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
+  const [amount, setAmount] = useState(String(payment.amount));
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
+    if (authError) {
+      setError("Incorrect password.");
+      setSaving(false);
+      return;
+    }
+    await onSubmit(parseFloat(amount));
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Correct Payment Amount</h3>
+        <p className="mb-3 text-xs text-slate-400">Was: {fmtRiel(payment.amount)} on {payment.pay_date}</p>
+
+        <form onSubmit={submit}>
+          <label className="mb-1 block text-xs text-slate-500">Correct amount (៛)</label>
+          <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus
+            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+
+          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
+
+          <div className="mt-2 flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
+            <button type="submit" disabled={saving || !password || !amount} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+              {saving ? "Saving..." : "Confirm Correction"}
             </button>
           </div>
         </form>
@@ -219,6 +357,7 @@ export default function Transactions({ setPage }) {
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
   const [cancelConfirmTx, setCancelConfirmTx] = useState(null);
+  const [viewPaymentsTx, setViewPaymentsTx] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -309,7 +448,16 @@ export default function Transactions({ setPage }) {
   }
 
   async function submitEdit(fields) {
-    await api.updateTransaction(editTx.id, fields);
+    const { oldData, ...updateFields } = fields;
+    const updated = await api.updateTransaction(editTx.id, updateFields);
+    await api.logAudit({
+      action: "edit_transaction",
+      tableName: "transactions",
+      recordId: editTx.id,
+      oldData,
+      newData: { price_per_kg: updated.price_per_kg, amount: updated.amount, payment_status: updated.payment_status },
+      userId: session.user.id,
+    });
     setEditTx(null);
     load();
   }
@@ -375,7 +523,11 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}</td>
                     <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
                     <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(tx.amount)}</td>
-                    <td className="px-3 py-3 text-emerald-600">{fmtRiel(Math.max(0, tx.amount - remaining))}</td>
+                    <td className="px-3 py-3">
+                      <button onClick={() => setViewPaymentsTx(tx)} className="text-emerald-600 underline decoration-dotted hover:text-emerald-700">
+                        {fmtRiel(Math.max(0, tx.amount - remaining))}
+                      </button>
+                    </td>
                     <td className="px-3 py-3">
                       {isCancelled ? (
                         <span className="text-xs text-slate-400">Excluded from reports</span>
@@ -426,7 +578,8 @@ export default function Transactions({ setPage }) {
       </main>
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
-      {editTx && <EditTransactionModal tx={editTx} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
+      {editTx && <EditTransactionModal tx={editTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
+      {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} />}
       {cancelConfirmTx && (
         <ConfirmCancelModal
           tx={cancelConfirmTx}
