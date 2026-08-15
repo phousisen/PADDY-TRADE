@@ -156,6 +156,35 @@ export const api = {
     return data;
   },
 
+  async getPaymentsForTransaction(transactionId) {
+    const { data, error } = await supabase
+      .from("payments")
+      .select("*, profiles(full_name)")
+      .eq("transaction_id", transactionId)
+      .order("created_at");
+    if (error) throw error;
+    return data.map((p) => ({ ...p, createdByName: p.profiles?.full_name || "—" }));
+  },
+
+  async updatePayment(id, amount) {
+    const { data, error } = await supabase.from("payments").update({ amount }).eq("id", id).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  async logAudit({ action, tableName, recordId, oldData, newData, userId }) {
+    const { error } = await supabase.from("audit_logs").insert({
+      user_id: userId, action, table_name: tableName, record_id: recordId, old_data: oldData, new_data: newData,
+    });
+    if (error) console.error("audit log failed", error);
+  },
+
+  async getAuditLogs() {
+    const { data, error } = await supabase.from("audit_logs").select("*, profiles(full_name)").order("created_at", { ascending: false });
+    if (error) throw error;
+    return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
+  },
+
   async getPayments({ locationId, type } = {}) {
     let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
     if (locationId) query = query.eq("location_id", locationId);
