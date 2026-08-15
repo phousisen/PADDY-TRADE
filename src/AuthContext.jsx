@@ -9,15 +9,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   async function loadProfile(userId) {
+    // Try the full query with the roles join first.
     const { data, error } = await supabase
       .from("profiles")
       .select("*, roles(id, name, scope, permissions)")
       .eq("id", userId)
       .single();
-    if (error) {
-      console.error("Failed to load profile", error);
-      setProfile(null);
-    } else {
+
+    if (!error) {
       setProfile({
         ...data,
         roleName: data.roles?.name || data.role,
@@ -25,7 +24,28 @@ export function AuthProvider({ children }) {
         roleScope: data.roles?.scope || (data.role === "admin" ? "all" : "own_location"),
         isOwner: (data.roles?.permissions || []).includes("manage_admins"),
       });
+      return;
     }
+
+    // The roles table/column may not exist yet if the SQL migration hasn't
+    // been run (or hasn't been run yet in this exact order). Rather than
+    // lock everyone out of the app, fall back to the plain profile so
+    // login still works — the new role features just won't be active
+    // until that migration is applied.
+    console.warn("Roles join failed, falling back to plain profile:", error.message);
+    const fallback = await supabase.from("profiles").select("*").eq("id", userId).single();
+    if (fallback.error) {
+      console.error("Failed to load profile", fallback.error);
+      setProfile(null);
+      return;
+    }
+    setProfile({
+      ...fallback.data,
+      roleName: fallback.data.role,
+      permissions: [],
+      roleScope: fallback.data.role === "admin" ? "all" : "own_location",
+      isOwner: false,
+    });
   }
 
   useEffect(() => {
