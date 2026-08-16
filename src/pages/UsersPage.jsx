@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Plus, AlertTriangle } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import AddUserModal from "../components/AddUserModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 
@@ -12,6 +14,7 @@ export default function UsersPage() {
   const [roles, setRoles] = useState([]);
   const [locations, setLocations] = useState([]);
   const [savingId, setSavingId] = useState(null);
+  const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -22,6 +25,8 @@ export default function UsersPage() {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  const rolesMissing = roles.length === 0;
 
   // Owner can touch anyone. HQ Admin (not Owner) can only manage people
   // who currently hold an own_location-scope role — the database enforces
@@ -73,9 +78,23 @@ export default function UsersPage() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Users" subtitle="Everyone with access to PaddyTrade" />
       <main className="flex-1 overflow-y-auto p-6">
-        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-          Creating a brand-new login is still done in Supabase (Authentication → Users) — once that's done, assign their role and location right here. {!isOwner && "As HQ Admin, you can manage Manager/Staff-tier accounts; only Owner can change Owner or HQ Admin-level accounts."}
-        </div>
+        {rolesMissing ? (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">Roles aren't set up yet.</p>
+              <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase first — until then, roles can't be assigned here.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+            <span>{!isOwner && "As HQ Admin, you can manage Manager/Staff-tier accounts; only Owner can change Owner or HQ Admin-level accounts."}</span>
+            <button onClick={() => setAdding(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
+              <Plus size={13} /> Add User
+            </button>
+          </div>
+        )}
+
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -89,7 +108,7 @@ export default function UsersPage() {
             </thead>
             <tbody>
               {users.map((u) => {
-                const editable = canEdit(u);
+                const editable = !rolesMissing && canEdit(u);
                 const scope = u.roleObj?.scope || "own_location";
                 return (
                   <tr key={u.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
@@ -129,6 +148,16 @@ export default function UsersPage() {
           </table>
         </div>
       </main>
+
+      {adding && (
+        <AddUserModal
+          roles={roles}
+          locations={locations}
+          isOwner={isOwner}
+          onClose={() => setAdding(false)}
+          onCreated={() => { setAdding(false); load(); }}
+        />
+      )}
     </div>
   );
 }

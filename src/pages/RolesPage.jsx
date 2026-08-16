@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Plus, Trash2, Lock } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Lock, AlertTriangle } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -8,13 +8,17 @@ import { PERMISSION_GROUPS } from "../permissions.js";
 const SCOPE_LABELS = { all: "All Locations", own_location: "Own Location Only" };
 const SCOPE_STYLES = { all: "bg-brand-100 text-brand-700", own_location: "bg-slate-100 text-slate-600" };
 
-function RoleEditor({ role, isOwner, onBack, onSaved, onDeleted }) {
+function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSaved, onDeleted, onMembersChanged }) {
   const [name, setName] = useState(role.name);
   const [scope, setScope] = useState(role.scope);
   const [permissions, setPermissions] = useState(role.permissions || []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [reassigning, setReassigning] = useState(null);
   const isNew = !role.id;
+
+  const members = isNew ? [] : allProfiles.filter((p) => p.role_id === role.id);
+  const reassignOptions = isOwner ? allRoles : allRoles.filter((r) => r.scope === "own_location");
 
   function toggle(key) {
     setPermissions((prev) => (prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]));
@@ -51,8 +55,21 @@ function RoleEditor({ role, isOwner, onBack, onSaved, onDeleted }) {
     }
   }
 
+  async function reassignMember(profileId, newRoleId) {
+    setReassigning(profileId);
+    try {
+      await api.updateProfileRole(profileId, { roleId: newRoleId });
+      onMembersChanged();
+    } catch (err) {
+      alert(err.message || String(err));
+    } finally {
+      setReassigning(null);
+    }
+  }
+
   const scopeLocked = role.is_system; // never let scope change on a seed role
   const canPickAllScope = isOwner; // only Owner can grant all-location reach
+  const canManageMembers = isOwner || role.scope === "own_location";
 
   return (
     <div>
@@ -60,63 +77,87 @@ function RoleEditor({ role, isOwner, onBack, onSaved, onDeleted }) {
         <ArrowLeft size={15} /> Back to roles
       </button>
 
-      <div className="max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="mb-5 grid grid-cols-2 gap-4">
-          <div>
-            <label className="mb-1 block text-xs text-slate-500">Role name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} disabled={role.is_system}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-400" />
-          </div>
-          <div>
-            <label className="mb-1 flex items-center gap-1 text-xs text-slate-500">
-              Location access {scopeLocked && <Lock size={11} />}
-            </label>
-            <select value={scope} onChange={(e) => setScope(e.target.value)} disabled={scopeLocked || !canPickAllScope}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-400">
-              <option value="own_location">Own Location Only</option>
-              {canPickAllScope && <option value="all">All Locations</option>}
-            </select>
-            {!canPickAllScope && !scopeLocked && <p className="mt-1 text-[11px] text-slate-400">Only Owner can grant all-location access.</p>}
-          </div>
-        </div>
-
-        <div className="space-y-5">
-          {PERMISSION_GROUPS.map((g) => (
-            <div key={g.label}>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{g.label}</p>
-              <div className="space-y-2">
-                {g.permissions.map((p) => {
-                  const isOwnerOnlyPerm = p.key === "manage_admins";
-                  const disabled = isOwnerOnlyPerm && !isOwner;
-                  return (
-                    <label key={p.key} className={`flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2 text-sm ${disabled ? "opacity-40" : "hover:bg-slate-50"}`}>
-                      <input type="checkbox" checked={permissions.includes(p.key)} disabled={disabled} onChange={() => toggle(p.key)}
-                        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-                      <span className="text-slate-700">{p.label}</span>
-                      {isOwnerOnlyPerm && <span className="ml-auto text-[10px] text-slate-400">Owner only</span>}
-                    </label>
-                  );
-                })}
-              </div>
+      <div className="grid max-w-4xl grid-cols-3 gap-5">
+        <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-5 grid grid-cols-2 gap-4">
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Role name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} disabled={role.is_system}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-400" />
             </div>
-          ))}
-        </div>
+            <div>
+              <label className="mb-1 flex items-center gap-1 text-xs text-slate-500">
+                Location access {scopeLocked && <Lock size={11} />}
+              </label>
+              <select value={scope} onChange={(e) => setScope(e.target.value)} disabled={scopeLocked || !canPickAllScope}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-400">
+                <option value="own_location">Own Location Only</option>
+                {canPickAllScope && <option value="all">All Locations</option>}
+              </select>
+              {!canPickAllScope && !scopeLocked && <p className="mt-1 text-[11px] text-slate-400">Only Owner can grant all-location access.</p>}
+            </div>
+          </div>
 
-        {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
+          <div className="space-y-5">
+            {PERMISSION_GROUPS.map((g) => (
+              <div key={g.label}>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{g.label}</p>
+                <div className="space-y-2">
+                  {g.permissions.map((p) => {
+                    const isOwnerOnlyPerm = p.key === "manage_admins";
+                    const disabled = isOwnerOnlyPerm && !isOwner;
+                    return (
+                      <label key={p.key} className={`flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2 text-sm ${disabled ? "opacity-40" : "hover:bg-slate-50"}`}>
+                        <input type="checkbox" checked={permissions.includes(p.key)} disabled={disabled} onChange={() => toggle(p.key)}
+                          className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
+                        <span className="text-slate-700">{p.label}</span>
+                        {isOwnerOnlyPerm && <span className="ml-auto text-[10px] text-slate-400">Owner only</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
 
-        <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
-          {!isNew && !role.is_system ? (
-            <button onClick={del} disabled={saving} className="flex items-center gap-1.5 text-sm text-rose-500 hover:text-rose-700">
-              <Trash2 size={14} /> Delete role
-            </button>
-          ) : <span />}
-          <div className="flex gap-2">
-            <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-            <button onClick={save} disabled={saving} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-              {saving ? "Saving..." : "Save Role"}
-            </button>
+          {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
+
+          <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+            {!isNew && !role.is_system ? (
+              <button onClick={del} disabled={saving} className="flex items-center gap-1.5 text-sm text-rose-500 hover:text-rose-700">
+                <Trash2 size={14} /> Delete role
+              </button>
+            ) : <span />}
+            <div className="flex gap-2">
+              <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+              <button onClick={save} disabled={saving} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+                {saving ? "Saving..." : "Save Role"}
+              </button>
+            </div>
           </div>
         </div>
+
+        {!isNew && (
+          <div className="col-span-1 h-fit rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="mb-3 text-sm font-semibold text-slate-700">Accounts with this role ({members.length})</p>
+            {members.length === 0 && <p className="text-xs text-slate-400">Nobody has this role right now.</p>}
+            <div className="space-y-2">
+              {members.map((m) => (
+                <div key={m.id} className="rounded-lg border border-slate-100 p-2.5">
+                  <p className="text-sm font-medium text-slate-700">{m.full_name}</p>
+                  {canManageMembers ? (
+                    <select value={m.role_id} disabled={reassigning === m.id} onChange={(e) => reassignMember(m.id, e.target.value)}
+                      className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1 text-xs outline-none focus:border-brand-400">
+                      {reassignOptions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  ) : (
+                    <p className="mt-0.5 text-xs text-slate-400">Only Owner can move this person to a different role.</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -138,6 +179,8 @@ export default function RolesPage() {
   }
   useEffect(() => { load(); }, []);
 
+  const rolesMissing = roles.length === 0 && !loading;
+
   function employeeCount(roleId) {
     return profiles.filter((p) => p.role_id === roleId).length;
   }
@@ -156,7 +199,11 @@ export default function RolesPage() {
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
         <Topbar title="Edit Role" />
         <main className="flex-1 overflow-y-auto p-6">
-          <RoleEditor role={editing} isOwner={isOwner} onBack={() => setEditing(null)} onSaved={handleSaved} onDeleted={handleDeleted} />
+          <RoleEditor
+            role={editing} isOwner={isOwner} allRoles={roles} allProfiles={profiles} myId={profile.id}
+            onBack={() => setEditing(null)} onSaved={handleSaved} onDeleted={handleDeleted}
+            onMembersChanged={load}
+          />
         </main>
       </div>
     );
@@ -166,10 +213,20 @@ export default function RolesPage() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Roles" subtitle="Custom access rights for everyone in PaddyTrade" />
       <main className="flex-1 overflow-y-auto p-6">
-        <button onClick={() => setEditing({ name: "", scope: "own_location", permissions: [], is_system: false })}
-          className="mb-4 flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-          <Plus size={15} /> Add Role
-        </button>
+        {rolesMissing ? (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium">The roles table isn't set up yet.</p>
+              <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase's SQL Editor, then refresh this page.</p>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setEditing({ name: "", scope: "own_location", permissions: [], is_system: false })}
+            className="mb-4 flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+            <Plus size={15} /> Add Role
+          </button>
+        )}
 
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
@@ -200,9 +257,11 @@ export default function RolesPage() {
           </table>
         </div>
 
-        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-          Location access controls what data a role can actually reach in the database (all locations vs their own). Permissions control what's shown inside that boundary. {!isOwner && "Only Owner can create a role with all-location access, or edit the \"Owner\"/\"HQ Admin\" roles."}
-        </div>
+        {!rolesMissing && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+            Location access controls what data a role can actually reach in the database (all locations vs their own). Permissions control what's shown inside that boundary. {!isOwner && "Only Owner can create a role with all-location access, or edit the \"Owner\"/\"HQ Admin\" roles."}
+          </div>
+        )}
       </main>
     </div>
   );

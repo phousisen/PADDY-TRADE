@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, ChevronRight, Layers } from "lucide-react";
+import { Pencil, ChevronRight, Layers, Plus } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
+import AddLocationModal from "../components/AddLocationModal.jsx";
 import { api } from "../api.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -21,6 +22,7 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
   const [txs, setTxs] = useState([]);
   const [period, setPeriod] = useState("week");
   const [editingLocation, setEditingLocation] = useState(null);
+  const [addingLocation, setAddingLocation] = useState(false);
 
   async function load() {
     const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
@@ -59,6 +61,9 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
             ))}
             <button onClick={() => openDetail("all")} className="ml-2 flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700">
               <Layers size={14} /> View All Combined
+            </button>
+            <button onClick={() => setAddingLocation(true)} className="flex items-center gap-1.5 rounded-lg border border-brand-300 bg-white px-3 py-1.5 text-sm font-medium text-brand-700 hover:bg-brand-50">
+              <Plus size={14} /> Add Location
             </button>
           </div>
         </div>
@@ -121,6 +126,16 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
           onSaved={(updated) => {
             setLocations((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
             setEditingLocation(null);
+          }}
+        />
+      )}
+
+      {addingLocation && (
+        <AddLocationModal
+          onClose={() => setAddingLocation(false)}
+          onCreated={(created) => {
+            setLocations((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+            setAddingLocation(false);
           }}
         />
       )}
