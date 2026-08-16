@@ -3,7 +3,7 @@ import { api } from "../api.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 
-export default function ReportStock({ selectedLocationIds = [] }) {
+export default function ReportStock({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allStations, setAllStations] = useState([]);
   const [allTxs, setAllTxs] = useState([]);
   const [view, setView] = useState("summary");
@@ -18,7 +18,9 @@ export default function ReportStock({ selectedLocationIds = [] }) {
   const stations = selectedLocationIds.length ? allStations.filter((s) => selectedLocationIds.includes(s.id)) : allStations;
   const txs = allTxs
     .filter((t) => (t.hq_status || "processing") !== "cancelled")
-    .filter((t) => !selectedLocationIds.length || selectedLocationIds.includes(t.location_id));
+    .filter((t) => !selectedLocationIds.length || selectedLocationIds.includes(t.location_id))
+    .filter((t) => !startDate || t.tx_date >= startDate)
+    .filter((t) => !endDate || t.tx_date <= endDate);
 
   // Running balance per location, built from the transaction history.
   // Note: this reconstructs the ledger from BUY(+)/SELL(-) movements only —

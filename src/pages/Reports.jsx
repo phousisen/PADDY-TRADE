@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
+import DateRangeFilter from "../components/DateRangeFilter.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
@@ -22,6 +23,8 @@ export default function Reports({ initialTab = "overview" }) {
   const [tab, setTab] = useState(initialTab);
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
 
   useEffect(() => {
     api.getLocations().then(setLocations);
@@ -57,20 +60,23 @@ export default function Reports({ initialTab = "overview" }) {
               </button>
             ))}
           </div>
-          {locations.length > 1 && (
-            <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
-          )}
+          <div className="flex items-center gap-2 py-2">
+            <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
+            {locations.length > 1 && (
+              <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
+            )}
+          </div>
         </div>
       </div>
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
-        {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} />}
-        {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} />}
-        {tab === "sales" && <ReportSales selectedLocationIds={selectedLocationIds} />}
-        {tab === "payables" && <ReportPayables selectedLocationIds={selectedLocationIds} />}
-        {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} />}
-        {tab === "stock" && <ReportStock selectedLocationIds={selectedLocationIds} />}
-        {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} />}
-        {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} />}
+        {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "sales" && <ReportSales selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "payables" && <ReportPayables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "stock" && <ReportStock selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "auditlog" && isAdmin && <ReportAuditLog />}
       </main>
     </div>

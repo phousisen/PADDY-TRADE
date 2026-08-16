@@ -15,7 +15,7 @@ const TYPE = "BUY";
 const PAY_TYPE = "pay_supplier";
 const PARTY_LABEL = "Supplier";
 
-export default function ReportPayables({ selectedLocationIds = [] }) {
+export default function ReportPayables({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allRows, setAllRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [view, setView] = useState("aging");
@@ -29,7 +29,9 @@ export default function ReportPayables({ selectedLocationIds = [] }) {
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")
-    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id));
+    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id))
+    .filter((r) => !startDate || r.tx_date >= startDate)
+    .filter((r) => !endDate || r.tx_date <= endDate);
 
   const outstanding = useMemo(() => {
     const today = new Date();

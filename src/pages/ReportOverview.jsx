@@ -25,7 +25,7 @@ function computeFinancials(txs, stations) {
   return { totalBuy, totalSell, grossProfit, accountsPayable, accountsReceivable, cashEstimate, inventoryValue, totalAssets, totalLiabilities, equity };
 }
 
-export default function ReportOverview({ selectedLocationIds = [] }) {
+export default function ReportOverview({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [txs, setTxs] = useState([]);
   const [stations, setStations] = useState([]);
 
@@ -34,7 +34,10 @@ export default function ReportOverview({ selectedLocationIds = [] }) {
   }, []);
 
   const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
-  const activeTxs = txs.filter((t) => (t.hq_status || "processing") !== "cancelled");
+  const activeTxs = txs
+    .filter((t) => (t.hq_status || "processing") !== "cancelled")
+    .filter((t) => !startDate || t.tx_date >= startDate)
+    .filter((t) => !endDate || t.tx_date <= endDate);
   const filteredTxs = selectedLocationIds.length ? activeTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : activeTxs;
 
   const calc = useMemo(() => computeFinancials(filteredTxs, filteredStations), [filteredTxs, filteredStations]);

@@ -5,7 +5,7 @@ import { api } from "../api.js";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function ReportTax({ selectedLocationIds = [] }) {
+export default function ReportTax({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allTxs, setAllTxs] = useState([]);
   const [view, setView] = useState("summary");
 
@@ -16,7 +16,9 @@ export default function ReportTax({ selectedLocationIds = [] }) {
   const txs = allTxs
     .filter((t) => (t.hq_status || "processing") !== "cancelled")
     .filter((t) => t.tax_applicable)
-    .filter((t) => !selectedLocationIds.length || selectedLocationIds.includes(t.location_id));
+    .filter((t) => !selectedLocationIds.length || selectedLocationIds.includes(t.location_id))
+    .filter((t) => !startDate || t.tx_date >= startDate)
+    .filter((t) => !endDate || t.tx_date <= endDate);
 
   const outputTax = txs.filter((t) => t.type === "SELL").reduce((s, t) => s + Number(t.tax_amount || 0), 0);
   const inputTax = txs.filter((t) => t.type === "BUY").reduce((s, t) => s + Number(t.tax_amount || 0), 0);

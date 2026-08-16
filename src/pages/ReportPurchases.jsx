@@ -4,7 +4,7 @@ import { api } from "../api.js";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function ReportPurchases({ selectedLocationIds = [] }) {
+export default function ReportPurchases({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allRows, setAllRows] = useState([]);
   const [groupBy, setGroupBy] = useState("party");
   const [view, setView] = useState("summary");
@@ -15,7 +15,9 @@ export default function ReportPurchases({ selectedLocationIds = [] }) {
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")
-    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id));
+    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id))
+    .filter((r) => !startDate || r.tx_date >= startDate)
+    .filter((r) => !endDate || r.tx_date <= endDate);
 
   const grouped = useMemo(() => {
     const key = groupBy === "party" ? "partyName" : groupBy === "product" ? "productName" : "stationName";

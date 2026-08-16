@@ -15,7 +15,7 @@ const TYPE = "SELL";
 const PAY_TYPE = "receive_customer";
 const PARTY_LABEL = "Customer";
 
-export default function ReportReceivables({ selectedLocationIds = [] }) {
+export default function ReportReceivables({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allRows, setAllRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [view, setView] = useState("aging");
@@ -29,7 +29,9 @@ export default function ReportReceivables({ selectedLocationIds = [] }) {
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")
-    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id));
+    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id))
+    .filter((r) => !startDate || r.tx_date >= startDate)
+    .filter((r) => !endDate || r.tx_date <= endDate);
 
   const outstanding = useMemo(() => {
     const today = new Date();
