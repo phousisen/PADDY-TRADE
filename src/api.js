@@ -14,7 +14,14 @@ export const api = {
 
   async getProfiles() {
     const { data, error } = await supabase.from("profiles").select("*, locations(name), roles(id, name, scope, permissions)").order("full_name");
-    if (error) throw error;
+    if (error) {
+      // The roles table/relationship may not exist yet if that migration
+      // hasn't been run — fall back to plain profiles so this page doesn't
+      // just go blank with no explanation.
+      const fallback = await supabase.from("profiles").select("*, locations(name)").order("full_name");
+      if (fallback.error) throw fallback.error;
+      return fallback.data.map((p) => ({ ...p, locationName: p.locations?.name || "—", roleObj: null, rolesTableMissing: true }));
+    }
     return data.map((p) => ({ ...p, locationName: p.locations?.name || "—", roleObj: p.roles || null }));
   },
 
@@ -29,7 +36,10 @@ export const api = {
 
   async getRoles() {
     const { data, error } = await supabase.from("roles").select("*").order("scope").order("name");
-    if (error) throw error;
+    if (error) {
+      console.warn("Roles table not available yet:", error.message);
+      return [];
+    }
     return data;
   },
 
@@ -54,6 +64,39 @@ export const api = {
     const { data, error } = await supabase.from("locations").update({ name, name_kh: nameKh }).eq("id", id).select().single();
     if (error) throw error;
     return data;
+  },
+
+  async createLocation({ name, nameKh, capacityKg }) {
+    const { data, error } = await supabase
+      .from("locations")
+      .insert({ name, name_kh: nameKh || "", capacity_kg: capacityKg || 0, current_stock_kg: 0, updated_ago: "just now" })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async createUserAccount({ email, password, fullName, roleId, locationId }) {
+    // Use a separate, throwaway Supabase client for this so it doesn't
+    // touch the admin's own logged-in session — signUp() would otherwise
+    // switch the current browser session to the newly created user.
+    const { createClient } = await import("@supabase/supabase-js");
+    const tempClient = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await tempClient.auth.signUp({ email, password, options: { data: { full_name: fullName } } });
+    if (error) throw error;
+    const userId = data.user?.id;
+    if (!userId) throw new Error("Account created, but no user id was returned.");
+    // The signup trigger creates a basic profile row; now set their real name/role/location.
+    const patch = { full_name: fullName };
+    if (roleId) patch.role_id = roleId;
+    if (locationId !== undefined) patch.location_id = locationId || null;
+    // Small delay to let the DB trigger finish inserting the profile row first.
+    await new Promise((r) => setTimeout(r, 700));
+    const { error: updateError } = await supabase.from("profiles").update(patch).eq("id", userId);
+    if (updateError) throw updateError;
+    return { id: userId, emailConfirmed: !!data.user?.confirmed_at, session: data.session };
   },
 
   async getProducts() {
