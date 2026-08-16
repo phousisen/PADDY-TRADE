@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Warehouse, Receipt, Users, ShoppingCart, MapPin, BarChart3,
-  Settings, Languages, ClipboardList, LogOut, Wallet, UserCog, ShieldCheck,
+  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck,
 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -20,7 +20,6 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
     { id: "buyers", label: t("nav_buyers"), icon: ShoppingCart },
     { id: "stock", label: t("nav_stock"), icon: Warehouse },
     ...(!isStaff ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
-    ...(!isStaff ? [{ id: "payments", label: "Payments", icon: Wallet }] : []),
   ];
 
   const systemNav = isAdmin
