@@ -105,7 +105,7 @@ export default function TransactionForm({ type, setPage }) {
       .finally(() => setStationsLoaded(true));
 
     api.getProducts().then((p) => { setProducts(p); if (p[0]) setProductQuery(p[0].name); }).catch(() => {});
-    if (isBuy) api.getSettings().then(setSettings).catch(() => {});
+    api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -117,6 +117,10 @@ export default function TransactionForm({ type, setPage }) {
       setPricePerKg(settings[`price_grade_${qualityGrade.toLowerCase()}_per_kg`]);
     }
   }, [qualityGrade, settings, isBuy, priceOverridden]);
+
+  useEffect(() => {
+    if (settings.default_vat_rate) setTaxRate(settings.default_vat_rate);
+  }, [settings]);
 
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const total = netKg * (parseFloat(pricePerKg) || 0);
