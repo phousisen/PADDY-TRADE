@@ -149,6 +149,17 @@ export const api = {
     return map;
   },
 
+  async updateSetting(key, value) {
+    const { error } = await supabase.from("system_settings").upsert({ key, value: String(value) }, { onConflict: "key" });
+    if (error) throw error;
+  },
+
+  async updateSettings(entries) {
+    const rows = Object.entries(entries).map(([key, value]) => ({ key, value: String(value ?? "") }));
+    const { error } = await supabase.from("system_settings").upsert(rows, { onConflict: "key" });
+    if (error) throw error;
+  },
+
   async getTransactions({ type, locationId } = {}) {
     let query = supabase
       .from("transactions")
