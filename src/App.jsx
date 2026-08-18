@@ -13,6 +13,7 @@ import Reports from "./pages/Reports.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
 import LocationsPage from "./pages/LocationsPage.jsx";
 import LocationDetail from "./pages/LocationDetail.jsx";
+import PartyDetail from "./pages/PartyDetail.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
 import RolesPage from "./pages/RolesPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
@@ -24,6 +25,7 @@ export default function App() {
   const [selectedLocationId, setSelectedLocationId] = useState(null);
   const [pendingRequests, setPendingRequests] = useState(0);
   const [prefillParty, setPrefillParty] = useState(null);
+  const [openParty, setOpenParty] = useState(null); // { id, kind }
 
   // Jump to a fresh New Buy / New Sell form with a farmer's or buyer's info
   // already filled in — used by the "New Buy"/"New Sell" button on their
@@ -36,6 +38,14 @@ export default function App() {
   function startSellFor(party) {
     setPrefillParty(party);
     setPage("new-sell");
+  }
+
+  // Open a farmer's or buyer's full profile page (clicked from their name
+  // on the Farmers/Buyers list) — shows their info, running totals, and
+  // complete transaction history.
+  function viewParty(party, kind) {
+    setOpenParty({ id: party.id, kind });
+    setPage("party-detail");
   }
 
   useEffect(() => {
@@ -72,8 +82,9 @@ export default function App() {
     if (page === "users") return isAdmin ? <UsersPage /> : <PermissionDenied />;
     if (page === "roles") return isAdmin ? <RolesPage /> : <PermissionDenied />;
     if (page === "settings") return isAdmin ? <SettingsPage /> : <PermissionDenied />;
-    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} />;
-    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} />;
+    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} />;
+    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} />;
+    if (page === "party-detail") return <PartyDetail partyId={openParty?.id} kind={openParty?.kind} setPage={setPage} onBuyFor={startBuyFor} onSellFor={startSellFor} />;
     return <Dashboard />;
   }
 
