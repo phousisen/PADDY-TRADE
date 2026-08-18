@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Search, PlusCircle } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function SimpleListPage({ title, kind }) {
+export default function SimpleListPage({ title, kind, onBuyFor, onSellFor }) {
   const [rows, setRows] = useState([]);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     if (kind === "stations") {
@@ -33,6 +35,14 @@ export default function SimpleListPage({ title, kind }) {
       );
     });
   }, [kind]);
+
+  // Search by name or phone number — lets HQ staff quickly find a farmer
+  // or buyer they've talked to before instead of scrolling the whole list.
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) => (r.name || "").toLowerCase().includes(q) || (r.phone || "").toLowerCase().includes(q));
+  }, [rows, search]);
 
   const columns =
     kind === "stations"
@@ -67,24 +77,53 @@ export default function SimpleListPage({ title, kind }) {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={title} />
       <main className="flex-1 overflow-y-auto p-6">
+        {kind !== "stations" && (
+          <div className="mb-4 relative w-full max-w-xs">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or phone…"
+              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+          </div>
+        )}
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
                 {columns.map((c) => <th key={c.key} className="px-5 py-3 font-medium whitespace-nowrap">{c.label}</th>)}
+                {(onBuyFor || onSellFor) && <th className="px-5 py-3 font-medium whitespace-nowrap">Action</th>}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
+              {filteredRows.map((r) => (
                 <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                   {columns.map((c) => (
                     <td key={c.key} className="px-5 py-3 text-slate-700 whitespace-nowrap">
                       {c.render ? c.render(r[c.key]) : (r[c.key] || "—")}
                     </td>
                   ))}
+                  {(onBuyFor || onSellFor) && (
+                    <td className="px-5 py-3 whitespace-nowrap">
+                      <button
+                        onClick={() => (onBuyFor ? onBuyFor(r) : onSellFor(r))}
+                        className="flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
+                      >
+                        <PlusCircle size={13} /> {onBuyFor ? "New Buy" : "New Sell"}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={columns.length} className="px-5 py-10 text-center text-sm text-slate-400">No records visible to your account.</td></tr>}
+              {filteredRows.length === 0 && (
+                <tr>
+                  <td colSpan={columns.length + ((onBuyFor || onSellFor) ? 1 : 0)} className="px-5 py-10 text-center text-sm text-slate-400">
+                    {rows.length === 0 ? "No records visible to your account." : "No matches for your search."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -23,7 +23,7 @@ const BANK_OPTIONS = [
   "Chipmong Bank",
 ];
 
-export default function TransactionForm({ type, setPage }) {
+export default function TransactionForm({ type, setPage, prefillParty, clearPrefill }) {
   const isBuy = type === "BUY";
   const { t } = useLanguage();
   const { profile, session } = useAuth();
@@ -124,6 +124,17 @@ export default function TransactionForm({ type, setPage }) {
     setCompany(p.company || "");
     setDestination(p.destination || "dest_hq");
   }
+
+  // Coming here from a farmer/buyer's profile page (via the "New Buy"/"New
+  // Sell" button there) — prefill their info so HQ staff don't have to
+  // retype the same name, bank, and account for every truckload.
+  useEffect(() => {
+    if (prefillParty) {
+      selectParty(prefillParty);
+      if (clearPrefill) clearPrefill();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillParty]);
 
   async function resolveProductId() {
     const name = productQuery.trim();
