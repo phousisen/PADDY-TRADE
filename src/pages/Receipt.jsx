@@ -62,8 +62,20 @@ export default function Receipt({ tx, onDone }) {
           <div className="mb-3 space-y-1 text-sm">
             <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium text-slate-700">{fmt2(tx.quantity_kg)} kg</span></div>
             {tx.quality_grade && <div className="flex justify-between"><span className="text-slate-500">Quality Grade</span><span className="font-medium text-slate-700">{tx.quality_grade}</span></div>}
+            {(tx.moisture_pct > 0 || tx.mixture_pct > 0 || tx.outthrow_pct > 0) && (
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>Moisture {tx.moisture_pct}% · Mixture {tx.mixture_pct}% · Outthrow {tx.outthrow_pct}%</span>
+              </div>
+            )}
+            {tx.deduction_kg > 0 && (
+              <>
+                <div className="flex justify-between"><span className="text-slate-500">Deduction</span><span className="font-medium text-rose-600">-{fmt2(tx.deduction_kg)} kg</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium text-slate-700">{fmt2(tx.payable_kg ?? (tx.quantity_kg - tx.deduction_kg))} kg</span></div>
+              </>
+            )}
             <div className="flex justify-between"><span className="text-slate-500">Price per kg</span><span className="font-medium text-slate-700">{fmtRiel(tx.price_per_kg)}</span></div>
           </div>
+          {tx.note && <p className="mb-3 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500">{tx.note}</p>}
 
           {tx.tax_applicable && (
             <div className="mb-3 space-y-1 border-t border-dashed border-slate-200 pt-2 text-sm">

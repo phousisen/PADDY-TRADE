@@ -38,6 +38,11 @@ export default function TransactionForm({ type, setPage }) {
   const [paymentStatus, setPaymentStatus] = useState(isBuy ? "pending" : "paid");
   const [taxApplicable, setTaxApplicable] = useState(false);
   const [taxRate, setTaxRate] = useState("10");
+  const [moisturePct, setMoisturePct] = useState("");
+  const [mixturePct, setMixturePct] = useState("");
+  const [outthrowPct, setOutthrowPct] = useState("");
+  const [deductionKg, setDeductionKg] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTx, setSavedTx] = useState(null);
@@ -123,7 +128,8 @@ export default function TransactionForm({ type, setPage }) {
   }, [settings]);
 
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
-  const total = netKg * (parseFloat(pricePerKg) || 0);
+  const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
+  const total = payableKg * (parseFloat(pricePerKg) || 0);
   const taxAmount = taxApplicable ? Math.round(total * (parseFloat(taxRate) || 0)) / 100 : 0;
   const totalWithTax = total + taxAmount;
   const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
@@ -181,6 +187,9 @@ export default function TransactionForm({ type, setPage }) {
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
         taxApplicable, taxRate: parseFloat(taxRate) || 0,
+        moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
+        outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
+        note: note.trim() || null,
       });
 
       // If it was entered as already paid, record that cash movement immediately
@@ -310,6 +319,9 @@ export default function TransactionForm({ type, setPage }) {
               <div className="mt-4 rounded-lg bg-brand-50 p-4 text-center">
                 <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
                 <p className="text-4xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-lg font-medium text-brand-600">KG</span></p>
+                {parseFloat(deductionKg) > 0 && (
+                  <p className="mt-1 text-xs text-brand-700/70">Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)</p>
+                )}
               </div>
             </section>
 
@@ -357,6 +369,39 @@ export default function TransactionForm({ type, setPage }) {
               </div>
               <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.</p>
 
+              <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
+                <div className="grid grid-cols-4 gap-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] text-slate-400">Moisture %</label>
+                    <input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} placeholder="0"
+                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-slate-400">Mixture %</label>
+                    <input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} placeholder="0"
+                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label>
+                    <input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} placeholder="0"
+                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label>
+                    <input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} placeholder="0"
+                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  </div>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.</p>
+              </div>
+
+              <div className="mt-3">
+                <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
+                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. from Weighbridge Ticket WT0134"
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+
               <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
@@ -380,7 +425,7 @@ export default function TransactionForm({ type, setPage }) {
               <div className="mb-4 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-4 text-white">
                 <p className="text-xs text-brand-100/80">{taxApplicable ? "Subtotal" : t("total_amount")}</p>
                 <p className="mt-1 text-3xl font-bold">{fmtRiel(total)}</p>
-                <p className="mt-2 text-xs text-brand-100/70">{fmt2(netKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
+                <p className="mt-2 text-xs text-brand-100/70">{fmt2(payableKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
                 {taxApplicable && (
                   <div className="mt-3 border-t border-white/20 pt-3">
                     <div className="flex justify-between text-xs text-brand-100/80">
