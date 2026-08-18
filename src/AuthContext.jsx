@@ -32,6 +32,25 @@ function describeDevice() {
   return `${browser} on ${os}`;
 }
 
+// Asks a free public lookup service what IP this browser is connecting
+// from, and roughly where that IP is registered (city/country). This is
+// the same technique most consumer apps use for "new login location"
+// alerts — it's approximate (VPNs/mobile data can throw it off) and
+// self-reported by the browser, not a precise or tamper-proof fingerprint.
+// If the lookup fails for any reason, login still proceeds normally —
+// this only adds a nice-to-have detail for the Users page.
+async function lookupIpLocation() {
+  try {
+    const res = await fetch("https://ipapi.co/json/");
+    if (!res.ok) return { ip: null, location: null };
+    const data = await res.json();
+    const parts = [data.city, data.country_name].filter(Boolean);
+    return { ip: data.ip || null, location: parts.length ? parts.join(", ") : null };
+  } catch (_err) {
+    return { ip: null, location: null };
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -96,7 +115,9 @@ export function AuthProvider({ children }) {
         // reload restoring an existing session, and not on a background
         // token refresh, both of which also fire through this callback.
         if (_event === "SIGNED_IN") {
-          supabase.rpc("record_login", { device_info: describeDevice() }).catch(() => {});
+          lookupIpLocation().then(({ ip, location }) => {
+            supabase.rpc("record_login", { device_info: describeDevice(), ip_address: ip, ip_location: location }).catch(() => {});
+          });
         }
       } else {
         setProfile(null);
