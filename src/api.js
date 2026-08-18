@@ -61,10 +61,17 @@ export const api = {
     return data.map((p) => ({ ...p, locationName: p.locations?.name || "—", roleObj: p.roles || null }));
   },
 
-  async updateProfileRole(id, { roleId, locationId }) {
+  async updateProfileRole(id, { roleId, locationId, role }) {
     const patch = {};
     if (roleId !== undefined) patch.role_id = roleId;
     if (locationId !== undefined) patch.location_id = locationId;
+    // `role` here is the older, simpler admin/staff text column that most
+    // of the app still reads directly (Sidebar sections, page access,
+    // the Transactions read-only lock) — it predates the granular Roles
+    // table. Passing it through keeps the two in sync so a Role change on
+    // the Users page actually takes effect everywhere, not just in that
+    // dropdown's own label.
+    if (role !== undefined) patch.role = role;
     const { data, error } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
     if (error) throw error;
     return data;
