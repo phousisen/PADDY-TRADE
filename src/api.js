@@ -66,6 +66,15 @@ export const api = {
     return data;
   },
 
+  async uploadTransactionPhoto(file, kind) {
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${kind}/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from("transaction-photos").upload(path, file, { cacheControl: "3600", upsert: false });
+    if (error) throw error;
+    const { data } = supabase.storage.from("transaction-photos").getPublicUrl(path);
+    return data.publicUrl;
+  },
+
   async createLocation({ name, nameKh, capacityKg }) {
     const { data, error } = await supabase
       .from("locations")
@@ -178,7 +187,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note }) {
+  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, receiptPhotoUrl, paymentProofUrl }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(payableKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
@@ -202,6 +211,8 @@ export const api = {
         outthrow_pct: outthrowPct || 0,
         deduction_kg: deductionKg || 0,
         note: note || null,
+        receipt_photo_url: receiptPhotoUrl || null,
+        payment_proof_url: paymentProofUrl || null,
       })
       .select()
       .single();
