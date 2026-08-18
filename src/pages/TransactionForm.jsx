@@ -43,6 +43,7 @@ export default function TransactionForm({ type, setPage }) {
   const [bankName, setBankName] = useState("");
   const [bankIsOther, setBankIsOther] = useState(false);
   const [bankAccount, setBankAccount] = useState("");
+  const [bankQrUrl, setBankQrUrl] = useState(null);
   const [carPlate, setCarPlate] = useState("");
   const [company, setCompany] = useState("");
   const [destination, setDestination] = useState("dest_hq");
@@ -163,6 +164,7 @@ export default function TransactionForm({ type, setPage }) {
     setBankName(p.bank_name || "");
     setBankIsOther(!!p.bank_name && !BANK_OPTIONS.includes(p.bank_name));
     setBankAccount(p.bank_account || "");
+    setBankQrUrl(p.bank_qr_url || null);
     setCompany(p.company || "");
     setDestination(p.destination || "dest_hq");
   }
@@ -200,10 +202,21 @@ export default function TransactionForm({ type, setPage }) {
           idNumber: partyIdNumber,
           bankName: isBuy ? bankName : undefined,
           bankAccount: isBuy ? bankAccount : undefined,
+          bankQrUrl: isBuy && bankName !== "Cash" ? bankQrUrl : undefined,
           company: !isBuy ? company : undefined,
           destination: !isBuy ? destination : undefined,
           locationId: effectiveStationId,
         });
+      } else if (isBuy) {
+        // Existing farmer — if their bank details or QR code were corrected
+        // or added here, keep their saved profile in sync.
+        const patch = {};
+        if (bankName !== (party.bank_name || "")) patch.bankName = bankName;
+        if (bankAccount !== (party.bank_account || "")) patch.bankAccount = bankAccount;
+        if (bankName !== "Cash" && bankQrUrl && bankQrUrl !== (party.bank_qr_url || "")) patch.bankQrUrl = bankQrUrl;
+        if (Object.keys(patch).length > 0) {
+          try { await api.updateParty(party.id, patch); } catch (err) { console.error("Party profile update failed", err); }
+        }
       }
       const productId = await resolveProductId();
       const tx = await api.createTransaction({
@@ -352,6 +365,16 @@ export default function TransactionForm({ type, setPage }) {
                   </div>
                 )}
               </div>
+
+              {isBuy && bankName && bankName !== "Cash" && (
+                <div className="mt-4">
+                  <PhotoUpload
+                    label="Bank QR Code" kind="party-bank-qr"
+                    url={bankQrUrl} onUploaded={setBankQrUrl}
+                    hint={`Photo of this farmer's ${bankName} QR code — saved to their profile, not just this transaction`}
+                  />
+                </div>
+              )}
             </section>
 
             {/* Section 2: Weighbridge Data */}

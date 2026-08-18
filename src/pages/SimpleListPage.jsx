@@ -49,6 +49,7 @@ export default function SimpleListPage({ title, kind }) {
           { key: "id_number", label: "ID" },
           { key: "bank_name", label: "Bank" },
           { key: "bank_account", label: "Account No." },
+          { key: "bank_qr_url", label: "QR Code", render: (v) => v ? <a href={v} target="_blank" rel="noreferrer" className="text-brand-600 underline decoration-dotted hover:text-brand-700">View</a> : "—" },
           { key: "count", label: "Transactions" },
           { key: "qty", label: "Total Bought (kg)", render: (v) => fmt2(v) },
           { key: "amount", label: "Total Paid", render: (v) => fmtRiel(v) },
