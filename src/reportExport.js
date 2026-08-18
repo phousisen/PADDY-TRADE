@@ -4,7 +4,7 @@
 // (Overview, Purchases, Sales, Accounts Payable/Receivable, Stock, Cash
 // Flow, Tax), using whatever Location/Date filters are currently active.
 import * as XLSX from "xlsx";
-import { computeFinancials } from "./pages/ReportOverview.jsx";
+import { computeFinancials, paidStatusMap } from "./pages/ReportOverview.jsx";
 
 // Cambodia's current date/time (independent of the viewing device's own
 // timezone/clock), used to stamp the exported filename.
@@ -81,10 +81,10 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     .filter((e) => !endDate || e.entry_date <= endDate);
 
   // ---------------- Overview (P&L + Balance Sheet + By Location) ----------------
-  const calc = computeFinancials(activeTxs, filteredStations, capitalEntries, loanEntries);
+  const calc = computeFinancials(activeTxs, filteredStations, capitalEntries, loanEntries, payments);
   const byLocation = filteredStations.map((s) => {
     const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-    return { station: s, ...computeFinancials(stationTxs, [s], capitalEntries, loanEntries) };
+    return { station: s, ...computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments) };
   });
   XLSX.utils.book_append_sheet(wb, sheet([
     ["PaddyTrade — Financial Overview"],
@@ -118,12 +118,13 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
 
   // ---------------- Purchases ----------------
   const buyRows = activeTxs.filter((t) => t.type === "BUY");
+  const buyPaidMap = paidStatusMap(buyRows, payments);
   XLSX.utils.book_append_sheet(wb, sheet([
     ["Purchases — Detail"],
     [rangeLabel],
     [],
     ["Date", "Receipt", "Supplier", "Truck/Driver", "Paddy Type", "Location", "Paid", "Cost Price (៛/kg)", "Qty (kg)", "Amount (៛)"],
-    ...buyRows.map((r) => [r.tx_date, r.code, r.partyName, r.driver_name || "", r.productName, r.stationName, r.payment_status === "paid" ? "Paid" : "Unpaid", round2(r.price_per_kg), round2(r.quantity_kg), round2(r.amount)]),
+    ...buyRows.map((r) => [r.tx_date, r.code, r.partyName, r.driver_name || "", r.productName, r.stationName, (buyPaidMap[r.id]?.remaining || 0) <= 0.01 ? "Paid" : "Unpaid", round2(r.price_per_kg), round2(r.quantity_kg), round2(r.amount)]),
     [],
     ["Summary by Supplier"],
     ["Supplier", "Transactions", "Qty (kg)", "Amount (៛)"],
