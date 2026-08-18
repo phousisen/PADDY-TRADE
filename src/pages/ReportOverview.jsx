@@ -4,7 +4,10 @@ import { api } from "../api.js";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 
-export function computeFinancials(txs, stations) {
+// capitalEntries/loanEntries are the full, unfiltered lists — this filters
+// them down to whatever locations are represented in `stations` itself, the
+// same way inventory value is scoped to those stations' stock.
+export function computeFinancials(txs, stations, capitalEntries = [], loanEntries = []) {
   const buys = txs.filter((x) => x.type === "BUY");
   const sells = txs.filter((x) => x.type === "SELL");
   const totalBuy = buys.reduce((s, x) => s + Number(x.amount), 0);
@@ -20,17 +23,42 @@ export function computeFinancials(txs, stations) {
   const totalStockKg = stations.reduce((s, x) => s + Number(x.current_stock_kg), 0);
   const inventoryValue = totalStockKg * avgCostPerKg;
   const totalAssets = inventoryValue + accountsReceivable + Math.max(0, cashEstimate);
-  const totalLiabilities = accountsPayable;
+
+  const stationIds = new Set(stations.map((s) => s.id));
+  const bankLoansOutstanding = loanEntries
+    .filter((e) => stationIds.has(e.location_id))
+    .reduce((s, e) => s + (e.type === "borrow" ? Number(e.amount) : -Number(e.amount)), 0);
+  const partnerCapital = capitalEntries
+    .filter((e) => stationIds.has(e.location_id))
+    .reduce((s, e) => s + (e.type === "contribution" ? Number(e.amount) : -Number(e.amount)), 0);
+
+  const totalLiabilities = accountsPayable + bankLoansOutstanding;
   const equity = totalAssets - totalLiabilities;
-  return { totalBuy, totalSell, grossProfit, accountsPayable, accountsReceivable, cashEstimate, inventoryValue, totalAssets, totalLiabilities, equity };
+  // Whatever equity isn't accounted for by real partner capital is treated
+  // as accumulated profit kept in the business — this keeps Assets =
+  // Liabilities + Equity holding exactly, while still surfacing the real,
+  // partner-entered capital number separately.
+  const retainedEarnings = equity - partnerCapital;
+
+  return {
+    totalBuy, totalSell, grossProfit, accountsPayable, accountsReceivable, cashEstimate, inventoryValue,
+    totalAssets, bankLoansOutstanding, totalLiabilities, partnerCapital, retainedEarnings, equity,
+  };
 }
 
 export default function ReportOverview({ selectedLocationIds = [], startDate = null, endDate = null, onNavigate }) {
   const [txs, setTxs] = useState([]);
   const [stations, setStations] = useState([]);
+  const [capitalEntries, setCapitalEntries] = useState([]);
+  const [loanEntries, setLoanEntries] = useState([]);
 
   useEffect(() => {
     Promise.all([api.getTransactions(), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
+    // Admin-only tables — a non-admin viewer (shouldn't normally reach this
+    // page, but just in case) simply sees zero partner capital/bank loans
+    // rather than an error.
+    api.getPartnerCapitalEntries().then(setCapitalEntries).catch(() => setCapitalEntries([]));
+    api.getBankLoans().then(setLoanEntries).catch(() => setLoanEntries([]));
   }, []);
 
   const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
@@ -40,15 +68,18 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     .filter((t) => !endDate || t.tx_date <= endDate);
   const filteredTxs = selectedLocationIds.length ? activeTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : activeTxs;
 
-  const calc = useMemo(() => computeFinancials(filteredTxs, filteredStations), [filteredTxs, filteredStations]);
+  const calc = useMemo(
+    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries),
+    [filteredTxs, filteredStations, capitalEntries, loanEntries]
+  );
 
   const byLocation = useMemo(() => {
     return filteredStations.map((s) => {
       const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-      const c = computeFinancials(stationTxs, [s]);
+      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries);
       return { station: s, ...c };
     });
-  }, [activeTxs, filteredStations]);
+  }, [activeTxs, filteredStations, capitalEntries, loanEntries]);
 
   const Row = ({ label, value, bold, indent, onClick }) => (
     <div
@@ -74,7 +105,12 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
           <Row label="Gross Profit" value={calc.grossProfit} bold />
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Balance Sheet</h3>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Balance Sheet</h3>
+            {onNavigate && (
+              <button onClick={() => onNavigate("balancesheet")} className="text-xs font-medium text-brand-600 hover:underline">Full statement →</button>
+            )}
+          </div>
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Assets</p>
           <Row label="Inventory on hand" value={calc.inventoryValue} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
           <Row label="Accounts Receivable" value={calc.accountsReceivable} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
@@ -82,7 +118,11 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
           <Row label="Total Assets" value={calc.totalAssets} bold />
           <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Liabilities</p>
           <Row label="Accounts Payable" value={calc.accountsPayable} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
+          <Row label="Bank Loans" value={calc.bankLoansOutstanding} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
           <Row label="Total Liabilities" value={calc.totalLiabilities} bold />
+          <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Equity</p>
+          <Row label="Partner Capital" value={calc.partnerCapital} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
+          <Row label="Retained Earnings" value={calc.retainedEarnings} indent />
           <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5"><Row label="Equity (net worth)" value={calc.equity} bold /></div>
         </div>
       </div>

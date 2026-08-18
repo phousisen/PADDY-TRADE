@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2 } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -8,12 +8,14 @@ import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
 import { downloadReportWorkbook, cambodiaTimestamp } from "../reportExport.js";
 import ReportOverview from "./ReportOverview.jsx";
+import ReportBalanceSheet from "./ReportBalanceSheet.jsx";
 import ReportPurchases from "./ReportPurchases.jsx";
 import ReportSales from "./ReportSales.jsx";
 import ReportPayables from "./ReportPayables.jsx";
 import ReportReceivables from "./ReportReceivables.jsx";
 import ReportStock from "./ReportStock.jsx";
 import ReportCashFlow from "./ReportCashFlow.jsx";
+import ReportCapital from "./ReportCapital.jsx";
 import ReportTax from "./ReportTax.jsx";
 import ReportAuditLog from "./ReportAuditLog.jsx";
 
@@ -35,9 +37,14 @@ export default function Reports({ initialTab = "overview" }) {
   async function exportExcel() {
     setExporting(true);
     try {
-      const [txs, payments] = await Promise.all([api.getTransactions(), api.getPayments()]);
+      const [txs, payments, capitalEntries, loanEntries] = await Promise.all([
+        api.getTransactions(),
+        api.getPayments(),
+        api.getPartnerCapitalEntries().catch(() => []),
+        api.getBankLoans().catch(() => []),
+      ]);
       downloadReportWorkbook(
-        { txs, payments, stations: locations, selectedLocationIds, startDate, endDate },
+        { txs, payments, capitalEntries, loanEntries, stations: locations, selectedLocationIds, startDate, endDate },
         `PaddyTrade_Report_${cambodiaTimestamp()}.xlsx`
       );
     } catch (err) {
@@ -49,12 +56,14 @@ export default function Reports({ initialTab = "overview" }) {
 
   const tabs = [
     { id: "overview", label: "Overview", icon: LayoutGrid },
+    { id: "balancesheet", label: "Balance Sheet", icon: Scale },
     { id: "purchases", label: "Purchases", icon: ShoppingBag },
     { id: "sales", label: "Sales", icon: TrendingUp },
     { id: "payables", label: "Accounts Payable", icon: HandCoins },
     { id: "receivables", label: "Accounts Receivable", icon: Wallet },
     { id: "stock", label: "Stock", icon: Boxes },
     { id: "cashflow", label: "Cash Flow", icon: Landmark },
+    { id: "capital", label: "Capital & Loans", icon: PiggyBank },
     { id: "tax", label: "Tax", icon: ReceiptText },
     ...(isAdmin ? [{ id: "auditlog", label: "Audit Log", icon: History }] : []),
   ];
@@ -95,12 +104,14 @@ export default function Reports({ initialTab = "overview" }) {
       </div>
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
         {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
+        {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "sales" && <ReportSales selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "payables" && <ReportPayables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "stock" && <ReportStock selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "capital" && <ReportCapital selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "auditlog" && isAdmin && <ReportAuditLog />}
       </main>
