@@ -4,7 +4,7 @@ import { api } from "../api.js";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 
-function computeFinancials(txs, stations) {
+export function computeFinancials(txs, stations) {
   const buys = txs.filter((x) => x.type === "BUY");
   const sells = txs.filter((x) => x.type === "SELL");
   const totalBuy = buys.reduce((s, x) => s + Number(x.amount), 0);
@@ -25,7 +25,7 @@ function computeFinancials(txs, stations) {
   return { totalBuy, totalSell, grossProfit, accountsPayable, accountsReceivable, cashEstimate, inventoryValue, totalAssets, totalLiabilities, equity };
 }
 
-export default function ReportOverview({ selectedLocationIds = [], startDate = null, endDate = null }) {
+export default function ReportOverview({ selectedLocationIds = [], startDate = null, endDate = null, onNavigate }) {
   const [txs, setTxs] = useState([]);
   const [stations, setStations] = useState([]);
 
@@ -50,9 +50,16 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     });
   }, [activeTxs, filteredStations]);
 
-  const Row = ({ label, value, bold, indent }) => (
-    <div className={`flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""}`}>
-      <span className={bold ? "font-semibold text-slate-800" : "text-slate-500"}>{label}</span>
+  const Row = ({ label, value, bold, indent, onClick }) => (
+    <div
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
+      title={onClick ? "Click to view details" : undefined}
+      className={`group flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""} ${onClick ? "cursor-pointer rounded-md px-1.5 -mx-1.5 hover:bg-brand-50" : ""}`}
+    >
+      <span className={`${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${onClick ? "group-hover:text-brand-700 group-hover:underline" : ""}`}>{label}</span>
       <span className={bold ? "font-semibold text-slate-800" : "text-slate-700"}>{fmt(value)} ៛</span>
     </div>
   );
@@ -62,19 +69,19 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
       <div className="grid grid-cols-2 gap-5">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-700"><TrendingUp size={16} className="text-brand-600" /> Profit &amp; Loss</h3>
-          <Row label="Total Sales (Revenue)" value={calc.totalSell} />
-          <Row label="Total Purchases (COGS)" value={-calc.totalBuy} />
+          <Row label="Total Sales (Revenue)" value={calc.totalSell} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
+          <Row label="Total Purchases (COGS)" value={-calc.totalBuy} onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
           <Row label="Gross Profit" value={calc.grossProfit} bold />
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Balance Sheet</h3>
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Assets</p>
-          <Row label="Inventory on hand" value={calc.inventoryValue} indent />
-          <Row label="Accounts Receivable" value={calc.accountsReceivable} indent />
-          <Row label="Cash (estimate)" value={Math.max(0, calc.cashEstimate)} indent />
+          <Row label="Inventory on hand" value={calc.inventoryValue} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
+          <Row label="Accounts Receivable" value={calc.accountsReceivable} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
+          <Row label="Cash (estimate)" value={Math.max(0, calc.cashEstimate)} indent onClick={onNavigate ? () => onNavigate("cashflow") : undefined} />
           <Row label="Total Assets" value={calc.totalAssets} bold />
           <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Liabilities</p>
-          <Row label="Accounts Payable" value={calc.accountsPayable} indent />
+          <Row label="Accounts Payable" value={calc.accountsPayable} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
           <Row label="Total Liabilities" value={calc.totalLiabilities} bold />
           <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5"><Row label="Equity (net worth)" value={calc.equity} bold /></div>
         </div>
@@ -116,6 +123,7 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
       <div className="mt-5 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         <Wallet size={14} className="mt-0.5 shrink-0" />
         Simplified model: inventory is valued at average purchase cost, and cost of goods sold is approximated from total purchases rather than matched item-by-item.
+        {onNavigate && <span className="ml-1">Tip: click any Sales, Purchases, or Balance Sheet line above to jump straight to its detail report.</span>}
       </div>
     </div>
   );

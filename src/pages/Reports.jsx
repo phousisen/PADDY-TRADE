@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2 } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
+import { downloadReportWorkbook, cambodiaTimestamp } from "../reportExport.js";
 import ReportOverview from "./ReportOverview.jsx";
 import ReportPurchases from "./ReportPurchases.jsx";
 import ReportSales from "./ReportSales.jsx";
@@ -25,10 +26,26 @@ export default function Reports({ initialTab = "overview" }) {
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     api.getLocations().then(setLocations);
   }, []);
+
+  async function exportExcel() {
+    setExporting(true);
+    try {
+      const [txs, payments] = await Promise.all([api.getTransactions(), api.getPayments()]);
+      downloadReportWorkbook(
+        { txs, payments, stations: locations, selectedLocationIds, startDate, endDate },
+        `PaddyTrade_Report_${cambodiaTimestamp()}.xlsx`
+      );
+    } catch (err) {
+      alert("Export failed: " + (err.message || err));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const tabs = [
     { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -65,11 +82,19 @@ export default function Reports({ initialTab = "overview" }) {
             {locations.length > 1 && (
               <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
             )}
+            <button
+              onClick={exportExcel}
+              disabled={exporting}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {exporting ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <Download size={14} className="text-slate-400" />}
+              {exporting ? "Exporting..." : "Export to Excel"}
+            </button>
           </div>
         </div>
       </div>
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
-        {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
         {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "sales" && <ReportSales selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "payables" && <ReportPayables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
