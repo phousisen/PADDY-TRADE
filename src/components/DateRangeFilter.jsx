@@ -1,8 +1,22 @@
 import { useState, useRef, useEffect } from "react";
 import { Calendar, ChevronDown } from "lucide-react";
 
-function toIso(d) { return d.toISOString().slice(0, 10); }
-function today() { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+// All date-range math below works with a Date object whose LOCAL
+// year/month/day fields represent Cambodia's calendar date — this keeps
+// toIso() and the addDays/startOfWeek/startOfMonth helpers correct no
+// matter what timezone the viewing device itself happens to be set to.
+function toIso(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function today() {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(new Date()).forEach((p) => { parts[p.type] = p.value; });
+  return new Date(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
+}
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
 function startOfWeek(d) { const r = new Date(d); const day = (r.getDay() + 6) % 7; return addDays(r, -day); } // Monday start
 function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
