@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, Search, RotateCcw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -9,19 +9,172 @@ import { supabase } from "../supabaseClient.js";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
+// "Request a change" doesn't edit the live transaction — it redoes the Buy/Sell
+// entry with corrected values and files it as a pending proposal. Nothing on
+// the real transaction changes unless/until an HQ Admin/Owner approves it.
 function RequestChangeModal({ tx, t, onClose, onSubmit }) {
+  const isBuy = tx.type === "BUY";
+  const [parties, setParties] = useState([]);
+  const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
+  const [selectedPartyId, setSelectedPartyId] = useState(tx.party_id);
+  const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg ?? ""));
+  const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg ?? ""));
+  const [qualityGrade, setQualityGrade] = useState(tx.quality_grade || "");
+  const [paymentStatus, setPaymentStatus] = useState(tx.payment_status || (isBuy ? "pending" : "paid"));
+  const [taxApplicable, setTaxApplicable] = useState(!!tx.tax_applicable);
+  const [taxRate, setTaxRate] = useState(String(tx.tax_rate ?? "10"));
+  const [moisturePct, setMoisturePct] = useState(String(tx.moisture_pct ?? ""));
+  const [mixturePct, setMixturePct] = useState(String(tx.mixture_pct ?? ""));
+  const [outthrowPct, setOutthrowPct] = useState(String(tx.outthrow_pct ?? ""));
+  const [deductionKg, setDeductionKg] = useState(String(tx.deduction_kg ?? ""));
+  const [carPlate, setCarPlate] = useState(tx.car_plate || "");
+  const [note, setNote] = useState(tx.note || "");
   const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    api.getParties({ type: isBuy ? "supplier" : "buyer", q: partyQuery }).then(setParties).catch(() => {});
+  }, [partyQuery]);
+
+  function selectParty(p) {
+    setSelectedPartyId(p.id);
+    setPartyQuery(p.name);
+  }
+
+  const newAmount = Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0);
+  const partyUnchanged = partyQuery.trim() === (tx.partyName || "").trim();
+  const canSubmit = reason.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0 && (selectedPartyId || partyUnchanged);
+
+  function submit() {
+    const proposedData = {
+      partyId: selectedPartyId || tx.party_id,
+      partyName: partyQuery.trim(),
+      quantityKg: parseFloat(quantityKg) || 0,
+      pricePerKg: parseFloat(pricePerKg) || 0,
+      qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
+      paymentStatus,
+      taxApplicable,
+      taxRate: taxApplicable ? (parseFloat(taxRate) || 0) : 0,
+      moisturePct: parseFloat(moisturePct) || 0,
+      mixturePct: parseFloat(mixturePct) || 0,
+      outthrowPct: parseFloat(outthrowPct) || 0,
+      deductionKg: parseFloat(deductionKg) || 0,
+      carPlate: carPlate.trim() || null,
+      note: note.trim() || null,
+    };
+    onSubmit(reason.trim(), proposedData);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Flag size={16} className="text-amber-500" /> {t("request_change")}</h3>
-        <p className="mb-3 text-xs text-slate-400">{tx.code} · {fmt2(tx.quantity_kg)} kg · {fmtRiel(tx.amount)}</p>
-        <label className="mb-1 block text-xs text-slate-500">{t("reason_label")}</label>
-        <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("reason_placeholder")} rows={3}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-amber-500" /> Redo This {isBuy ? "Buy" : "Sell"} Entry</h3>
+        <p className="mb-3 text-xs text-slate-400">
+          {tx.code} · Current: {fmt2(tx.quantity_kg)} kg × {fmtRiel(tx.price_per_kg)}/kg = {fmtRiel(tx.amount)}
+        </p>
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          This does not change the saved transaction. It sends these corrected values to HQ as a pending request — nothing updates until an HQ Admin or Owner approves it.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="relative col-span-2">
+            <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}</label>
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={partyQuery}
+                onChange={(e) => { setPartyQuery(e.target.value); setSelectedPartyId(null); }}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+            </div>
+            {partyQuery && !selectedPartyId && parties.length > 0 && (
+              <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
+                {parties.map((p) => (
+                  <button type="button" key={p.id} onClick={() => selectParty(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50">
+                    <span>{p.name}</span><span className="text-xs text-slate-400">{p.phone}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!selectedPartyId && partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "") && (
+              <p className="mt-1 text-[11px] text-amber-600">No exact match selected — pick an existing {isBuy ? "farmer" : "buyer"} from the list, or leave it as {tx.partyName} if it shouldn't change.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-slate-500">Weight (kg)</label>
+            <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
+            <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          </div>
+
+          {isBuy && (
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Quality Grade</label>
+              <input list="rc-grade-options" value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              <datalist id="rc-grade-options"><option value="A" /><option value="B" /><option value="C" /></datalist>
+            </div>
+          )}
+          <div>
+            <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
+            <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+              {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
+            </select>
+          </div>
+
+          <div className="col-span-2">
+            <label className="mb-1 block text-xs text-slate-500">Car Plate Number</label>
+            <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-lg border border-slate-200 p-3">
+          <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
+          <div className="grid grid-cols-4 gap-2">
+            <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
+            Apply VAT
+          </label>
+          {taxApplicable && (
+            <div className="flex items-center gap-1.5">
+              <input type="number" min="0" step="0.1" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              <span className="text-sm text-slate-500">%</span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-3">
+          <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
+          <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+        </div>
+
+        <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
+          <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
+        </div>
+
+        <div className="mt-3">
+          <label className="mb-1 block text-xs text-slate-500">{t("reason_label")}</label>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("reason_placeholder")} rows={2}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+        </div>
+
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
-          <button disabled={!reason.trim()} onClick={() => onSubmit(reason.trim())} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{t("submit_request")}</button>
+          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{t("submit_request")}</button>
         </div>
       </div>
     </div>
@@ -398,12 +551,13 @@ export default function Transactions({ setPage }) {
     URL.revokeObjectURL(url);
   }
 
-  async function submitRequest(reason) {
+  async function submitRequest(reason, proposedData) {
     await api.createChangeRequest({
       transactionId: requestTx.id,
       requestedBy: session.user.id,
       locationId: profile.location_id,
       reason,
+      proposedData,
     });
     setRequestTx(null);
   }
@@ -535,9 +689,15 @@ export default function Transactions({ setPage }) {
                       {isCancelled ? (
                         <span className="text-xs text-slate-400">Excluded from reports</span>
                       ) : remaining > 0.01 ? (
-                        <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
-                          <Wallet size={12} /> {fmtRiel(remaining)}
-                        </button>
+                        isAdmin ? (
+                          <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
+                            <Wallet size={12} /> {fmtRiel(remaining)}
+                          </button>
+                        ) : (
+                          <span className="flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-medium text-amber-600" title="Only HQ Admin / Owner can record a payment against a remaining balance">
+                            <Wallet size={12} /> {fmtRiel(remaining)}
+                          </span>
+                        )
                       ) : (
                         <span className="text-xs text-emerald-600">Settled</span>
                       )}
