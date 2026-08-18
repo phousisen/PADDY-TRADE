@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
+function fmtRiel(n) { return `${fmt(n)} ៛`; }
 
 export default function StockInventory() {
   const { t } = useLanguage();
@@ -69,24 +70,19 @@ export default function StockInventory() {
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
                 <th className="px-5 py-2 font-medium">{t("station")}</th>
                 <th className="px-5 py-2 font-medium">{t("quantity_kg")}</th>
-                <th className="px-5 py-2 font-medium">{t("capacity")}</th>
+                <th className="px-5 py-2 font-medium">{t("stock_value_col")}</th>
                 <th className="px-5 py-2 font-medium">{t("updated")}</th>
                 <th className="px-5 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {stations.map((s) => {
-                const pct = Math.round((Number(s.current_stock_kg) / Number(s.capacity_kg)) * 100);
+                const stationValue = Number(s.current_stock_kg) * avgPrice;
                 return (
                   <tr key={s.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                     <td className="px-5 py-3"><p className="font-medium text-slate-700">{s.name}</p><p className="text-xs text-slate-400">{s.name_kh}</p></td>
                     <td className="px-5 py-3 font-medium text-slate-700">{fmt(s.current_stock_kg)}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-32 rounded-full bg-slate-100"><div className={`h-1.5 rounded-full ${pct > 80 ? "bg-emerald-500" : pct > 40 ? "bg-amber-400" : "bg-rose-400"}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>
-                        <span className="text-xs text-slate-400">{pct}% {t("max")}</span>
-                      </div>
-                    </td>
+                    <td className="px-5 py-3 font-medium text-slate-700">{fmtRiel(stationValue)}</td>
                     <td className="px-5 py-3 text-xs text-slate-400">{s.updated_ago}</td>
                     <td className="px-5 py-3 text-right"><ChevronRight size={16} className="ml-auto text-slate-300" /></td>
                   </tr>
