@@ -8,6 +8,30 @@ const AuthContext = createContext(null);
 // it to log out.
 const HEARTBEAT_MS = 20000;
 
+// A rough, plain-language guess at the browser/OS someone is using, read
+// straight from the browser itself (not a precise device fingerprint) —
+// just enough for the Users page to show e.g. "Chrome on Windows".
+function describeDevice() {
+  if (typeof navigator === "undefined" || !navigator.userAgent) return "Unknown device";
+  const ua = navigator.userAgent;
+
+  let os = "Unknown OS";
+  if (/iPhone|iPad|iPod/i.test(ua)) os = "iOS";
+  else if (/Android/i.test(ua)) os = "Android";
+  else if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Mac OS X/i.test(ua)) os = "macOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+
+  let browser = "Unknown browser";
+  if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/OPR\//i.test(ua)) browser = "Opera";
+  else if (/CriOS|Chrome\//i.test(ua) && !/Chromium/i.test(ua)) browser = "Chrome";
+  else if (/Firefox\//i.test(ua)) browser = "Firefox";
+  else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
+
+  return `${browser} on ${os}`;
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -68,6 +92,12 @@ export function AuthProvider({ children }) {
       setSession(session);
       if (session) {
         await loadProfile(session.user.id);
+        // Only record a fresh "login" on an actual sign-in — not on a page
+        // reload restoring an existing session, and not on a background
+        // token refresh, both of which also fire through this callback.
+        if (_event === "SIGNED_IN") {
+          supabase.rpc("record_login", { device_info: describeDevice() }).catch(() => {});
+        }
       } else {
         setProfile(null);
       }
