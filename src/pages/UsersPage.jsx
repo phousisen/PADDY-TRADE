@@ -47,7 +47,11 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
     setSaving(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: ownerEmail, password: ownPassword });
     if (authError) {
-      setError("Your password was incorrect.");
+      // Show Supabase's real reason instead of always assuming a typo —
+      // "incorrect password" was previously shown even for unrelated
+      // failures (e.g. a rate limit), which made a real problem look like
+      // user error and impossible to debug.
+      setError(authError.message === "Invalid login credentials" ? "That password doesn't match your own login — not the new one you're setting below." : authError.message || "Your password was incorrect.");
       setSaving(false);
       return;
     }
@@ -75,8 +79,8 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         <div className="mb-3 border-t border-slate-100 pt-3">
-          <label className="mb-1 block text-xs text-slate-500">Enter your own password to confirm this change</label>
-          <input type="password" value={ownPassword} onChange={(e) => setOwnPassword(e.target.value)}
+          <label className="mb-1 block text-xs text-slate-500">Your own login password (not the new one above) — to confirm it's really you</label>
+          <input type="password" value={ownPassword} onChange={(e) => setOwnPassword(e.target.value)} autoComplete="current-password"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
 
@@ -147,8 +151,11 @@ export default function UsersPage() {
     setSavingId(u.id);
     const oldRole = u.roleObj;
     const newRole = roles.find((r) => r.id === roleId);
+    // Keep the older admin/staff column in sync with the new Role — see
+    // the comment on api.updateProfileRole for why this matters.
+    const legacyRole = newRole?.scope === "all" ? "admin" : "staff";
     try {
-      await api.updateProfileRole(u.id, { roleId });
+      await api.updateProfileRole(u.id, { roleId, role: legacyRole });
       await api.logAudit({
         action: "change_role", tableName: "profiles", recordId: u.id,
         oldData: { role: oldRole?.name }, newData: { role: newRole?.name }, userId: me.id,

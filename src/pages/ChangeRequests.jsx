@@ -44,7 +44,10 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
     setSaving(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     if (authError) {
-      setError("Incorrect password.");
+      // Show Supabase's real reason instead of always assuming a typo —
+      // a hardcoded "incorrect" message here hides anything else that
+      // could be going wrong (rate limiting, network, etc).
+      setError(authError.message || "Incorrect password.");
       setSaving(false);
       return;
     }
