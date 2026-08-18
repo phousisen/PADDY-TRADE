@@ -7,7 +7,7 @@ import { paidStatusMap } from "./ReportOverview.jsx";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function SimpleListPage({ title, kind, onBuyFor, onSellFor }) {
+export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty }) {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
 
@@ -118,7 +118,15 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor }) {
                 <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                   {columns.map((c) => (
                     <td key={c.key} className="px-5 py-3 text-slate-700 whitespace-nowrap">
-                      {c.render ? c.render(r[c.key]) : (r[c.key] || "—")}
+                      {c.key === "name" && onOpenParty ? (
+                        <button onClick={() => onOpenParty(r)} className="font-medium text-brand-700 underline decoration-dotted hover:text-brand-800">
+                          {r.name || "—"}
+                        </button>
+                      ) : c.render ? (
+                        c.render(r[c.key])
+                      ) : (
+                        r[c.key] || "—"
+                      )}
                     </td>
                   ))}
                   {(onBuyFor || onSellFor) && (
