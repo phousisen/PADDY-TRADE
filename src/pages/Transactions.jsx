@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, Search, RotateCcw } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, Search, RotateCcw, Camera, ImageOff } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -397,6 +397,43 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
   );
 }
 
+function PhotoPane({ label, url }) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-medium text-slate-500">{label}</p>
+      {url ? (
+        <a href={url} target="_blank" rel="noreferrer" className="block">
+          <img src={url} alt={label} className="h-48 w-full rounded-lg border border-slate-200 object-contain bg-slate-50 hover:opacity-90" />
+          <p className="mt-1 text-center text-[11px] text-brand-600">Click to open full size</p>
+        </a>
+      ) : (
+        <div className="flex h-48 w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-300">
+          <ImageOff size={20} />
+          <p className="text-xs">Not uploaded</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhotosModal({ tx, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Camera size={16} className="text-brand-600" /> Photos</h3>
+        <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
+        <div className="grid grid-cols-2 gap-4">
+          <PhotoPane label="Physical Receipt" url={tx.receipt_photo_url} />
+          <PhotoPane label="Bank QR / Payment Proof" url={tx.payment_proof_url} />
+        </div>
+        <div className="mt-4 flex justify-end">
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
   const [amount, setAmount] = useState(String(payment.amount));
   const [password, setPassword] = useState("");
@@ -511,6 +548,7 @@ export default function Transactions({ setPage }) {
   const [editTx, setEditTx] = useState(null);
   const [cancelConfirmTx, setCancelConfirmTx] = useState(null);
   const [viewPaymentsTx, setViewPaymentsTx] = useState(null);
+  const [photosTx, setPhotosTx] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -654,6 +692,7 @@ export default function Transactions({ setPage }) {
                 <th className="px-3 py-3 font-medium">Paid</th>
                 <th className="px-3 py-3 font-medium">Remaining</th>
                 <th className="px-3 py-3 font-medium">{t("col_status")}</th>
+                <th className="px-3 py-3 font-medium">Photos</th>
                 <th className="px-3 py-3 font-medium">{t("hq_confirmation")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_action")}</th>
               </tr>
@@ -704,6 +743,11 @@ export default function Transactions({ setPage }) {
                     </td>
                     <td className="px-3 py-3">{tx.status === "confirmed" ? <CheckCircle2 size={16} className="text-emerald-500" /> : <AlertTriangle size={16} className="text-amber-500" />}</td>
                     <td className="px-3 py-3">
+                      <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
+                        <Camera size={12} /> {[tx.receipt_photo_url, tx.payment_proof_url].filter(Boolean).length}
+                      </button>
+                    </td>
+                    <td className="px-3 py-3">
                       {isAdmin ? (
                         <select
                           value={hqStatus}
@@ -734,7 +778,7 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
-              {rows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
+              {rows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -743,6 +787,7 @@ export default function Transactions({ setPage }) {
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
       {editTx && <EditTransactionModal tx={editTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
       {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} />}
+      {photosTx && <PhotosModal tx={photosTx} onClose={() => setPhotosTx(null)} />}
       {cancelConfirmTx && (
         <ConfirmCancelModal
           tx={cancelConfirmTx}
