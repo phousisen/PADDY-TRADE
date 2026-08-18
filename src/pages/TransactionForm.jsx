@@ -65,58 +65,12 @@ export default function TransactionForm({ type, setPage }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTx, setSavedTx] = useState(null);
-  const [draftRestored, setDraftRestored] = useState(false);
 
-  const draftKey = `paddytrade:draft:${type}`;
-
-  // Restore any unfinished entry from before a reload / lost connection.
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(draftKey);
-      if (raw) {
-        const d = JSON.parse(raw);
-        // Product, Quality Grade, and Price per KG are deliberately NOT
-        // restored from a saved draft — they should always start blank on
-        // a fresh form so nothing gets carried over/re-used by accident.
-        setPartyQuery(d.partyQuery || "");
-        setPartyPhone(d.partyPhone || "");
-        setPartyIdNumber(d.partyIdNumber || "");
-        setBankName(d.bankName || "");
-        setBankIsOther(!!d.bankName && !BANK_OPTIONS.includes(d.bankName));
-        setBankAccount(d.bankAccount || "");
-        setCompany(d.company || "");
-        setDestination(d.destination || "dest_hq");
-        setGrossKg(d.grossKg || "");
-        setTareKg(d.tareKg || "");
-        setCarPlate(d.carPlate || "");
-        setPaymentStatus(d.paymentStatus || (isBuy ? "pending" : "paid"));
-        setDraftRestored(true);
-      }
-    } catch (e) {}
-  }, []);
-
-  // Save a draft as the person types, so a dropped connection or accidental
-  // reload doesn't lose what they entered.
-  useEffect(() => {
-    // Product, Quality Grade, and Price per KG are intentionally left out
-    // of the saved draft (see restore effect above).
-    const draft = {
-      partyQuery, partyPhone, partyIdNumber, bankName, bankAccount,
-      company, destination, grossKg, tareKg, paymentStatus, carPlate,
-    };
-    const hasContent = partyQuery || grossKg || tareKg;
-    const timeout = setTimeout(() => {
-      try {
-        if (hasContent) localStorage.setItem(draftKey, JSON.stringify(draft));
-        else localStorage.removeItem(draftKey);
-      } catch (e) {}
-    }, 400);
-    return () => clearTimeout(timeout);
-  }, [partyQuery, partyPhone, partyIdNumber, bankName, bankAccount, company, destination, grossKg, tareKg, paymentStatus, carPlate]);
-
-  function clearDraft() {
-    try { localStorage.removeItem(draftKey); } catch (e) {}
-  }
+  // Note: this form used to auto-save/restore a draft to the browser's
+  // local storage so a dropped connection or accidental reload wouldn't
+  // lose an in-progress entry. That's been removed on request — every new
+  // transaction now always starts completely blank, with nothing carried
+  // over from a previous attempt.
 
   useEffect(() => {
     api.getLocations()
@@ -253,7 +207,6 @@ export default function TransactionForm({ type, setPage }) {
       }
 
       setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "" });
-      clearDraft();
     } catch (err) {
       const isNetworkError = err.message && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"));
       setError(
@@ -274,18 +227,6 @@ export default function TransactionForm({ type, setPage }) {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isBuy ? t("new_buy_title") : t("new_sell_title")} />
       <main className="flex-1 overflow-y-auto p-6">
-        {draftRestored && (
-          <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            <span>Restored an unfinished entry from before — check it over before saving.</span>
-            <button
-              type="button"
-              onClick={() => { clearDraft(); window.location.reload(); }}
-              className="rounded-md border border-amber-300 px-2 py-1 text-amber-700 hover:bg-amber-100"
-            >
-              Discard & start blank
-            </button>
-          </div>
-        )}
         <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-5">
           <div className="col-span-2 space-y-5">
             {/* Section 1: Party Information */}
