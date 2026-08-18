@@ -130,7 +130,7 @@ export const api = {
     return data;
   },
 
-  async createParty({ name, type, phone, idNumber, bankName, bankAccount, company, destination, locationId }) {
+  async createParty({ name, type, phone, idNumber, bankName, bankAccount, bankQrUrl, company, destination, locationId }) {
     const { data, error } = await supabase
       .from("parties")
       .insert({
@@ -140,12 +140,23 @@ export const api = {
         id_number: idNumber,
         bank_name: bankName,
         bank_account: bankAccount,
+        bank_qr_url: bankQrUrl || null,
         company,
         destination,
         location_id: locationId,
       })
       .select()
       .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateParty(id, { bankName, bankAccount, bankQrUrl }) {
+    const patch = {};
+    if (bankName !== undefined) patch.bank_name = bankName;
+    if (bankAccount !== undefined) patch.bank_account = bankAccount;
+    if (bankQrUrl !== undefined) patch.bank_qr_url = bankQrUrl;
+    const { data, error } = await supabase.from("parties").update(patch).eq("id", id).select().single();
     if (error) throw error;
     return data;
   },
