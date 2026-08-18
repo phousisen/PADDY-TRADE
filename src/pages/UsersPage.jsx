@@ -275,6 +275,11 @@ export default function UsersPage() {
                         Login: {u.last_login_at ? relativeTime(u.last_login_at) : "Never"}
                         {u.last_login_device ? ` · ${u.last_login_device}` : ""}
                       </p>
+                      {(u.last_login_ip || u.last_login_location) && (
+                        <p className="mt-0.5 text-[11px] text-slate-400">
+                          {u.last_login_ip || "—"}{u.last_login_location ? ` · ${u.last_login_location}` : ""}
+                        </p>
+                      )}
                     </td>
                     <td className="px-3 py-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-3">
