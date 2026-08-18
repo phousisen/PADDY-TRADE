@@ -1,0 +1,231 @@
+// Builds and downloads a multi-sheet Excel (.xlsx) workbook for the
+// Financial Reports section. Every sheet mirrors the exact same filtering
+// and calculation logic used by the on-screen report it corresponds to
+// (Overview, Purchases, Sales, Accounts Payable/Receivable, Stock, Cash
+// Flow, Tax), using whatever Location/Date filters are currently active.
+import * as XLSX from "xlsx";
+import { computeFinancials } from "./pages/ReportOverview.jsx";
+
+// Cambodia's current date/time (independent of the viewing device's own
+// timezone/clock), used to stamp the exported filename.
+export function cambodiaTimestamp(d = new Date()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Phnom_Penh",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}_${parts.hour}${parts.minute}`;
+}
+
+function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+
+function ageBucket(days) {
+  if (days <= 30) return "0-30 days";
+  if (days <= 60) return "31-60 days";
+  if (days <= 90) return "61-90 days";
+  return "90+ days";
+}
+
+function activeFilter(rows, selectedLocationIds, startDate, endDate) {
+  return rows
+    .filter((r) => (r.hq_status || "processing") !== "cancelled")
+    .filter((r) => !selectedLocationIds.length || selectedLocationIds.includes(r.location_id))
+    .filter((r) => !startDate || r.tx_date >= startDate)
+    .filter((r) => !endDate || r.tx_date <= endDate);
+}
+
+function groupSum(rows, keyFn) {
+  const map = {};
+  rows.forEach((r) => {
+    const k = keyFn(r) || "—";
+    if (!map[k]) map[k] = { name: k, count: 0, qty: 0, amount: 0 };
+    map[k].count += 1;
+    map[k].qty += Number(r.quantity_kg || 0);
+    map[k].amount += Number(r.amount || 0);
+  });
+  return Object.values(map).sort((a, b) => b.amount - a.amount);
+}
+
+function outstandingFor(rows, payments) {
+  const today = new Date();
+  return rows
+    .map((tx) => {
+      const paid = payments.filter((p) => p.transaction_id === tx.id).reduce((s, p) => s + Number(p.amount), 0);
+      const remaining = Math.max(0, Number(tx.total_with_tax ?? tx.amount) - paid);
+      const days = Math.floor((today - new Date(tx.tx_date)) / (1000 * 60 * 60 * 24));
+      return { ...tx, remaining, days, bucket: ageBucket(days) };
+    })
+    .filter((tx) => tx.remaining > 0.01)
+    .sort((a, b) => b.days - a.days);
+}
+
+function sheet(rows) {
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"] = [{ wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 }];
+  return ws;
+}
+
+export function buildReportWorkbook({ txs, payments, stations, selectedLocationIds = [], startDate = null, endDate = null }) {
+  const wb = XLSX.utils.book_new();
+  const rangeLabel = `Date range: ${startDate || "All time"} to ${endDate || "All time"}`;
+  const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
+  const activeTxs = activeFilter(txs, selectedLocationIds, startDate, endDate);
+
+  // ---------------- Overview (P&L + Balance Sheet + By Location) ----------------
+  const calc = computeFinancials(activeTxs, filteredStations);
+  const byLocation = filteredStations.map((s) => {
+    const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
+    return { station: s, ...computeFinancials(stationTxs, [s]) };
+  });
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["PaddyTrade — Financial Overview"],
+    [rangeLabel],
+    [],
+    ["Profit & Loss", "Amount (៛)"],
+    ["Total Sales (Revenue)", round2(calc.totalSell)],
+    ["Total Purchases (COGS)", round2(-calc.totalBuy)],
+    ["Gross Profit", round2(calc.grossProfit)],
+    [],
+    ["Balance Sheet — Assets", "Amount (៛)"],
+    ["Inventory on hand", round2(calc.inventoryValue)],
+    ["Accounts Receivable", round2(calc.accountsReceivable)],
+    ["Cash (estimate)", round2(Math.max(0, calc.cashEstimate))],
+    ["Total Assets", round2(calc.totalAssets)],
+    [],
+    ["Balance Sheet — Liabilities", "Amount (៛)"],
+    ["Accounts Payable", round2(calc.accountsPayable)],
+    ["Total Liabilities", round2(calc.totalLiabilities)],
+    [],
+    ["Equity (net worth)", round2(calc.equity)],
+    [],
+    ["By Location"],
+    ["Location", "Sales", "Purchases", "Profit", "Inventory", "Payable"],
+    ...byLocation.map((r) => [r.station.name, round2(r.totalSell), round2(r.totalBuy), round2(r.grossProfit), round2(r.inventoryValue), round2(r.accountsPayable)]),
+  ]), "Overview");
+
+  // ---------------- Purchases ----------------
+  const buyRows = activeTxs.filter((t) => t.type === "BUY");
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Purchases — Detail"],
+    [rangeLabel],
+    [],
+    ["Date", "Receipt", "Supplier", "Paddy Type", "Location", "Qty (kg)", "Amount (៛)"],
+    ...buyRows.map((r) => [r.tx_date, r.code, r.partyName, r.productName, r.stationName, round2(r.quantity_kg), round2(r.amount)]),
+    [],
+    ["Summary by Supplier"],
+    ["Supplier", "Transactions", "Qty (kg)", "Amount (៛)"],
+    ...groupSum(buyRows, (r) => r.partyName).map((g) => [g.name, g.count, round2(g.qty), round2(g.amount)]),
+  ]), "Purchases");
+
+  // ---------------- Sales ----------------
+  const sellRows = activeTxs.filter((t) => t.type === "SELL");
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Sales — Detail"],
+    [rangeLabel],
+    [],
+    ["Date", "Receipt", "Customer", "Paddy Type", "Location", "Qty (kg)", "Amount (៛)"],
+    ...sellRows.map((r) => [r.tx_date, r.code, r.partyName, r.productName, r.stationName, round2(r.quantity_kg), round2(r.amount)]),
+    [],
+    ["Summary by Customer"],
+    ["Customer", "Transactions", "Qty (kg)", "Amount (៛)"],
+    ...groupSum(sellRows, (r) => r.partyName).map((g) => [g.name, g.count, round2(g.qty), round2(g.amount)]),
+  ]), "Sales");
+
+  // ---------------- Accounts Payable ----------------
+  const payablesOutstanding = outstandingFor(buyRows, payments.filter((p) => p.type === "pay_supplier"));
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Accounts Payable — Outstanding"],
+    [rangeLabel],
+    [],
+    ["Total Outstanding (៛)", round2(payablesOutstanding.reduce((s, r) => s + r.remaining, 0))],
+    [],
+    ["Date", "Receipt", "Supplier", "Location", "Age (days)", "Amount Owed (៛)"],
+    ...payablesOutstanding.map((r) => [r.tx_date, r.code, r.partyName, r.stationName, r.days, round2(r.remaining)]),
+  ]), "Accounts Payable");
+
+  // ---------------- Accounts Receivable ----------------
+  const receivablesOutstanding = outstandingFor(sellRows, payments.filter((p) => p.type === "receive_customer"));
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Accounts Receivable — Outstanding"],
+    [rangeLabel],
+    [],
+    ["Total Outstanding (៛)", round2(receivablesOutstanding.reduce((s, r) => s + r.remaining, 0))],
+    [],
+    ["Date", "Receipt", "Customer", "Location", "Age (days)", "Amount Owed (៛)"],
+    ...receivablesOutstanding.map((r) => [r.tx_date, r.code, r.partyName, r.stationName, r.days, round2(r.remaining)]),
+  ]), "Accounts Receivable");
+
+  // ---------------- Stock ----------------
+  const sortedAllTxs = txs.slice().sort((a, b) => (a.tx_date + a.tx_time > b.tx_date + b.tx_time ? 1 : -1));
+  const stockTxs = activeFilter(sortedAllTxs, selectedLocationIds, startDate, endDate);
+  const running = {};
+  const movements = stockTxs.map((tx) => {
+    const delta = tx.type === "BUY" ? Number(tx.quantity_kg) : -Number(tx.quantity_kg);
+    running[tx.location_id] = (running[tx.location_id] || 0) + delta;
+    return { ...tx, delta, runningBalance: running[tx.location_id] };
+  });
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Stock — Current Summary"],
+    [],
+    ["Location", "Current Stock (kg)", "Capacity (kg)", "% Full"],
+    ...filteredStations.map((s) => [s.name, round2(s.current_stock_kg), round2(s.capacity_kg), Math.round((Number(s.current_stock_kg) / Number(s.capacity_kg)) * 100)]),
+    [],
+    ["Movement Detail"],
+    [rangeLabel],
+    ["Date", "Receipt", "Location", "Type", "Change (kg)", "Running Balance"],
+    ...movements.map((m) => [m.tx_date, m.code, m.stationName, m.type, round2(m.delta), round2(m.runningBalance)]),
+  ]), "Stock");
+
+  // ---------------- Cash Flow ----------------
+  const cashPayments = payments
+    .filter((p) => !selectedLocationIds.length || selectedLocationIds.includes(p.location_id))
+    .filter((p) => !startDate || p.pay_date >= startDate)
+    .filter((p) => !endDate || p.pay_date <= endDate);
+  const sortedPayments = cashPayments.slice().sort((a, b) => (a.pay_date + a.created_at < b.pay_date + b.created_at ? -1 : 1));
+  const TYPE_LABELS = {
+    pay_supplier: "Paid to supplier",
+    receive_customer: "Received from customer",
+    expense: "Expense",
+    transfer: "Fund transfer",
+    journal: "Journal entry",
+  };
+  let bal = 0;
+  const ledger = sortedPayments.map((p) => {
+    const isInflow = p.type === "receive_customer";
+    const signedAmount = isInflow ? Number(p.amount) : -Number(p.amount);
+    bal += signedAmount;
+    return { ...p, signedAmount, balance: bal };
+  }).reverse();
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Cash Flow — Ledger"],
+    [rangeLabel],
+    [],
+    ["Date", "Type", "Note", "Recorded by", "Amount (៛)", "Balance (៛)"],
+    ...ledger.map((p) => [p.pay_date, TYPE_LABELS[p.type] || p.type, p.memo || "", p.createdByName, round2(p.signedAmount), round2(p.balance)]),
+  ]), "Cash Flow");
+
+  // ---------------- Tax ----------------
+  const taxTxs = activeTxs.filter((t) => t.tax_applicable).slice().sort((a, b) => (a.tx_date < b.tx_date ? 1 : -1));
+  const outputTax = taxTxs.filter((t) => t.type === "SELL").reduce((s, t) => s + Number(t.tax_amount || 0), 0);
+  const inputTax = taxTxs.filter((t) => t.type === "BUY").reduce((s, t) => s + Number(t.tax_amount || 0), 0);
+  const netPayable = outputTax - inputTax;
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Tax — Taxable Transactions"],
+    [rangeLabel],
+    [],
+    ["Output Tax (collected on sales)", round2(outputTax)],
+    ["Input Tax (paid on purchases)", round2(inputTax)],
+    [netPayable >= 0 ? "Net Tax Payable" : "Net Tax Refundable", round2(Math.abs(netPayable))],
+    [],
+    ["Date", "Receipt", "Type", "Party", "Subtotal (៛)", "Rate (%)", "Tax (៛)", "Total (៛)"],
+    ...taxTxs.map((t) => [t.tx_date, t.code, t.type, t.partyName, round2(t.amount), Number(t.tax_rate), round2(t.tax_amount), round2(t.total_with_tax)]),
+  ]), "Tax");
+
+  return wb;
+}
+
+export function downloadReportWorkbook(data, filename) {
+  const wb = buildReportWorkbook(data);
+  XLSX.writeFile(wb, filename);
+}
