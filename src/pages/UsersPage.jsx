@@ -180,10 +180,14 @@ export default function UsersPage() {
   }
 
   async function logOut(u) {
-    if (!window.confirm(`Log ${u.full_name} out right now? Their session will end within about 20 seconds.`)) return;
+    const online = isOnline(u);
+    const msg = online
+      ? `Log ${u.full_name} out right now? Their session will end within about 20 seconds.`
+      : `${u.full_name} isn't currently active, so this won't do anything immediately — it'll force them to log out the next time their browser reconnects (even if that's later). Continue?`;
+    if (!window.confirm(msg)) return;
     try {
       await api.requestLogout(u.id);
-      alert(`${u.full_name} will be signed out shortly.`);
+      alert(online ? `${u.full_name} will be signed out shortly.` : `${u.full_name} will be signed out next time they're active.`);
     } catch (err) {
       alert(err.message || String(err));
     }
@@ -221,7 +225,7 @@ export default function UsersPage() {
                 <th className="px-3 py-3 font-medium">Role</th>
                 <th className="px-3 py-3 font-medium">Location</th>
                 <th className="px-3 py-3 font-medium">Access</th>
-                <th className="px-3 py-3 font-medium">Status</th>
+                <th className="px-3 py-3 font-medium">Activity</th>
                 <th className="px-3 py-3"></th>
               </tr>
             </thead>
@@ -267,11 +271,15 @@ export default function UsersPage() {
                         <Circle size={8} className={online ? "fill-emerald-500 text-emerald-500" : "fill-slate-300 text-slate-300"} />
                         {online ? "Active now" : `Last seen ${relativeTime(u.last_seen_at)}`}
                       </span>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        Login: {u.last_login_at ? relativeTime(u.last_login_at) : "Never"}
+                        {u.last_login_device ? ` · ${u.last_login_device}` : ""}
+                      </p>
                     </td>
                     <td className="px-3 py-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-3">
-                        {editable && online && u.id !== me.id && (
-                          <button onClick={() => logOut(u)} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
+                        {editable && u.id !== me.id && (
+                          <button onClick={() => logOut(u)} className={`flex items-center gap-1 text-xs hover:text-slate-700 ${online ? "text-slate-500" : "text-slate-400"}`}>
                             <LogOut size={12} /> Log Out
                           </button>
                         )}
