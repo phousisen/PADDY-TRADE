@@ -1,12 +1,21 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase } from "./supabaseClient.js";
 
 const AuthContext = createContext(null);
+
+// How often each logged-in browser "checks in" — both to mark itself as
+// active for the Users page, and to notice if an HQ Admin/Owner has forced
+// it to log out.
+const HEARTBEAT_MS = 20000;
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  // The moment this browser tab started up. A forced-logout flag only
+  // matters if it was set AFTER this — otherwise a leftover flag from a
+  // past logout would immediately kick the user again on their next login.
+  const openedAtRef = useRef(new Date());
 
   async function loadProfile(userId) {
     // Try the full query with the roles join first.
@@ -66,6 +75,38 @@ export function AuthProvider({ children }) {
 
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // Heartbeat: while someone is logged in, periodically mark this browser
+  // as active and check whether an admin has forced this session to log
+  // out. Both checks happen through narrow database functions (not a
+  // direct table read/write of sensitive columns) — see
+  // migration_active_users_admin.sql.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    let cancelled = false;
+
+    async function tick() {
+      try {
+        await supabase.rpc("touch_last_seen");
+        const { data } = await supabase
+          .from("profiles")
+          .select("logout_requested_at")
+          .eq("id", session.user.id)
+          .single();
+        if (!cancelled && data?.logout_requested_at && new Date(data.logout_requested_at) > openedAtRef.current) {
+          await supabase.rpc("acknowledge_logout");
+          await supabase.auth.signOut();
+        }
+      } catch (_err) {
+        // Transient network/RPC errors here shouldn't crash the app or log
+        // anyone out — just try again on the next tick.
+      }
+    }
+
+    tick();
+    const interval = setInterval(tick, HEARTBEAT_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [session?.user?.id]);
 
   async function login(email, password) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });

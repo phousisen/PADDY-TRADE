@@ -26,6 +26,21 @@ function cambodiaNow() {
   };
 }
 
+// Supabase's functions.invoke() gives a generic "non-2xx status" message on
+// error by default — this pulls out the actual reason our admin-users Edge
+// Function sent back (e.g. "Only the Owner account can do this."), if any.
+async function extractFnError(error) {
+  try {
+    if (error?.context && typeof error.context.json === "function") {
+      const body = await error.context.json();
+      if (body?.error) return body.error;
+    }
+  } catch (_e) {
+    // fall through to the generic message below
+  }
+  return error?.message || String(error);
+}
+
 export const api = {
   async getLocations() {
     const { data, error } = await supabase.from("locations").select("*").order("name");
@@ -52,6 +67,49 @@ export const api = {
     if (locationId !== undefined) patch.location_id = locationId;
     const { data, error } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
     if (error) throw error;
+    return data;
+  },
+
+  // Marks the current browser as "active" — called on a repeating timer
+  // while someone is logged in, so the Users page can show who's currently
+  // using the app. Runs through a narrow database function rather than a
+  // direct table update, so it can't be used to change anything else.
+  async touchLastSeen() {
+    const { error } = await supabase.rpc("touch_last_seen");
+    if (error) throw error;
+  },
+
+  // Called by a user's own browser once it has acted on a forced logout,
+  // so the flag doesn't linger and re-trigger on a future login.
+  async acknowledgeLogout() {
+    const { error } = await supabase.rpc("acknowledge_logout");
+    if (error) throw error;
+  },
+
+  // HQ Admin/Owner only (enforced in the database): flags another user's
+  // active session to sign out next time their browser checks in.
+  async requestLogout(targetUserId) {
+    const { error } = await supabase.rpc("request_logout", { target_user_id: targetUserId });
+    if (error) throw error;
+  },
+
+  // Owner only (enforced server-side): fetches every account's email via
+  // the admin-users Edge Function, since emails live in Supabase's
+  // protected auth system, not a table the app can query directly.
+  async listUserEmails() {
+    const { data, error } = await supabase.functions.invoke("admin-users", { body: { action: "list_emails" } });
+    if (error) throw new Error(await extractFnError(error));
+    return data?.emails || [];
+  },
+
+  // Owner only (enforced server-side): sets a brand-new password for
+  // another user's account via the admin-users Edge Function. The old
+  // password is never seen or needed — this simply replaces it.
+  async adminSetPassword(targetUserId, newPassword) {
+    const { data, error } = await supabase.functions.invoke("admin-users", {
+      body: { action: "set_password", targetUserId, newPassword },
+    });
+    if (error) throw new Error(await extractFnError(error));
     return data;
   },
 
