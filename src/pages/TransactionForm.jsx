@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search, Save, ScanLine } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import PhotoUpload from "../components/PhotoUpload.jsx";
 import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -43,6 +44,8 @@ export default function TransactionForm({ type, setPage }) {
   const [outthrowPct, setOutthrowPct] = useState("");
   const [deductionKg, setDeductionKg] = useState("");
   const [note, setNote] = useState("");
+  const [receiptPhotoUrl, setReceiptPhotoUrl] = useState(null);
+  const [paymentProofUrl, setPaymentProofUrl] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTx, setSavedTx] = useState(null);
@@ -129,6 +132,7 @@ export default function TransactionForm({ type, setPage }) {
 
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
+  const paymentProofRequired = paymentStatus === "paid" || paymentStatus === "deposit";
   const total = payableKg * (parseFloat(pricePerKg) || 0);
   const taxAmount = taxApplicable ? Math.round(total * (parseFloat(taxRate) || 0)) / 100 : 0;
   const totalWithTax = total + taxAmount;
@@ -159,6 +163,8 @@ export default function TransactionForm({ type, setPage }) {
     const effectiveStationId = isAdmin ? stationId : profile?.location_id;
     if (!isAdmin && !effectiveStationId) { setError("Your account has no location assigned yet. Ask HQ to assign one to your login."); return; }
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
+    if (!receiptPhotoUrl) { setError("A photo of the physical receipt is required."); return; }
+    if (paymentProofRequired && !paymentProofUrl) { setError("A photo of the bank QR / payment proof is required when payment is marked as done."); return; }
     setSaving(true);
     try {
       let party = selectedParty;
@@ -190,6 +196,7 @@ export default function TransactionForm({ type, setPage }) {
         moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
         note: note.trim() || null,
+        receiptPhotoUrl, paymentProofUrl,
       });
 
       // If it was entered as already paid, record that cash movement immediately
@@ -323,6 +330,13 @@ export default function TransactionForm({ type, setPage }) {
                   <p className="mt-1 text-xs text-brand-700/70">Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)</p>
                 )}
               </div>
+              <div className="mt-4">
+                <PhotoUpload
+                  label="Physical Receipt Photo" kind="receipt" required
+                  url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
+                  hint="Photo of the printed weighbridge ticket/receipt"
+                />
+              </div>
             </section>
 
             {/* Section 3: Quality & Pricing */}
@@ -368,6 +382,16 @@ export default function TransactionForm({ type, setPage }) {
                 </div>
               </div>
               <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.</p>
+
+              {paymentProofRequired && (
+                <div className="mt-3">
+                  <PhotoUpload
+                    label="Bank QR / Payment Proof Photo" kind="payment-proof" required
+                    url={paymentProofUrl} onUploaded={setPaymentProofUrl}
+                    hint="Photo of the bank transfer QR code or payment confirmation"
+                  />
+                </div>
+              )}
 
               <div className="mt-3 rounded-lg border border-slate-200 p-3">
                 <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
