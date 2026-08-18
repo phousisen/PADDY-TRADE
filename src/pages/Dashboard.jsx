@@ -9,13 +9,24 @@ function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmtRiel(n) { return `${fmt(n)} ៛`; }
 function timeAgo(dateStr, timeStr) {
-  const then = new Date(`${dateStr}T${timeStr || "00:00"}`);
+  // dateStr/timeStr are Cambodia wall-clock values — parse them as such
+  // explicitly (+07:00) so this is correct no matter what timezone the
+  // viewing device itself is set to.
+  const then = new Date(`${dateStr}T${timeStr || "00:00:00"}+07:00`);
   const diffMin = Math.round((Date.now() - then.getTime()) / 60000);
   if (diffMin < 1) return "just now";
   if (diffMin < 60) return `${diffMin} min${diffMin === 1 ? "" : "s"} ago`;
   const diffHr = Math.round(diffMin / 60);
   if (diffHr < 24) return `${diffHr} hr${diffHr === 1 ? "" : "s"} ago`;
   return `${Math.round(diffHr / 24)} day(s) ago`;
+}
+// Cambodia's current calendar date (YYYY-MM-DD), independent of the
+// viewing device's own timezone/clock setting.
+function cambodiaDateStr(d = new Date()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 export default function Dashboard() {
@@ -35,7 +46,7 @@ export default function Dashboard() {
   }
   useEffect(() => { load(); }, []);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = cambodiaDateStr();
   const todayTxs = txs.filter((t) => t.tx_date === today);
 
   const todayBuy = todayTxs.filter((t) => t.type === "BUY");

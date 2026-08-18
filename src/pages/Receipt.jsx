@@ -5,6 +5,14 @@ import { api } from "../api.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+function fmtTime(t) {
+  if (!t) return "";
+  const [hh, mm] = t.split(":");
+  let h = parseInt(hh, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${mm} ${period}`;
+}
 
 export default function Receipt({ tx, onDone }) {
   const { t } = useLanguage();
@@ -47,7 +55,7 @@ export default function Receipt({ tx, onDone }) {
           </div>
           <div className="mb-3 flex justify-between border-t border-b border-dashed border-slate-200 py-2 text-xs text-slate-500">
             <span>Receipt #: <span className="font-medium text-slate-700">{tx.code}</span></span>
-            <span>{tx.tx_date} {tx.tx_time}</span>
+            <span>{tx.tx_date} {fmtTime(tx.tx_time)}</span>
           </div>
 
           <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">

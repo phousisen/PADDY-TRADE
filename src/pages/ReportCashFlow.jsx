@@ -4,6 +4,14 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+// Cambodia's current calendar date (YYYY-MM-DD), independent of the
+// viewing device's own timezone/clock setting.
+function cambodiaDateStr(d = new Date()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 const TYPE_LABELS = {
   pay_supplier: "Paid to supplier",
@@ -106,7 +114,7 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
       locationId: profile.location_id,
       amount,
       method: "cash",
-      payDate: new Date().toISOString().slice(0, 10),
+      payDate: cambodiaDateStr(),
       memo,
       userId: session.user.id,
     });

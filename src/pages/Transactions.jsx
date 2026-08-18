@@ -8,6 +8,22 @@ import { supabase } from "../supabaseClient.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+function fmtTime(t) {
+  if (!t) return "";
+  const [hh, mm] = t.split(":");
+  let h = parseInt(hh, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${mm} ${period}`;
+}
+// Cambodia's current calendar date (YYYY-MM-DD), independent of the
+// viewing device's own timezone/clock setting.
+function cambodiaDateStr(d = new Date()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 // "Request a change" doesn't edit the live transaction — it redoes the Buy/Sell
 // entry with corrected values and files it as a pending proposal. Nothing on
@@ -607,7 +623,7 @@ export default function Transactions({ setPage }) {
       locationId: payTx.location_id,
       amount,
       method,
-      payDate: new Date().toISOString().slice(0, 10),
+      payDate: cambodiaDateStr(),
       memo,
       userId: session.user.id,
     });
@@ -711,7 +727,7 @@ export default function Transactions({ setPage }) {
                       </span>
                     </td>
                     <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-sky-50 text-sky-600"}`}>{tx.code}</span></td>
-                    <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{tx.tx_time}</div></td>
+                    <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{tx.car_plate && <p className="text-xs text-slate-400">🚚 {tx.car_plate}</p>}</td>
                     <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
