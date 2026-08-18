@@ -75,7 +75,9 @@ export default function TransactionForm({ type, setPage }) {
       const raw = localStorage.getItem(draftKey);
       if (raw) {
         const d = JSON.parse(raw);
-        setProductQuery(d.productQuery || "");
+        // Product, Quality Grade, and Price per KG are deliberately NOT
+        // restored from a saved draft — they should always start blank on
+        // a fresh form so nothing gets carried over/re-used by accident.
         setPartyQuery(d.partyQuery || "");
         setPartyPhone(d.partyPhone || "");
         setPartyIdNumber(d.partyIdNumber || "");
@@ -84,12 +86,9 @@ export default function TransactionForm({ type, setPage }) {
         setBankAccount(d.bankAccount || "");
         setCompany(d.company || "");
         setDestination(d.destination || "dest_hq");
-        setQualityGrade(d.qualityGrade || "");
         setGrossKg(d.grossKg || "");
         setTareKg(d.tareKg || "");
         setCarPlate(d.carPlate || "");
-        setPricePerKg(d.pricePerKg || "");
-        setPriceOverridden(!!d.priceOverridden);
         setPaymentStatus(d.paymentStatus || (isBuy ? "pending" : "paid"));
         setDraftRestored(true);
       }
@@ -99,11 +98,13 @@ export default function TransactionForm({ type, setPage }) {
   // Save a draft as the person types, so a dropped connection or accidental
   // reload doesn't lose what they entered.
   useEffect(() => {
+    // Product, Quality Grade, and Price per KG are intentionally left out
+    // of the saved draft (see restore effect above).
     const draft = {
-      productQuery, partyQuery, partyPhone, partyIdNumber, bankName, bankAccount,
-      company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus, carPlate,
+      partyQuery, partyPhone, partyIdNumber, bankName, bankAccount,
+      company, destination, grossKg, tareKg, paymentStatus, carPlate,
     };
-    const hasContent = partyQuery || grossKg || tareKg || pricePerKg;
+    const hasContent = partyQuery || grossKg || tareKg;
     const timeout = setTimeout(() => {
       try {
         if (hasContent) localStorage.setItem(draftKey, JSON.stringify(draft));
@@ -111,7 +112,7 @@ export default function TransactionForm({ type, setPage }) {
       } catch (e) {}
     }, 400);
     return () => clearTimeout(timeout);
-  }, [productQuery, partyQuery, partyPhone, partyIdNumber, bankName, bankAccount, company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus, carPlate]);
+  }, [partyQuery, partyPhone, partyIdNumber, bankName, bankAccount, company, destination, grossKg, tareKg, paymentStatus, carPlate]);
 
   function clearDraft() {
     try { localStorage.removeItem(draftKey); } catch (e) {}
