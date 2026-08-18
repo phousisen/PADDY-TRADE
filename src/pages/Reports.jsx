@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank, Layers } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -10,6 +10,7 @@ import { downloadReportWorkbook, cambodiaTimestamp } from "../reportExport.js";
 import ReportOverview from "./ReportOverview.jsx";
 import ReportBalanceSheet from "./ReportBalanceSheet.jsx";
 import ReportPurchases from "./ReportPurchases.jsx";
+import ReportPurchasesByItem from "./ReportPurchasesByItem.jsx";
 import ReportSales from "./ReportSales.jsx";
 import ReportPayables from "./ReportPayables.jsx";
 import ReportReceivables from "./ReportReceivables.jsx";
@@ -58,6 +59,7 @@ export default function Reports({ initialTab = "overview" }) {
     { id: "overview", label: "Overview", icon: LayoutGrid },
     { id: "balancesheet", label: "Balance Sheet", icon: Scale },
     { id: "purchases", label: "Purchases", icon: ShoppingBag },
+    { id: "purchasesbyitem", label: "Purchases by Item", icon: Layers },
     { id: "sales", label: "Sales", icon: TrendingUp },
     { id: "payables", label: "Accounts Payable", icon: HandCoins },
     { id: "receivables", label: "Accounts Receivable", icon: Wallet },
@@ -106,6 +108,7 @@ export default function Reports({ initialTab = "overview" }) {
         {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
         {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "purchasesbyitem" && <ReportPurchasesByItem selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "sales" && <ReportSales selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "payables" && <ReportPayables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}

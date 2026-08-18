@@ -79,6 +79,20 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
     return Object.values(map).sort((a, b) => b.amount - a.amount);
   }, [outstanding]);
 
+  // Splits what's owed by paddy type — like separate AP sub-accounts per
+  // item (AP Sen Krob, AP IR, AP Srangae, etc.) in the old bookkeeping
+  // system, instead of one lump Accounts Payable total.
+  const byProduct = useMemo(() => {
+    const map = {};
+    outstanding.forEach((r) => {
+      const k = r.productName || "—";
+      if (!map[k]) map[k] = { name: k, count: 0, amount: 0 };
+      map[k].count += 1;
+      map[k].amount += r.remaining;
+    });
+    return Object.values(map).sort((a, b) => b.amount - a.amount);
+  }, [outstanding]);
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -87,7 +101,7 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
           <p className="text-2xl font-bold text-rose-600">{fmtRiel(totalOutstanding)}</p>
         </div>
         <div className="flex gap-2">
-          {[{ v: "aging", l: "Aging Summary" }, { v: "party", l: `By ${PARTY_LABEL}` }, { v: "location", l: "By Location" }, { v: "detail", l: "Detail" }].map((o) => (
+          {[{ v: "aging", l: "Aging Summary" }, { v: "party", l: `By ${PARTY_LABEL}` }, { v: "location", l: "By Location" }, { v: "product", l: "By Paddy Type" }, { v: "detail", l: "Detail" }].map((o) => (
             <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
           ))}
         </div>
@@ -153,6 +167,27 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
                 </tr>
               ))}
               {byLocation.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+            </tbody>
+          </table>
+        )}
+        {view === "product" && (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+                <th className="px-5 py-3 font-medium">Paddy Type</th>
+                <th className="px-5 py-3 font-medium">Transactions</th>
+                <th className="px-5 py-3 font-medium">Amount Owed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {byProduct.map((p) => (
+                <tr key={p.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                  <td className="px-5 py-3 font-medium text-slate-700">{p.name}</td>
+                  <td className="px-5 py-3 text-slate-600">{p.count}</td>
+                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
+                </tr>
+              ))}
+              {byProduct.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
             </tbody>
           </table>
         )}

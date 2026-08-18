@@ -44,6 +44,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [outthrowPct, setOutthrowPct] = useState(String(tx.outthrow_pct ?? ""));
   const [deductionKg, setDeductionKg] = useState(String(tx.deduction_kg ?? ""));
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
+  const [driverName, setDriverName] = useState(tx.driver_name || "");
   const [note, setNote] = useState(tx.note || "");
   const [reason, setReason] = useState("");
 
@@ -75,6 +76,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
       outthrowPct: parseFloat(outthrowPct) || 0,
       deductionKg: parseFloat(deductionKg) || 0,
       carPlate: carPlate.trim() || null,
+      driverName: driverName.trim() || null,
       note: note.trim() || null,
     };
     onSubmit(reason.trim(), proposedData);
@@ -143,9 +145,14 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
             </select>
           </div>
 
-          <div className="col-span-2">
+          <div>
             <label className="mb-1 block text-xs text-slate-500">Car Plate Number</label>
             <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
+            <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
         </div>
@@ -592,10 +599,10 @@ export default function Transactions({ setPage }) {
   }, [rows, payments]);
 
   function exportCsv() {
-    const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Car Plate", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
+    const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Car Plate", "Truck/Driver", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
     const lines = rows.map((tx, i) => {
       const remaining = remainingByTx[tx.id] || 0;
-      return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.car_plate || "", tx.quantity_kg, tx.amount, Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining), remaining, tx.hq_status || "processing"];
+      return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.car_plate || "", tx.driver_name || "", tx.quantity_kg, tx.amount, Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining), remaining, tx.hq_status || "processing"];
     });
     const csv = [header, ...lines].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -729,7 +736,7 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-sky-50 text-sky-600"}`}>{tx.code}</span></td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
-                    <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{tx.car_plate && <p className="text-xs text-slate-400">🚚 {tx.car_plate}</p>}</td>
+                    <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}</td>
                     <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
                     <td className="px-3 py-3 font-medium text-slate-800">
                       {fmtRiel(tx.total_with_tax ?? tx.amount)}

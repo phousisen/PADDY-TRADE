@@ -92,6 +92,7 @@ export default function ReportPurchases({ selectedLocationIds = [], startDate = 
                 <th className="px-5 py-3 font-medium">Date</th>
                 <th className="px-5 py-3 font-medium">Receipt</th>
                 <th className="px-5 py-3 font-medium">Supplier</th>
+                <th className="px-5 py-3 font-medium">Truck/Driver</th>
                 <th className="px-5 py-3 font-medium">Paddy Type</th>
                 <th className="px-5 py-3 font-medium">Location</th>
                 <th className="px-5 py-3 font-medium">Qty (kg)</th>
@@ -104,13 +105,14 @@ export default function ReportPurchases({ selectedLocationIds = [], startDate = 
                   <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{r.code}</td>
                   <td className="px-5 py-3 text-slate-700">{r.partyName}</td>
+                  <td className="px-5 py-3 text-slate-500">{r.driver_name || "—"}</td>
                   <td className="px-5 py-3 text-slate-600">{r.productName}</td>
                   <td className="px-5 py-3 text-slate-600">{r.stationName}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(r.quantity_kg)}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No purchases yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No purchases yet.</td></tr>}
             </tbody>
           </table>
         )}

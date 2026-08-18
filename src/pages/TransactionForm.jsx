@@ -45,6 +45,7 @@ export default function TransactionForm({ type, setPage }) {
   const [bankAccount, setBankAccount] = useState("");
   const [bankQrUrl, setBankQrUrl] = useState(null);
   const [carPlate, setCarPlate] = useState("");
+  const [driverName, setDriverName] = useState("");
   const [company, setCompany] = useState("");
   const [destination, setDestination] = useState("dest_hq");
   const [qualityGrade, setQualityGrade] = useState("");
@@ -183,6 +184,7 @@ export default function TransactionForm({ type, setPage }) {
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
         note: note.trim() || null,
         carPlate: carPlate.trim() || null,
+        driverName: driverName.trim() || null,
         receiptPhotoUrl, paymentProofUrl,
       });
 
@@ -328,9 +330,14 @@ export default function TransactionForm({ type, setPage }) {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="mb-1 block text-xs text-slate-500">{t("gross_weight")}</label><input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
                 <div><label className="mb-1 block text-xs text-slate-500">{t("tare_weight")}</label><input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-                <div className="col-span-2">
+                <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("car_plate_number")}</label>
                   <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">{t("driver_name")}</label>
+                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                 </div>
               </div>

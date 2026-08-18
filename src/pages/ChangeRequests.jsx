@@ -72,6 +72,7 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
             <DiffRow label="Deduction (kg)" current={fmt2(tx.deduction_kg)} proposed={fmt2(p.deductionKg)} />
             <DiffRow label="Moisture / Mixture / Outthrow %" current={`${tx.moisture_pct || 0} / ${tx.mixture_pct || 0} / ${tx.outthrow_pct || 0}`} proposed={`${p.moisturePct || 0} / ${p.mixturePct || 0} / ${p.outthrowPct || 0}`} />
             <DiffRow label="Car Plate" current={tx.car_plate || "—"} proposed={p.carPlate || "—"} />
+            <DiffRow label="Truck / Driver Name" current={tx.driver_name || "—"} proposed={p.driverName || "—"} />
             <DiffRow label="Note" current={tx.note || "—"} proposed={p.note || "—"} />
             <DiffRow label="Total Amount" current={fmtRiel(currentAmount)} proposed={fmtRiel(proposedAmount)} />
           </div>
@@ -124,6 +125,7 @@ export default function ChangeRequests() {
       outthrowPct: p.outthrowPct,
       note: p.note,
       carPlate: p.carPlate,
+      driverName: p.driverName,
       partyId: p.partyId,
     });
     await api.logAudit({
