@@ -178,8 +178,9 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate }) {
-    const amount = Math.round(quantityKg * pricePerKg * 100) / 100;
+  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note }) {
+    const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
+    const amount = Math.round(payableKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
       .from("transactions")
       .insert({
@@ -196,6 +197,11 @@ export const api = {
         quality_grade: qualityGrade || null,
         tax_applicable: !!taxApplicable,
         tax_rate: taxApplicable ? (taxRate || 0) : 0,
+        moisture_pct: moisturePct || 0,
+        mixture_pct: mixturePct || 0,
+        outthrow_pct: outthrowPct || 0,
+        deduction_kg: deductionKg || 0,
+        note: note || null,
       })
       .select()
       .single();
@@ -238,13 +244,15 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate }) {
-    const amount = Math.round(quantityKg * pricePerKg * 100) / 100;
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg }) {
+    const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
+    const amount = Math.round(payableKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
       .from("transactions")
       .update({
         quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: qualityGrade || null,
         tax_applicable: !!taxApplicable, tax_rate: taxApplicable ? (taxRate || 0) : 0,
+        ...(deductionKg !== undefined ? { deduction_kg: deductionKg || 0 } : {}),
       })
       .eq("id", id)
       .select()
