@@ -566,6 +566,7 @@ export default function Transactions({ setPage }) {
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [type, setType] = useState("");
+  const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
@@ -598,9 +599,17 @@ export default function Transactions({ setPage }) {
     return map;
   }, [rows, payments]);
 
+  // "Unpaid" toggle — for Buys this means money still owed to the farmer;
+  // for Sells it means money not yet received from the buyer. Works
+  // together with the All/Buy/Sell filter above it, not instead of it.
+  const visibleRows = useMemo(() => {
+    if (!unpaidOnly) return rows;
+    return rows.filter((tx) => (remainingByTx[tx.id] || 0) > 0.01);
+  }, [rows, unpaidOnly, remainingByTx]);
+
   function exportCsv() {
     const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Car Plate", "Truck/Driver", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
-    const lines = rows.map((tx, i) => {
+    const lines = visibleRows.map((tx, i) => {
       const remaining = remainingByTx[tx.id] || 0;
       return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.car_plate || "", tx.driver_name || "", tx.quantity_kg, tx.amount, Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining), remaining, tx.hq_status || "processing"];
     });
@@ -722,6 +731,7 @@ export default function Transactions({ setPage }) {
             {[{ v: "", l: t("all") }, { v: "BUY", l: t("buy") }, { v: "SELL", l: t("sell") }].map((opt) => (
               <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${type === opt.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{opt.l}</button>
             ))}
+            <button onClick={() => setUnpaidOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm ${unpaidOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid / Not Received</button>
             <button className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50"><Filter size={14} /> {t("filter")}</button>
           </div>
           <div className="flex gap-2">
@@ -752,7 +762,7 @@ export default function Transactions({ setPage }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((tx, i) => {
+              {visibleRows.map((tx, i) => {
                 const hqStatus = tx.hq_status || "processing";
                 const isCancelled = hqStatus === "cancelled";
                 const remaining = remainingByTx[tx.id] || 0;
@@ -832,7 +842,7 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
-              {rows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_transactions")}</td></tr>}
+              {visibleRows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{unpaidOnly ? "Nothing unpaid — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
