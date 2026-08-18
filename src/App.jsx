@@ -23,6 +23,20 @@ export default function App() {
   const [page, setPage] = useState("dashboard");
   const [selectedLocationId, setSelectedLocationId] = useState(null);
   const [pendingRequests, setPendingRequests] = useState(0);
+  const [prefillParty, setPrefillParty] = useState(null);
+
+  // Jump to a fresh New Buy / New Sell form with a farmer's or buyer's info
+  // already filled in — used by the "New Buy"/"New Sell" button on their
+  // profile row in the Farmers/Buyers list, so staff don't retype the same
+  // name, phone, and bank details for every truckload.
+  function startBuyFor(party) {
+    setPrefillParty(party);
+    setPage("new-buy");
+  }
+  function startSellFor(party) {
+    setPrefillParty(party);
+    setPage("new-sell");
+  }
 
   useEffect(() => {
     if (profile?.role === "admin") {
@@ -48,8 +62,8 @@ export default function App() {
     if (page === "dashboard") return <Dashboard />;
     if (page === "stock") return <StockInventory />;
     if (page === "transactions") return <Transactions setPage={setPage} />;
-    if (page === "new-buy") return <TransactionForm type="BUY" setPage={setPage} />;
-    if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} />;
+    if (page === "new-buy") return <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} />;
+    if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} />;
     if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;
     if (page === "stations") return isAdmin ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
     if (page === "station-detail") return isAdmin ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
@@ -58,8 +72,8 @@ export default function App() {
     if (page === "users") return isAdmin ? <UsersPage /> : <PermissionDenied />;
     if (page === "roles") return isAdmin ? <RolesPage /> : <PermissionDenied />;
     if (page === "settings") return isAdmin ? <SettingsPage /> : <PermissionDenied />;
-    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" />;
-    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" />;
+    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} />;
+    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} />;
     return <Dashboard />;
   }
 
