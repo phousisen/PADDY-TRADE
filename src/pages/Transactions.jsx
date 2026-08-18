@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, Search, RotateCcw, Camera, ImageOff } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import LocationFilter from "../components/LocationFilter.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -566,7 +567,14 @@ export default function Transactions({ setPage }) {
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [type, setType] = useState("");
-  const [unpaidOnly, setUnpaidOnly] = useState(false);
+  // Kept as two separate toggles rather than one combined "unpaid" flag —
+  // "Unpaid" only ever means money owed to a farmer on a Buy, "Not
+  // Received" only ever means money not yet collected from a buyer on a
+  // Sell. Mixing them together made the single button ambiguous.
+  const [unpaidBuysOnly, setUnpaidBuysOnly] = useState(false);
+  const [notReceivedOnly, setNotReceivedOnly] = useState(false);
+  const [locations, setLocations] = useState([]);
+  const [selectedLocationIds, setSelectedLocationIds] = useState([]);
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
@@ -588,6 +596,13 @@ export default function Transactions({ setPage }) {
 
   useEffect(() => { load(); }, [type]);
 
+  // Only HQ Admin sees every location's transactions — staff logins are
+  // already scoped to their own location, so the picker only makes sense
+  // (and only loads) for admins.
+  useEffect(() => {
+    if (isAdmin) api.getLocations().then(setLocations).catch(() => {});
+  }, [isAdmin]);
+
   const remainingByTx = useMemo(() => {
     const map = {};
     rows.forEach((tx) => {
@@ -599,13 +614,23 @@ export default function Transactions({ setPage }) {
     return map;
   }, [rows, payments]);
 
-  // "Unpaid" toggle — for Buys this means money still owed to the farmer;
-  // for Sells it means money not yet received from the buyer. Works
-  // together with the All/Buy/Sell filter above it, not instead of it.
+  // Applies the Unpaid/Not Received toggles (each scoped to its own
+  // transaction type) and the location picker on top of whatever the
+  // All/Buy/Sell filter already loaded from the server.
   const visibleRows = useMemo(() => {
-    if (!unpaidOnly) return rows;
-    return rows.filter((tx) => (remainingByTx[tx.id] || 0) > 0.01);
-  }, [rows, unpaidOnly, remainingByTx]);
+    let out = rows;
+    if (unpaidBuysOnly || notReceivedOnly) {
+      out = out.filter((tx) => {
+        const owed = (remainingByTx[tx.id] || 0) > 0.01;
+        if (!owed) return false;
+        return tx.type === "BUY" ? unpaidBuysOnly : notReceivedOnly;
+      });
+    }
+    if (selectedLocationIds.length) {
+      out = out.filter((tx) => selectedLocationIds.includes(tx.location_id));
+    }
+    return out;
+  }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds]);
 
   function exportCsv() {
     const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Car Plate", "Truck/Driver", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
@@ -719,7 +744,18 @@ export default function Transactions({ setPage }) {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title={t("tx_title")} subtitle={isAdmin ? t("all_locations") : t("my_location")} />
+      <Topbar
+        title={t("tx_title")}
+        subtitle={
+          !isAdmin
+            ? t("my_location")
+            : selectedLocationIds.length === 0
+            ? t("all_locations")
+            : selectedLocationIds.length === 1
+            ? locations.find((l) => l.id === selectedLocationIds[0])?.name || t("all_locations")
+            : `${selectedLocationIds.length} locations selected`
+        }
+      />
       <main className="flex-1 overflow-y-auto p-6">
         {!isAdmin && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
@@ -731,8 +767,12 @@ export default function Transactions({ setPage }) {
             {[{ v: "", l: t("all") }, { v: "BUY", l: t("buy") }, { v: "SELL", l: t("sell") }].map((opt) => (
               <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${type === opt.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{opt.l}</button>
             ))}
-            <button onClick={() => setUnpaidOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm ${unpaidOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid / Not Received</button>
+            <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
+            <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm ${notReceivedOnly ? "border-amber-400 bg-amber-50 text-amber-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
             <button className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50"><Filter size={14} /> {t("filter")}</button>
+            {isAdmin && locations.length > 1 && (
+              <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
+            )}
           </div>
           <div className="flex gap-2">
             <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"><Download size={14} /> {t("export_csv")}</button>
@@ -842,7 +882,7 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
-              {visibleRows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{unpaidOnly ? "Nothing unpaid — everything here is settled." : t("no_transactions")}</td></tr>}
+              {visibleRows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>

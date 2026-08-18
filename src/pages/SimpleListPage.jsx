@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, PlusCircle } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
+import { paidStatusMap } from "./ReportOverview.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -18,19 +19,32 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor }) {
 
     const partyType = kind === "suppliers" ? "supplier" : "buyer";
     const txType = kind === "suppliers" ? "BUY" : "SELL";
+    const payType = kind === "suppliers" ? "pay_supplier" : "receive_customer";
 
-    Promise.all([api.getParties({ type: partyType }), api.getTransactions({ type: txType })]).then(([parties, txs]) => {
+    Promise.all([
+      api.getParties({ type: partyType }),
+      api.getTransactions({ type: txType }),
+      api.getPayments({ type: payType }).catch(() => []),
+    ]).then(([parties, txs, payments]) => {
+      // Paid vs. still-owed is computed live from the real payments ledger
+      // (same paidStatusMap used on the Transactions list and every
+      // report), not from the transaction's own payment_status field —
+      // that field doesn't update itself once a payment is recorded later,
+      // so it can quietly drift from what's actually been paid.
+      const paidMap = paidStatusMap(txs, payments);
       const totalsByParty = {};
       txs.forEach((tx) => {
-        if (!totalsByParty[tx.party_id]) totalsByParty[tx.party_id] = { count: 0, qty: 0, amount: 0 };
+        if (!totalsByParty[tx.party_id]) totalsByParty[tx.party_id] = { count: 0, qty: 0, amount: 0, paid: 0, remaining: 0 };
         totalsByParty[tx.party_id].count += 1;
         totalsByParty[tx.party_id].qty += Number(tx.quantity_kg);
         totalsByParty[tx.party_id].amount += Number(tx.amount);
+        totalsByParty[tx.party_id].paid += paidMap[tx.id]?.paid || 0;
+        totalsByParty[tx.party_id].remaining += paidMap[tx.id]?.remaining || 0;
       });
       setRows(
         parties.map((p) => ({
           ...p,
-          ...(totalsByParty[p.id] || { count: 0, qty: 0, amount: 0 }),
+          ...(totalsByParty[p.id] || { count: 0, qty: 0, amount: 0, paid: 0, remaining: 0 }),
         }))
       );
     });
@@ -62,7 +76,8 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor }) {
           { key: "bank_qr_url", label: "QR Code", render: (v) => v ? <a href={v} target="_blank" rel="noreferrer" className="text-brand-600 underline decoration-dotted hover:text-brand-700">View</a> : "—" },
           { key: "count", label: "Transactions" },
           { key: "qty", label: "Total Bought (kg)", render: (v) => fmt2(v) },
-          { key: "amount", label: "Total Paid", render: (v) => fmtRiel(v) },
+          { key: "paid", label: "Amount Paid", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
+          { key: "remaining", label: "Amount Unpaid", render: (v) => (v > 0.01 ? <span className="font-medium text-rose-500">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
         ]
       : [
           { key: "name", label: "Name" },
@@ -70,7 +85,8 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor }) {
           { key: "company", label: "Company" },
           { key: "count", label: "Transactions" },
           { key: "qty", label: "Total Sold (kg)", render: (v) => fmt2(v) },
-          { key: "amount", label: "Total Received", render: (v) => fmtRiel(v) },
+          { key: "paid", label: "Amount Received", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
+          { key: "remaining", label: "Amount Not Received", render: (v) => (v > 0.01 ? <span className="font-medium text-amber-600">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
         ];
 
   return (
