@@ -237,6 +237,25 @@ export const api = {
       .select()
       .single();
     if (error) throw error;
+    // Mirror this into the real cash ledger too, so Cash Flow and the
+    // Balance Sheet's "Cash (estimate)" actually move when real money comes
+    // in or goes out — not just the Partner Capital equity line. Best
+    // effort: if this second write fails, the capital entry itself has
+    // still been recorded, so nothing is lost.
+    try {
+      await api.createPayment({
+        type: type === "contribution" ? "capital_in" : "capital_out",
+        transactionId: null,
+        locationId,
+        amount,
+        method: "partner_capital",
+        payDate: entryDate,
+        memo: `Partner capital ${type === "contribution" ? "in" : "out"}${note ? ` — ${note}` : ""}`,
+        userId,
+      });
+    } catch (linkErr) {
+      console.warn("Capital entry saved, but mirroring it to the cash ledger failed:", linkErr);
+    }
     return data;
   },
 
@@ -259,6 +278,24 @@ export const api = {
       .select()
       .single();
     if (error) throw error;
+    // Mirror this into the real cash ledger too, so Cash Flow and the
+    // Balance Sheet's "Cash (estimate)" actually move when a loan is drawn
+    // or repaid — not just the Bank Loans liability line. Best effort: if
+    // this second write fails, the loan entry itself has still been recorded.
+    try {
+      await api.createPayment({
+        type: type === "borrow" ? "loan_in" : "loan_out",
+        transactionId: null,
+        locationId,
+        amount,
+        method: "bank_loan",
+        payDate: entryDate,
+        memo: `${lenderName} — ${type === "borrow" ? "loan drawn" : "loan repaid"}${note ? ` — ${note}` : ""}`,
+        userId,
+      });
+    } catch (linkErr) {
+      console.warn("Loan entry saved, but mirroring it to the cash ledger failed:", linkErr);
+    }
     return data;
   },
 

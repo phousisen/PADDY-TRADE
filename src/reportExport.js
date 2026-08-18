@@ -201,10 +201,25 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     expense: "Expense",
     transfer: "Fund transfer",
     journal: "Journal entry",
+    capital_in: "Partner capital in",
+    capital_out: "Partner capital out",
+    loan_in: "Bank loan drawn",
+    loan_out: "Bank loan repaid",
+  };
+  const IS_INFLOW = {
+    pay_supplier: false,
+    receive_customer: true,
+    expense: false,
+    transfer: false,
+    journal: null,
+    capital_in: true,
+    capital_out: false,
+    loan_in: true,
+    loan_out: false,
   };
   let bal = 0;
   const ledger = sortedPayments.map((p) => {
-    const isInflow = p.type === "receive_customer";
+    const isInflow = IS_INFLOW[p.type] ?? false;
     const signedAmount = isInflow ? Number(p.amount) : -Number(p.amount);
     bal += signedAmount;
     return { ...p, signedAmount, balance: bal };
