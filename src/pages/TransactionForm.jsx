@@ -47,7 +47,7 @@ export default function TransactionForm({ type, setPage }) {
   const [carPlate, setCarPlate] = useState("");
   const [company, setCompany] = useState("");
   const [destination, setDestination] = useState("dest_hq");
-  const [qualityGrade, setQualityGrade] = useState("A");
+  const [qualityGrade, setQualityGrade] = useState("");
   const [grossKg, setGrossKg] = useState("");
   const [tareKg, setTareKg] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
@@ -84,7 +84,7 @@ export default function TransactionForm({ type, setPage }) {
         setBankAccount(d.bankAccount || "");
         setCompany(d.company || "");
         setDestination(d.destination || "dest_hq");
-        setQualityGrade(d.qualityGrade || "A");
+        setQualityGrade(d.qualityGrade || "");
         setGrossKg(d.grossKg || "");
         setTareKg(d.tareKg || "");
         setCarPlate(d.carPlate || "");
@@ -130,7 +130,7 @@ export default function TransactionForm({ type, setPage }) {
       .catch((err) => setError(err.message || String(err)))
       .finally(() => setStationsLoaded(true));
 
-    api.getProducts().then((p) => { setProducts(p); if (p[0]) setProductQuery(p[0].name); }).catch(() => {});
+    api.getProducts().then(setProducts).catch(() => {});
     api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
