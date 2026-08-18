@@ -187,7 +187,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, receiptPhotoUrl, paymentProofUrl }) {
+  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, receiptPhotoUrl, paymentProofUrl }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(payableKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
@@ -211,6 +211,7 @@ export const api = {
         outthrow_pct: outthrowPct || 0,
         deduction_kg: deductionKg || 0,
         note: note || null,
+        car_plate: carPlate || null,
         receipt_photo_url: receiptPhotoUrl || null,
         payment_proof_url: paymentProofUrl || null,
       })
