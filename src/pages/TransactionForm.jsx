@@ -10,6 +10,19 @@ import { useAuth } from "../AuthContext.jsx";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
+const BANK_OPTIONS = [
+  "Cash",
+  "ABA Bank",
+  "ACLEDA Bank",
+  "Canadia Bank",
+  "Sathapana Bank",
+  "Wing Bank",
+  "KB Prasac Bank",
+  "FTB Bank",
+  "Phillip Bank",
+  "Chipmong Bank",
+];
+
 export default function TransactionForm({ type, setPage }) {
   const isBuy = type === "BUY";
   const { t } = useLanguage();
@@ -28,7 +41,9 @@ export default function TransactionForm({ type, setPage }) {
   const [partyPhone, setPartyPhone] = useState("");
   const [partyIdNumber, setPartyIdNumber] = useState("");
   const [bankName, setBankName] = useState("");
+  const [bankIsOther, setBankIsOther] = useState(false);
   const [bankAccount, setBankAccount] = useState("");
+  const [carPlate, setCarPlate] = useState("");
   const [company, setCompany] = useState("");
   const [destination, setDestination] = useState("dest_hq");
   const [qualityGrade, setQualityGrade] = useState("A");
@@ -64,12 +79,14 @@ export default function TransactionForm({ type, setPage }) {
         setPartyPhone(d.partyPhone || "");
         setPartyIdNumber(d.partyIdNumber || "");
         setBankName(d.bankName || "");
+        setBankIsOther(!!d.bankName && !BANK_OPTIONS.includes(d.bankName));
         setBankAccount(d.bankAccount || "");
         setCompany(d.company || "");
         setDestination(d.destination || "dest_hq");
         setQualityGrade(d.qualityGrade || "A");
         setGrossKg(d.grossKg || "");
         setTareKg(d.tareKg || "");
+        setCarPlate(d.carPlate || "");
         setPricePerKg(d.pricePerKg || "");
         setPriceOverridden(!!d.priceOverridden);
         setPaymentStatus(d.paymentStatus || (isBuy ? "pending" : "paid"));
@@ -83,7 +100,7 @@ export default function TransactionForm({ type, setPage }) {
   useEffect(() => {
     const draft = {
       productQuery, partyQuery, partyPhone, partyIdNumber, bankName, bankAccount,
-      company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus,
+      company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus, carPlate,
     };
     const hasContent = partyQuery || grossKg || tareKg || pricePerKg;
     const timeout = setTimeout(() => {
@@ -93,7 +110,7 @@ export default function TransactionForm({ type, setPage }) {
       } catch (e) {}
     }, 400);
     return () => clearTimeout(timeout);
-  }, [productQuery, partyQuery, partyPhone, partyIdNumber, bankName, bankAccount, company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus]);
+  }, [productQuery, partyQuery, partyPhone, partyIdNumber, bankName, bankAccount, company, destination, qualityGrade, grossKg, tareKg, pricePerKg, priceOverridden, paymentStatus, carPlate]);
 
   function clearDraft() {
     try { localStorage.removeItem(draftKey); } catch (e) {}
@@ -144,6 +161,7 @@ export default function TransactionForm({ type, setPage }) {
     setPartyPhone(p.phone || "");
     setPartyIdNumber(p.id_number || "");
     setBankName(p.bank_name || "");
+    setBankIsOther(!!p.bank_name && !BANK_OPTIONS.includes(p.bank_name));
     setBankAccount(p.bank_account || "");
     setCompany(p.company || "");
     setDestination(p.destination || "dest_hq");
@@ -196,6 +214,7 @@ export default function TransactionForm({ type, setPage }) {
         moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
         note: note.trim() || null,
+        carPlate: carPlate.trim() || null,
         receiptPhotoUrl, paymentProofUrl,
       });
 
@@ -282,7 +301,29 @@ export default function TransactionForm({ type, setPage }) {
 
                 {isBuy ? (
                   <>
-                    <div><label className="mb-1 block text-xs text-slate-500">{t("bank_name")}</label><input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="ABA / ACLEDA / ..." className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                    <div>
+                      <label className="mb-1 block text-xs text-slate-500">{t("bank_name")}</label>
+                      <select
+                        value={bankIsOther ? "__other__" : bankName}
+                        onChange={(e) => {
+                          if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
+                          else { setBankIsOther(false); setBankName(e.target.value); }
+                        }}
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                      >
+                        <option value="" disabled>Select payment method / bank</option>
+                        {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                        <option value="__other__">Other...</option>
+                      </select>
+                      {bankIsOther && (
+                        <input
+                          value={bankName}
+                          onChange={(e) => setBankName(e.target.value)}
+                          placeholder="Type bank name"
+                          className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+                        />
+                      )}
+                    </div>
                     <div><label className="mb-1 block text-xs text-slate-500">{t("bank_account")}</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
                   </>
                 ) : (
@@ -322,6 +363,11 @@ export default function TransactionForm({ type, setPage }) {
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="mb-1 block text-xs text-slate-500">{t("gross_weight")}</label><input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
                 <div><label className="mb-1 block text-xs text-slate-500">{t("tare_weight")}</label><input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                <div className="col-span-2">
+                  <label className="mb-1 block text-xs text-slate-500">{t("car_plate_number")}</label>
+                  <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                </div>
               </div>
               <div className="mt-4 rounded-lg bg-brand-50 p-4 text-center">
                 <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
