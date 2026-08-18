@@ -5,6 +5,27 @@ function genCode(type) {
   return type === "BUY" ? `RCP-${n}-A` : `INV-${n}-B`;
 }
 
+// The database server's clock defaults to UTC, not Cambodia time — so we
+// stamp every transaction with Cambodia's actual wall-clock date/time here
+// instead of relying on a DB-side default, regardless of what timezone the
+// user's own device happens to be set to.
+function cambodiaNow() {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Phnom_Penh",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(new Date())
+    .forEach((p) => { parts[p.type] = p.value; });
+  const hour = parts.hour === "24" ? "00" : parts.hour; // midnight edge case in some Intl implementations
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${hour}:${parts.minute}:${parts.second}`,
+  };
+}
+
 export const api = {
   async getLocations() {
     const { data, error } = await supabase.from("locations").select("*").order("name");
@@ -201,11 +222,14 @@ export const api = {
   async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, receiptPhotoUrl, paymentProofUrl }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(payableKg * pricePerKg * 100) / 100;
+    const { date: txDate, time: txTime } = cambodiaNow();
     const { data, error } = await supabase
       .from("transactions")
       .insert({
         code: genCode(type),
         type,
+        tx_date: txDate,
+        tx_time: txTime,
         location_id: locationId,
         party_id: partyId,
         product_id: productId,
