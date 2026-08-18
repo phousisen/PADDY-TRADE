@@ -665,6 +665,37 @@ export default function Transactions({ setPage }) {
   async function submitEdit(fields) {
     const { oldData, ...updateFields } = fields;
     const updated = await api.updateTransaction(editTx.id, updateFields);
+    // Setting Payment Status to "Paid" here only changes that label — it
+    // doesn't by itself move any real money. If there's no payment on file
+    // that actually covers the balance, record one now for the remainder,
+    // the same way a Buy/Sell marked "paid" at creation already does. This
+    // keeps Cash Flow and every report that reads real payments (Purchases
+    // by Item, Accounts Payable/Receivable, the Balance Sheet) in sync with
+    // what this Payment Status dropdown says, instead of the two drifting
+    // apart.
+    if (updated.payment_status === "paid") {
+      const payType = editTx.type === "BUY" ? "pay_supplier" : "receive_customer";
+      const alreadyPaid = payments
+        .filter((p) => p.transaction_id === editTx.id && p.type === payType)
+        .reduce((s, p) => s + Number(p.amount), 0);
+      const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
+      if (stillOwed > 0.01) {
+        try {
+          await api.createPayment({
+            type: payType,
+            transactionId: editTx.id,
+            locationId: editTx.location_id,
+            amount: stillOwed,
+            method: "cash",
+            payDate: cambodiaDateStr(),
+            memo: "Marked paid via Edit Transaction",
+            userId: session.user.id,
+          });
+        } catch (payErr) {
+          console.error("Auto-payment record failed", payErr);
+        }
+      }
+    }
     await api.logAudit({
       action: "edit_transaction",
       tableName: "transactions",

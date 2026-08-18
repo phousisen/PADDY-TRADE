@@ -4,19 +4,46 @@ import { api } from "../api.js";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 
+// The `payment_status` field stored on a transaction is only what it was
+// set to at creation/edit time — it does NOT update itself when someone
+// later records a payment against that transaction (see Transactions.jsx
+// "Record Payment"). Relying on it caused paid transactions to keep
+// showing as unpaid everywhere except the Transactions list, which computes
+// paid/remaining live from the real payments ledger instead. This does the
+// same thing, so every report agrees with the Transactions list and with
+// each other. Returns a map of transaction id -> { paid, remaining }.
+export function paidStatusMap(txs, payments) {
+  const txIds = new Set(txs.map((t) => t.id));
+  const map = {};
+  payments.forEach((p) => {
+    if (!p.transaction_id || !txIds.has(p.transaction_id)) return;
+    map[p.transaction_id] = (map[p.transaction_id] || 0) + Number(p.amount);
+  });
+  const result = {};
+  txs.forEach((t) => {
+    const total = Number(t.total_with_tax ?? t.amount);
+    const paid = Math.min(total, map[t.id] || 0);
+    result[t.id] = { paid, remaining: Math.max(0, total - paid) };
+  });
+  return result;
+}
+
 // capitalEntries/loanEntries are the full, unfiltered lists — this filters
 // them down to whatever locations are represented in `stations` itself, the
-// same way inventory value is scoped to those stations' stock.
-export function computeFinancials(txs, stations, capitalEntries = [], loanEntries = []) {
+// same way inventory value is scoped to those stations' stock. `payments`
+// is likewise the full, unfiltered payments list — see paidStatusMap above.
+export function computeFinancials(txs, stations, capitalEntries = [], loanEntries = [], payments = []) {
   const buys = txs.filter((x) => x.type === "BUY");
   const sells = txs.filter((x) => x.type === "SELL");
   const totalBuy = buys.reduce((s, x) => s + Number(x.amount), 0);
   const totalSell = sells.reduce((s, x) => s + Number(x.amount), 0);
   const grossProfit = totalSell - totalBuy;
-  const accountsPayable = buys.filter((x) => x.payment_status === "pending").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
-  const accountsReceivable = sells.filter((x) => x.payment_status && x.payment_status !== "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
-  const paidBuy = buys.filter((x) => x.payment_status === "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
-  const paidSell = sells.filter((x) => !x.payment_status || x.payment_status === "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
+
+  const paidMap = paidStatusMap(txs, payments);
+  const accountsPayable = buys.reduce((s, x) => s + (paidMap[x.id]?.remaining || 0), 0);
+  const accountsReceivable = sells.reduce((s, x) => s + (paidMap[x.id]?.remaining || 0), 0);
+  const paidBuy = buys.reduce((s, x) => s + (paidMap[x.id]?.paid || 0), 0);
+  const paidSell = sells.reduce((s, x) => s + (paidMap[x.id]?.paid || 0), 0);
 
   const stationIds = new Set(stations.map((s) => s.id));
   const bankLoansOutstanding = loanEntries
@@ -58,9 +85,11 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   const [stations, setStations] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
   const [loanEntries, setLoanEntries] = useState([]);
+  const [payments, setPayments] = useState([]);
 
   useEffect(() => {
     Promise.all([api.getTransactions(), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
+    api.getPayments().then(setPayments).catch(() => setPayments([]));
     // Admin-only tables — a non-admin viewer (shouldn't normally reach this
     // page, but just in case) simply sees zero partner capital/bank loans
     // rather than an error.
@@ -76,17 +105,17 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   const filteredTxs = selectedLocationIds.length ? activeTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : activeTxs;
 
   const calc = useMemo(
-    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries),
-    [filteredTxs, filteredStations, capitalEntries, loanEntries]
+    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries, payments),
+    [filteredTxs, filteredStations, capitalEntries, loanEntries, payments]
   );
 
   const byLocation = useMemo(() => {
     return filteredStations.map((s) => {
       const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries);
+      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments);
       return { station: s, ...c };
     });
-  }, [activeTxs, filteredStations, capitalEntries, loanEntries]);
+  }, [activeTxs, filteredStations, capitalEntries, loanEntries, payments]);
 
   const Row = ({ label, value, bold, indent, onClick }) => (
     <div

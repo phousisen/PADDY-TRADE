@@ -20,9 +20,11 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
   const [stations, setStations] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
   const [loanEntries, setLoanEntries] = useState([]);
+  const [payments, setPayments] = useState([]);
 
   useEffect(() => {
     Promise.all([api.getTransactions(), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
+    api.getPayments().then(setPayments).catch(() => setPayments([]));
     api.getPartnerCapitalEntries().then(setCapitalEntries).catch(() => setCapitalEntries([]));
     api.getBankLoans().then(setLoanEntries).catch(() => setLoanEntries([]));
   }, []);
@@ -35,17 +37,17 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
   const filteredTxs = selectedLocationIds.length ? activeTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : activeTxs;
 
   const calc = useMemo(
-    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries),
-    [filteredTxs, filteredStations, capitalEntries, loanEntries]
+    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries, payments),
+    [filteredTxs, filteredStations, capitalEntries, loanEntries, payments]
   );
 
   const byLocation = useMemo(() => {
     return filteredStations.map((s) => {
       const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries);
+      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments);
       return { station: s, ...c };
     });
-  }, [activeTxs, filteredStations, capitalEntries, loanEntries]);
+  }, [activeTxs, filteredStations, capitalEntries, loanEntries, payments]);
 
   const rangeLabel = !startDate && !endDate ? "All time" : `${startDate || "…"} to ${endDate || "…"}`;
   const balances = Math.abs(calc.totalAssets - (calc.totalLiabilities + calc.equity)) < 1;

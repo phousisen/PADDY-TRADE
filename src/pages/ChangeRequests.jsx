@@ -8,6 +8,14 @@ import { supabase } from "../supabaseClient.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+// Cambodia's current calendar date (YYYY-MM-DD), independent of the
+// viewing device's own timezone/clock setting.
+function cambodiaDateStr(d = new Date()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 function DiffRow({ label, current, proposed }) {
   const changed = String(current ?? "") !== String(proposed ?? "");
@@ -128,6 +136,32 @@ export default function ChangeRequests() {
       driverName: p.driverName,
       partyId: p.partyId,
     });
+    // Same reasoning as the direct Edit Transaction flow: approving a
+    // request that sets Payment Status to "Paid" should also make sure
+    // real money is on file for it, so Cash Flow and every payments-based
+    // report actually reflect it instead of just this one label.
+    if (updated.payment_status === "paid") {
+      try {
+        const payType = tx.type === "BUY" ? "pay_supplier" : "receive_customer";
+        const existing = await api.getPaymentsForTransaction(tx.id);
+        const alreadyPaid = existing.filter((pm) => pm.type === payType).reduce((s, pm) => s + Number(pm.amount), 0);
+        const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
+        if (stillOwed > 0.01) {
+          await api.createPayment({
+            type: payType,
+            transactionId: tx.id,
+            locationId: updated.location_id,
+            amount: stillOwed,
+            method: "cash",
+            payDate: cambodiaDateStr(),
+            memo: "Marked paid via approved change request",
+            userId: session.user.id,
+          });
+        }
+      } catch (payErr) {
+        console.error("Auto-payment record failed", payErr);
+      }
+    }
     await api.logAudit({
       action: "edit_transaction",
       tableName: "transactions",

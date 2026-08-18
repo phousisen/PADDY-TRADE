@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Printer, Layers } from "lucide-react";
 import { api } from "../api.js";
+import { paidStatusMap } from "./ReportOverview.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -35,6 +36,13 @@ export default function ReportPurchasesByItem({ selectedLocationIds = [], startD
     .filter((r) => !startDate || r.tx_date >= startDate)
     .filter((r) => !endDate || r.tx_date <= endDate);
 
+  // Paid/remaining is computed live from the real payments ledger (see
+  // paidStatusMap), not from the transaction's own payment_status field —
+  // that field doesn't update itself when a payment is recorded later via
+  // "Record Payment", so it can silently drift from reality. This keeps
+  // this report in sync with the Transactions list at all times.
+  const paidMap = useMemo(() => paidStatusMap(rows, payments), [rows, payments]);
+
   const groups = useMemo(() => {
     const map = {};
     rows.forEach((r) => {
@@ -46,15 +54,18 @@ export default function ReportPurchasesByItem({ selectedLocationIds = [], startD
       // Paid rows first, then unpaid — same ordering as the old system's
       // "Sort By Paid" — then by date within each.
       const sorted = map[name].slice().sort((a, b) => {
-        const pa = a.payment_status === "paid" ? 0 : 1;
-        const pb = b.payment_status === "paid" ? 0 : 1;
+        const pa = (paidMap[a.id]?.remaining || 0) <= 0.01 ? 0 : 1;
+        const pb = (paidMap[b.id]?.remaining || 0) <= 0.01 ? 0 : 1;
         if (pa !== pb) return pa - pb;
         return a.tx_date < b.tx_date ? -1 : a.tx_date > b.tx_date ? 1 : a.code < b.code ? -1 : 1;
       });
       let bal = 0;
       const withBalance = sorted.map((r) => {
         bal += Number(r.amount);
-        return { ...r, runningBalance: bal, paidDate: paidDateByTx[r.id] || null };
+        const remaining = paidMap[r.id]?.remaining || 0;
+        const paidSoFar = paidMap[r.id]?.paid || 0;
+        const status = remaining <= 0.01 ? "paid" : paidSoFar > 0 ? "partial" : "unpaid";
+        return { ...r, runningBalance: bal, paidDate: paidDateByTx[r.id] || null, payStatus: status, remaining, paidSoFar };
       });
       return {
         name,
@@ -63,7 +74,7 @@ export default function ReportPurchasesByItem({ selectedLocationIds = [], startD
         totalAmount: sorted.reduce((s, r) => s + Number(r.amount), 0),
       };
     });
-  }, [rows, paidDateByTx]);
+  }, [rows, paidDateByTx, paidMap]);
 
   const grandQty = groups.reduce((s, g) => s + g.totalQty, 0);
   const grandAmount = groups.reduce((s, g) => s + g.totalAmount, 0);
@@ -119,9 +130,10 @@ export default function ReportPurchasesByItem({ selectedLocationIds = [], startD
                   <td className="px-5 py-2.5 font-medium text-slate-700">{r.code}</td>
                   <td className="px-5 py-2.5 text-slate-500">{r.note || "—"}</td>
                   <td className="px-5 py-2.5 text-slate-600">{r.driver_name || r.partyName}</td>
-                  <td className={`px-5 py-2.5 font-medium ${r.payment_status === "paid" ? "text-emerald-600" : "text-amber-600"}`}>
-                    {r.payment_status === "paid" ? "Paid" : "Unpaid"}
-                    {r.payment_status === "paid" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
+                  <td className={`px-5 py-2.5 font-medium ${r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
+                    {r.payStatus === "paid" ? "Paid" : r.payStatus === "partial" ? "Partial" : "Unpaid"}
+                    {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} paid</div>}
+                    {r.payStatus !== "unpaid" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
                   </td>
                   <td className="px-5 py-2.5 text-slate-700">{fmt2(r.quantity_kg)}</td>
                   <td className="px-5 py-2.5 text-slate-700">{fmtRiel(r.price_per_kg)}</td>
