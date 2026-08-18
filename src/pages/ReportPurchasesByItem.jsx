@@ -11,10 +11,23 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 // was built from.
 export default function ReportPurchasesByItem({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allRows, setAllRows] = useState([]);
+  const [payments, setPayments] = useState([]);
 
   useEffect(() => {
     api.getTransactions({ type: "BUY" }).then(setAllRows);
+    api.getPayments({ type: "pay_supplier" }).then(setPayments).catch(() => setPayments([]));
   }, []);
+
+  // A transaction can have more than one payment logged against it (partial
+  // payments) — use the most recent pay_date as "the date it was paid".
+  const paidDateByTx = useMemo(() => {
+    const map = {};
+    payments.forEach((p) => {
+      if (!p.transaction_id) return;
+      if (!map[p.transaction_id] || p.pay_date > map[p.transaction_id]) map[p.transaction_id] = p.pay_date;
+    });
+    return map;
+  }, [payments]);
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")
@@ -41,7 +54,7 @@ export default function ReportPurchasesByItem({ selectedLocationIds = [], startD
       let bal = 0;
       const withBalance = sorted.map((r) => {
         bal += Number(r.amount);
-        return { ...r, runningBalance: bal };
+        return { ...r, runningBalance: bal, paidDate: paidDateByTx[r.id] || null };
       });
       return {
         name,
@@ -50,7 +63,7 @@ export default function ReportPurchasesByItem({ selectedLocationIds = [], startD
         totalAmount: sorted.reduce((s, r) => s + Number(r.amount), 0),
       };
     });
-  }, [rows]);
+  }, [rows, paidDateByTx]);
 
   const grandQty = groups.reduce((s, g) => s + g.totalQty, 0);
   const grandAmount = groups.reduce((s, g) => s + g.totalAmount, 0);
@@ -108,6 +121,7 @@ export default function ReportPurchasesByItem({ selectedLocationIds = [], startD
                   <td className="px-5 py-2.5 text-slate-600">{r.driver_name || r.partyName}</td>
                   <td className={`px-5 py-2.5 font-medium ${r.payment_status === "paid" ? "text-emerald-600" : "text-amber-600"}`}>
                     {r.payment_status === "paid" ? "Paid" : "Unpaid"}
+                    {r.payment_status === "paid" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
                   </td>
                   <td className="px-5 py-2.5 text-slate-700">{fmt2(r.quantity_kg)}</td>
                   <td className="px-5 py-2.5 text-slate-700">{fmtRiel(r.price_per_kg)}</td>
