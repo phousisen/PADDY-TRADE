@@ -224,20 +224,29 @@ export const api = {
   async getChangeRequests() {
     const { data, error } = await supabase
       .from("change_requests")
-      .select("*, transactions(code), profiles!change_requests_requested_by_fkey(full_name)")
+      .select(
+        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, amount, party_id, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
+      )
       .order("created_at", { ascending: false });
     if (error) throw error;
     return data.map((r) => ({
       ...r,
       transactionCode: r.transactions?.code || "—",
       requestedByName: r.profiles?.full_name || "—",
+      currentPartyName: r.transactions?.parties?.name || "—",
     }));
   },
 
-  async createChangeRequest({ transactionId, requestedBy, locationId, reason }) {
+  async createChangeRequest({ transactionId, requestedBy, locationId, reason, proposedData }) {
     const { data, error } = await supabase
       .from("change_requests")
-      .insert({ transaction_id: transactionId, requested_by: requestedBy, location_id: locationId, reason })
+      .insert({
+        transaction_id: transactionId,
+        requested_by: requestedBy,
+        location_id: locationId,
+        reason,
+        proposed_data: proposedData || null,
+      })
       .select()
       .single();
     if (error) throw error;
@@ -256,7 +265,7 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, partyId }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(payableKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
@@ -265,6 +274,12 @@ export const api = {
         quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: qualityGrade || null,
         tax_applicable: !!taxApplicable, tax_rate: taxApplicable ? (taxRate || 0) : 0,
         ...(deductionKg !== undefined ? { deduction_kg: deductionKg || 0 } : {}),
+        ...(moisturePct !== undefined ? { moisture_pct: moisturePct || 0 } : {}),
+        ...(mixturePct !== undefined ? { mixture_pct: mixturePct || 0 } : {}),
+        ...(outthrowPct !== undefined ? { outthrow_pct: outthrowPct || 0 } : {}),
+        ...(note !== undefined ? { note: note || null } : {}),
+        ...(carPlate !== undefined ? { car_plate: carPlate || null } : {}),
+        ...(partyId !== undefined && partyId ? { party_id: partyId } : {}),
       })
       .eq("id", id)
       .select()
