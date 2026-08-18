@@ -66,17 +66,25 @@ function sheet(rows) {
   return ws;
 }
 
-export function buildReportWorkbook({ txs, payments, stations, selectedLocationIds = [], startDate = null, endDate = null }) {
+export function buildReportWorkbook({ txs, payments, stations, capitalEntries = [], loanEntries = [], selectedLocationIds = [], startDate = null, endDate = null }) {
   const wb = XLSX.utils.book_new();
   const rangeLabel = `Date range: ${startDate || "All time"} to ${endDate || "All time"}`;
   const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
   const activeTxs = activeFilter(txs, selectedLocationIds, startDate, endDate);
+  const capRows = capitalEntries
+    .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
+    .filter((e) => !startDate || e.entry_date >= startDate)
+    .filter((e) => !endDate || e.entry_date <= endDate);
+  const loanRows = loanEntries
+    .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
+    .filter((e) => !startDate || e.entry_date >= startDate)
+    .filter((e) => !endDate || e.entry_date <= endDate);
 
   // ---------------- Overview (P&L + Balance Sheet + By Location) ----------------
-  const calc = computeFinancials(activeTxs, filteredStations);
+  const calc = computeFinancials(activeTxs, filteredStations, capitalEntries, loanEntries);
   const byLocation = filteredStations.map((s) => {
     const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-    return { station: s, ...computeFinancials(stationTxs, [s]) };
+    return { station: s, ...computeFinancials(stationTxs, [s], capitalEntries, loanEntries) };
   });
   XLSX.utils.book_append_sheet(wb, sheet([
     ["PaddyTrade — Financial Overview"],
@@ -95,13 +103,17 @@ export function buildReportWorkbook({ txs, payments, stations, selectedLocationI
     [],
     ["Balance Sheet — Liabilities", "Amount (៛)"],
     ["Accounts Payable", round2(calc.accountsPayable)],
+    ["Bank Loans Outstanding", round2(calc.bankLoansOutstanding)],
     ["Total Liabilities", round2(calc.totalLiabilities)],
     [],
+    ["Balance Sheet — Equity", "Amount (៛)"],
+    ["Partner Capital", round2(calc.partnerCapital)],
+    ["Retained Earnings", round2(calc.retainedEarnings)],
     ["Equity (net worth)", round2(calc.equity)],
     [],
     ["By Location"],
-    ["Location", "Sales", "Purchases", "Profit", "Inventory", "Payable"],
-    ...byLocation.map((r) => [r.station.name, round2(r.totalSell), round2(r.totalBuy), round2(r.grossProfit), round2(r.inventoryValue), round2(r.accountsPayable)]),
+    ["Location", "Sales", "Purchases", "Profit", "Inventory", "Payable", "Bank Loans", "Partner Capital", "Equity"],
+    ...byLocation.map((r) => [r.station.name, round2(r.totalSell), round2(r.totalBuy), round2(r.grossProfit), round2(r.inventoryValue), round2(r.accountsPayable), round2(r.bankLoansOutstanding), round2(r.partnerCapital), round2(r.equity)]),
   ]), "Overview");
 
   // ---------------- Purchases ----------------
@@ -204,6 +216,42 @@ export function buildReportWorkbook({ txs, payments, stations, selectedLocationI
     ["Date", "Type", "Note", "Recorded by", "Amount (៛)", "Balance (៛)"],
     ...ledger.map((p) => [p.pay_date, TYPE_LABELS[p.type] || p.type, p.memo || "", p.createdByName, round2(p.signedAmount), round2(p.balance)]),
   ]), "Cash Flow");
+
+  // ---------------- Capital & Loans ----------------
+  const capByPartner = {};
+  capRows.forEach((e) => {
+    const k = e.partner_id;
+    if (!capByPartner[k]) capByPartner[k] = { name: e.partnerName, location: e.stationName, contributed: 0, withdrawn: 0 };
+    if (e.type === "contribution") capByPartner[k].contributed += Number(e.amount);
+    else capByPartner[k].withdrawn += Number(e.amount);
+  });
+  const loansByLender = {};
+  loanRows.forEach((e) => {
+    const k = `${e.lender_name}__${e.location_id}`;
+    if (!loansByLender[k]) loansByLender[k] = { name: e.lender_name, location: e.stationName, borrowed: 0, repaid: 0 };
+    if (e.type === "borrow") loansByLender[k].borrowed += Number(e.amount);
+    else loansByLender[k].repaid += Number(e.amount);
+  });
+  XLSX.utils.book_append_sheet(wb, sheet([
+    ["Capital & Loans"],
+    [rangeLabel],
+    [],
+    ["Partner Capital — by Partner"],
+    ["Partner", "Location", "Contributed (៛)", "Withdrawn (៛)", "Net Capital (៛)"],
+    ...Object.values(capByPartner).map((r) => [r.name, r.location, round2(r.contributed), round2(r.withdrawn), round2(r.contributed - r.withdrawn)]),
+    [],
+    ["Partner Capital — Entry Detail"],
+    ["Date", "Partner", "Location", "Type", "Amount (៛)", "Note"],
+    ...capRows.map((e) => [e.entry_date, e.partnerName, e.stationName, e.type, round2(e.amount), e.note || ""]),
+    [],
+    ["Bank Loans — by Lender"],
+    ["Lender", "Location", "Borrowed (៛)", "Repaid (៛)", "Outstanding (៛)"],
+    ...Object.values(loansByLender).map((r) => [r.name, r.location, round2(r.borrowed), round2(r.repaid), round2(r.borrowed - r.repaid)]),
+    [],
+    ["Bank Loans — Entry Detail"],
+    ["Date", "Lender", "Location", "Type", "Amount (៛)", "Note"],
+    ...loanRows.map((e) => [e.entry_date, e.lender_name, e.stationName, e.type, round2(e.amount), e.note || ""]),
+  ]), "Capital & Loans");
 
   // ---------------- Tax ----------------
   const taxTxs = activeTxs.filter((t) => t.tax_applicable).slice().sort((a, b) => (a.tx_date < b.tx_date ? 1 : -1));

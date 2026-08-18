@@ -199,6 +199,69 @@ export const api = {
     return data;
   },
 
+  // Partners (investors) at a location, and the running ledger of their
+  // capital contributions/withdrawals. Admin-only (enforced by RLS) — see
+  // migration_partner_capital_bank_loans.sql.
+  async getPartners(locationId) {
+    let query = supabase.from("partners").select("*, locations(name)").order("name");
+    if (locationId) query = query.eq("location_id", locationId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data.map((p) => ({ ...p, locationName: p.locations?.name || "—" }));
+  },
+
+  async createPartner({ name, locationId, note, userId }) {
+    const { data, error } = await supabase
+      .from("partners")
+      .insert({ name, location_id: locationId, note: note || null, created_by: userId })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getPartnerCapitalEntries() {
+    const { data, error } = await supabase
+      .from("partner_capital_entries")
+      .select("*, partners(name), locations(name)")
+      .order("entry_date", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return data.map((e) => ({ ...e, partnerName: e.partners?.name || "—", stationName: e.locations?.name || "—" }));
+  },
+
+  async createPartnerCapitalEntry({ partnerId, locationId, type, amount, entryDate, note, userId }) {
+    const { data, error } = await supabase
+      .from("partner_capital_entries")
+      .insert({ partner_id: partnerId, location_id: locationId, type, amount, entry_date: entryDate, note: note || null, created_by: userId })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Bank loans (outside lenders) at a location — a flat borrow/repay
+  // ledger, the same style as the payments table. Admin-only.
+  async getBankLoans() {
+    const { data, error } = await supabase
+      .from("bank_loans")
+      .select("*, locations(name)")
+      .order("entry_date", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return data.map((e) => ({ ...e, stationName: e.locations?.name || "—" }));
+  },
+
+  async createBankLoanEntry({ locationId, lenderName, type, amount, entryDate, note, userId }) {
+    const { data, error } = await supabase
+      .from("bank_loans")
+      .insert({ location_id: locationId, lender_name: lenderName, type, amount, entry_date: entryDate, note: note || null, created_by: userId })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   async getParties({ type, q, phone } = {}) {
     let query = supabase.from("parties").select("*").order("name");
     if (type) query = query.eq("type", type);
