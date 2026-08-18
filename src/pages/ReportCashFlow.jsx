@@ -19,9 +19,23 @@ const TYPE_LABELS = {
   expense: "Expense",
   transfer: "Fund transfer",
   journal: "Journal entry",
+  capital_in: "Partner capital in",
+  capital_out: "Partner capital out",
+  loan_in: "Bank loan drawn",
+  loan_out: "Bank loan repaid",
 };
 
-const IS_INFLOW = { pay_supplier: false, receive_customer: true, expense: false, transfer: false, journal: null };
+const IS_INFLOW = {
+  pay_supplier: false,
+  receive_customer: true,
+  expense: false,
+  transfer: false,
+  journal: null,
+  capital_in: true,
+  capital_out: false,
+  loan_in: true,
+  loan_out: false,
+};
 
 function AddEntryForm({ profile, onAdd }) {
   const [open, setOpen] = useState(false);
@@ -97,15 +111,15 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
     const sorted = payments.slice().sort((a, b) => (a.pay_date + a.created_at < b.pay_date + b.created_at ? -1 : 1));
     let balance = 0;
     return sorted.map((p) => {
-      const isInflow = p.type === "receive_customer";
+      const isInflow = IS_INFLOW[p.type] ?? false;
       const signedAmount = isInflow ? Number(p.amount) : -Number(p.amount);
       balance += signedAmount;
       return { ...p, signedAmount, balance };
     }).reverse();
   }, [payments]);
 
-  const totalIn = payments.filter((p) => p.type === "receive_customer").reduce((s, p) => s + Number(p.amount), 0);
-  const totalOut = payments.filter((p) => p.type !== "receive_customer").reduce((s, p) => s + Number(p.amount), 0);
+  const totalIn = payments.filter((p) => IS_INFLOW[p.type] ?? false).reduce((s, p) => s + Number(p.amount), 0);
+  const totalOut = payments.filter((p) => !(IS_INFLOW[p.type] ?? false)).reduce((s, p) => s + Number(p.amount), 0);
 
   async function addEntry({ type, amount, memo }) {
     await api.createPayment({

@@ -17,12 +17,6 @@ export function computeFinancials(txs, stations, capitalEntries = [], loanEntrie
   const accountsReceivable = sells.filter((x) => x.payment_status && x.payment_status !== "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
   const paidBuy = buys.filter((x) => x.payment_status === "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
   const paidSell = sells.filter((x) => !x.payment_status || x.payment_status === "paid").reduce((s, x) => s + Number(x.total_with_tax ?? x.amount), 0);
-  const cashEstimate = paidSell - paidBuy;
-  const totalBuyKg = buys.reduce((s, x) => s + Number(x.quantity_kg), 0) || 1;
-  const avgCostPerKg = totalBuy / totalBuyKg;
-  const totalStockKg = stations.reduce((s, x) => s + Number(x.current_stock_kg), 0);
-  const inventoryValue = totalStockKg * avgCostPerKg;
-  const totalAssets = inventoryValue + accountsReceivable + Math.max(0, cashEstimate);
 
   const stationIds = new Set(stations.map((s) => s.id));
   const bankLoansOutstanding = loanEntries
@@ -31,6 +25,19 @@ export function computeFinancials(txs, stations, capitalEntries = [], loanEntrie
   const partnerCapital = capitalEntries
     .filter((e) => stationIds.has(e.location_id))
     .reduce((s, e) => s + (e.type === "contribution" ? Number(e.amount) : -Number(e.amount)), 0);
+
+  // Cash isn't just trade proceeds — real money also comes in/out through
+  // partner capital and bank loan draws/repayments, which are mirrored into
+  // the payments ledger (see api.js createPartnerCapitalEntry/
+  // createBankLoanEntry). Folding their net effect in here keeps Cash Flow,
+  // this Cash line, and the Capital & Loans totals all consistent with
+  // each other instead of Retained Earnings silently plugging the gap.
+  const cashEstimate = paidSell - paidBuy + partnerCapital + bankLoansOutstanding;
+  const totalBuyKg = buys.reduce((s, x) => s + Number(x.quantity_kg), 0) || 1;
+  const avgCostPerKg = totalBuy / totalBuyKg;
+  const totalStockKg = stations.reduce((s, x) => s + Number(x.current_stock_kg), 0);
+  const inventoryValue = totalStockKg * avgCostPerKg;
+  const totalAssets = inventoryValue + accountsReceivable + Math.max(0, cashEstimate);
 
   const totalLiabilities = accountsPayable + bankLoansOutstanding;
   const equity = totalAssets - totalLiabilities;

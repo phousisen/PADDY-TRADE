@@ -249,17 +249,29 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
   async function addPartner({ name, locationId }) {
     const created = await api.createPartner({ name, locationId, userId: session.user.id });
+    await api.logAudit({
+      action: "add_partner", tableName: "partners", recordId: created.id,
+      oldData: null, newData: { name, locationId }, userId: session.user.id,
+    });
     setPartners((prev) => [...prev, created]);
     return created;
   }
 
   async function addCapitalEntry(entry) {
-    await api.createPartnerCapitalEntry({ ...entry, userId: session.user.id });
+    const created = await api.createPartnerCapitalEntry({ ...entry, userId: session.user.id });
+    await api.logAudit({
+      action: "add_capital_entry", tableName: "partner_capital_entries", recordId: created?.id,
+      oldData: null, newData: entry, userId: session.user.id,
+    });
     load();
   }
 
   async function addLoanEntry(entry) {
-    await api.createBankLoanEntry({ ...entry, userId: session.user.id });
+    const created = await api.createBankLoanEntry({ ...entry, userId: session.user.id });
+    await api.logAudit({
+      action: "add_loan_entry", tableName: "bank_loans", recordId: created?.id,
+      oldData: null, newData: entry, userId: session.user.id,
+    });
     load();
   }
 
