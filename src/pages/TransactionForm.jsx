@@ -9,6 +9,15 @@ import { useAuth } from "../AuthContext.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+// Cambodia's current calendar date (YYYY-MM-DD), independent of the
+// viewing device's own timezone/clock setting — used as the default so the
+// date box starts on "today" for Cambodia, not wherever the browser is set.
+function cambodiaDateStr(d = new Date()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 const BANK_OPTIONS = [
   "Cash",
@@ -35,6 +44,9 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [parties, setParties] = useState([]);
   const [settings, setSettings] = useState({});
   const [stationId, setStationId] = useState("");
+  // Defaults to today, but staff can back-date it (e.g. entering a
+  // truckload that was actually weighed yesterday but only got logged now).
+  const [txDate, setTxDate] = useState(cambodiaDateStr());
   const [productQuery, setProductQuery] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const [selectedParty, setSelectedParty] = useState(null);
@@ -150,6 +162,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     const effectiveStationId = isAdmin ? stationId : profile?.location_id;
     if (!isAdmin && !effectiveStationId) { setError("Your account has no location assigned yet. Ask HQ to assign one to your login."); return; }
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
+    if (!txDate) { setError("Please pick a transaction date."); return; }
     if (!receiptPhotoUrl) { setError("A photo of the physical receipt is required."); return; }
     if (paymentProofRequired && !paymentProofUrl) { setError("A photo of the bank QR / payment proof is required when payment is marked as done."); return; }
     setSaving(true);
@@ -189,6 +202,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       const tx = await api.createTransaction({
         type, locationId: effectiveStationId, partyId: party.id, productId,
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
+        txDate,
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
         taxApplicable, taxRate: parseFloat(taxRate) || 0,
         moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
@@ -319,6 +333,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     </select>
                   </div>
                 )}
+
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
+                  <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  <p className="mt-1 text-[11px] text-slate-400">Defaults to today — change it if this load was actually weighed on a different day.</p>
+                </div>
               </div>
 
               {isBuy && bankName && bankName !== "Cash" && (
