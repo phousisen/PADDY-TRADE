@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Warehouse, Receipt, Users, ShoppingCart, MapPin, BarChart3,
-  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck,
+  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale,
 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -14,6 +14,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
 
   const mainNav = [
     { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
+    { id: "tickets", label: "Weighing Tickets", icon: Scale },
     { id: "transactions", label: t("nav_transactions"), icon: Receipt },
     ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
     { id: "suppliers", label: t("nav_suppliers"), icon: Users },
