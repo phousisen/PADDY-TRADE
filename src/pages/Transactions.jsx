@@ -274,6 +274,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
 function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
   const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg));
   const [paymentStatus, setPaymentStatus] = useState(tx.payment_status || "pending");
+  const [txDate, setTxDate] = useState(tx.tx_date || cambodiaDateStr());
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -296,7 +297,8 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
       pricePerKg: parseFloat(pricePerKg),
       paymentStatus,
       qualityGrade: tx.quality_grade,
-      oldData: { price_per_kg: tx.price_per_kg, amount: tx.amount, payment_status: tx.payment_status },
+      txDate,
+      oldData: { price_per_kg: tx.price_per_kg, amount: tx.amount, payment_status: tx.payment_status, tx_date: tx.tx_date },
     });
     setSaving(false);
   }
@@ -321,6 +323,10 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
           </div>
+
+          <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
+          <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
+            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
           <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
           <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
@@ -735,7 +741,7 @@ export default function Transactions({ setPage }) {
       tableName: "transactions",
       recordId: editTx.id,
       oldData,
-      newData: { price_per_kg: updated.price_per_kg, amount: updated.amount, payment_status: updated.payment_status },
+      newData: { price_per_kg: updated.price_per_kg, amount: updated.amount, payment_status: updated.payment_status, tx_date: updated.tx_date },
       userId: session.user.id,
     });
     setEditTx(null);
