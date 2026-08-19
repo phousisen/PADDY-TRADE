@@ -384,16 +384,19 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl }) {
+  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(payableKg * pricePerKg * 100) / 100;
-    const { date: txDate, time: txTime } = cambodiaNow();
+    // `txDate` lets staff back-date an entry (e.g. logging a truckload the
+    // next morning that was actually weighed the day before) — falls back
+    // to right now, in Cambodia's timezone, if nothing was picked.
+    const { date: defaultDate, time: txTime } = cambodiaNow();
     const { data, error } = await supabase
       .from("transactions")
       .insert({
         code: genCode(type),
         type,
-        tx_date: txDate,
+        tx_date: txDate || defaultDate,
         tx_time: txTime,
         location_id: locationId,
         party_id: partyId,
