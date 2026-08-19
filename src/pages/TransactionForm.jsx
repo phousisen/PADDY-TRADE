@@ -72,6 +72,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [mixturePct, setMixturePct] = useState("");
   const [outthrowPct, setOutthrowPct] = useState("");
   const [deductionKg, setDeductionKg] = useState("");
+  const [staffFee, setStaffFee] = useState("");
   const [note, setNote] = useState("");
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState(null);
   const [paymentProofUrl, setPaymentProofUrl] = useState(null);
@@ -120,8 +121,15 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
   const paymentProofRequired = paymentStatus === "paid" || paymentStatus === "deposit";
   const total = payableKg * (parseFloat(pricePerKg) || 0);
-  const taxAmount = taxApplicable ? Math.round(total * (parseFloat(taxRate) || 0)) / 100 : 0;
-  const totalWithTax = total + taxAmount;
+  // Staff/carrying fee — rare, only when our own staff carries the paddy
+  // for a farmer with no labor of their own — comes off the goods amount
+  // before VAT, the same way the weight deduction above comes off before
+  // pricing.
+  const staffFeeAmt = isBuy ? (parseFloat(staffFee) || 0) : 0;
+  const netSubtotal = Math.max(0, total - staffFeeAmt);
+  const taxAmount = taxApplicable ? Math.round(netSubtotal * (parseFloat(taxRate) || 0)) / 100 : 0;
+  const totalWithTax = netSubtotal + taxAmount;
+  const hasBreakdown = taxApplicable || staffFeeAmt > 0;
   const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
 
   function selectParty(p) {
@@ -207,6 +215,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         taxApplicable, taxRate: parseFloat(taxRate) || 0,
         moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
+        staffFee: staffFeeAmt,
         note: note.trim() || null,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
@@ -470,6 +479,15 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <p className="mt-1.5 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.</p>
               </div>
 
+              {isBuy && (
+                <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                  <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
+                  <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
+                    className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — this amount is charged to them and comes off what they're paid.</p>
+                </div>
+              )}
+
               <div className="mt-3">
                 <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. from Weighbridge Ticket WT0134"
@@ -497,15 +515,23 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
             <div className="sticky top-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-4 font-semibold text-slate-700">{t("summary")}</h3>
               <div className="mb-4 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-4 text-white">
-                <p className="text-xs text-brand-100/80">{taxApplicable ? "Subtotal" : t("total_amount")}</p>
+                <p className="text-xs text-brand-100/80">{hasBreakdown ? "Goods Amount" : t("total_amount")}</p>
                 <p className="mt-1 text-3xl font-bold">{fmtRiel(total)}</p>
                 <p className="mt-2 text-xs text-brand-100/70">{fmt2(payableKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
-                {taxApplicable && (
-                  <div className="mt-3 border-t border-white/20 pt-3">
-                    <div className="flex justify-between text-xs text-brand-100/80">
-                      <span>VAT ({taxRate || 0}%)</span>
-                      <span>{fmtRiel(taxAmount)}</span>
-                    </div>
+                {hasBreakdown && (
+                  <div className="mt-3 space-y-1 border-t border-white/20 pt-3">
+                    {staffFeeAmt > 0 && (
+                      <div className="flex justify-between text-xs text-brand-100/80">
+                        <span>Staff / Carrying Fee</span>
+                        <span>-{fmtRiel(staffFeeAmt)}</span>
+                      </div>
+                    )}
+                    {taxApplicable && (
+                      <div className="flex justify-between text-xs text-brand-100/80">
+                        <span>VAT ({taxRate || 0}%)</span>
+                        <span>{fmtRiel(taxAmount)}</span>
+                      </div>
+                    )}
                     <div className="mt-1 flex justify-between text-sm font-bold">
                       <span>{t("total_amount")}</span>
                       <span>{fmtRiel(totalWithTax)}</span>

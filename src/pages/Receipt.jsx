@@ -87,10 +87,20 @@ export default function Receipt({ tx, onDone }) {
           </div>
           {tx.note && <p className="mb-3 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500">{tx.note}</p>}
 
-          {tx.tax_applicable && (
+          {(tx.tax_applicable || tx.staff_fee > 0) && (
             <div className="mb-3 space-y-1 border-t border-dashed border-slate-200 pt-2 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="text-slate-700">{fmtRiel(tx.amount)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">VAT ({tx.tax_rate}%)</span><span className="text-slate-700">{fmtRiel(tx.tax_amount)}</span></div>
+              {isBuy && tx.staff_fee > 0 && (
+                <>
+                  <div className="flex justify-between"><span className="text-slate-500">Goods Amount</span><span className="text-slate-700">{fmtRiel(Number(tx.amount) + Number(tx.staff_fee))}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">Staff / Carrying Fee</span><span className="text-rose-600">-{fmtRiel(tx.staff_fee)}</span></div>
+                </>
+              )}
+              {tx.tax_applicable && (
+                <>
+                  <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="text-slate-700">{fmtRiel(tx.amount)}</span></div>
+                  <div className="flex justify-between"><span className="text-slate-500">VAT ({tx.tax_rate}%)</span><span className="text-slate-700">{fmtRiel(tx.tax_amount)}</span></div>
+                </>
+              )}
             </div>
           )}
 

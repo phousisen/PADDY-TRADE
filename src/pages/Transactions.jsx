@@ -56,6 +56,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [mixturePct, setMixturePct] = useState(String(tx.mixture_pct ?? ""));
   const [outthrowPct, setOutthrowPct] = useState(String(tx.outthrow_pct ?? ""));
   const [deductionKg, setDeductionKg] = useState(String(tx.deduction_kg ?? ""));
+  const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
   const [note, setNote] = useState(tx.note || "");
@@ -63,7 +64,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const newAmount = Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0);
+  const newAmount = Math.max(0, Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
   const canSubmit = reason.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0 && partyQuery.trim() && !saving;
 
   async function submit() {
@@ -84,6 +85,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
         mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0,
         deductionKg: parseFloat(deductionKg) || 0,
+        staffFee: isBuy ? (parseFloat(staffFee) || 0) : 0,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
         note: note.trim() || null,
@@ -170,6 +172,15 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
             <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
           </div>
         </div>
+
+        {isBuy && (
+          <div className="mt-3 rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
+            <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
+              className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.</p>
+          </div>
+        )}
 
         <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
           <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -289,6 +300,7 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
   const [mixturePct, setMixturePct] = useState(String(tx.mixture_pct ?? ""));
   const [outthrowPct, setOutthrowPct] = useState(String(tx.outthrow_pct ?? ""));
   const [deductionKg, setDeductionKg] = useState(String(tx.deduction_kg ?? ""));
+  const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
   const [note, setNote] = useState(tx.note || "");
@@ -297,7 +309,7 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const newAmount = Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0);
+  const newAmount = Math.max(0, Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
   const canSubmit = !saving && password && partyQuery.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0;
 
   async function submit(e) {
@@ -324,6 +336,7 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
         mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0,
         deductionKg: parseFloat(deductionKg) || 0,
+        staffFee: isBuy ? (parseFloat(staffFee) || 0) : 0,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
         note: note.trim() || null,
@@ -332,7 +345,7 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
           party_id: tx.party_id, partyName: tx.partyName, quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
           amount: tx.amount, payment_status: tx.payment_status, quality_grade: tx.quality_grade, tax_applicable: tx.tax_applicable,
           tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
-          deduction_kg: tx.deduction_kg, car_plate: tx.car_plate, driver_name: tx.driver_name, note: tx.note, tx_date: tx.tx_date,
+          deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name, note: tx.note, tx_date: tx.tx_date,
         },
       });
     } catch (err) {
@@ -409,6 +422,15 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
               <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
             </div>
           </div>
+
+          {isBuy && (
+            <div className="mt-3 rounded-lg border border-slate-200 p-3">
+              <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
+              <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
+                className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.</p>
+            </div>
+          )}
 
           <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
             <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -846,7 +868,7 @@ export default function Transactions({ setPage }) {
         party_id: updated.party_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
         payment_status: updated.payment_status, quality_grade: updated.quality_grade, tax_applicable: updated.tax_applicable,
         tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,
-        deduction_kg: updated.deduction_kg, car_plate: updated.car_plate, driver_name: updated.driver_name, note: updated.note, tx_date: updated.tx_date,
+        deduction_kg: updated.deduction_kg, staff_fee: updated.staff_fee, car_plate: updated.car_plate, driver_name: updated.driver_name, note: updated.note, tx_date: updated.tx_date,
       },
       userId: session.user.id,
     });

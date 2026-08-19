@@ -37,7 +37,9 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
   const [saving, setSaving] = useState(false);
 
   const currentAmount = tx.amount;
-  const proposedAmount = p ? Math.max(0, (p.quantityKg || 0) - (p.deductionKg || 0)) * (p.pricePerKg || 0) : null;
+  const proposedAmount = p
+    ? Math.max(0, Math.max(0, (p.quantityKg || 0) - (p.deductionKg || 0)) * (p.pricePerKg || 0) - (isBuy ? (p.staffFee || 0) : 0))
+    : null;
 
   async function approve() {
     setError("");
@@ -81,6 +83,7 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
             <DiffRow label="Payment Status" current={tx.payment_status} proposed={p.paymentStatus} />
             <DiffRow label="VAT" current={tx.tax_applicable ? `${tx.tax_rate}%` : "No"} proposed={p.taxApplicable ? `${p.taxRate}%` : "No"} />
             <DiffRow label="Deduction (kg)" current={fmt2(tx.deduction_kg)} proposed={fmt2(p.deductionKg)} />
+            {isBuy && <DiffRow label="Staff / Carrying Fee" current={fmtRiel(tx.staff_fee || 0)} proposed={fmtRiel(p.staffFee || 0)} />}
             <DiffRow label="Moisture / Mixture / Outthrow %" current={`${tx.moisture_pct || 0} / ${tx.mixture_pct || 0} / ${tx.outthrow_pct || 0}`} proposed={`${p.moisturePct || 0} / ${p.mixturePct || 0} / ${p.outthrowPct || 0}`} />
             <DiffRow label="Car Plate" current={tx.car_plate || "—"} proposed={p.carPlate || "—"} />
             <DiffRow label="Truck / Driver Name" current={tx.driver_name || "—"} proposed={p.driverName || "—"} />
@@ -96,8 +99,8 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
 
         {p && (
           <div className="mt-4 border-t border-slate-200 pt-4">
-            <label className="mb-1 block text-xs text-slate-500">Enter your password to approve &amp; apply these changes to the transaction</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            <label className="mb-1 block text-xs text-slate-500">Enter your own login password to approve &amp; apply these changes to the transaction</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" name="approve-own-password-not-autofillable"
               className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             {error && <p className="mb-2 text-xs text-rose-500">{error}</p>}
             <button disabled={saving || !password} onClick={approve} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
@@ -131,6 +134,7 @@ export default function ChangeRequests() {
       taxApplicable: p.taxApplicable,
       taxRate: p.taxRate,
       deductionKg: p.deductionKg,
+      staffFee: p.staffFee,
       moisturePct: p.moisturePct,
       mixturePct: p.mixturePct,
       outthrowPct: p.outthrowPct,
