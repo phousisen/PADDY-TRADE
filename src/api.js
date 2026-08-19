@@ -10,6 +10,24 @@ function genTicketCode() {
   return `TKT-${n}`;
 }
 
+// Used when a row is created with a client-supplied id (offline queue —
+// see offlineQueue.js). Normally that's a plain insert. But if the same
+// save gets retried (e.g. it actually landed on the server, but the
+// confirmation never reached the device before it lost connection), a
+// second insert with the same id would fail with a duplicate-key error.
+// Rather than needing a separate "update" permission for that retry, we
+// just recognize that specific error and fetch the row that's already
+// there instead — the retry ends up a no-op, and nothing new is written.
+async function insertOrFetchExisting(table, row) {
+  const { data, error } = await supabase.from(table).insert(row).select().single();
+  if (!error) return data;
+  if (row.id && error.code === "23505") {
+    const { data: existing, error: fetchErr } = await supabase.from(table).select("*").eq("id", row.id).single();
+    if (!fetchErr && existing) return existing;
+  }
+  throw error;
+}
+
 // The database server's clock defaults to UTC, not Cambodia time — so we
 // stamp every transaction with Cambodia's actual wall-clock date/time here
 // instead of relying on a DB-side default, regardless of what timezone the
@@ -221,10 +239,13 @@ export const api = {
     return data;
   },
 
-  async createProduct(name) {
-    const { data, error } = await supabase.from("products").insert({ name }).select().single();
-    if (error) throw error;
-    return data;
+  // `id` is optional — passed by the offline queue when this product was
+  // already created locally (with a client-generated UUID) while offline,
+  // so re-sending it once the connection returns reuses the same id
+  // instead of making a duplicate.
+  async createProduct(name, id) {
+    const row = id ? { id, name } : { name };
+    return insertOrFetchExisting("products", row);
   },
 
   // Partners (investors) at a location, and the running ledger of their
@@ -337,25 +358,24 @@ export const api = {
     return data;
   },
 
-  async createParty({ name, type, phone, idNumber, bankName, bankAccount, bankQrUrl, company, destination, locationId }) {
-    const { data, error } = await supabase
-      .from("parties")
-      .insert({
-        name,
-        type,
-        phone,
-        id_number: idNumber,
-        bank_name: bankName,
-        bank_account: bankAccount,
-        bank_qr_url: bankQrUrl || null,
-        company,
-        destination,
-        location_id: locationId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+  // `id` is optional — used by the offline queue to replay a party that
+  // was already created locally with a client-generated UUID, so a
+  // retried sync op reuses that same id instead of making a duplicate.
+  async createParty({ id, name, type, phone, idNumber, bankName, bankAccount, bankQrUrl, company, destination, locationId }) {
+    const row = {
+      ...(id ? { id } : {}),
+      name,
+      type,
+      phone,
+      id_number: idNumber,
+      bank_name: bankName,
+      bank_account: bankAccount,
+      bank_qr_url: bankQrUrl || null,
+      company,
+      destination,
+      location_id: locationId,
+    };
+    return insertOrFetchExisting("parties", row);
   },
 
   async updateParty(id, { bankName, bankAccount, bankQrUrl }) {
@@ -405,7 +425,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee }) {
+  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -415,39 +435,38 @@ export const api = {
     // next morning that was actually weighed the day before) — falls back
     // to right now, in Cambodia's timezone, if nothing was picked.
     const { date: defaultDate, time: txTime } = cambodiaNow();
-    const { data, error } = await supabase
-      .from("transactions")
-      .insert({
-        code: genCode(type),
-        type,
-        tx_date: txDate || defaultDate,
-        tx_time: txTime,
-        location_id: locationId,
-        party_id: partyId,
-        product_id: productId,
-        quantity_kg: quantityKg,
-        price_per_kg: pricePerKg,
-        amount,
-        payment_status: paymentStatus,
-        created_by: userId,
-        quality_grade: qualityGrade || null,
-        tax_applicable: !!taxApplicable,
-        tax_rate: taxApplicable ? (taxRate || 0) : 0,
-        moisture_pct: moisturePct || 0,
-        mixture_pct: mixturePct || 0,
-        outthrow_pct: outthrowPct || 0,
-        deduction_kg: deductionKg || 0,
-        note: note || null,
-        car_plate: carPlate || null,
-        driver_name: driverName || null,
-        receipt_photo_url: receiptPhotoUrl || null,
-        payment_proof_url: paymentProofUrl || null,
-        staff_fee: staffFee || 0,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+    const row = {
+      ...(id ? { id } : {}),
+      code: code || genCode(type),
+      type,
+      tx_date: txDate || defaultDate,
+      tx_time: txTime,
+      location_id: locationId,
+      party_id: partyId,
+      product_id: productId,
+      quantity_kg: quantityKg,
+      price_per_kg: pricePerKg,
+      amount,
+      payment_status: paymentStatus,
+      created_by: userId,
+      quality_grade: qualityGrade || null,
+      tax_applicable: !!taxApplicable,
+      tax_rate: taxApplicable ? (taxRate || 0) : 0,
+      moisture_pct: moisturePct || 0,
+      mixture_pct: mixturePct || 0,
+      outthrow_pct: outthrowPct || 0,
+      deduction_kg: deductionKg || 0,
+      note: note || null,
+      car_plate: carPlate || null,
+      driver_name: driverName || null,
+      receipt_photo_url: receiptPhotoUrl || null,
+      payment_proof_url: paymentProofUrl || null,
+      staff_fee: staffFee || 0,
+    };
+    // `id` is optional — passed by finalizeTicket when a weighing ticket
+    // is finalized offline, so a retried sync reuses the same id instead
+    // of creating a second transaction.
+    return insertOrFetchExisting("transactions", row);
   },
 
   // Weighing Tickets — the digital version of the paper ticket that
@@ -477,29 +496,28 @@ export const api = {
     }));
   },
 
-  async createTicket({ type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId }) {
-    const { data, error } = await supabase
-      .from("weighing_tickets")
-      .insert({
-        code: genTicketCode(),
-        type,
-        location_id: locationId,
-        party_id: partyId || null,
-        party_name: partyName,
-        phone: phone || null,
-        bank_name: bankName || null,
-        bank_account: bankAccount || null,
-        car_plate: carPlate || null,
-        driver_name: driverName || null,
-        product_id: productId || null,
-        product_name: productName,
-        stage: "arrived",
-        created_by: userId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+  // `id` is optional — passed by the offline queue when a ticket was
+  // already opened locally (client-generated UUID) while offline, so a
+  // retried sync reuses that same id instead of opening a second ticket.
+  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId }) {
+    const row = {
+      ...(id ? { id } : {}),
+      code: code || genTicketCode(),
+      type,
+      location_id: locationId,
+      party_id: partyId || null,
+      party_name: partyName,
+      phone: phone || null,
+      bank_name: bankName || null,
+      bank_account: bankAccount || null,
+      car_plate: carPlate || null,
+      driver_name: driverName || null,
+      product_id: productId || null,
+      product_name: productName,
+      stage: "arrived",
+      created_by: userId,
+    };
+    return insertOrFetchExisting("weighing_tickets", row);
   },
 
   async setTicketGross(id, { grossKg, userId }) {
@@ -557,11 +575,20 @@ export const api = {
   // Turns a fully weighed-out, priced ticket into a real transaction —
   // reusing createTransaction above so every report/screen that already
   // reads the transactions table works without any changes.
-  async finalizeTicket(id, { userId, txDate }) {
+  async finalizeTicket(id, { userId, txDate, transactionId, transactionCode }) {
     const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
     if (fetchErr) throw fetchErr;
+    // If this ticket was already finalized (e.g. this op is being replayed
+    // after a connection drop right after the first attempt succeeded),
+    // don't create a second transaction — just return the existing one.
+    if (ticket.stage === "finalized" && ticket.transaction_id) {
+      const { data: existingTx, error: txErr } = await supabase.from("transactions").select("*").eq("id", ticket.transaction_id).single();
+      if (!txErr && existingTx) return existingTx;
+    }
     const netKg = Math.max(0, (ticket.gross_kg || 0) - (ticket.tare_kg || 0));
     const tx = await this.createTransaction({
+      id: transactionId,
+      code: transactionCode,
       type: ticket.type,
       locationId: ticket.location_id,
       partyId: ticket.party_id,
