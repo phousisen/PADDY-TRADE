@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard.jsx";
 import StockInventory from "./pages/StockInventory.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import TransactionForm from "./pages/TransactionForm.jsx";
+import WeighingTickets from "./pages/WeighingTickets.jsx";
 import ChangeRequests from "./pages/ChangeRequests.jsx";
 import Reports from "./pages/Reports.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
@@ -72,6 +73,7 @@ export default function App() {
     if (page === "dashboard") return <Dashboard />;
     if (page === "stock") return <StockInventory />;
     if (page === "transactions") return <Transactions setPage={setPage} />;
+    if (page === "tickets") return <WeighingTickets />;
     if (page === "new-buy") return <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} />;
     if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} />;
     if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;

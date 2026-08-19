@@ -5,6 +5,11 @@ function genCode(type) {
   return type === "BUY" ? `RCP-${n}-A` : `INV-${n}-B`;
 }
 
+function genTicketCode() {
+  const n = Math.floor(1000 + Math.random() * 8999);
+  return `TKT-${n}`;
+}
+
 // The database server's clock defaults to UTC, not Cambodia time — so we
 // stamp every transaction with Cambodia's actual wall-clock date/time here
 // instead of relying on a DB-side default, regardless of what timezone the
@@ -45,6 +50,22 @@ export const api = {
   async getLocations() {
     const { data, error } = await supabase.from("locations").select("*").order("name");
     if (error) throw error;
+    return data;
+  },
+
+  // Live weighbridge connection — reads the single "current weight" row a
+  // location's bridge program keeps updated. Returns null (not an error)
+  // if the table doesn't exist yet (migration not run) or nothing has ever
+  // reported in for this location, so callers can just treat "no live
+  // weight" the same as "not connected."
+  async getLiveWeight(locationId) {
+    if (!locationId) return null;
+    const { data, error } = await supabase
+      .from("scale_readings")
+      .select("weight_kg, updated_at")
+      .eq("location_id", locationId)
+      .maybeSingle();
+    if (error) return null;
     return data;
   },
 
@@ -427,6 +448,147 @@ export const api = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  // Weighing Tickets — the digital version of the paper ticket that
+  // travels between the scale and the drop-off area. A ticket moves
+  // through stages (arrived -> weighed_in -> priced -> weighed_out ->
+  // finalized), picked up by whichever staff member is handling that
+  // stage, several in progress at once. Finalizing one creates a real
+  // transaction via the existing createTransaction path above, so
+  // everything downstream (reports, stock, AP/AR) is unaffected.
+
+  async getTickets({ locationId, stages } = {}) {
+    let query = supabase
+      .from("weighing_tickets")
+      .select("*, locations(name), gross_profile:gross_by(full_name), priced_profile:priced_by(full_name), tare_profile:tare_by(full_name), created_profile:created_by(full_name)")
+      .order("created_at", { ascending: false });
+    if (locationId) query = query.eq("location_id", locationId);
+    if (stages && stages.length) query = query.in("stage", stages);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data.map((t) => ({
+      ...t,
+      stationName: t.locations?.name || "—",
+      grossByName: t.gross_profile?.full_name,
+      pricedByName: t.priced_profile?.full_name,
+      tareByName: t.tare_profile?.full_name,
+      createdByName: t.created_profile?.full_name,
+    }));
+  },
+
+  async createTicket({ type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId }) {
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .insert({
+        code: genTicketCode(),
+        type,
+        location_id: locationId,
+        party_id: partyId || null,
+        party_name: partyName,
+        phone: phone || null,
+        bank_name: bankName || null,
+        bank_account: bankAccount || null,
+        car_plate: carPlate || null,
+        driver_name: driverName || null,
+        product_id: productId || null,
+        product_name: productName,
+        stage: "arrived",
+        created_by: userId,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async setTicketGross(id, { grossKg, userId }) {
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .update({ gross_kg: grossKg, gross_at: new Date().toISOString(), gross_by: userId, stage: "weighed_in" })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async setTicketPrice(id, { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline }) {
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .update({
+        quality_grade: qualityGrade || null,
+        moisture_pct: moisturePct || 0,
+        mixture_pct: mixturePct || 0,
+        outthrow_pct: outthrowPct || 0,
+        deduction_kg: deductionKg || 0,
+        price_per_kg: decline ? null : pricePerKg,
+        staff_fee: staffFee || 0,
+        tax_applicable: !!taxApplicable,
+        tax_rate: taxApplicable ? (taxRate || 0) : 0,
+        price_note: priceNote || null,
+        priced_at: new Date().toISOString(),
+        priced_by: userId,
+        stage: decline ? "declined" : "priced",
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async setTicketTare(id, { tareKg, userId }) {
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .update({ tare_kg: tareKg, tare_at: new Date().toISOString(), tare_by: userId, stage: "weighed_out" })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async cancelTicket(id) {
+    const { error } = await supabase.from("weighing_tickets").update({ stage: "cancelled" }).eq("id", id);
+    if (error) throw error;
+  },
+
+  // Turns a fully weighed-out, priced ticket into a real transaction —
+  // reusing createTransaction above so every report/screen that already
+  // reads the transactions table works without any changes.
+  async finalizeTicket(id, { userId, txDate }) {
+    const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
+    if (fetchErr) throw fetchErr;
+    const netKg = Math.max(0, (ticket.gross_kg || 0) - (ticket.tare_kg || 0));
+    const tx = await this.createTransaction({
+      type: ticket.type,
+      locationId: ticket.location_id,
+      partyId: ticket.party_id,
+      productId: ticket.product_id,
+      quantityKg: netKg,
+      pricePerKg: ticket.price_per_kg,
+      paymentStatus: ticket.type === "BUY" ? "pending" : "paid",
+      userId,
+      qualityGrade: ticket.quality_grade,
+      taxApplicable: ticket.tax_applicable,
+      taxRate: ticket.tax_rate,
+      moisturePct: ticket.moisture_pct,
+      mixturePct: ticket.mixture_pct,
+      outthrowPct: ticket.outthrow_pct,
+      deductionKg: ticket.deduction_kg,
+      note: ticket.note,
+      carPlate: ticket.car_plate,
+      driverName: ticket.driver_name,
+      txDate,
+      staffFee: ticket.staff_fee,
+    });
+    const { error: updateErr } = await supabase
+      .from("weighing_tickets")
+      .update({ stage: "finalized", transaction_id: tx.id })
+      .eq("id", id);
+    if (updateErr) throw updateErr;
+    return tx;
   },
 
   async getChangeRequests() {
