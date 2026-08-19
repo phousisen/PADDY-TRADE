@@ -469,7 +469,7 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(payableKg * pricePerKg * 100) / 100;
     const { data, error } = await supabase
@@ -485,6 +485,7 @@ export const api = {
         ...(carPlate !== undefined ? { car_plate: carPlate || null } : {}),
         ...(driverName !== undefined ? { driver_name: driverName || null } : {}),
         ...(partyId !== undefined && partyId ? { party_id: partyId } : {}),
+        ...(txDate !== undefined && txDate ? { tx_date: txDate } : {}),
       })
       .eq("id", id)
       .select()
