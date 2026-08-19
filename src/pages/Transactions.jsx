@@ -225,6 +225,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   const [amount, setAmount] = useState(String(remaining));
   const [method, setMethod] = useState("cash");
   const [memo, setMemo] = useState("");
+  const [payDate, setPayDate] = useState(cambodiaDateStr());
   const [saving, setSaving] = useState(false);
   const isBuy = tx.type === "BUY";
 
@@ -234,7 +235,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
 
   async function submit() {
     setSaving(true);
-    await onSubmit(parseFloat(amount), method, memo);
+    await onSubmit(parseFloat(amount), method, memo, payDate);
     setSaving(false);
   }
 
@@ -267,6 +268,10 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
           <option value="check">Check</option>
           <option value="bank">Bank Transfer</option>
         </select>
+
+        <label className="mb-1 block text-xs text-slate-500">Payment Date</label>
+        <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} max={cambodiaDateStr()}
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
         <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. partial payment"
@@ -543,7 +548,14 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
               <tbody>
                 {payments.map((p) => (
                   <tr key={p.id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-3 py-2 text-slate-500">{p.pay_date}</td>
+                    <td className="px-3 py-2 text-slate-500">
+                      {p.pay_date}
+                      {p.created_at && (
+                        <span className="ml-1 text-slate-400">
+                          {new Date(p.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
                     <td className="px-3 py-2 text-slate-500">{p.createdByName}</td>
                     <td className="px-3 py-2 text-right">
@@ -811,14 +823,14 @@ export default function Transactions({ setPage }) {
     setRequestTx(null);
   }
 
-  async function submitPayment(amount, method, memo) {
+  async function submitPayment(amount, method, memo, payDate) {
     const created = await api.createPayment({
       type: payTx.type === "BUY" ? "pay_supplier" : "receive_customer",
       transactionId: payTx.id,
       locationId: payTx.location_id,
       amount,
       method,
-      payDate: cambodiaDateStr(),
+      payDate: payDate || cambodiaDateStr(),
       memo,
       userId: session.user.id,
     });
@@ -826,7 +838,7 @@ export default function Transactions({ setPage }) {
       action: "record_payment",
       tableName: "payments",
       recordId: created.id,
-      newData: { amount, method, memo: memo || null, code: payTx.code, partyName: payTx.partyName, txType: payTx.type },
+      newData: { amount, method, memo: memo || null, payDate: payDate || cambodiaDateStr(), code: payTx.code, partyName: payTx.partyName, txType: payTx.type },
       userId: session.user.id,
     });
     setPayTx(null);
