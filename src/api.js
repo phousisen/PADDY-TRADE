@@ -473,7 +473,7 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate, staffFee }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate, staffFee, locationId }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     const { data, error } = await supabase
@@ -491,6 +491,7 @@ export const api = {
         ...(driverName !== undefined ? { driver_name: driverName || null } : {}),
         ...(partyId !== undefined && partyId ? { party_id: partyId } : {}),
         ...(txDate !== undefined && txDate ? { tx_date: txDate } : {}),
+        ...(locationId !== undefined && locationId ? { location_id: locationId } : {}),
       })
       .eq("id", id)
       .select()
