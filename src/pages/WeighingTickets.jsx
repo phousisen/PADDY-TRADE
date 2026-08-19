@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Scale, Printer, X, ArrowRight, Ban, Check } from "lucide-react";
+import { Plus, Scale, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
+import {
+  startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
+  resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
+  setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
+  onSyncStatusChange, pendingCountForTicket,
+} from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -21,32 +27,6 @@ const STAGES = [
   { id: "weighed_out", label: "Ready to Finalize", next: "Finalize" },
   { id: "declined", label: "Declined", next: null },
 ];
-
-// Resolve a typed name to an existing party (exact match) or create a new
-// one — same pattern used for editing transactions elsewhere in the app.
-async function resolvePartyId(typedName, type, locationId, extra = {}) {
-  const trimmed = (typedName || "").trim();
-  if (!trimmed) return null;
-  const matches = await api.getParties({ type, q: trimmed }).catch(() => []);
-  const exact = (matches || []).find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
-  if (exact) return exact.id;
-  // Brand new seller/buyer — save what was written on the ticket onto their
-  // new profile too, so it's already there next time they come by.
-  const created = await api.createParty({
-    name: trimmed, type, locationId,
-    phone: extra.phone, bankName: extra.bankName, bankAccount: extra.bankAccount,
-  });
-  return created.id;
-}
-
-async function resolveProductId(typedName, products) {
-  const trimmed = (typedName || "").trim();
-  if (!trimmed) return null;
-  const existing = products.find((p) => p.name.toLowerCase() === trimmed.toLowerCase());
-  if (existing) return existing.id;
-  const created = await api.createProduct(trimmed);
-  return created.id;
-}
 
 // ---- Live weight box (same pattern as the New Transaction form) ----------
 
@@ -119,12 +99,9 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
   const [productName, setProductName] = useState("");
-  const [products, setProducts] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
-
-  useEffect(() => { api.getProducts().then(setProducts).catch(() => {}); }, []);
 
   async function submit() {
     if (!locationId || !partyName.trim() || !productName.trim() || !carPlate.trim()) {
@@ -134,10 +111,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     setSaving(true);
     setError("");
     try {
-      const partyId = await resolvePartyId(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone, bankName, bankAccount });
-      const productId = await resolveProductId(productName, products);
-      const ticket = await api.createTicket({
-        type, locationId, partyId, partyName: partyName.trim(), phone, bankName, bankAccount,
+      const partyId = await resolvePartyIdOffline(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone, bankName, bankAccount });
+      const productId = await resolveProductIdOffline(productName);
+      const locationName = locations.find((l) => l.id === locationId)?.name;
+      const ticket = createTicketOffline({
+        type, locationId, locationName, partyId, partyName: partyName.trim(), phone, bankName, bankAccount,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
       });
       onCreated(ticket);
@@ -196,8 +174,8 @@ function WeighModal({ ticket, mode, onClose, onDone }) {
     setSaving(true);
     try {
       const updated = isIn
-        ? await api.setTicketGross(ticket.id, { grossKg: kg, userId: session.user.id })
-        : await api.setTicketTare(ticket.id, { tareKg: kg, userId: session.user.id });
+        ? setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id })
+        : setTicketTareOffline(ticket.id, { tareKg: kg, userId: session.user.id });
       onDone(updated);
     } finally {
       setSaving(false);
@@ -238,7 +216,7 @@ function PriceModal({ ticket, onClose, onDone }) {
   async function submit(decline) {
     setSaving(true);
     try {
-      const updated = await api.setTicketPrice(ticket.id, {
+      const updated = setTicketPriceOffline(ticket.id, {
         qualityGrade, moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
         pricePerKg: parseFloat(pricePerKg) || 0, staffFee: parseFloat(staffFee) || 0,
@@ -300,7 +278,7 @@ function FinalizeModal({ ticket, onClose, onFinalized }) {
   async function submit() {
     setSaving(true);
     try {
-      const tx = await api.finalizeTicket(ticket.id, { userId: session.user.id, txDate });
+      const tx = finalizeTicketOffline(ticket, { userId: session.user.id, txDate });
       onFinalized(tx);
     } finally {
       setSaving(false);
@@ -388,6 +366,7 @@ export default function WeighingTickets() {
   const [finalizeTicketRow, setFinalizeTicketRow] = useState(null);
   const [slipTicket, setSlipTicket] = useState(null);
   const [finalReceipt, setFinalReceipt] = useState(null);
+  const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
 
   const effectiveLocationId = isAdmin ? locationId : profile?.location_id;
 
@@ -396,6 +375,13 @@ export default function WeighingTickets() {
       setLocations(locs);
       if (!isAdmin && profile?.location_id) setLocationId(profile.location_id);
     });
+    // Starts trying to send any queued offline changes the moment the
+    // connection is back (plus a 15s safety check), and keeps the local
+    // supplier/buyer/product lookup lists fresh whenever we're online.
+    startAutoSync();
+    refreshLookupCaches();
+    const unsub = onSyncStatusChange(setSyncStatus);
+    return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -404,13 +390,26 @@ export default function WeighingTickets() {
     // Only pull tickets still in progress — once finalized (or cancelled)
     // a ticket has become a normal transaction and belongs in the
     // Transactions list instead, not on this board.
-    const rows = await api
-      .getTickets({ locationId: effectiveLocationId || undefined, stages: STAGES.map((s) => s.id) })
-      .catch(() => []);
-    setTickets(rows);
+    let serverRows = null;
+    try {
+      serverRows = await api.getTickets({ locationId: effectiveLocationId || undefined, stages: STAGES.map((s) => s.id) });
+    } catch {
+      serverRows = null; // offline, or the request failed — fall back to the local cache below
+    }
+    const merged = serverRows ? mergeServerTickets(serverRows) : getCachedTickets();
+    const visible = merged.filter((t) => STAGES.some((s) => s.id === t.stage) && (!effectiveLocationId || t.location_id === effectiveLocationId));
+    setTickets(visible);
     setLoading(false);
   }
   useEffect(() => { load(); }, [effectiveLocationId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Once a sync round finishes with nothing left queued, refresh from the
+  // server so friendly names (station, which staff member weighed it,
+  // etc.) fill in for anything that was created or updated offline.
+  useEffect(() => {
+    if (!syncStatus.syncing && syncStatus.pending === 0) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStatus.syncing, syncStatus.pending]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -429,6 +428,17 @@ export default function WeighingTickets() {
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Weighing Tickets" subtitle="Digital ticket that follows a truck from arrival to final receipt" />
+
+      {(!syncStatus.online || syncStatus.pending > 0 || syncStatus.syncing) && (
+        <div className={`flex items-center gap-2 px-6 py-2 text-xs font-medium ${!syncStatus.online ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"}`}>
+          {!syncStatus.online ? <WifiOff size={13} /> : <RefreshCw size={13} className={syncStatus.syncing ? "animate-spin" : ""} />}
+          {!syncStatus.online
+            ? `No internet — working offline. ${syncStatus.pending > 0 ? `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} will sync once it's back.` : "Everything you do here is saved on this device."}`
+            : syncStatus.syncing
+              ? "Connected — syncing changes to PaddyTrade…"
+              : `Connected — ${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} waiting to sync…`}
+        </div>
+      )}
 
       <div className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between gap-3">
@@ -465,7 +475,12 @@ export default function WeighingTickets() {
               <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-2 flex items-start justify-between">
                   <div>
-                    <p className="font-semibold text-slate-800">{t.code}</p>
+                    <p className="flex items-center gap-1.5 font-semibold text-slate-800">
+                      {t.code}
+                      {pendingCountForTicket(t.id) > 0 && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
+                      )}
+                    </p>
                     <p className="text-xs text-slate-400">{t.stationName} · {t.type}</p>
                   </div>
                   <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
@@ -533,7 +548,9 @@ export default function WeighingTickets() {
           ticket={finalizeTicketRow}
           onClose={() => setFinalizeTicketRow(null)}
           onFinalized={(tx) => {
-            setFinalReceipt({ ...tx, partyName: finalizeTicketRow.party_name, partyIdNumber: finalizeTicketRow.phone });
+            // finalizeTicketOffline already fills in partyName/partyIdNumber
+            // (Receipt.jsx's expected shape), offline or not.
+            setFinalReceipt(tx);
             setFinalizeTicketRow(null);
             load();
           }}
