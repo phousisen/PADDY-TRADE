@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, Search, RotateCcw, Camera, ImageOff } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import { api } from "../api.js";
@@ -31,9 +31,7 @@ function cambodiaDateStr(d = new Date()) {
 // the real transaction changes unless/until an HQ Admin/Owner approves it.
 function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const isBuy = tx.type === "BUY";
-  const [parties, setParties] = useState([]);
   const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
-  const [selectedPartyId, setSelectedPartyId] = useState(tx.party_id);
   const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg ?? ""));
   const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg ?? ""));
   const [qualityGrade, setQualityGrade] = useState(tx.quality_grade || "");
@@ -48,39 +46,55 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [driverName, setDriverName] = useState(tx.driver_name || "");
   const [note, setNote] = useState(tx.note || "");
   const [reason, setReason] = useState("");
-
-  useEffect(() => {
-    api.getParties({ type: isBuy ? "supplier" : "buyer", q: partyQuery }).then(setParties).catch(() => {});
-  }, [partyQuery]);
-
-  function selectParty(p) {
-    setSelectedPartyId(p.id);
-    setPartyQuery(p.name);
-  }
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const newAmount = Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0);
-  const partyUnchanged = partyQuery.trim() === (tx.partyName || "").trim();
-  const canSubmit = reason.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0 && (selectedPartyId || partyUnchanged);
+  const canSubmit = reason.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0 && partyQuery.trim() && !saving;
 
-  function submit() {
-    const proposedData = {
-      partyId: selectedPartyId || tx.party_id,
-      partyName: partyQuery.trim(),
-      quantityKg: parseFloat(quantityKg) || 0,
-      pricePerKg: parseFloat(pricePerKg) || 0,
-      qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
-      paymentStatus,
-      taxApplicable,
-      taxRate: taxApplicable ? (parseFloat(taxRate) || 0) : 0,
-      moisturePct: parseFloat(moisturePct) || 0,
-      mixturePct: parseFloat(mixturePct) || 0,
-      outthrowPct: parseFloat(outthrowPct) || 0,
-      deductionKg: parseFloat(deductionKg) || 0,
-      carPlate: carPlate.trim() || null,
-      driverName: driverName.trim() || null,
-      note: note.trim() || null,
-    };
-    onSubmit(reason.trim(), proposedData);
+  // Resolve the typed name to a party id: keep the original if it wasn't
+  // touched, reuse an existing farmer/buyer if the typed name matches one
+  // exactly, or create a brand-new record — same as the New Buy/Sell form
+  // does. Staff don't need to search here; they can look someone up on the
+  // Farmers/Buyers page if they just want to browse the list.
+  async function resolvePartyId(name) {
+    const trimmed = name.trim();
+    if (trimmed === (tx.partyName || "").trim()) return tx.party_id;
+    const type = isBuy ? "supplier" : "buyer";
+    const matches = await api.getParties({ type, q: trimmed }).catch(() => []);
+    const exact = (matches || []).find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+    if (exact) return exact.id;
+    const created = await api.createParty({ name: trimmed, type });
+    return created.id;
+  }
+
+  async function submit() {
+    setError("");
+    setSaving(true);
+    try {
+      const partyId = await resolvePartyId(partyQuery);
+      const proposedData = {
+        partyId,
+        partyName: partyQuery.trim(),
+        quantityKg: parseFloat(quantityKg) || 0,
+        pricePerKg: parseFloat(pricePerKg) || 0,
+        qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
+        paymentStatus,
+        taxApplicable,
+        taxRate: taxApplicable ? (parseFloat(taxRate) || 0) : 0,
+        moisturePct: parseFloat(moisturePct) || 0,
+        mixturePct: parseFloat(mixturePct) || 0,
+        outthrowPct: parseFloat(outthrowPct) || 0,
+        deductionKg: parseFloat(deductionKg) || 0,
+        carPlate: carPlate.trim() || null,
+        driverName: driverName.trim() || null,
+        note: note.trim() || null,
+      };
+      await onSubmit(reason.trim(), proposedData);
+    } catch (err) {
+      setError(err.message || "Couldn't submit this request. Please try again.");
+      setSaving(false);
+    }
   }
 
   return (
@@ -97,25 +111,16 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
         <div className="grid grid-cols-2 gap-3">
           <div className="relative col-span-2">
             <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}</label>
-            <div className="relative">
-              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                value={partyQuery}
-                onChange={(e) => { setPartyQuery(e.target.value); setSelectedPartyId(null); }}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-8 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-              />
-            </div>
-            {partyQuery && !selectedPartyId && parties.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
-                {parties.map((p) => (
-                  <button type="button" key={p.id} onClick={() => selectParty(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50">
-                    <span>{p.name}</span><span className="text-xs text-slate-400">{p.phone}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {!selectedPartyId && partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "") && (
-              <p className="mt-1 text-[11px] text-amber-600">No exact match selected — pick an existing {isBuy ? "farmer" : "buyer"} from the list, or leave it as {tx.partyName} if it shouldn't change.</p>
+            <input
+              value={partyQuery}
+              onChange={(e) => setPartyQuery(e.target.value)}
+              placeholder={isBuy ? "Farmer name" : "Buyer name"}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+            />
+            {partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "").trim() && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                {isBuy ? "Farmer" : "Buyer"} will be matched to an existing one with this name, or added as new, once approved. You can browse existing names on the {isBuy ? "Farmers" : "Buyers"} page.
+              </p>
             )}
           </div>
 
@@ -196,9 +201,11 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
 
+        {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
+
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
-          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{t("submit_request")}</button>
+          <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
+          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Submitting…" : t("submit_request")}</button>
         </div>
       </div>
     </div>
