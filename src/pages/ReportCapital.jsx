@@ -259,9 +259,10 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
   async function addCapitalEntry(entry) {
     const created = await api.createPartnerCapitalEntry({ ...entry, userId: session.user.id });
+    const partnerName = partners.find((p) => p.id === entry.partnerId)?.name;
     await api.logAudit({
       action: "add_capital_entry", tableName: "partner_capital_entries", recordId: created?.id,
-      oldData: null, newData: entry, userId: session.user.id,
+      oldData: null, newData: { ...entry, partnerName }, userId: session.user.id,
     });
     load();
   }

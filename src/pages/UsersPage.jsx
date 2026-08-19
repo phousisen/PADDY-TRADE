@@ -80,7 +80,12 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
 
         <div className="mb-3 border-t border-slate-100 pt-3">
           <label className="mb-1 block text-xs text-slate-500">Your own login password (not the new one above) — to confirm it's really you</label>
-          <input type="password" value={ownPassword} onChange={(e) => setOwnPassword(e.target.value)} autoComplete="current-password"
+          {/* autoComplete deliberately off: every account signs into this
+              same web address, so Chrome/Safari can have several different
+              saved logins for this one site and may offer to autofill the
+              wrong one here (e.g. another account's password instead of
+              your own) — safer to make people type it. */}
+          <input type="password" value={ownPassword} onChange={(e) => setOwnPassword(e.target.value)} autoComplete="off" name="confirm-own-password-not-autofillable"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
 
@@ -158,7 +163,7 @@ export default function UsersPage() {
       await api.updateProfileRole(u.id, { roleId, role: legacyRole });
       await api.logAudit({
         action: "change_role", tableName: "profiles", recordId: u.id,
-        oldData: { role: oldRole?.name }, newData: { role: newRole?.name }, userId: me.id,
+        oldData: { role: oldRole?.name }, newData: { role: newRole?.name, fullName: u.full_name }, userId: me.id,
       });
       load();
     } catch (err) {

@@ -222,11 +222,30 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         receiptPhotoUrl, paymentProofUrl,
       });
 
+      // Log every new Buy/Sell to the Activity Log so it's traceable later —
+      // same reasoning as logging edits/payments: an audit trail is only
+      // useful for finding mistakes if it captures the original entry too,
+      // not just later corrections.
+      try {
+        await api.logAudit({
+          action: "create_transaction",
+          tableName: "transactions",
+          recordId: tx.id,
+          newData: {
+            code: tx.code, type, partyName: party.name, quantityKg: netKg, pricePerKg: parseFloat(pricePerKg),
+            amount: tx.amount, stationName: myStation?.name, txDate: tx.tx_date, paymentStatus,
+          },
+          userId: session.user.id,
+        });
+      } catch (logErr) {
+        console.error("Activity log failed", logErr);
+      }
+
       // If it was entered as already paid, record that cash movement immediately
       // so it shows up correctly in Accounts Payable/Receivable and Cash Flow.
       if (paymentStatus === "paid") {
         try {
-          await api.createPayment({
+          const createdPayment = await api.createPayment({
             type: isBuy ? "pay_supplier" : "receive_customer",
             transactionId: tx.id,
             locationId: effectiveStationId,
@@ -234,6 +253,16 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
             method: "cash",
             payDate: tx.tx_date,
             memo: "Paid at time of transaction",
+            userId: session.user.id,
+          });
+          await api.logAudit({
+            action: "record_payment",
+            tableName: "payments",
+            recordId: createdPayment.id,
+            newData: {
+              amount: tx.total_with_tax ?? tx.amount, method: "cash", memo: "Paid at time of transaction",
+              code: tx.code, partyName: party.name, txType: type,
+            },
             userId: session.user.id,
           });
         } catch (payErr) {

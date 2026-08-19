@@ -65,7 +65,7 @@ export default function Reports({ initialTab = "overview" }) {
     { id: "cashflow", label: "Cash Flow", icon: Landmark },
     { id: "capital", label: "Capital & Loans", icon: PiggyBank },
     { id: "tax", label: "Tax", icon: ReceiptText },
-    ...(isAdmin ? [{ id: "auditlog", label: "Audit Log", icon: History }] : []),
+    ...(isAdmin ? [{ id: "auditlog", label: "Activity Log", icon: History }] : []),
   ];
 
   return (

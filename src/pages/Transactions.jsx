@@ -511,7 +511,9 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
     await api.updatePayment(editPayment.id, newAmount);
     await api.logAudit({
       action: "edit_payment", tableName: "payments", recordId: editPayment.id,
-      oldData: { amount: editPayment.amount }, newData: { amount: newAmount }, userId,
+      oldData: { amount: editPayment.amount },
+      newData: { amount: newAmount, code: tx.code, partyName: tx.partyName },
+      userId,
     });
     setEditPayment(null);
     load();
@@ -792,18 +794,25 @@ export default function Transactions({ setPage }) {
   }
 
   async function submitRequest(reason, proposedData) {
-    await api.createChangeRequest({
+    const created = await api.createChangeRequest({
       transactionId: requestTx.id,
       requestedBy: session.user.id,
       locationId: profile.location_id,
       reason,
       proposedData,
     });
+    await api.logAudit({
+      action: "submit_change_request",
+      tableName: "change_requests",
+      recordId: created.id,
+      newData: { code: requestTx.code, partyName: requestTx.partyName, reason },
+      userId: session.user.id,
+    });
     setRequestTx(null);
   }
 
   async function submitPayment(amount, method, memo) {
-    await api.createPayment({
+    const created = await api.createPayment({
       type: payTx.type === "BUY" ? "pay_supplier" : "receive_customer",
       transactionId: payTx.id,
       locationId: payTx.location_id,
@@ -811,6 +820,13 @@ export default function Transactions({ setPage }) {
       method,
       payDate: cambodiaDateStr(),
       memo,
+      userId: session.user.id,
+    });
+    await api.logAudit({
+      action: "record_payment",
+      tableName: "payments",
+      recordId: created.id,
+      newData: { amount, method, memo: memo || null, code: payTx.code, partyName: payTx.partyName, txType: payTx.type },
       userId: session.user.id,
     });
     setPayTx(null);
@@ -836,6 +852,14 @@ export default function Transactions({ setPage }) {
     setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, hq_status: "cancelled" } : r)));
     try {
       await api.updateHqStatus(tx.id, "cancelled");
+      await api.logAudit({
+        action: "cancel_transaction",
+        tableName: "transactions",
+        recordId: tx.id,
+        oldData: { hq_status: tx.hq_status || "processing" },
+        newData: { hq_status: "cancelled", code: tx.code, partyName: tx.partyName, amount: tx.amount },
+        userId: session.user.id,
+      });
     } catch (err) {
       load();
     }
@@ -860,7 +884,7 @@ export default function Transactions({ setPage }) {
       const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
       if (stillOwed > 0.01) {
         try {
-          await api.createPayment({
+          const createdPayment = await api.createPayment({
             type: payType,
             transactionId: editTx.id,
             locationId: updated.location_id,
@@ -868,6 +892,13 @@ export default function Transactions({ setPage }) {
             method: "cash",
             payDate: cambodiaDateStr(),
             memo: "Marked paid via Edit Transaction",
+            userId: session.user.id,
+          });
+          await api.logAudit({
+            action: "record_payment",
+            tableName: "payments",
+            recordId: createdPayment.id,
+            newData: { amount: stillOwed, method: "cash", memo: "Marked paid via Edit Transaction", code: editTx.code, partyName: editTx.partyName, txType: editTx.type },
             userId: session.user.id,
           });
         } catch (payErr) {
@@ -881,7 +912,7 @@ export default function Transactions({ setPage }) {
       recordId: editTx.id,
       oldData,
       newData: {
-        location_id: updated.location_id,
+        code: editTx.code, partyName: editTx.partyName, location_id: updated.location_id,
         party_id: updated.party_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
         payment_status: updated.payment_status, quality_grade: updated.quality_grade, tax_applicable: updated.tax_applicable,
         tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,

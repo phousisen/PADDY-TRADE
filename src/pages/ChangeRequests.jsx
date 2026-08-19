@@ -154,7 +154,7 @@ export default function ChangeRequests() {
         const alreadyPaid = existing.filter((pm) => pm.type === payType).reduce((s, pm) => s + Number(pm.amount), 0);
         const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
         if (stillOwed > 0.01) {
-          await api.createPayment({
+          const createdPayment = await api.createPayment({
             type: payType,
             transactionId: tx.id,
             locationId: updated.location_id,
@@ -164,17 +164,24 @@ export default function ChangeRequests() {
             memo: "Marked paid via approved change request",
             userId: session.user.id,
           });
+          await api.logAudit({
+            action: "record_payment",
+            tableName: "payments",
+            recordId: createdPayment.id,
+            newData: { amount: stillOwed, method: "cash", memo: "Marked paid via approved change request", code: req.transactionCode, partyName: req.currentPartyName, txType: tx.type },
+            userId: session.user.id,
+          });
         }
       } catch (payErr) {
         console.error("Auto-payment record failed", payErr);
       }
     }
     await api.logAudit({
-      action: "edit_transaction",
+      action: "approve_change_request",
       tableName: "transactions",
       recordId: tx.id,
-      oldData,
-      newData: updated,
+      oldData: { ...oldData, code: req.transactionCode, partyName: req.currentPartyName },
+      newData: { ...updated, code: req.transactionCode },
       userId: session.user.id,
     });
     await api.resolveChangeRequest(req.id, "approved");
@@ -184,6 +191,13 @@ export default function ChangeRequests() {
 
   async function reject(req) {
     await api.resolveChangeRequest(req.id, "rejected");
+    await api.logAudit({
+      action: "reject_change_request",
+      tableName: "change_requests",
+      recordId: req.id,
+      newData: { code: req.transactionCode, partyName: req.currentPartyName, reason: req.reason },
+      userId: session.user.id,
+    });
     setReviewReq(null);
     load();
   }
