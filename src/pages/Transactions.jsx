@@ -29,6 +29,20 @@ function cambodiaDateStr(d = new Date()) {
 // "Request a change" doesn't edit the live transaction — it redoes the Buy/Sell
 // entry with corrected values and files it as a pending proposal. Nothing on
 // the real transaction changes unless/until an HQ Admin/Owner approves it.
+// Resolve a typed farmer/buyer name to a party id: keep the original party
+// if the name wasn't touched, reuse an existing farmer/buyer if the typed
+// name matches one exactly, or create a brand-new record — same as the New
+// Buy/Sell form does when it sees an unrecognized name.
+async function resolvePartyId(typedName, originalName, originalPartyId, type) {
+  const trimmed = (typedName || "").trim();
+  if (trimmed === (originalName || "").trim()) return originalPartyId;
+  const matches = await api.getParties({ type, q: trimmed }).catch(() => []);
+  const exact = (matches || []).find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact.id;
+  const created = await api.createParty({ name: trimmed, type });
+  return created.id;
+}
+
 function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const isBuy = tx.type === "BUY";
   const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
@@ -52,27 +66,11 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const newAmount = Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0);
   const canSubmit = reason.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0 && partyQuery.trim() && !saving;
 
-  // Resolve the typed name to a party id: keep the original if it wasn't
-  // touched, reuse an existing farmer/buyer if the typed name matches one
-  // exactly, or create a brand-new record — same as the New Buy/Sell form
-  // does. Staff don't need to search here; they can look someone up on the
-  // Farmers/Buyers page if they just want to browse the list.
-  async function resolvePartyId(name) {
-    const trimmed = name.trim();
-    if (trimmed === (tx.partyName || "").trim()) return tx.party_id;
-    const type = isBuy ? "supplier" : "buyer";
-    const matches = await api.getParties({ type, q: trimmed }).catch(() => []);
-    const exact = (matches || []).find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
-    if (exact) return exact.id;
-    const created = await api.createParty({ name: trimmed, type });
-    return created.id;
-  }
-
   async function submit() {
     setError("");
     setSaving(true);
     try {
-      const partyId = await resolvePartyId(partyQuery);
+      const partyId = await resolvePartyId(partyQuery, tx.partyName, tx.party_id, isBuy ? "supplier" : "buyer");
       const proposedData = {
         partyId,
         partyName: partyQuery.trim(),
@@ -279,15 +277,28 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
 }
 
 function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
-  const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg));
-  const [paymentStatus, setPaymentStatus] = useState(tx.payment_status || "pending");
+  const isBuy = tx.type === "BUY";
+  const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
+  const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg ?? ""));
+  const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg ?? ""));
+  const [qualityGrade, setQualityGrade] = useState(tx.quality_grade || "");
+  const [paymentStatus, setPaymentStatus] = useState(tx.payment_status || (isBuy ? "pending" : "paid"));
+  const [taxApplicable, setTaxApplicable] = useState(!!tx.tax_applicable);
+  const [taxRate, setTaxRate] = useState(String(tx.tax_rate ?? "10"));
+  const [moisturePct, setMoisturePct] = useState(String(tx.moisture_pct ?? ""));
+  const [mixturePct, setMixturePct] = useState(String(tx.mixture_pct ?? ""));
+  const [outthrowPct, setOutthrowPct] = useState(String(tx.outthrow_pct ?? ""));
+  const [deductionKg, setDeductionKg] = useState(String(tx.deduction_kg ?? ""));
+  const [carPlate, setCarPlate] = useState(tx.car_plate || "");
+  const [driverName, setDriverName] = useState(tx.driver_name || "");
+  const [note, setNote] = useState(tx.note || "");
   const [txDate, setTxDate] = useState(tx.tx_date || cambodiaDateStr());
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const isBuy = tx.type === "BUY";
 
-  const newAmount = Number(tx.quantity_kg) * (parseFloat(pricePerKg) || 0);
+  const newAmount = Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0);
+  const canSubmit = !saving && password && partyQuery.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0;
 
   async function submit(e) {
     e.preventDefault();
@@ -295,64 +306,147 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
     setSaving(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     if (authError) {
-      setError("Incorrect password.");
+      setError(authError.message || "Incorrect password.");
       setSaving(false);
       return;
     }
-    await onSubmit({
-      quantityKg: Number(tx.quantity_kg),
-      pricePerKg: parseFloat(pricePerKg),
-      paymentStatus,
-      qualityGrade: tx.quality_grade,
-      txDate,
-      oldData: { price_per_kg: tx.price_per_kg, amount: tx.amount, payment_status: tx.payment_status, tx_date: tx.tx_date },
-    });
-    setSaving(false);
+    try {
+      const partyId = await resolvePartyId(partyQuery, tx.partyName, tx.party_id, isBuy ? "supplier" : "buyer");
+      await onSubmit({
+        partyId,
+        quantityKg: parseFloat(quantityKg) || 0,
+        pricePerKg: parseFloat(pricePerKg) || 0,
+        paymentStatus,
+        qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
+        taxApplicable,
+        taxRate: taxApplicable ? (parseFloat(taxRate) || 0) : 0,
+        moisturePct: parseFloat(moisturePct) || 0,
+        mixturePct: parseFloat(mixturePct) || 0,
+        outthrowPct: parseFloat(outthrowPct) || 0,
+        deductionKg: parseFloat(deductionKg) || 0,
+        carPlate: carPlate.trim() || null,
+        driverName: driverName.trim() || null,
+        note: note.trim() || null,
+        txDate,
+        oldData: {
+          party_id: tx.party_id, partyName: tx.partyName, quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
+          amount: tx.amount, payment_status: tx.payment_status, quality_grade: tx.quality_grade, tax_applicable: tx.tax_applicable,
+          tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
+          deduction_kg: tx.deduction_kg, car_plate: tx.car_plate, driver_name: tx.driver_name, note: tx.note, tx_date: tx.tx_date,
+        },
+      });
+    } catch (err) {
+      setError(err.message || "Couldn't save these changes. Please try again.");
+      setSaving(false);
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Edit Transaction</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
         <form onSubmit={submit}>
-          <div className="mb-3 grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}</label>
+              <input value={partyQuery} onChange={(e) => setPartyQuery(e.target.value)}
+                placeholder={isBuy ? "Farmer name" : "Buyer name"}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              {partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "").trim() && (
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Will be matched to an existing {isBuy ? "farmer" : "buyer"} with this name, or added as new, when saved.
+                </p>
+              )}
+            </div>
+
             <div>
               <label className="mb-1 block text-xs text-slate-500">Quantity (kg)</label>
-              <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500">
-                {fmt2(tx.quantity_kg)} <span className="ml-1 text-xs text-slate-400">(fixed — from weighbridge)</span>
-              </div>
+              <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
               <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
+
+            {isBuy && (
+              <div>
+                <label className="mb-1 block text-xs text-slate-500">Quality Grade</label>
+                <input list="et-grade-options" value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                <datalist id="et-grade-options"><option value="A" /><option value="B" /><option value="C" /></datalist>
+              </div>
+            )}
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
+              <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Car Plate Number</label>
+              <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
+              <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            </div>
           </div>
 
-          <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
-          <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
-            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          <div className="mt-3 rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
+            <div className="grid grid-cols-4 gap-2">
+              <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            </div>
+          </div>
 
-          <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
-          <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
-            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-            {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
-          </select>
+          <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
+              Apply VAT
+            </label>
+            {taxApplicable && (
+              <div className="flex items-center gap-1.5">
+                <input type="number" min="0" step="0.1" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                <span className="text-sm text-slate-500">%</span>
+              </div>
+            )}
+          </div>
 
-          <div className="mb-4 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
+          <div className="mt-3">
+            <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
+            <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          </div>
+
+          <div className="mt-3">
+            <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
+            <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          </div>
+
+          <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
             <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
           </div>
 
-          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm this change</label>
+          <label className="mb-1 mt-3 block text-xs text-slate-500">Enter your password to confirm this change</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            autoComplete="off" name="confirm-own-password-not-autofillable"
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
 
           <div className="flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
-            <button type="submit" disabled={saving || !password} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+            <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
+            <button type="submit" disabled={!canSubmit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
@@ -748,7 +842,12 @@ export default function Transactions({ setPage }) {
       tableName: "transactions",
       recordId: editTx.id,
       oldData,
-      newData: { price_per_kg: updated.price_per_kg, amount: updated.amount, payment_status: updated.payment_status, tx_date: updated.tx_date },
+      newData: {
+        party_id: updated.party_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
+        payment_status: updated.payment_status, quality_grade: updated.quality_grade, tax_applicable: updated.tax_applicable,
+        tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,
+        deduction_kg: updated.deduction_kg, car_plate: updated.car_plate, driver_name: updated.driver_name, note: updated.note, tx_date: updated.tx_date,
+      },
       userId: session.user.id,
     });
     setEditTx(null);
