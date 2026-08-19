@@ -287,8 +287,9 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   );
 }
 
-function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
+function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClose, onSubmit }) {
   const isBuy = tx.type === "BUY";
+  const [locationId, setLocationId] = useState(tx.location_id || "");
   const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
   const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg ?? ""));
   const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg ?? ""));
@@ -326,6 +327,7 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
       const partyId = await resolvePartyId(partyQuery, tx.partyName, tx.party_id, isBuy ? "supplier" : "buyer");
       await onSubmit({
         partyId,
+        locationId,
         quantityKg: parseFloat(quantityKg) || 0,
         pricePerKg: parseFloat(pricePerKg) || 0,
         paymentStatus,
@@ -342,6 +344,7 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
         note: note.trim() || null,
         txDate,
         oldData: {
+          location_id: tx.location_id, stationName: tx.stationName,
           party_id: tx.party_id, partyName: tx.partyName, quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
           amount: tx.amount, payment_status: tx.payment_status, quality_grade: tx.quality_grade, tax_applicable: tx.tax_applicable,
           tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
@@ -373,6 +376,19 @@ function EditTransactionModal({ tx, userEmail, userId, t, onClose, onSubmit }) {
                 </p>
               )}
             </div>
+
+            {locations.length > 0 && (
+              <div className="col-span-2">
+                <label className="mb-1 block text-xs text-slate-500">Location</label>
+                <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+                {locationId !== tx.location_id && (
+                  <p className="mt-1 text-[11px] text-amber-600">Moving this to a different location — its stock will move too.</p>
+                )}
+              </div>
+            )}
 
             <div>
               <label className="mb-1 block text-xs text-slate-500">Quantity (kg)</label>
@@ -847,7 +863,7 @@ export default function Transactions({ setPage }) {
           await api.createPayment({
             type: payType,
             transactionId: editTx.id,
-            locationId: editTx.location_id,
+            locationId: updated.location_id,
             amount: stillOwed,
             method: "cash",
             payDate: cambodiaDateStr(),
@@ -865,6 +881,7 @@ export default function Transactions({ setPage }) {
       recordId: editTx.id,
       oldData,
       newData: {
+        location_id: updated.location_id,
         party_id: updated.party_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
         payment_status: updated.payment_status, quality_grade: updated.quality_grade, tax_applicable: updated.tax_applicable,
         tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,
@@ -1023,7 +1040,7 @@ export default function Transactions({ setPage }) {
       </main>
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
-      {editTx && <EditTransactionModal tx={editTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
+      {editTx && <EditTransactionModal tx={editTx} locations={locations} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
       {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} />}
       {photosTx && <PhotosModal tx={photosTx} onClose={() => setPhotosTx(null)} />}
       {cancelConfirmTx && (
