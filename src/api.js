@@ -384,9 +384,12 @@ export const api = {
     }));
   },
 
-  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate }) {
+  async createTransaction({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
-    const amount = Math.round(payableKg * pricePerKg * 100) / 100;
+    // Staff/carrying fee (rare — only when our own staff carries the paddy
+    // for a farmer who didn't bring labor) comes straight off what's paid,
+    // same stage as the weight deduction above but in cash instead of kg.
+    const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     // `txDate` lets staff back-date an entry (e.g. logging a truckload the
     // next morning that was actually weighed the day before) — falls back
     // to right now, in Cambodia's timezone, if nothing was picked.
@@ -418,6 +421,7 @@ export const api = {
         driver_name: driverName || null,
         receipt_photo_url: receiptPhotoUrl || null,
         payment_proof_url: paymentProofUrl || null,
+        staff_fee: staffFee || 0,
       })
       .select()
       .single();
@@ -429,7 +433,7 @@ export const api = {
     const { data, error } = await supabase
       .from("change_requests")
       .select(
-        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
+        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
       )
       .order("created_at", { ascending: false });
     if (error) throw error;
@@ -469,15 +473,16 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate, staffFee }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
-    const amount = Math.round(payableKg * pricePerKg * 100) / 100;
+    const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     const { data, error } = await supabase
       .from("transactions")
       .update({
         quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: qualityGrade || null,
         tax_applicable: !!taxApplicable, tax_rate: taxApplicable ? (taxRate || 0) : 0,
         ...(deductionKg !== undefined ? { deduction_kg: deductionKg || 0 } : {}),
+        ...(staffFee !== undefined ? { staff_fee: staffFee || 0 } : {}),
         ...(moisturePct !== undefined ? { moisture_pct: moisturePct || 0 } : {}),
         ...(mixturePct !== undefined ? { mixture_pct: mixturePct || 0 } : {}),
         ...(outthrowPct !== undefined ? { outthrow_pct: outthrowPct || 0 } : {}),
