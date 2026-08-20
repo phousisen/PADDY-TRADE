@@ -2,6 +2,37 @@ import { useRef, useState } from "react";
 import { Camera, X, Loader2, AlertCircle } from "lucide-react";
 import { api } from "../api.js";
 
+// Compresses a photo before it ever leaves the device — a phone camera
+// photo is often 3-8MB, and on a shaky rural connection that's the
+// difference between an upload finishing in a few seconds or timing out
+// entirely (or eating a chunk of everyone's mobile data). Shrinks anything
+// larger than 1600px on its longest side and re-saves it as a JPEG at 80%
+// quality, which usually gets a multi-megabyte photo down under half a
+// megabyte with no visible loss for a receipt or QR code photo. If
+// anything goes wrong here (an unusual file type, an older browser), it
+// quietly falls back to uploading the original file untouched rather than
+// blocking the upload entirely.
+async function compressImage(file, maxDimension = 1600, quality = 0.8) {
+  if (!file.type || !file.type.startsWith("image/")) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    if (scale >= 1) { bitmap.close?.(); return file; } // already small enough
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob) return file;
+    const newName = file.name.replace(/\.\w+$/, "") + ".jpg";
+    return new File([blob], newName, { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
 export default function PhotoUpload({ label, kind, required, url, onUploaded, hint }) {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -13,7 +44,8 @@ export default function PhotoUpload({ label, kind, required, url, onUploaded, hi
     setError("");
     setUploading(true);
     try {
-      const publicUrl = await api.uploadTransactionPhoto(file, kind);
+      const compressed = await compressImage(file);
+      const publicUrl = await api.uploadTransactionPhoto(compressed, kind);
       onUploaded(publicUrl);
     } catch (err) {
       setError(err.message || "Upload failed");
