@@ -145,6 +145,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [phoneLookupMsg, setPhoneLookupMsg] = useState("");
+  // Whatever bank name/account/QR photo this person already has on file
+  // (if any) — captured the moment their phone number matches someone, so
+  // it can ride along with the ticket from the very start instead of
+  // waiting until Finish Ticket to show up.
+  const [savedBank, setSavedBank] = useState(null);
   const { session } = useAuth();
   // Paddy types staff have already used before, so the field suggests them
   // instead of everyone typing (and misspelling) the same names over and
@@ -168,13 +173,15 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
   // Looks up a farmer/buyer that already self-registered (via the QR
   // registration page) or has been entered before, by phone number, and
-  // fills in their saved name so staff don't retype it. Bank/QR details
-  // (if any are already on file) are shown later, at Finish Ticket, once
-  // it's actually known whether this truckload is getting paid in cash or
-  // by bank transfer.
+  // fills in their saved name so staff don't retype it. Their saved bank
+  // name/account and QR photo (if any are on file) are pulled in here too
+  // — the actual Payment Method fields still live at Finish Ticket (that's
+  // when cash-vs-bank is really decided), but this way whatever was saved
+  // last time is already attached to the ticket from the moment it's
+  // created, instead of staff needing to re-enter or re-upload it later.
   async function lookupByPhone() {
     const trimmed = phone.trim();
-    if (!trimmed) { setPhoneLookupMsg(""); return; }
+    if (!trimmed) { setPhoneLookupMsg(""); setSavedBank(null); return; }
     setPhoneLookupMsg("Looking up…");
     try {
       const matches = await api.getParties({ type: type === "BUY" ? "supplier" : "buyer", phone: trimmed });
@@ -182,8 +189,14 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         const p = matches[0];
         setPartyName(p.name || "");
         setPhoneLookupMsg(`Found: ${p.name}`);
+        setSavedBank(
+          p.bank_name || p.bank_account || p.bank_qr_url
+            ? { bankName: p.bank_name || "", bankAccount: p.bank_account || "", bankQrUrl: p.bank_qr_url || null }
+            : null
+        );
       } else {
         setPhoneLookupMsg("No record found — fill in details below.");
+        setSavedBank(null);
       }
     } catch {
       setPhoneLookupMsg("");
@@ -214,6 +227,9 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
+        bankName: savedBank?.bankName || undefined,
+        bankAccount: savedBank?.bankAccount || undefined,
+        bankQrUrl: savedBank?.bankQrUrl || undefined,
       });
       const weighedIn = setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id });
       onCreated(weighedIn);
@@ -250,6 +266,17 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           <label className={labelCls}>Phone (type it and tab/click away to look them up)</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={inputCls} />
           {phoneLookupMsg && <p className={`mt-1 text-xs ${phoneLookupMsg.startsWith("Found") ? "text-emerald-600" : "text-slate-400"}`}>{phoneLookupMsg}</p>}
+          {savedBank && (
+            <div className="mt-2 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              {savedBank.bankQrUrl && (
+                <img src={savedBank.bankQrUrl} alt="Saved bank QR code" className="h-12 w-12 flex-shrink-0 rounded border border-emerald-200 object-cover" />
+              )}
+              <div className="text-xs text-emerald-700">
+                <p className="font-semibold">Saved payment on file — filled in automatically</p>
+                <p>{savedBank.bankName || "—"}{savedBank.bankAccount ? ` · ${savedBank.bankAccount}` : ""}</p>
+              </div>
+            </div>
+          )}
         </div>
         <div className="col-span-2"><label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label><input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} /></div>
         <div>
