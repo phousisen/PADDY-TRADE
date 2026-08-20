@@ -431,7 +431,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl }) {
+  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -466,6 +466,14 @@ export const api = {
       car_plate: carPlate || null,
       driver_name: driverName || null,
       receipt_photo_url: receiptPhotoUrl || null,
+      // Weigh In / Weigh Out numbers — carried over from the weighing
+      // ticket (undefined for a manually-entered Buy/Sell, which only
+      // ever has one net weight) so a reopened receipt can show the real
+      // IN/OUT table again, not just right after it was first saved.
+      gross_kg: grossKg ?? null,
+      gross_at: grossAt || null,
+      tare_kg: tareKg ?? null,
+      tare_at: tareAt || null,
       payment_proof_url: paymentProofUrl || null,
       staff_fee: staffFee || 0,
       paper_ticket_no: paperTicketNo || null,
@@ -629,6 +637,10 @@ export const api = {
       paperTicketNo: ticket.paper_ticket_no,
       bankQrUrl: ticket.bank_qr_url,
       receiptPhotoUrl,
+      grossKg: ticket.gross_kg,
+      grossAt: ticket.gross_at,
+      tareKg: ticket.tare_kg,
+      tareAt: ticket.tare_at,
     });
     const { error: updateErr } = await supabase
       .from("weighing_tickets")
