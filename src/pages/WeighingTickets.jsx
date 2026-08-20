@@ -9,7 +9,7 @@ import {
   startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
-  onSyncStatusChange, pendingCountForTicket, getCachedProducts,
+  onSyncStatusChange, pendingCountForTicket, getCachedProducts, getCachedParties, updatePartyOffline,
 } from "../offlineQueue.js";
 
 // Same bank list as the New Transaction form, so staff see the same
@@ -110,14 +110,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [locationId, setLocationId] = useState(defaultLocationId || "");
   const [partyName, setPartyName] = useState("");
   const [phone, setPhone] = useState("");
-  const [bankName, setBankName] = useState("");
-  const [bankIsOther, setBankIsOther] = useState(false);
-  const [bankAccount, setBankAccount] = useState("");
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
   const [productName, setProductName] = useState("");
   const [paperTicketNo, setPaperTicketNo] = useState("");
-  const [bankQrUrl, setBankQrUrl] = useState(null);
   const [grossWeight, setGrossWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -131,7 +127,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
   // Looks up a farmer/buyer that already self-registered (via the QR
   // registration page) or has been entered before, by phone number, and
-  // fills in their saved name/bank details so staff don't retype them.
+  // fills in their saved name so staff don't retype it. Bank/QR details
+  // (if any are already on file) are shown later, at Finish Ticket, once
+  // it's actually known whether this truckload is getting paid in cash or
+  // by bank transfer.
   async function lookupByPhone() {
     const trimmed = phone.trim();
     if (!trimmed) { setPhoneLookupMsg(""); return; }
@@ -141,9 +140,6 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       if (matches && matches.length > 0) {
         const p = matches[0];
         setPartyName(p.name || "");
-        setBankName(p.bank_name || "");
-        setBankIsOther(!!p.bank_name && !BANK_OPTIONS.includes(p.bank_name));
-        setBankAccount(p.bank_account || "");
         setPhoneLookupMsg(`Found: ${p.name}`);
       } else {
         setPhoneLookupMsg("No record found — fill in details below.");
@@ -170,13 +166,13 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     setSaving(true);
     setError("");
     try {
-      const partyId = await resolvePartyIdOffline(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone, bankName, bankAccount });
+      const partyId = await resolvePartyIdOffline(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone });
       const productId = await resolveProductIdOffline(productName);
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
-        type, locationId, locationName, partyId, partyName: partyName.trim(), phone, bankName, bankAccount,
+        type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
-        paperTicketNo: paperTicketNo.trim(), bankQrUrl,
+        paperTicketNo: paperTicketNo.trim(),
       });
       const weighedIn = setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id });
       onCreated(weighedIn);
@@ -209,36 +205,6 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           {phoneLookupMsg && <p className={`mt-1 text-xs ${phoneLookupMsg.startsWith("Found") ? "text-emerald-600" : "text-slate-400"}`}>{phoneLookupMsg}</p>}
         </div>
         <div className="col-span-2"><label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label><input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} /></div>
-        <div>
-          <label className={labelCls}>Bank</label>
-          <select
-            value={bankIsOther ? "__other__" : bankName}
-            onChange={(e) => {
-              if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
-              else { setBankIsOther(false); setBankName(e.target.value); }
-            }}
-            className={inputCls}
-          >
-            <option value="" disabled>Select payment method / bank</option>
-            {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-            <option value="__other__">Other...</option>
-          </select>
-          {bankIsOther && (
-            <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
-          )}
-        </div>
-        <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
-        {type === "BUY" && bankName && bankName !== "Cash" && (
-          <div className="col-span-2">
-            <PhotoUpload
-              label="Bank QR Code (photo)"
-              kind="party-bank-qr"
-              url={bankQrUrl}
-              onUploaded={setBankQrUrl}
-              hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
-            />
-          </div>
-        )}
         <div>
           <label className={labelCls}>Product (paddy type)</label>
           <input list="paddy-type-options" value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" />
@@ -285,10 +251,29 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
   const [tareWeight, setTareWeight] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankIsOther, setBankIsOther] = useState(false);
+  const [bankAccount, setBankAccount] = useState("");
+  const [bankQrUrl, setBankQrUrl] = useState(null);
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
+
+  // Cash-or-bank-transfer, and the actual bank details/QR, aren't known
+  // until now — the farmer only decides during the paper quality/price
+  // step between weigh-in and weigh-out. If they've paid this farmer
+  // before, prefill whatever's already saved on their profile so staff
+  // don't have to retype it every truckload.
+  useEffect(() => {
+    const savedParty = ticket.party_id ? getCachedParties().find((p) => p.id === ticket.party_id) : null;
+    const initialBank = ticket.bank_name || savedParty?.bank_name || "";
+    setBankName(initialBank);
+    setBankIsOther(!!initialBank && !BANK_OPTIONS.includes(initialBank));
+    setBankAccount(ticket.bank_account || savedParty?.bank_account || "");
+    setBankQrUrl(ticket.bank_qr_url || savedParty?.bank_qr_url || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.id]);
 
   const netKg = Math.max(0, (ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
@@ -315,12 +300,25 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
     setError("");
     setSaving(true);
     try {
+      const finalBankQrUrl = isBuy && bankName && bankName !== "Cash" ? bankQrUrl : null;
       setTicketPriceOffline(ticket.id, {
         qualityGrade, moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
         pricePerKg: parseFloat(pricePerKg) || 0, staffFee: parseFloat(staffFee) || 0,
         taxApplicable, taxRate: parseFloat(taxRate) || 0, priceNote, userId: session.user.id, decline: false,
+        bankName, bankAccount, bankQrUrl: finalBankQrUrl,
       });
+      // Keep the farmer's saved profile in sync so next time they come by,
+      // their bank details/QR are already there to prefill — same as the
+      // manual Buy/Sell form does.
+      if (isBuy && ticket.party_id) {
+        const savedParty = getCachedParties().find((p) => p.id === ticket.party_id) || {};
+        const patch = {};
+        if (bankName !== (savedParty.bank_name || "")) patch.bankName = bankName;
+        if (bankAccount !== (savedParty.bank_account || "")) patch.bankAccount = bankAccount;
+        if (finalBankQrUrl && finalBankQrUrl !== (savedParty.bank_qr_url || "")) patch.bankQrUrl = finalBankQrUrl;
+        if (Object.keys(patch).length > 0) updatePartyOffline(ticket.party_id, patch);
+      }
       const tareUpdated = setTicketTareOffline(ticket.id, { tareKg, userId: session.user.id });
       // No date picker here on purpose — this is finalized the moment the
       // truck is actually back and empty, so today's real date and the
@@ -355,6 +353,42 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
         <label className="mb-1 block text-sm font-semibold text-brand-800">Price per kg (Riel) — the price agreed on the paper ticket</label>
         <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="e.g. 1090"
           className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+      </div>
+
+      <div className="mt-4 rounded-lg border border-slate-200 p-4">
+        <p className="mb-2 text-sm font-semibold text-slate-700">Payment Method</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className={labelCls}>Bank (or Cash)</label>
+            <select
+              value={bankIsOther ? "__other__" : bankName}
+              onChange={(e) => {
+                if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
+                else { setBankIsOther(false); setBankName(e.target.value); }
+              }}
+              className={inputCls}
+            >
+              <option value="" disabled>Select payment method / bank</option>
+              {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+              <option value="__other__">Other...</option>
+            </select>
+            {bankIsOther && (
+              <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
+            )}
+          </div>
+          <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
+        </div>
+        {isBuy && bankName && bankName !== "Cash" && (
+          <div className="mt-3">
+            <PhotoUpload
+              label="Bank QR Code (photo)"
+              kind="party-bank-qr"
+              url={bankQrUrl}
+              onUploaded={setBankQrUrl}
+              hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
+            />
+          </div>
+        )}
       </div>
 
       <div className="mt-4">
