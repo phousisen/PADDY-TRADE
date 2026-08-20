@@ -585,7 +585,7 @@ export const api = {
   // Turns a fully weighed-out, priced ticket into a real transaction —
   // reusing createTransaction above so every report/screen that already
   // reads the transactions table works without any changes.
-  async finalizeTicket(id, { userId, txDate, transactionId, transactionCode }) {
+  async finalizeTicket(id, { userId, txDate, transactionId, transactionCode, receiptPhotoUrl }) {
     const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
     if (fetchErr) throw fetchErr;
     // If this ticket was already finalized (e.g. this op is being replayed
@@ -621,6 +621,7 @@ export const api = {
       staffFee: ticket.staff_fee,
       paperTicketNo: ticket.paper_ticket_no,
       bankQrUrl: ticket.bank_qr_url,
+      receiptPhotoUrl,
     });
     const { error: updateErr } = await supabase
       .from("weighing_tickets")

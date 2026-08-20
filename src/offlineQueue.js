@@ -481,7 +481,7 @@ export function setTicketTareOffline(id, { tareKg, userId }) {
 // numbers (the exact same math FinalizeModal already previews) and queue
 // the real save for later. Once synced, the permanent server copy has
 // this same id, so nothing about the receipt has to change.
-export function finalizeTicketOffline(ticket, { userId, txDate }) {
+export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl }) {
   const transactionId = newId();
   const transactionCode = genLocalTxCode(ticket.type);
   const netKg = Math.max(0, (ticket.gross_kg || 0) - (ticket.tare_kg || 0));
@@ -492,7 +492,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate }) {
   const amount = Math.round((subtotal) * 100) / 100;
 
   patchCachedTicket(ticket.id, { stage: "finalized", transaction_id: transactionId });
-  enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, transactionId, transactionCode } });
+  enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, transactionId, transactionCode, receiptPhotoUrl } });
   trySync();
 
   const { date: nowDate, time: nowTime } = cambodiaNow();
@@ -524,6 +524,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate }) {
     driver_name: ticket.driver_name,
     paper_ticket_no: ticket.paper_ticket_no,
     bank_qr_url: ticket.bank_qr_url,
+    receipt_photo_url: receiptPhotoUrl || null,
     note: ticket.note,
     tax_applicable: ticket.tax_applicable,
     staff_fee: ticket.staff_fee,
