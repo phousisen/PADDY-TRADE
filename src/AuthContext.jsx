@@ -116,7 +116,14 @@ export function AuthProvider({ children }) {
         // token refresh, both of which also fire through this callback.
         if (_event === "SIGNED_IN") {
           lookupIpLocation().then(({ ip, location }) => {
-            supabase.rpc("record_login", { device_info: describeDevice(), ip_address: ip, ip_location: location }).catch(() => {});
+            // Wrapped in Promise.resolve() because Supabase's query builder
+            // isn't a real Promise until it's awaited/wrapped — calling
+            // .catch() straight on it throws "...catch is not a function"
+            // and login-tracking failures were showing up as uncaught
+            // errors in the console instead of being quietly ignored.
+            Promise.resolve(
+              supabase.rpc("record_login", { device_info: describeDevice(), ip_address: ip, ip_location: location })
+            ).catch(() => {});
           });
         }
       } else {

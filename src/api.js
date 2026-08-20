@@ -19,11 +19,19 @@ function genTicketCode() {
 // just recognize that specific error and fetch the row that's already
 // there instead — the retry ends up a no-op, and nothing new is written.
 async function insertOrFetchExisting(table, row) {
-  const { data, error } = await supabase.from(table).insert(row).select().single();
-  if (!error) return data;
+  const { data, error } = await supabase.from(table).insert(row).select();
+  if (!error) {
+    // The new row normally comes straight back. On the rare device/account
+    // where it comes back empty instead (RLS can hide a row from being
+    // read back immediately after a write, even though the write itself
+    // succeeded), don't treat that as a failure — the offline sync queue
+    // stops and retries forever on any error here, so wrongly throwing
+    // would permanently jam every change queued behind this one.
+    return (data && data[0]) || row;
+  }
   if (row.id && error.code === "23505") {
-    const { data: existing, error: fetchErr } = await supabase.from(table).select("*").eq("id", row.id).single();
-    if (!fetchErr && existing) return existing;
+    const { data: existing, error: fetchErr } = await supabase.from(table).select("*").eq("id", row.id);
+    if (!fetchErr && existing && existing.length) return existing[0];
   }
   throw error;
 }
@@ -389,9 +397,14 @@ export const api = {
     if (bankName !== undefined) patch.bank_name = bankName;
     if (bankAccount !== undefined) patch.bank_account = bankAccount;
     if (bankQrUrl !== undefined) patch.bank_qr_url = bankQrUrl;
-    const { data, error } = await supabase.from("parties").update(patch).eq("id", id).select().single();
+    const { data, error } = await supabase.from("parties").update(patch).eq("id", id).select();
     if (error) throw error;
-    return data;
+    // Same reasoning as insertOrFetchExisting above: a save that legitimately
+    // changed the row can still come back with zero rows read afterward.
+    // Requiring exactly one row back (the old `.single()` here) turned that
+    // into a hard error every single retry, forever — which is exactly what
+    // was stuck: a "10 changes waiting to sync" queue that never clears.
+    return (data && data[0]) || { id, ...patch };
   },
 
   async getSettings() {
