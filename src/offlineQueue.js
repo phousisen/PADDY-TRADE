@@ -231,6 +231,13 @@ async function runOp(op) {
       addCachedProduct(product);
       return product;
     }
+    case "updateParty": {
+      const party = await api.updateParty(op.partyId, op.payload);
+      const list = getCachedParties();
+      const idx = list.findIndex((p) => p.id === op.partyId);
+      if (idx >= 0) { list[idx] = { ...list[idx], ...party }; setCachedParties(list); }
+      return party;
+    }
     case "createTicket":
       return api.createTicket(op.payload);
     case "setTicketGross":
@@ -281,7 +288,7 @@ export function trySync() {
           // A ticket-related op just landed on the server — fold the
           // server's returned row into the local cache so the UI reflects
           // confirmed data as soon as it's available.
-          if (result && op.type !== "createParty" && op.type !== "createProduct") {
+          if (result && op.type !== "createParty" && op.type !== "createProduct" && op.type !== "updateParty") {
             upsertCachedTicket(normalizeSyncedTicket(op, result));
           }
           dequeueFirst();
@@ -377,6 +384,26 @@ export async function resolvePartyIdOffline(typedName, type, locationId, extra =
   return id;
 }
 
+// Updates an existing supplier/buyer's saved bank details/QR — e.g. when
+// staff correct or add them at Finish Ticket and they differ from what's
+// already on file, so the next truckload from this same farmer has it
+// ready to prefill.
+export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl }) {
+  if (!partyId) return;
+  const list = getCachedParties();
+  const idx = list.findIndex((p) => p.id === partyId);
+  if (idx >= 0) {
+    const fields = {};
+    if (bankName !== undefined) fields.bank_name = bankName || null;
+    if (bankAccount !== undefined) fields.bank_account = bankAccount || null;
+    if (bankQrUrl !== undefined) fields.bank_qr_url = bankQrUrl || null;
+    list[idx] = { ...list[idx], ...fields };
+    setCachedParties(list);
+  }
+  enqueue({ type: "updateParty", partyId, payload: { bankName, bankAccount, bankQrUrl } });
+  trySync();
+}
+
 // Same idea for the paddy/product type field.
 export async function resolveProductIdOffline(typedName) {
   const trimmed = (typedName || "").trim();
@@ -448,8 +475,8 @@ export function setTicketGrossOffline(id, { grossKg, userId }) {
 }
 
 export function setTicketPriceOffline(id, opts) {
-  const { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline } = opts;
-  const updated = patchCachedTicket(id, {
+  const { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline, bankName, bankAccount, bankQrUrl } = opts;
+  const patch = {
     quality_grade: qualityGrade || null,
     moisture_pct: moisturePct || 0,
     mixture_pct: mixturePct || 0,
@@ -463,7 +490,15 @@ export function setTicketPriceOffline(id, opts) {
     priced_at: new Date().toISOString(),
     priced_by: userId,
     stage: decline ? "declined" : "priced",
-  });
+  };
+  // Which bank (or Cash) and QR to pay this farmer with — decided here, not
+  // at weigh-in, since that's genuinely when it's known. Left out entirely
+  // (not overwritten with a blank) on calls that don't pass them, like a
+  // quick Decline.
+  if (bankName !== undefined) patch.bank_name = bankName || null;
+  if (bankAccount !== undefined) patch.bank_account = bankAccount || null;
+  if (bankQrUrl !== undefined) patch.bank_qr_url = bankQrUrl || null;
+  const updated = patchCachedTicket(id, patch);
   enqueue({ type: "setTicketPrice", ticketId: id, payload: opts });
   trySync();
   return updated;

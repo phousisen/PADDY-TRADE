@@ -541,24 +541,31 @@ export const api = {
     return data;
   },
 
-  async setTicketPrice(id, { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline }) {
+  async setTicketPrice(id, { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline, bankName, bankAccount, bankQrUrl }) {
+    const patch = {
+      quality_grade: qualityGrade || null,
+      moisture_pct: moisturePct || 0,
+      mixture_pct: mixturePct || 0,
+      outthrow_pct: outthrowPct || 0,
+      deduction_kg: deductionKg || 0,
+      price_per_kg: decline ? null : pricePerKg,
+      staff_fee: staffFee || 0,
+      tax_applicable: !!taxApplicable,
+      tax_rate: taxApplicable ? (taxRate || 0) : 0,
+      price_note: priceNote || null,
+      priced_at: new Date().toISOString(),
+      priced_by: userId,
+      stage: decline ? "declined" : "priced",
+    };
+    // Which bank (or Cash) and QR to pay this farmer with — left out
+    // entirely (not overwritten with a blank) on calls that don't pass
+    // them, like a quick Decline.
+    if (bankName !== undefined) patch.bank_name = bankName || null;
+    if (bankAccount !== undefined) patch.bank_account = bankAccount || null;
+    if (bankQrUrl !== undefined) patch.bank_qr_url = bankQrUrl || null;
     const { data, error } = await supabase
       .from("weighing_tickets")
-      .update({
-        quality_grade: qualityGrade || null,
-        moisture_pct: moisturePct || 0,
-        mixture_pct: mixturePct || 0,
-        outthrow_pct: outthrowPct || 0,
-        deduction_kg: deductionKg || 0,
-        price_per_kg: decline ? null : pricePerKg,
-        staff_fee: staffFee || 0,
-        tax_applicable: !!taxApplicable,
-        tax_rate: taxApplicable ? (taxRate || 0) : 0,
-        price_note: priceNote || null,
-        priced_at: new Date().toISOString(),
-        priced_by: userId,
-        stage: decline ? "declined" : "priced",
-      })
+      .update(patch)
       .eq("id", id)
       .select()
       .single();
