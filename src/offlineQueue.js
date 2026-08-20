@@ -405,7 +405,7 @@ export async function resolveProductIdOffline(typedName) {
 
 // Opens a brand new ticket the instant a truck arrives — no network
 // required. `locationName` is only used for the on-screen/print label.
-export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo }) {
+export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl }) {
   const id = newId();
   const code = genLocalTicketCode();
   const ticket = {
@@ -416,6 +416,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     car_plate: carPlate || null, driver_name: driverName || null,
     product_id: productId || null, product_name: productName,
     paper_ticket_no: paperTicketNo || null,
+    bank_qr_url: bankQrUrl || null,
     stage: "arrived",
     gross_kg: null, gross_at: null, gross_by: null, grossByName: null,
     quality_grade: null, moisture_pct: null, mixture_pct: null, outthrow_pct: null,
@@ -426,7 +427,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     created_by: userId, createdByName: null, created_at: new Date().toISOString(),
   };
   upsertCachedTicket(ticket);
-  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo } });
+  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl } });
   trySync();
   return ticket;
 }
@@ -522,6 +523,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate }) {
     car_plate: ticket.car_plate,
     driver_name: ticket.driver_name,
     paper_ticket_no: ticket.paper_ticket_no,
+    bank_qr_url: ticket.bank_qr_url,
     note: ticket.note,
     tax_applicable: ticket.tax_applicable,
     staff_fee: ticket.staff_fee,

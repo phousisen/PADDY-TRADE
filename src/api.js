@@ -431,7 +431,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo }) {
+  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -469,6 +469,7 @@ export const api = {
       payment_proof_url: paymentProofUrl || null,
       staff_fee: staffFee || 0,
       paper_ticket_no: paperTicketNo || null,
+      bank_qr_url: bankQrUrl || null,
     };
     // `id` is optional — passed by finalizeTicket when a weighing ticket
     // is finalized offline, so a retried sync reuses the same id instead
@@ -506,7 +507,7 @@ export const api = {
   // `id` is optional — passed by the offline queue when a ticket was
   // already opened locally (client-generated UUID) while offline, so a
   // retried sync reuses that same id instead of opening a second ticket.
-  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo }) {
+  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl }) {
     const row = {
       ...(id ? { id } : {}),
       code: code || genTicketCode(),
@@ -524,6 +525,7 @@ export const api = {
       stage: "arrived",
       created_by: userId,
       paper_ticket_no: paperTicketNo || null,
+      bank_qr_url: bankQrUrl || null,
     };
     return insertOrFetchExisting("weighing_tickets", row);
   },
@@ -618,6 +620,7 @@ export const api = {
       txDate,
       staffFee: ticket.staff_fee,
       paperTicketNo: ticket.paper_ticket_no,
+      bankQrUrl: ticket.bank_qr_url,
     });
     const { error: updateErr } = await supabase
       .from("weighing_tickets")
