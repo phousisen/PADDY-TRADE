@@ -5,6 +5,19 @@
 html, body, #root { height: 100%; }
 body { @apply bg-slate-100 text-slate-800 font-sans; }
 
+/* Hide the up/down spinner arrows on number inputs everywhere in the app
+   (weights, prices, percentages, etc.) — they don't add anything useful
+   here and just clutter the field. */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 @media print {
   .no-print { display: none !important; }
   body { background: white !important; }
