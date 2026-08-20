@@ -103,9 +103,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
+  // Searches by phone number, not name — lots of farmers share the exact
+  // same name, but phone numbers are unique, so this is a much more
+  // reliable way to find the right person.
   useEffect(() => {
-    api.getParties({ type: isBuy ? "supplier" : "buyer", q: partyQuery }).then(setParties).catch(() => {});
-  }, [partyQuery]);
+    if (!partyPhone.trim()) { setParties([]); return; }
+    api.getParties({ type: isBuy ? "supplier" : "buyer", qPhone: partyPhone }).then(setParties).catch(() => {});
+  }, [partyPhone, isBuy]);
 
   useEffect(() => {
     if (isBuy && !priceOverridden && settings[`price_grade_${qualityGrade.toLowerCase()}_per_kg`]) {
@@ -131,6 +135,29 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const totalWithTax = netSubtotal + taxAmount;
   const hasBreakdown = taxApplicable || staffFeeAmt > 0;
   const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
+  const effectiveLocationId = isAdmin ? stationId : profile?.location_id;
+
+  // Live weighbridge connection — polls the scale_readings table (kept up
+  // to date by a small background "bridge" program at the location) every
+  // couple of seconds so this screen can show the truck's weight live. If
+  // the bridge hasn't reported in recently (not set up yet at this
+  // location, lost power, lost internet), the reading just goes stale and
+  // staff type the weight in by hand instead — this is purely an assist,
+  // never required to fill out the form.
+  const [liveWeight, setLiveWeight] = useState(null);
+  useEffect(() => {
+    if (!effectiveLocationId) { setLiveWeight(null); return; }
+    let cancelled = false;
+    async function poll() {
+      const reading = await api.getLiveWeight(effectiveLocationId).catch(() => null);
+      if (!cancelled) setLiveWeight(reading);
+    }
+    poll();
+    const interval = setInterval(poll, 2000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [effectiveLocationId]);
+  const liveWeightAgeMs = liveWeight?.updated_at ? Date.now() - new Date(liveWeight.updated_at).getTime() : Infinity;
+  const liveWeightConnected = liveWeightAgeMs < 6000; // no update in 6s of polling = treat as disconnected
 
   function selectParty(p) {
     setSelectedParty(p);
@@ -302,22 +329,22 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               </h3>
               <div className="relative mb-3">
                 <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder={t("search_party_placeholder")}
+                <input value={partyPhone} onChange={(e) => { setPartyPhone(e.target.value); setSelectedParty(null); }} placeholder="Search by phone number"
                   className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                {partyQuery && !selectedParty && parties.length > 0 && (
+                {partyPhone && !selectedParty && parties.length > 0 && (
                   <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
                     {parties.map((p) => (
                       <button type="button" key={p.id} onClick={() => selectParty(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50">
-                        <span>{p.name}</span><span className="text-xs text-slate-400">{p.id_number}</span>
+                        <span>{p.name}</span><span className="text-xs text-slate-400">{p.phone}</span>
                       </button>
                     ))}
                   </div>
                 )}
-                <p className="mt-1 text-[11px] text-slate-400">Type a name to search, or a new name to add them.</p>
+                <p className="mt-1 text-[11px] text-slate-400">Type a phone number to search — lots of people share the same name, so phone is more reliable.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="mb-1 block text-xs text-slate-500">{t("phone")}</label><input value={partyPhone} onChange={(e) => setPartyPhone(e.target.value)} placeholder="+855 XX XXX XXX" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                <div><label className="mb-1 block text-xs text-slate-500">{isBuy ? t("section1_seller") : t("section1_buyer")} Name</label><input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder="Type name, or select a match above" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
 
                 {isBuy ? (
                   <>
@@ -397,6 +424,33 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">2</span>
                 <ScanLine size={16} /> {t("section2_weighbridge")}
               </h3>
+
+              <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 ${liveWeightConnected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+                <div className="flex items-center gap-2.5">
+                  <span className={`h-2 w-2 rounded-full ${liveWeightConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
+                  <div>
+                    <p className={`text-xs font-medium ${liveWeightConnected ? "text-emerald-700" : "text-slate-400"}`}>
+                      {liveWeightConnected ? "Live Scale Weight" : "Scale not connected"}
+                    </p>
+                    <p className={`text-lg font-bold ${liveWeightConnected ? "text-emerald-800" : "text-slate-300"}`}>
+                      {liveWeightConnected ? `${fmt2(liveWeight.weight_kg)} kg` : "— kg"}
+                    </p>
+                  </div>
+                </div>
+                {liveWeightConnected && (
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setGrossKg(String(liveWeight.weight_kg))}
+                      className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
+                      Use as Gross
+                    </button>
+                    <button type="button" onClick={() => setTareKg(String(liveWeight.weight_kg))}
+                      className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
+                      Use as Tare
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div><label className="mb-1 block text-xs text-slate-500">{t("gross_weight")}</label><input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
                 <div><label className="mb-1 block text-xs text-slate-500">{t("tare_weight")}</label><input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
