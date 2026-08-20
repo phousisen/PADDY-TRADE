@@ -253,6 +253,20 @@ async function runOp(op) {
 let syncPromise = null;
 export function trySync() {
   if (syncPromise) return syncPromise;
+
+  // Nothing queued — this call is just the 15s safety-net heartbeat (or a
+  // redundant call right after one). Quietly top up the lookup caches if
+  // we're online, but skip flipping the "syncing" status entirely: every
+  // screen watching sync status (like the ticket board) reacts to that
+  // flag by reloading, so toggling it for a no-op cycle was making the
+  // whole board silently refresh itself every 15 seconds even when
+  // absolutely nothing had changed. Only a REAL sync (queue not empty)
+  // should trigger that reload.
+  if (getQueue().length === 0) {
+    if (navigator.onLine) refreshLookupCaches();
+    return Promise.resolve();
+  }
+
   syncPromise = (async () => {
     if (!navigator.onLine) return;
     syncing = true;
