@@ -298,7 +298,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         }
       }
 
-      setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "" });
+      setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "", bank_name: party.bank_name, bank_account: party.bank_account });
     } catch (err) {
       const isNetworkError = err.message && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"));
       setError(
