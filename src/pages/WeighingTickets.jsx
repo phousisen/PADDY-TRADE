@@ -121,6 +121,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
   const [productName, setProductName] = useState("");
+  const [paperTicketNo, setPaperTicketNo] = useState("");
   const [grossWeight, setGrossWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -162,6 +163,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setError("Please fill in location, party name, product, and plate number.");
       return;
     }
+    if (!paperTicketNo.trim()) {
+      setError("Please enter the number printed on the paper quality ticket.");
+      return;
+    }
     if (!kg || kg <= 0) {
       setError("Please enter the truck's gross (loaded) weight.");
       return;
@@ -175,6 +180,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone, bankName, bankAccount,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
+        paperTicketNo: paperTicketNo.trim(),
       });
       const weighedIn = setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id });
       onCreated(weighedIn);
@@ -234,6 +240,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           </datalist>
         </div>
         <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
+        <div>
+          <label className={labelCls}>Quality Ticket No.</label>
+          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
+          <p className="mt-1 text-[11px] text-slate-400">The red serial number printed on the paper quality ticket you're about to write on</p>
+        </div>
         <div className="col-span-2"><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
 
@@ -412,6 +423,7 @@ function TicketSlip({ ticket, onClose }) {
         <div id="ticket-slip-root" className="border border-slate-300 p-4 text-sm">
           <p className="text-center text-base font-bold">Ticket {ticket.code}</p>
           <p className="text-center text-xs text-slate-500">{ticket.stationName}</p>
+          {ticket.paper_ticket_no && <p className="text-center text-xs text-slate-400">Quality Ticket No. {ticket.paper_ticket_no}</p>}
           <hr className="my-2" />
           <div className="space-y-1">
             <div className="flex justify-between"><span>Truck ID</span><span className="font-medium">{ticket.car_plate}</span></div>
@@ -570,6 +582,7 @@ export default function WeighingTickets() {
                   <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
                   <p className="text-slate-500">{t.product_name}</p>
                   {t.gross_kg != null && <p className="text-slate-500">Gross: {fmt2(t.gross_kg)} kg {t.grossByName && <span className="text-slate-400">by {t.grossByName}</span>}</p>}
+                  {t.paper_ticket_no && <p className="text-xs text-slate-400">Quality Ticket No. {t.paper_ticket_no}</p>}
                 </div>
                 {tab === "waiting" && (
                   <div className="flex gap-2">

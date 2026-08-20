@@ -84,6 +84,7 @@ export default function Receipt({ tx, onDone }) {
             <div className="flex justify-between"><span className="text-slate-500">Price per kg</span><span className="font-medium text-slate-700">{fmtRiel(tx.price_per_kg)}</span></div>
             {tx.car_plate && <div className="flex justify-between"><span className="text-slate-500">Car Plate</span><span className="font-medium text-slate-700">{tx.car_plate}</span></div>}
             {tx.driver_name && <div className="flex justify-between"><span className="text-slate-500">Truck / Driver</span><span className="font-medium text-slate-700">{tx.driver_name}</span></div>}
+            {tx.paper_ticket_no && <div className="flex justify-between"><span className="text-slate-500">Quality Ticket No.</span><span className="font-medium text-slate-700">{tx.paper_ticket_no}</span></div>}
           </div>
           {tx.note && <p className="mb-3 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-500">{tx.note}</p>}
 
