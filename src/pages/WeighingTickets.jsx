@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Scale, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw } from "lucide-react";
+import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -20,13 +20,15 @@ function cambodiaDateStr(d = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-const STAGES = [
-  { id: "arrived", label: "Arrived", next: "Weigh In" },
-  { id: "weighed_in", label: "Awaiting Price", next: "Set Price" },
-  { id: "priced", label: "Awaiting Weigh-Out", next: "Weigh Out" },
-  { id: "weighed_out", label: "Ready to Finalize", next: "Finalize" },
-  { id: "declined", label: "Declined", next: null },
-];
+// These are the underlying stages a ticket moves through in the database
+// (unchanged from before — this is what keeps old data and the sync queue
+// compatible). What changed is that the board no longer shows a separate
+// screen/tab for each one: "arrived" and "weighed_in" happen together the
+// instant staff open a new ticket, and "priced"/"weighed_out" happen
+// together in the single "Finish Ticket" step — matching how Baitang
+// actually uses two visits to the computer per truck, not four or five.
+const OPEN_STAGE_IDS = ["arrived", "weighed_in", "priced", "weighed_out"];
+const ALL_STAGE_IDS = [...OPEN_STAGE_IDS, "declined"];
 
 // ---- Live weight box (same pattern as the New Transaction form) ----------
 
@@ -47,14 +49,14 @@ function useLiveWeight(locationId) {
   return { connected: ageMs < 6000, weightKg: liveWeight?.weight_kg };
 }
 
-function LiveWeightBox({ locationId, onUse }) {
+function LiveWeightBox({ locationId, label, onUse }) {
   const { connected, weightKg } = useLiveWeight(locationId);
   return (
     <div className={`mb-3 flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${connected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
       <div className="flex items-center gap-2.5">
         <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
         <div>
-          <p className={`text-xs font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>{connected ? "Live Scale Weight" : "Scale not connected"}</p>
+          <p className={`text-xs font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>{connected ? (label || "Live Scale Weight") : "Scale not connected"}</p>
           <p className={`text-lg font-bold ${connected ? "text-emerald-800" : "text-slate-300"}`}>{connected ? `${fmt2(weightKg)} kg` : "— kg"}</p>
         </div>
       </div>
@@ -70,12 +72,15 @@ function LiveWeightBox({ locationId, onUse }) {
 
 // ---- Modal shell ----------------------------------------------------------
 
-function Modal({ title, onClose, children, wide }) {
+function Modal({ title, subtitle, onClose, children, wide }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className={`no-print w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 shadow-xl`}>
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-700">{title}</h3>
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-700">{title}</h3>
+            {subtitle && <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>}
+          </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         {children}
@@ -87,7 +92,7 @@ function Modal({ title, onClose, children, wide }) {
 const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1 block text-xs text-slate-500";
 
-// ---- New Ticket -------------------------------------------------------
+// ---- New Ticket & Weigh In (combined — one screen, like the scale software's single window) ----
 
 function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated }) {
   const [type, setType] = useState("BUY");
@@ -99,13 +104,43 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
   const [productName, setProductName] = useState("");
+  const [grossWeight, setGrossWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [phoneLookupMsg, setPhoneLookupMsg] = useState("");
   const { session } = useAuth();
 
+  // Looks up a farmer/buyer that already self-registered (via the QR
+  // registration page) or has been entered before, by phone number, and
+  // fills in their saved name/bank details so staff don't retype them.
+  async function lookupByPhone() {
+    const trimmed = phone.trim();
+    if (!trimmed) { setPhoneLookupMsg(""); return; }
+    setPhoneLookupMsg("Looking up…");
+    try {
+      const matches = await api.getParties({ type: type === "BUY" ? "supplier" : "buyer", phone: trimmed });
+      if (matches && matches.length > 0) {
+        const p = matches[0];
+        setPartyName(p.name || "");
+        setBankName(p.bank_name || "");
+        setBankAccount(p.bank_account || "");
+        setPhoneLookupMsg(`Found: ${p.name}`);
+      } else {
+        setPhoneLookupMsg("No record found — fill in details below.");
+      }
+    } catch {
+      setPhoneLookupMsg("");
+    }
+  }
+
   async function submit() {
+    const kg = parseFloat(grossWeight);
     if (!locationId || !partyName.trim() || !productName.trim() || !carPlate.trim()) {
       setError("Please fill in location, party name, product, and plate number.");
+      return;
+    }
+    if (!kg || kg <= 0) {
+      setError("Please enter the truck's gross (loaded) weight.");
       return;
     }
     setSaving(true);
@@ -118,7 +153,8 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone, bankName, bankAccount,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
       });
-      onCreated(ticket);
+      const weighedIn = setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id });
+      onCreated(weighedIn);
     } catch (err) {
       setError(err.message || "Something went wrong.");
     } finally {
@@ -127,7 +163,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   }
 
   return (
-    <Modal title="New Ticket — Truck Arrival" onClose={onClose} wide>
+    <Modal title="New Ticket — Weigh In (Loaded)" subtitle="Farmer already has their guard-issued queue slip in hand" onClose={onClose} wide>
       <div className="mb-3 flex gap-2">
         <button onClick={() => setType("BUY")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "BUY" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Buy (from farmer)</button>
         <button onClick={() => setType("SELL")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "SELL" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Sell (to buyer)</button>
@@ -142,63 +178,37 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
+        <div className="col-span-2">
+          <label className={labelCls}>Phone (type it and tab/click away to look them up)</label>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={inputCls} />
+          {phoneLookupMsg && <p className={`mt-1 text-xs ${phoneLookupMsg.startsWith("Found") ? "text-emerald-600" : "text-slate-400"}`}>{phoneLookupMsg}</p>}
+        </div>
         <div className="col-span-2"><label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label><input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Phone</label><input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Bank</label><input value={bankName} onChange={(e) => setBankName(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Product (paddy type)</label><input value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" /></div>
         <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} /></div>
+        <div className="col-span-2"><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
+
+      <div className="mt-4">
+        <LiveWeightBox locationId={locationId} onUse={(kg) => setGrossWeight(String(kg))} />
+        <label className={labelCls}>Gross Weight — loaded truck (kg)</label>
+        <input type="number" min="0" step="0.01" value={grossWeight} onChange={(e) => setGrossWeight(e.target.value)} className={inputCls} placeholder="0" />
+      </div>
+
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Saving…" : "Create Ticket & Weigh In"}</button>
+        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Saving…" : "Save & Print Weigh-In Slip"}</button>
       </div>
     </Modal>
   );
 }
 
-// ---- Weigh In / Weigh Out (shared shape) ----------------------------------
+// ---- Finish Ticket (combined — price + quality, weigh out, and finalize into a receipt, all in one screen) ----
 
-function WeighModal({ ticket, mode, onClose, onDone }) {
-  // mode: "in" (gross) or "out" (tare)
-  const isIn = mode === "in";
-  const [value, setValue] = useState("");
-  const [saving, setSaving] = useState(false);
-  const { session } = useAuth();
-
-  async function submit() {
-    const kg = parseFloat(value);
-    if (!kg || kg <= 0) return;
-    setSaving(true);
-    try {
-      const updated = isIn
-        ? setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id })
-        : setTicketTareOffline(ticket.id, { tareKg: kg, userId: session.user.id });
-      onDone(updated);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal title={isIn ? "Weigh In — Loaded" : "Weigh Out — Empty"} onClose={onClose}>
-      <p className="mb-3 text-xs text-slate-400">{ticket.code} · {ticket.party_name} · {ticket.car_plate}</p>
-      <LiveWeightBox locationId={ticket.location_id} onUse={(kg) => setValue(String(kg))} />
-      <label className={labelCls}>{isIn ? "Gross Weight (kg)" : "Tare Weight (kg)"}</label>
-      <input type="number" min="0" step="0.01" value={value} onChange={(e) => setValue(e.target.value)} className={inputCls} placeholder="0" />
-      <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-        <button disabled={saving || !value} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Saving…" : "Confirm & Print Slip"}</button>
-      </div>
-    </Modal>
-  );
-}
-
-// ---- Quality + Price --------------------------------------------------
-
-function PriceModal({ ticket, onClose, onDone }) {
+function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
   const isBuy = ticket.type === "BUY";
   const [qualityGrade, setQualityGrade] = useState("");
   const [moisturePct, setMoisturePct] = useState("");
@@ -210,27 +220,53 @@ function PriceModal({ ticket, onClose, onDone }) {
   const [taxApplicable, setTaxApplicable] = useState(false);
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
+  const [tareWeight, setTareWeight] = useState("");
+  const [txDate, setTxDate] = useState(cambodiaDateStr());
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const { session } = useAuth();
 
-  async function submit(decline) {
+  const netKg = Math.max(0, (ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0));
+  const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
+  const staffFeeAmt = isBuy ? (parseFloat(staffFee) || 0) : 0;
+  const subtotal = Math.max(0, payableKg * (parseFloat(pricePerKg) || 0) - staffFeeAmt);
+  const taxAmount = taxApplicable ? Math.round(subtotal * (parseFloat(taxRate) || 0)) / 100 : 0;
+  const total = subtotal + taxAmount;
+
+  async function submitDecline() {
     setSaving(true);
     try {
-      const updated = setTicketPriceOffline(ticket.id, {
+      setTicketPriceOffline(ticket.id, { priceNote: priceNote || "Not buying", userId: session.user.id, decline: true });
+      onDeclined();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function submitFinish() {
+    const tareKg = parseFloat(tareWeight);
+    if (!pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
+    if (!tareKg || tareKg <= 0) { setError("Please enter the empty truck's weight."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      setTicketPriceOffline(ticket.id, {
         qualityGrade, moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
         pricePerKg: parseFloat(pricePerKg) || 0, staffFee: parseFloat(staffFee) || 0,
-        taxApplicable, taxRate: parseFloat(taxRate) || 0, priceNote, userId: session.user.id, decline,
+        taxApplicable, taxRate: parseFloat(taxRate) || 0, priceNote, userId: session.user.id, decline: false,
       });
-      onDone(updated);
+      const tareUpdated = setTicketTareOffline(ticket.id, { tareKg, userId: session.user.id });
+      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id, txDate });
+      onFinalized(tx);
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Modal title="Quality Check & Price" onClose={onClose} wide>
-      <p className="mb-3 text-xs text-slate-400">{ticket.code} · {ticket.party_name} · {ticket.car_plate} · Gross: {fmt2(ticket.gross_kg)} kg</p>
+    <Modal title={`Finish Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate} · Gross: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
+      <p className={labelCls}>Whatever was already agreed on the paper ticket — grade, moisture, price</p>
       <div className="grid grid-cols-3 gap-3">
         <div><label className={labelCls}>Quality Grade</label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Moisture %</label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
@@ -245,69 +281,75 @@ function PriceModal({ ticket, onClose, onDone }) {
           <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> Tax applicable</label>
           {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
         </div>
-        <div className="col-span-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} /></div>
+        <div className="col-span-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
-      <p className="mt-3 text-xs text-slate-400">Whoever sets the price here will be recorded on the printed slip — leave a blank line to sign by hand, same as the paper ticket today.</p>
+
+      <div className="mt-4">
+        <LiveWeightBox locationId={ticket.location_id} label="Live Scale Weight (empty truck)" onUse={(kg) => setTareWeight(String(kg))} />
+        <label className={labelCls}>Tare Weight — empty truck (kg)</label>
+        <input type="number" min="0" step="0.01" value={tareWeight} onChange={(e) => setTareWeight(e.target.value)} className={inputCls} placeholder="0" />
+      </div>
+
+      <div className="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
+        <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
+        {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
+        <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
+      </div>
+
+      <div className="mt-3">
+        <label className={labelCls}>Transaction Date</label>
+        <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()} className={inputCls} />
+      </div>
+
+      {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-between gap-2">
-        <button onClick={() => submit(true)} disabled={saving} className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40">
+        <button onClick={submitDecline} disabled={saving} className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40">
           <Ban size={14} /> Not Buying
         </button>
         <div className="flex gap-2">
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-          <button disabled={saving || !pricePerKg} onClick={() => submit(false)} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Saving…" : "Confirm Price & Print Slip"}</button>
+          <button disabled={saving} onClick={submitFinish} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40">
+            <Check size={14} /> {saving ? "Saving…" : "Save, Print & Finalize"}
+          </button>
         </div>
       </div>
     </Modal>
   );
 }
 
-// ---- Finalize -----------------------------------------------------------
+// ---- Quick Decline (straight from the board card — no need to open the full Finish Ticket form) ----
 
-function FinalizeModal({ ticket, onClose, onFinalized }) {
-  const [txDate, setTxDate] = useState(cambodiaDateStr());
+function DeclineModal({ ticket, onClose, onDeclined }) {
+  const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const { session } = useAuth();
-
-  const netKg = Math.max(0, (ticket.gross_kg || 0) - (ticket.tare_kg || 0));
-  const payableKg = Math.max(0, netKg - (ticket.deduction_kg || 0));
-  const staffFeeAmt = ticket.type === "BUY" ? (ticket.staff_fee || 0) : 0;
-  const subtotal = Math.max(0, payableKg * (ticket.price_per_kg || 0) - staffFeeAmt);
-  const taxAmount = ticket.tax_applicable ? Math.round(subtotal * (ticket.tax_rate || 0)) / 100 : 0;
-  const total = subtotal + taxAmount;
 
   async function submit() {
     setSaving(true);
     try {
-      const tx = finalizeTicketOffline(ticket, { userId: session.user.id, txDate });
-      onFinalized(tx);
+      setTicketPriceOffline(ticket.id, { priceNote: reason || "Not buying", userId: session.user.id, decline: true });
+      onDeclined();
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <Modal title="Finalize — Create Receipt" onClose={onClose}>
-      <p className="mb-3 text-xs text-slate-400">{ticket.code} · {ticket.party_name} · {ticket.car_plate}</p>
-      <div className="mb-3 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
-        <div className="flex justify-between"><span className="text-slate-500">Gross</span><span className="font-medium">{fmt2(ticket.gross_kg)} kg</span></div>
-        <div className="flex justify-between"><span className="text-slate-500">Tare</span><span className="font-medium">{fmt2(ticket.tare_kg)} kg</span></div>
-        <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
-        <div className="flex justify-between"><span className="text-slate-500">Price / kg</span><span className="font-medium">{fmtRiel(ticket.price_per_kg)}</span></div>
-        <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
-      </div>
-      <label className={labelCls}>Transaction Date</label>
-      <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()} className={inputCls} />
+    <Modal title={`Decline Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
+      <p className="mb-3 text-xs text-slate-400">Same as not signing the paper quality ticket — no price, no weigh-out needed. This just keeps a short record of why.</p>
+      <label className={labelCls}>Reason (optional)</label>
+      <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} placeholder="e.g. moisture too high" />
       <div className="mt-4 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-        <button disabled={saving} onClick={submit} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
-          <Check size={14} /> {saving ? "Finalizing…" : "Finalize & Print Receipt"}
+        <button disabled={saving} onClick={submit} className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40">
+          <Ban size={14} /> {saving ? "Saving…" : "Confirm Decline"}
         </button>
       </div>
     </Modal>
   );
 }
 
-// ---- Interim slip (printed at each stage, mirrors the paper ticket) ------
+// ---- Interim slip (printed at weigh-in, mirrors the paper queue ticket) ------
 
 function TicketSlip({ ticket, onClose }) {
   const netKg = ticket.gross_kg != null && ticket.tare_kg != null ? Math.max(0, ticket.gross_kg - ticket.tare_kg) : null;
@@ -315,7 +357,7 @@ function TicketSlip({ ticket, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <div className="no-print mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-700">Ticket Slip</h3>
+          <h3 className="font-semibold text-slate-700">Weigh-In Slip</h3>
           <div className="flex gap-2">
             <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"><Printer size={13} /> Print</button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
@@ -332,7 +374,6 @@ function TicketSlip({ ticket, onClose }) {
             <div className="flex justify-between"><span>Buyer/Seller</span><span className="font-medium">{ticket.party_name}</span></div>
             {ticket.gross_kg != null && <div className="flex justify-between"><span>IN (Gross)</span><span className="font-medium">{fmt2(ticket.gross_kg)} kg</span></div>}
             {ticket.moisture_pct != null && ticket.priced_at && <div className="flex justify-between"><span>Moisture</span><span className="font-medium">{fmt2(ticket.moisture_pct)} %</span></div>}
-            {ticket.mixture_pct != null && ticket.priced_at && <div className="flex justify-between"><span>Mixture</span><span className="font-medium">{fmt2(ticket.mixture_pct)} %</span></div>}
             {ticket.outthrow_pct != null && ticket.priced_at && <div className="flex justify-between"><span>Outthrow</span><span className="font-medium">{fmt2(ticket.outthrow_pct)} %</span></div>}
             {ticket.price_per_kg != null && ticket.priced_at && <div className="flex justify-between"><span>Price / Kg</span><span className="font-medium">{fmtRiel(ticket.price_per_kg)}</span></div>}
             {ticket.tare_kg != null && <div className="flex justify-between"><span>OUT (Tare)</span><span className="font-medium">{fmt2(ticket.tare_kg)} kg</span></div>}
@@ -359,11 +400,10 @@ export default function WeighingTickets() {
   const [locationId, setLocationId] = useState("");
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("arrived");
+  const [tab, setTab] = useState("waiting");
   const [showNew, setShowNew] = useState(false);
-  const [weighTicket, setWeighTicket] = useState(null); // { ticket, mode }
-  const [priceTicket, setPriceTicket] = useState(null);
-  const [finalizeTicketRow, setFinalizeTicketRow] = useState(null);
+  const [finishTicket, setFinishTicket] = useState(null);
+  const [declineTicketRow, setDeclineTicketRow] = useState(null);
   const [slipTicket, setSlipTicket] = useState(null);
   const [finalReceipt, setFinalReceipt] = useState(null);
   const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
@@ -387,17 +427,17 @@ export default function WeighingTickets() {
 
   async function load() {
     setLoading(true);
-    // Only pull tickets still in progress — once finalized (or cancelled)
-    // a ticket has become a normal transaction and belongs in the
-    // Transactions list instead, not on this board.
+    // Only pull tickets still in progress — once finalized a ticket has
+    // become a normal transaction and belongs in the Transactions list
+    // instead, not on this board.
     let serverRows = null;
     try {
-      serverRows = await api.getTickets({ locationId: effectiveLocationId || undefined, stages: STAGES.map((s) => s.id) });
+      serverRows = await api.getTickets({ locationId: effectiveLocationId || undefined, stages: ALL_STAGE_IDS });
     } catch {
       serverRows = null; // offline, or the request failed — fall back to the local cache below
     }
     const merged = serverRows ? mergeServerTickets(serverRows) : getCachedTickets();
-    const visible = merged.filter((t) => STAGES.some((s) => s.id === t.stage) && (!effectiveLocationId || t.location_id === effectiveLocationId));
+    const visible = merged.filter((t) => ALL_STAGE_IDS.includes(t.stage) && (!effectiveLocationId || t.location_id === effectiveLocationId));
     setTickets(visible);
     setLoading(false);
   }
@@ -412,22 +452,14 @@ export default function WeighingTickets() {
   }, [syncStatus.syncing, syncStatus.pending]);
 
   const grouped = useMemo(() => {
-    const map = {};
-    STAGES.forEach((s) => { map[s.id] = []; });
-    tickets.forEach((t) => { if (map[t.stage]) map[t.stage].push(t); });
-    return map;
+    const waiting = tickets.filter((t) => OPEN_STAGE_IDS.includes(t.stage));
+    const declined = tickets.filter((t) => t.stage === "declined");
+    return { waiting, declined };
   }, [tickets]);
-
-  function handleAction(ticket, action) {
-    if (action === "weighed_in_target") setWeighTicket({ ticket, mode: "in" });
-    else if (action === "price") setPriceTicket(ticket);
-    else if (action === "weighed_out_target") setWeighTicket({ ticket, mode: "out" });
-    else if (action === "finalize") setFinalizeTicketRow(ticket);
-  }
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Weighing Tickets" subtitle="Digital ticket that follows a truck from arrival to final receipt" />
+      <Topbar title="Weighing Tickets" subtitle="Weigh in once, finish the ticket once the truck's back and empty" />
 
       {(!syncStatus.online || syncStatus.pending > 0 || syncStatus.syncing) && (
         <div className={`flex items-center gap-2 px-6 py-2 text-xs font-medium ${!syncStatus.online ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"}`}>
@@ -441,14 +473,16 @@ export default function WeighingTickets() {
       )}
 
       <div className="border-b border-slate-200 bg-white px-6 py-3">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex gap-1 overflow-x-auto">
-            {STAGES.map((s) => (
-              <button key={s.id} onClick={() => setTab(s.id)}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === s.id ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
-                {s.label} <span className={`rounded-full px-1.5 text-xs ${tab === s.id ? "bg-brand-700" : "bg-slate-200"}`}>{grouped[s.id]?.length || 0}</span>
-              </button>
-            ))}
+            <button onClick={() => setTab("waiting")}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "waiting" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+              Weighed In — Out for Quality Check <span className={`rounded-full px-1.5 text-xs ${tab === "waiting" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.waiting.length}</span>
+            </button>
+            <button onClick={() => setTab("declined")}
+              className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "declined" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+              Declined <span className={`rounded-full px-1.5 text-xs ${tab === "declined" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.declined.length}</span>
+            </button>
           </div>
           <div className="flex items-center gap-2">
             {isAdmin && locations.length > 1 && (
@@ -458,10 +492,11 @@ export default function WeighingTickets() {
               </select>
             )}
             <button onClick={() => setShowNew(true)} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-              <Plus size={15} /> New Ticket
+              <Plus size={15} /> New Ticket (Weigh In)
             </button>
           </div>
         </div>
+        {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">A ticket shows up here once it's been weighed in — the queue slip and quality/price decision on paper happen before this, same as today.</p>}
       </div>
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
@@ -481,7 +516,7 @@ export default function WeighingTickets() {
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-400">{t.stationName} · {t.type}</p>
+                    <p className="text-xs text-slate-400">{t.stationName} · {t.type}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
                   </div>
                   <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
                 </div>
@@ -489,30 +524,18 @@ export default function WeighingTickets() {
                   <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
                   <p className="text-slate-500">{t.product_name}</p>
                   {t.gross_kg != null && <p className="text-slate-500">Gross: {fmt2(t.gross_kg)} kg {t.grossByName && <span className="text-slate-400">by {t.grossByName}</span>}</p>}
-                  {t.price_per_kg != null && <p className="text-slate-500">Price: {fmtRiel(t.price_per_kg)}/kg {t.pricedByName && <span className="text-slate-400">by {t.pricedByName}</span>}</p>}
-                  {t.tare_kg != null && <p className="text-slate-500">Tare: {fmt2(t.tare_kg)} kg {t.tareByName && <span className="text-slate-400">by {t.tareByName}</span>}</p>}
                 </div>
-                {t.stage === "arrived" && (
-                  <button onClick={() => handleAction(t, "weighed_in_target")} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
-                    <Scale size={14} /> Weigh In <ArrowRight size={14} />
-                  </button>
+                {tab === "waiting" && (
+                  <div className="flex gap-2">
+                    <button onClick={() => setFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                      Finish Ticket <ArrowRight size={14} />
+                    </button>
+                    <button onClick={() => setDeclineTicketRow(t)} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
+                      Decline
+                    </button>
+                  </div>
                 )}
-                {t.stage === "weighed_in" && (
-                  <button onClick={() => handleAction(t, "price")} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
-                    Set Price <ArrowRight size={14} />
-                  </button>
-                )}
-                {t.stage === "priced" && (
-                  <button onClick={() => handleAction(t, "weighed_out_target")} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
-                    <Scale size={14} /> Weigh Out <ArrowRight size={14} />
-                  </button>
-                )}
-                {t.stage === "weighed_out" && (
-                  <button onClick={() => handleAction(t, "finalize")} className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 py-2 text-sm font-medium text-white hover:bg-emerald-700">
-                    <Check size={14} /> Finalize
-                  </button>
-                )}
-                {t.stage === "declined" && <p className="text-center text-xs font-medium text-rose-500">Not buying — {t.price_note || "no reason given"}</p>}
+                {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">Declined — {t.price_note || "no reason given"}</p>}
               </div>
             ))}
           </div>
@@ -528,32 +551,25 @@ export default function WeighingTickets() {
           onCreated={(t) => { setShowNew(false); load(); setSlipTicket(t); }}
         />
       )}
-      {weighTicket && (
-        <WeighModal
-          ticket={weighTicket.ticket}
-          mode={weighTicket.mode}
-          onClose={() => setWeighTicket(null)}
-          onDone={(updated) => { setWeighTicket(null); load(); setSlipTicket(updated); }}
-        />
-      )}
-      {priceTicket && (
-        <PriceModal
-          ticket={priceTicket}
-          onClose={() => setPriceTicket(null)}
-          onDone={(updated) => { setPriceTicket(null); load(); setSlipTicket(updated); }}
-        />
-      )}
-      {finalizeTicketRow && (
-        <FinalizeModal
-          ticket={finalizeTicketRow}
-          onClose={() => setFinalizeTicketRow(null)}
+      {finishTicket && (
+        <FinishTicketModal
+          ticket={finishTicket}
+          onClose={() => setFinishTicket(null)}
           onFinalized={(tx) => {
             // finalizeTicketOffline already fills in partyName/partyIdNumber
             // (Receipt.jsx's expected shape), offline or not.
             setFinalReceipt(tx);
-            setFinalizeTicketRow(null);
+            setFinishTicket(null);
             load();
           }}
+          onDeclined={() => { setFinishTicket(null); load(); }}
+        />
+      )}
+      {declineTicketRow && (
+        <DeclineModal
+          ticket={declineTicketRow}
+          onClose={() => setDeclineTicketRow(null)}
+          onDeclined={() => { setDeclineTicketRow(null); load(); }}
         />
       )}
       {slipTicket && <TicketSlip ticket={slipTicket} onClose={() => setSlipTicket(null)} />}
