@@ -348,10 +348,16 @@ export const api = {
     return data;
   },
 
-  async getParties({ type, q, phone } = {}) {
+  // `q` searches by name (exact-match-or-create flows elsewhere in the
+  // app), `qPhone` searches by phone as-you-type (partial match — used by
+  // the New Buy/Sell search box, since phone numbers are unique but many
+  // farmers share the same name), and `phone` does an exact phone match
+  // (used for one-shot lookups like the Weighing Ticket phone field).
+  async getParties({ type, q, qPhone, phone } = {}) {
     let query = supabase.from("parties").select("*").order("name");
     if (type) query = query.eq("type", type);
     if (q) query = query.ilike("name", `%${q}%`);
+    if (qPhone) query = query.ilike("phone", `%${qPhone}%`);
     if (phone) query = query.eq("phone", phone);
     const { data, error } = await query;
     if (error) throw error;
