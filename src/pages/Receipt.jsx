@@ -56,8 +56,18 @@ export default function Receipt({ tx, onDone }) {
   const inStamp = splitCambodiaTimestamp(tx.gross_at);
   const outStamp = splitCambodiaTimestamp(tx.tare_at);
   const hasBankDetails = tx.bank_name && tx.bank_name !== "Cash";
+  // A freshly-finalized ticket hands this component a snake_case
+  // `product_name`; a transaction reopened later (fetched via
+  // getTransactions, which joins/maps it as camelCase `productName`)
+  // doesn't — accept either so the receipt reads the same either way.
+  const productName = tx.product_name || tx.productName || "—";
   const payableKg = tx.deduction_kg > 0 ? (tx.payable_kg ?? (tx.quantity_kg - tx.deduction_kg)) : null;
-  const total = tx.total_with_tax ?? tx.amount;
+  // tax_amount/total_with_tax aren't columns on the transaction itself —
+  // they're recomputed here from what is stored (amount, tax_applicable,
+  // tax_rate) so a taxed transaction still totals correctly when reopened
+  // later, not just right after it was first saved.
+  const taxAmount = tx.tax_amount ?? (tx.tax_applicable ? Math.round(Number(tx.amount) * (Number(tx.tax_rate) || 0)) / 100 : 0);
+  const total = tx.total_with_tax ?? (Number(tx.amount) + taxAmount);
 
   const cellCls = "px-2 py-1 border border-slate-300";
   const labelCellCls = `${cellCls} bg-slate-50 font-medium text-slate-600 whitespace-nowrap`;
@@ -143,7 +153,7 @@ export default function Receipt({ tx, onDone }) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5 border border-slate-300 p-3">
               <p><span className="text-slate-400">CN</span> <span className="font-medium text-slate-700">{tx.code}</span></p>
-              <p><span className="text-slate-400">Product name</span> <span className="font-medium text-slate-700">{tx.product_name || "—"}</span> {tx.stationName && <><span className="ml-2 text-slate-400">WH</span> <span className="font-medium text-slate-700">{tx.stationName}</span></>}</p>
+              <p><span className="text-slate-400">Product name</span> <span className="font-medium text-slate-700">{productName}</span> {tx.stationName && <><span className="ml-2 text-slate-400">WH</span> <span className="font-medium text-slate-700">{tx.stationName}</span></>}</p>
               <p><span className="text-slate-400">{isBuy ? "Seller name" : "Buyer name"}</span> <span className="font-medium text-slate-700">{tx.partyName}</span></p>
               {tx.partyIdNumber && <p><span className="text-slate-400">Phone</span> <span className="font-medium text-slate-700">{tx.partyIdNumber}</span></p>}
               {tx.bank_name && <p><span className="text-slate-400">Bank</span> <span className="font-medium text-slate-700">{tx.bank_name}{hasBankDetails && tx.bank_account ? ` — ${tx.bank_account}` : ""}</span></p>}
@@ -179,7 +189,7 @@ export default function Receipt({ tx, onDone }) {
               {tx.tax_applicable && (
                 <p className="flex items-baseline justify-between text-xs">
                   <span className="text-slate-400">VAT ({tx.tax_rate}%)</span>
-                  <span className="text-slate-700">{fmtRiel(tx.tax_amount)}</span>
+                  <span className="text-slate-700">{fmtRiel(taxAmount)}</span>
                 </p>
               )}
               <div className="mt-2 rounded-lg bg-brand-50 p-3 text-center">
