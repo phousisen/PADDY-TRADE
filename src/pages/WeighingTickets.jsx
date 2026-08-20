@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import PhotoUpload from "../components/PhotoUpload.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
@@ -29,12 +30,6 @@ const BANK_OPTIONS = [
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
-function cambodiaDateStr(d = new Date()) {
-  const parts = {};
-  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
-    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
 
 // These are the underlying stages a ticket moves through in the database
 // (unchanged from before — this is what keeps old data and the sync queue
@@ -122,6 +117,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [driverName, setDriverName] = useState("");
   const [productName, setProductName] = useState("");
   const [paperTicketNo, setPaperTicketNo] = useState("");
+  const [bankQrUrl, setBankQrUrl] = useState(null);
   const [grossWeight, setGrossWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -180,7 +176,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone, bankName, bankAccount,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
-        paperTicketNo: paperTicketNo.trim(),
+        paperTicketNo: paperTicketNo.trim(), bankQrUrl,
       });
       const weighedIn = setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id });
       onCreated(weighedIn);
@@ -232,6 +228,17 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           )}
         </div>
         <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
+        {type === "BUY" && bankName && bankName !== "Cash" && (
+          <div className="col-span-2">
+            <PhotoUpload
+              label="Bank QR Code (photo)"
+              kind="party-bank-qr"
+              url={bankQrUrl}
+              onUploaded={setBankQrUrl}
+              hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
+            />
+          </div>
+        )}
         <div>
           <label className={labelCls}>Product (paddy type)</label>
           <input list="paddy-type-options" value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" />
@@ -278,7 +285,6 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
   const [tareWeight, setTareWeight] = useState("");
-  const [txDate, setTxDate] = useState(cambodiaDateStr());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
@@ -314,7 +320,10 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
         taxApplicable, taxRate: parseFloat(taxRate) || 0, priceNote, userId: session.user.id, decline: false,
       });
       const tareUpdated = setTicketTareOffline(ticket.id, { tareKg, userId: session.user.id });
-      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id, txDate });
+      // No date picker here on purpose — this is finalized the moment the
+      // truck is actually back and empty, so today's real date and the
+      // exact time right now are always the correct answer.
+      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id });
       onFinalized(tx);
     } finally {
       setSaving(false);
@@ -330,7 +339,6 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
         <div><label className={labelCls}>Mixture %</label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Outthrow %</label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
         <div><label className={labelCls}>Deduction (kg)</label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Price / kg (៛)</label><input type="number" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} className={inputCls} /></div>
         {isBuy && (
           <div><label className={labelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
         )}
@@ -339,6 +347,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
           {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
         </div>
         <div className="col-span-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
+      </div>
+
+      <div className="mt-4 rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
+        <label className="mb-1 block text-sm font-semibold text-brand-800">Price per kg (Riel) — the price agreed on the paper ticket</label>
+        <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="e.g. 1090"
+          className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
       </div>
 
       <div className="mt-4">
@@ -351,11 +365,6 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
         <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
         {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
         <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
-      </div>
-
-      <div className="mt-3">
-        <label className={labelCls}>Transaction Date</label>
-        <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()} className={inputCls} />
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
