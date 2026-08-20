@@ -10,6 +10,7 @@ import {
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedProducts, getCachedParties, updatePartyOffline,
+  suggestNextPaperTicketNo,
 } from "../offlineQueue.js";
 
 // Same bank list as the New Transaction form, so staff see the same
@@ -125,6 +126,20 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // works too.
   const [productOptions] = useState(() => getCachedProducts());
 
+  // Baitang's paper tickets come from a pre-numbered booklet, used in
+  // order — so as soon as a location is known, suggest the next number
+  // after whatever was last typed in for that location. Staff can still
+  // edit it (a spoiled ticket, a different booklet, etc.) — this only
+  // fills it in when it's still blank, so it never overwrites something
+  // they already typed.
+  useEffect(() => {
+    if (locationId && !paperTicketNo) {
+      const suggested = suggestNextPaperTicketNo(locationId);
+      if (suggested) setPaperTicketNo(suggested);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId]);
+
   // Looks up a farmer/buyer that already self-registered (via the QR
   // registration page) or has been entered before, by phone number, and
   // fills in their saved name so staff don't retype it. Bank/QR details
@@ -199,6 +214,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Quality Ticket No.</label>
+          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
+          <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong</p>
+        </div>
+        <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
         <div className="col-span-2">
           <label className={labelCls}>Phone (type it and tab/click away to look them up)</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={inputCls} />
@@ -212,13 +233,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             {productOptions.map((p) => <option key={p.id} value={p.name} />)}
           </datalist>
         </div>
-        <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
-        <div>
-          <label className={labelCls}>Quality Ticket No.</label>
-          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
-          <p className="mt-1 text-[11px] text-slate-400">The red serial number printed on the paper quality ticket you're about to write on</p>
-        </div>
-        <div className="col-span-2"><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
+        <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
 
       <div className="mt-4">
