@@ -120,7 +120,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex bg-slate-100">
+    <div className="flex bg-paper">
       <Sidebar page={page} setPage={setPage} pendingRequests={pendingRequests} />
       {renderPage()}
     </div>
