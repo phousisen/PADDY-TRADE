@@ -31,6 +31,7 @@ const CACHE_KEY = "ptw_ticket_cache_v1";
 const QUEUE_KEY = "ptw_ticket_queue_v1";
 const PARTY_CACHE_KEY = "ptw_party_cache_v1";
 const PRODUCT_CACHE_KEY = "ptw_product_cache_v1";
+const PAPER_TICKET_KEY = "ptw_last_paper_ticket_no_v1";
 
 // Same timezone stamping used in api.js — stamps with Cambodia's actual
 // wall-clock time regardless of the device's own timezone setting, since
@@ -57,6 +58,41 @@ export function newId() {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+}
+
+// ---------------------------------------------------------------------
+// Quality Ticket No. auto-increment — Baitang's paper tickets come from a
+// pre-numbered booklet, used in order, so once staff have typed the first
+// one for a location, every New Ticket screen after that can suggest the
+// next number for them (still just a suggestion — they can always type
+// over it, e.g. if a ticket was spoiled or they're on a different
+// booklet). Kept separate from the ticket cache itself since that cache
+// only holds tickets still in progress — a finalized ticket drops out of
+// it — but the "last number used" needs to survive that.
+// ---------------------------------------------------------------------
+
+function readLastPaperTicketMap() {
+  return readJSON(PAPER_TICKET_KEY, {});
+}
+
+export function suggestNextPaperTicketNo(locationId) {
+  const map = readLastPaperTicketMap();
+  const last = map[locationId || "_default"];
+  if (!last) return "";
+  const digitMatch = last.match(/\d+$/);
+  if (!digitMatch) return "";
+  const numPart = digitMatch[0];
+  const prefix = last.slice(0, last.length - numPart.length);
+  const incremented = String(Number(numPart) + 1).padStart(numPart.length, "0");
+  return prefix + incremented;
+}
+
+export function recordPaperTicketNo(locationId, paperTicketNo) {
+  const trimmed = (paperTicketNo || "").trim();
+  if (!trimmed) return;
+  const map = readLastPaperTicketMap();
+  map[locationId || "_default"] = trimmed;
+  writeJSON(PAPER_TICKET_KEY, map);
 }
 
 function readJSON(key, fallback) {
@@ -455,6 +491,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
   };
   upsertCachedTicket(ticket);
   enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl } });
+  recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
 }
