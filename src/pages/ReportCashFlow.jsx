@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
+import Receipt from "./Receipt.jsx";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
@@ -11,6 +12,12 @@ function cambodiaDateStr(d = new Date()) {
   new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+// The exact clock time a cash entry was recorded (as opposed to `pay_date`,
+// which is just the business date staff picked and can be back-dated).
+function cambodiaTime(iso) {
+  if (!iso) return "—";
+  return new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).format(new Date(iso));
 }
 
 const TYPE_LABELS = {
@@ -95,17 +102,46 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
   const { profile, session } = useAuth();
   const isAdmin = profile?.role === "admin";
   const [allPayments, setAllPayments] = useState([]);
+  // Full transaction + party records — used to show "who we paid/received
+  // from" on each row, and to reopen the actual receipt (bank details
+  // included) when a linked row is clicked.
+  const [txById, setTxById] = useState({});
+  const [partyById, setPartyById] = useState({});
+  const [viewingTx, setViewingTx] = useState(null);
 
   async function load() {
-    const data = await api.getPayments(isAdmin ? {} : { locationId: profile?.location_id });
-    setAllPayments(data);
+    const [payData, txData, partyData] = await Promise.all([
+      api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
+      api.getTransactions(),
+      api.getParties(),
+    ]);
+    setAllPayments(payData);
+    setTxById(Object.fromEntries(txData.map((t) => [t.id, t])));
+    setPartyById(Object.fromEntries(partyData.map((p) => [p.id, p])));
   }
   useEffect(() => { load(); }, []);
+
+  function openPayment(p) {
+    if (!p.transaction_id) return;
+    const tx = txById[p.transaction_id];
+    if (!tx) return;
+    const party = tx.party_id ? partyById[tx.party_id] : null;
+    setViewingTx({
+      ...tx,
+      bank_name: tx.bank_name || party?.bank_name,
+      bank_account: tx.bank_account || party?.bank_account,
+      bank_qr_url: tx.bank_qr_url || party?.bank_qr_url,
+    });
+  }
 
   const payments = allPayments
     .filter((p) => !selectedLocationIds.length || selectedLocationIds.includes(p.location_id))
     .filter((p) => !startDate || p.pay_date >= startDate)
-    .filter((p) => !endDate || p.pay_date <= endDate);
+    .filter((p) => !endDate || p.pay_date <= endDate)
+    .map((p) => {
+      const tx = p.transaction_id ? txById[p.transaction_id] : null;
+      return { ...p, partyName: tx?.partyName || null, txCode: tx?.code || null };
+    });
 
   const ledger = useMemo(() => {
     const sorted = payments.slice().sort((a, b) => (a.pay_date + a.created_at < b.pay_date + b.created_at ? -1 : 1));
@@ -135,6 +171,14 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
     load();
   }
 
+  if (viewingTx) {
+    return (
+      <div className="fixed inset-0 z-50 bg-white">
+        <Receipt tx={viewingTx} onDone={() => setViewingTx(null)} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -155,30 +199,46 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
         {profile?.location_id || isAdmin ? <AddEntryForm profile={profile} onAdd={addEntry} /> : null}
       </div>
 
+      <p className="mb-3 text-xs text-slate-400">
+        "Running Total" only adds up the entries listed below (whatever date range/location you've filtered to) — it is not a real bank account
+        balance and there is no starting/opening balance set anywhere in the system. A big negative number usually just means outgoing payments
+        were recorded in this period without matching money-in entries also being recorded here (for example, capital or loan funds that came in
+        before this date range, or that were received but never logged as a payment). Click any row linked to a transaction to open its receipt.
+      </p>
+
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
               <th className="px-5 py-3 font-medium">Date</th>
+              <th className="px-5 py-3 font-medium">Time</th>
               <th className="px-5 py-3 font-medium">Type</th>
+              <th className="px-5 py-3 font-medium">Paid to / Received from</th>
               <th className="px-5 py-3 font-medium">Note</th>
               <th className="px-5 py-3 font-medium">Recorded by</th>
               <th className="px-5 py-3 font-medium">Amount</th>
-              <th className="px-5 py-3 font-medium">Balance</th>
+              <th className="px-5 py-3 font-medium">Running Total</th>
             </tr>
           </thead>
           <tbody>
             {ledger.map((p) => (
-              <tr key={p.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+              <tr
+                key={p.id}
+                onClick={() => openPayment(p)}
+                title={p.transaction_id ? "Click to view this transaction's receipt" : "Manual entry — not linked to a transaction"}
+                className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${p.transaction_id ? "cursor-pointer" : ""}`}
+              >
                 <td className="px-5 py-3 text-slate-500">{p.pay_date}</td>
+                <td className="px-5 py-3 text-slate-500">{cambodiaTime(p.created_at)}</td>
                 <td className="px-5 py-3 text-slate-700">{TYPE_LABELS[p.type] || p.type}</td>
+                <td className="px-5 py-3 text-slate-700">{p.partyName || "—"}{p.txCode ? <span className="ml-1 text-xs text-slate-400">({p.txCode})</span> : null}</td>
                 <td className="px-5 py-3 text-slate-600">{p.memo || "—"}</td>
                 <td className="px-5 py-3 text-slate-500">{p.createdByName}</td>
                 <td className={`px-5 py-3 font-medium ${p.signedAmount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{p.signedAmount >= 0 ? "+" : ""}{fmtRiel(p.signedAmount)}</td>
                 <td className="px-5 py-3 text-slate-700">{fmtRiel(p.balance)}</td>
               </tr>
             ))}
-            {ledger.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">No cash movements recorded yet.</td></tr>}
+            {ledger.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No cash movements recorded yet.</td></tr>}
           </tbody>
         </table>
       </div>
