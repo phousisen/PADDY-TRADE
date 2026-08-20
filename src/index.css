@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 html, body, #root { height: 100%; }
-body { @apply bg-slate-100 text-slate-800 font-sans; }
+body { @apply bg-paper text-slate-800 font-sans; }
 
 /* Hide the up/down spinner arrows on number inputs everywhere in the app
    (weights, prices, percentages, etc.) — they don't add anything useful
