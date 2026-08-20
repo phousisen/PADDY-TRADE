@@ -8,8 +8,24 @@ import {
   startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
-  onSyncStatusChange, pendingCountForTicket,
+  onSyncStatusChange, pendingCountForTicket, getCachedProducts,
 } from "../offlineQueue.js";
+
+// Same bank list as the New Transaction form, so staff see the same
+// choices in both places — "Cash" is first since most farmer payouts at
+// the scale are cash in hand, not a bank transfer.
+const BANK_OPTIONS = [
+  "Cash",
+  "ABA Bank",
+  "ACLEDA Bank",
+  "Canadia Bank",
+  "Sathapana Bank",
+  "Wing Bank",
+  "KB Prasac Bank",
+  "FTB Bank",
+  "Phillip Bank",
+  "Chipmong Bank",
+];
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -100,6 +116,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [partyName, setPartyName] = useState("");
   const [phone, setPhone] = useState("");
   const [bankName, setBankName] = useState("");
+  const [bankIsOther, setBankIsOther] = useState(false);
   const [bankAccount, setBankAccount] = useState("");
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
@@ -109,6 +126,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [error, setError] = useState("");
   const [phoneLookupMsg, setPhoneLookupMsg] = useState("");
   const { session } = useAuth();
+  // Paddy types staff have already used before, so the field suggests them
+  // instead of everyone typing (and misspelling) the same names over and
+  // over — still a free-text field underneath, so a brand new type just
+  // works too.
+  const [productOptions] = useState(() => getCachedProducts());
 
   // Looks up a farmer/buyer that already self-registered (via the QR
   // registration page) or has been entered before, by phone number, and
@@ -123,6 +145,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         const p = matches[0];
         setPartyName(p.name || "");
         setBankName(p.bank_name || "");
+        setBankIsOther(!!p.bank_name && !BANK_OPTIONS.includes(p.bank_name));
         setBankAccount(p.bank_account || "");
         setPhoneLookupMsg(`Found: ${p.name}`);
       } else {
@@ -184,9 +207,32 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           {phoneLookupMsg && <p className={`mt-1 text-xs ${phoneLookupMsg.startsWith("Found") ? "text-emerald-600" : "text-slate-400"}`}>{phoneLookupMsg}</p>}
         </div>
         <div className="col-span-2"><label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label><input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Bank</label><input value={bankName} onChange={(e) => setBankName(e.target.value)} className={inputCls} /></div>
+        <div>
+          <label className={labelCls}>Bank</label>
+          <select
+            value={bankIsOther ? "__other__" : bankName}
+            onChange={(e) => {
+              if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
+              else { setBankIsOther(false); setBankName(e.target.value); }
+            }}
+            className={inputCls}
+          >
+            <option value="" disabled>Select payment method / bank</option>
+            {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+            <option value="__other__">Other...</option>
+          </select>
+          {bankIsOther && (
+            <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
+          )}
+        </div>
         <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Product (paddy type)</label><input value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" /></div>
+        <div>
+          <label className={labelCls}>Product (paddy type)</label>
+          <input list="paddy-type-options" value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" />
+          <datalist id="paddy-type-options">
+            {productOptions.map((p) => <option key={p.id} value={p.name} />)}
+          </datalist>
+        </div>
         <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
         <div className="col-span-2"><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
