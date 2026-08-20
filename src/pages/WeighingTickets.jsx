@@ -114,6 +114,22 @@ function Modal({ title, subtitle, onClose, children, wide }) {
 const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1 block text-xs text-slate-500";
 
+// Small numbered section header — used to break the Finish Ticket form into
+// clear steps (weigh, quality, price, payment, proof) instead of one long
+// unbroken list of fields, so a new staff member can follow it top to
+// bottom without guessing what comes next.
+function SectionHeader({ num, title, hint }) {
+  return (
+    <div className="mb-2.5 flex items-center gap-2.5">
+      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">{num}</div>
+      <div>
+        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        {hint && <p className="text-xs text-slate-500">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
 // ---- New Ticket & Weigh In (combined — one screen, like the scale software's single window) ----
 
 function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated }) {
@@ -357,83 +373,100 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
 
   return (
     <Modal title={`Finish Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate} · Gross: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
-      <p className={labelCls}>Whatever was already agreed on the paper ticket — grade, moisture, price</p>
-      <div className="grid grid-cols-3 gap-3">
-        <div><label className={labelCls}>Quality Grade</label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Moisture %</label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Mixture %</label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Outthrow %</label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Deduction (kg)</label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
-        {isBuy && (
-          <div><label className={labelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
-        )}
-        <div className="flex items-end gap-2">
-          <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> Tax applicable</label>
-          {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
-        </div>
-        <div className="col-span-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
-      </div>
-
-      <div className="mt-4 rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
-        <label className="mb-1 block text-sm font-semibold text-brand-800">Price per kg (Riel) — the price agreed on the paper ticket</label>
-        <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="e.g. 1090"
-          className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
-      </div>
-
-      <div className="mt-4 rounded-lg border border-slate-200 p-4">
-        <p className="mb-2 text-sm font-semibold text-slate-700">Payment Method</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Bank (or Cash)</label>
-            <select
-              value={bankIsOther ? "__other__" : bankName}
-              onChange={(e) => {
-                if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
-                else { setBankIsOther(false); setBankName(e.target.value); }
-              }}
-              className={inputCls}
-            >
-              <option value="" disabled>Select payment method / bank</option>
-              {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-              <option value="__other__">Other...</option>
-            </select>
-            {bankIsOther && (
-              <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
-            )}
-          </div>
-          <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
-        </div>
-        {isBuy && bankName && bankName !== "Cash" && (
-          <div className="mt-3">
-            <PhotoUpload
-              label="Bank QR Code (photo)"
-              kind="party-bank-qr"
-              url={bankQrUrl}
-              onUploaded={setBankQrUrl}
-              hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="mt-4">
+      {/* 1. Weigh Out — the physical action happening right now */}
+      <div className="mb-5">
+        <SectionHeader num={1} title="Weigh Out" hint="The truck is empty and on the scale right now" />
         <LiveWeightBox locationId={ticket.location_id} label="Live Scale Weight (empty truck)" onUse={(kg) => setTareWeight(String(kg))} />
         <label className={labelCls}>Tare Weight — empty truck (kg)</label>
         <input type="number" min="0" step="0.01" value={tareWeight} onChange={(e) => setTareWeight(e.target.value)} className={inputCls} placeholder="0" />
       </div>
 
-      <div className="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
-        <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
-        {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
-        <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
+      {/* 2. Quality — transcribed from the paper ticket */}
+      <div className="mb-5">
+        <SectionHeader num={2} title="Quality" hint="The grade and quality readings already agreed on the paper ticket" />
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 p-4">
+          <div><label className={labelCls}>Quality Grade</label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Moisture %</label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Mixture %</label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Outthrow %</label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Deduction (kg)</label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
+        </div>
       </div>
 
-      <div className="mt-4">
-        <PhotoUpload
-          label="Photo of the finished, signed paper ticket" kind="receipt" required
-          url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-          hint="So HQ can check it against what's entered here"
-        />
+      {/* 3. Price & Total — everything that feeds the amount owed, with the running total right below it */}
+      <div className="mb-5">
+        <SectionHeader num={3} title="Price & Total" hint="What this truckload is worth" />
+        <div className="rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
+          <label className="mb-1 block text-sm font-semibold text-brand-800">Price per kg (Riel) — the price agreed on the paper ticket</label>
+          <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="e.g. 1090"
+            className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {isBuy && (
+            <div><label className={labelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
+          )}
+          <div className="flex items-end gap-2">
+            <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> Tax applicable</label>
+            {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
+          </div>
+        </div>
+        <div className="mt-3 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
+          <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
+          {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
+          <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
+        </div>
+      </div>
+
+      {/* 4. Payment Method — decided after the total is known */}
+      <div className="mb-5">
+        <SectionHeader num={4} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
+        <div className="rounded-lg border border-slate-200 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Bank (or Cash)</label>
+              <select
+                value={bankIsOther ? "__other__" : bankName}
+                onChange={(e) => {
+                  if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
+                  else { setBankIsOther(false); setBankName(e.target.value); }
+                }}
+                className={inputCls}
+              >
+                <option value="" disabled>Select payment method / bank</option>
+                {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                <option value="__other__">Other...</option>
+              </select>
+              {bankIsOther && (
+                <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
+              )}
+            </div>
+            <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
+          </div>
+          {isBuy && bankName && bankName !== "Cash" && (
+            <div className="mt-3">
+              <PhotoUpload
+                label="Bank QR Code (photo)"
+                kind="party-bank-qr"
+                url={bankQrUrl}
+                onUploaded={setBankQrUrl}
+                hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 5. Note & Proof — wraps up the ticket; the required photo is the last thing before Save */}
+      <div className="mb-1">
+        <SectionHeader num={5} title="Note & Proof" hint="Optional note, and the signed paper ticket for HQ to check against" />
+        <div className="rounded-lg border border-slate-200 p-4">
+          <div className="mb-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
+          <PhotoUpload
+            label="Photo of the finished, signed paper ticket" kind="receipt" required
+            url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
+            hint="So HQ can check it against what's entered here"
+          />
+        </div>
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
