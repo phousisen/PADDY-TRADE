@@ -608,6 +608,7 @@ function PhotosModal({ tx, onClose }) {
         <div className="grid grid-cols-2 gap-4">
           <PhotoPane label="Physical Receipt" url={tx.receipt_photo_url} />
           <PhotoPane label="Bank QR / Payment Proof" url={tx.payment_proof_url} />
+          <PhotoPane label="Seller's Bank QR Code (to pay)" url={tx.bank_qr_url} />
         </div>
         <div className="mt-4 flex justify-end">
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close</button>
@@ -1042,7 +1043,7 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3">{tx.status === "confirmed" ? <CheckCircle2 size={16} className="text-emerald-500" /> : <AlertTriangle size={16} className="text-amber-500" />}</td>
                     <td className="px-3 py-3">
                       <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                        <Camera size={12} /> {[tx.receipt_photo_url, tx.payment_proof_url].filter(Boolean).length}
+                        <Camera size={12} /> {[tx.receipt_photo_url, tx.payment_proof_url, tx.bank_qr_url].filter(Boolean).length}
                       </button>
                     </td>
                     <td className="px-3 py-3">

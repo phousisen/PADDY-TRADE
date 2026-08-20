@@ -285,6 +285,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
   const [tareWeight, setTareWeight] = useState("");
+  const [receiptPhotoUrl, setReceiptPhotoUrl] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
@@ -310,6 +311,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
     const tareKg = parseFloat(tareWeight);
     if (!pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
     if (!tareKg || tareKg <= 0) { setError("Please enter the empty truck's weight."); return; }
+    if (!receiptPhotoUrl) { setError("Please take a photo of the finished, signed paper ticket."); return; }
     setError("");
     setSaving(true);
     try {
@@ -323,7 +325,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
       // No date picker here on purpose — this is finalized the moment the
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
-      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id });
+      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl });
       onFinalized(tx);
     } finally {
       setSaving(false);
@@ -365,6 +367,14 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
         <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
         {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
         <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
+      </div>
+
+      <div className="mt-4">
+        <PhotoUpload
+          label="Photo of the finished, signed paper ticket" kind="receipt" required
+          url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
+          hint="So HQ can check it against what's entered here"
+        />
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
@@ -641,7 +651,11 @@ export default function WeighingTickets() {
         />
       )}
       {slipTicket && <TicketSlip ticket={slipTicket} onClose={() => setSlipTicket(null)} />}
-      {finalReceipt && <Receipt tx={finalReceipt} onDone={() => setFinalReceipt(null)} />}
+      {finalReceipt && (
+        <div className="fixed inset-0 z-50 bg-white">
+          <Receipt tx={finalReceipt} onDone={() => setFinalReceipt(null)} />
+        </div>
+      )}
     </div>
   );
 }
