@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Phone, IdCard, Landmark, Building2, PlusCircle, QrCode } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
 
@@ -17,6 +18,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [viewingTx, setViewingTx] = useState(null);
 
   useEffect(() => {
     const partyType = isSupplier ? "supplier" : "buyer";
@@ -95,6 +97,28 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
           <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">Couldn't find this {isSupplier ? "farmer" : "buyer"} — they may have been removed.</div>
         </main>
       </div>
+    );
+  }
+
+  // Clicking a row shows the same final receipt that printed at Finish
+  // Ticket / New Buy-Sell — pulling Bank/Bank Account/QR from this farmer's
+  // current profile (rather than only whatever was on file the moment
+  // this particular truckload was entered), so it always reflects their
+  // latest payment details, and falling back to the transaction's own
+  // saved QR photo if this specific bill used a different one.
+  if (viewingTx) {
+    return (
+      <Receipt
+        tx={{
+          ...viewingTx,
+          partyName: party.name,
+          partyIdNumber: party.phone || party.id_number || "",
+          bank_name: party.bank_name,
+          bank_account: party.bank_account,
+          bank_qr_url: viewingTx.bank_qr_url || party.bank_qr_url,
+        }}
+        onDone={() => setViewingTx(null)}
+      />
     );
   }
 
@@ -192,7 +216,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
             </thead>
             <tbody>
               {history.map((r) => (
-                <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                <tr key={r.id} onClick={() => setViewingTx(r)} title="Click to view receipt" className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                   <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{r.code}</td>
                   <td className="px-5 py-3 text-slate-600">{r.stationName}</td>
