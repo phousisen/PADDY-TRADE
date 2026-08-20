@@ -76,54 +76,67 @@ export default function Dashboard() {
       <Topbar title={isAdmin ? "HQ Overview" : "Location Overview"} subtitle="Today's Operations Summary" />
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mb-5 grid grid-cols-4 gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><TrendingUp size={13} className="text-emerald-500" /> Total Buy Today</div>
-            <p className="text-xl font-bold text-slate-800">{fmt2(totalBuyKg)} kg</p>
-            <p className="mt-1 text-xs text-slate-400">{fmtRiel(totalBuyAmt)}</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-brand-600"><TrendingUp size={16} /></div>
+            <p className="text-xs font-medium text-slate-500">Total Buy Today</p>
+            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totalBuyKg)} kg</p>
+            <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalBuyAmt)} paid out</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><TrendingDown size={13} className="text-sky-500" /> Total Sell Today</div>
-            <p className="text-xl font-bold text-slate-800">{fmt2(totalSellKg)} kg</p>
-            <p className="mt-1 text-xs text-slate-400">{fmtRiel(totalSellAmt)}</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 text-sky-600"><TrendingDown size={16} /></div>
+            <p className="text-xs font-medium text-slate-500">Total Sell Today</p>
+            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totalSellKg)} kg</p>
+            <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalSellAmt)} received</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Warehouse size={13} className="text-brand-500" /> Net Stock</div>
-            <p className="text-xl font-bold text-slate-800">{fmt2(netStockKg)} kg</p>
-            <p className="mt-1 text-xs text-slate-400">across {locations.length} location(s)</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Warehouse size={16} /></div>
+            <p className="text-xs font-medium text-slate-500">Net Stock</p>
+            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(netStockKg)} kg</p>
+            <p className="mt-1 text-[11px] text-slate-400">across {locations.length} location(s)</p>
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><MapPin size={13} className="text-slate-400" /> Active Locations</div>
-            <p className="text-xl font-bold text-slate-800">{locations.length}</p>
-            <p className="mt-1 text-xs text-slate-400">{todayTxs.length} transaction(s) today</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-gold-100 text-gold-700"><MapPin size={16} /></div>
+            <p className="text-xs font-medium text-slate-500">Active Locations</p>
+            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{locations.length}</p>
+            <p className="mt-1 text-[11px] text-slate-400">{todayTxs.length} transaction(s) today</p>
           </div>
         </div>
 
         <div className="grid grid-cols-3 gap-5">
-          <div className="col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <h3 className="font-semibold text-slate-700">Location Performance (Today)</h3>
+          <div className="col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <h3 className="font-bold text-slate-800">Location Performance (Today)</h3>
+              <span className="text-[11px] text-slate-400">{locations.length} location(s)</span>
             </div>
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                  <th className="px-5 py-2 font-medium">Location</th>
-                  <th className="px-3 py-2 font-medium">Buy (kg)</th>
-                  <th className="px-3 py-2 font-medium">Sell (kg)</th>
-                  <th className="px-3 py-2 font-medium">Stock</th>
+                <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
+                  <th className="px-5 py-2.5 font-semibold">Location</th>
+                  <th className="px-3 py-2.5 font-semibold">Buy (kg)</th>
+                  <th className="px-3 py-2.5 font-semibold">Sell (kg)</th>
+                  <th className="px-3 py-2.5 font-semibold">Stock</th>
                 </tr>
               </thead>
               <tbody>
                 {locationPerformance.map(({ loc, buyKg, sellKg, pct }) => (
                   <tr key={loc.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                    <td className="px-5 py-3">
+                    <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full ${pct > 80 ? "bg-emerald-500" : pct > 40 ? "bg-amber-400" : "bg-rose-400"}`} />
-                        <span className="font-medium text-slate-700">{loc.name}</span>
+                        <span className={`h-2 w-2 rounded-full ${pct > 80 ? "bg-emerald-500" : pct > 40 ? "bg-gold-500" : "bg-rose-400"}`} />
+                        <span className="font-semibold text-slate-700">{loc.name}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-emerald-600">{buyKg > 0 ? `+${fmt2(buyKg)}` : "—"}</td>
-                    <td className="px-3 py-3 text-sky-600">{sellKg > 0 ? `-${fmt2(sellKg)}` : "—"}</td>
-                    <td className="px-3 py-3 text-slate-600">{fmt2(loc.current_stock_kg)} kg ({pct}%)</td>
+                    <td className="px-3 py-3.5 font-medium text-brand-600">{buyKg > 0 ? `+${fmt2(buyKg)}` : "—"}</td>
+                    <td className="px-3 py-3.5 font-medium text-sky-600">{sellKg > 0 ? `-${fmt2(sellKg)}` : "—"}</td>
+                    <td className="px-3 py-3.5 text-slate-600">
+                      <div className="flex items-center gap-2.5">
+                        <span>{fmt2(loc.current_stock_kg)} kg</span>
+                        <span className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-100">
+                          <span className="block h-full rounded-full bg-brand-500" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
+                        </span>
+                        <span className="text-[11px] text-slate-400">{pct}%</span>
+                      </div>
+                    </td>
                   </tr>
                 ))}
                 {locations.length === 0 && !loading && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
@@ -131,21 +144,22 @@ export default function Dashboard() {
             </table>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
               <Activity size={15} className="text-brand-600" />
-              <h3 className="font-semibold text-slate-700">Live Feed</h3>
+              <h3 className="font-bold text-slate-800">Live Feed</h3>
             </div>
             <div className="max-h-96 overflow-y-auto">
               {liveFeed.map((tx) => (
-                <div key={tx.id} className="flex items-start gap-2 border-b border-slate-50 px-4 py-3 last:border-0">
-                  <span className={`mt-0.5 rounded px-1.5 py-0.5 text-[10px] font-bold ${tx.type === "BUY" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"}`}>
+                <div key={tx.id} className="flex items-start gap-2.5 border-b border-slate-50 px-4 py-3.5 last:border-0">
+                  <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-sky-100 text-sky-700"}`}>
                     {tx.type === "BUY" ? "▲" : "▼"}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-slate-700">{tx.partyName} · {fmt2(tx.quantity_kg)} kg</p>
-                    <p className="text-xs text-slate-400">{tx.stationName} · {timeAgo(tx.tx_date, tx.tx_time)}</p>
+                    <p className="truncate text-[13px] font-medium text-slate-700">{tx.partyName} · {fmt2(tx.quantity_kg)} kg</p>
+                    <p className="text-[11px] text-slate-400">{tx.stationName}</p>
                   </div>
+                  <p className="shrink-0 whitespace-nowrap text-[10.5px] text-slate-400">{timeAgo(tx.tx_date, tx.tx_time)}</p>
                 </div>
               ))}
               {liveFeed.length === 0 && !loading && <p className="px-4 py-10 text-center text-sm text-slate-400">No activity yet.</p>}
