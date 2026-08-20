@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw } from "lucide-react";
+import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw, Search } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import { api } from "../api.js";
@@ -31,6 +31,16 @@ const BANK_OPTIONS = [
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+// Splits a timestamptz into Cambodia-local date/time strings — same
+// formatting Receipt.jsx uses, so the slip and the final receipt read the
+// same way.
+function splitCambodiaTimestamp(iso) {
+  if (!iso) return { date: "—", time: "—" };
+  const d = new Date(iso);
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "2-digit" }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+  return { date, time };
+}
 
 // These are the underlying stages a ticket moves through in the database
 // (unchanged from before — this is what keeps old data and the sync queue
@@ -477,37 +487,102 @@ function DeclineModal({ ticket, onClose, onDeclined }) {
 // ---- Interim slip (printed at weigh-in, mirrors the paper queue ticket) ------
 
 function TicketSlip({ ticket, onClose }) {
+  const [settings, setSettings] = useState({});
+  useEffect(() => {
+    api.getSettings().then(setSettings).catch(() => {});
+  }, []);
+
   const netKg = ticket.gross_kg != null && ticket.tare_kg != null ? Math.max(0, ticket.gross_kg - ticket.tare_kg) : null;
+  const inStamp = splitCambodiaTimestamp(ticket.gross_at);
+  const outStamp = splitCambodiaTimestamp(ticket.tare_at);
+  const isPriced = !!ticket.priced_at;
+  const cellCls = "px-2 py-1.5 border border-slate-300";
+  const labelCellCls = `${cellCls} bg-slate-50 font-medium text-slate-600 whitespace-nowrap`;
+  const rowCls = "flex justify-between border-b border-slate-100 px-3 py-2 last:border-0";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <div className="no-print mb-3 flex items-center justify-between">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+        <div className="no-print mb-4 flex items-center justify-between">
           <h3 className="font-semibold text-slate-700">Weigh-In Slip</h3>
           <div className="flex gap-2">
             <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"><Printer size={13} /> Print</button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
           </div>
         </div>
-        <div id="ticket-slip-root" className="border border-slate-300 p-4 text-sm">
-          <p className="text-center text-base font-bold">Ticket {ticket.code}</p>
-          <p className="text-center text-xs text-slate-500">{ticket.stationName}</p>
-          {ticket.paper_ticket_no && <p className="text-center text-xs text-slate-400">Quality Ticket No. {ticket.paper_ticket_no}</p>}
-          <hr className="my-2" />
-          <div className="space-y-1">
-            <div className="flex justify-between"><span>Truck ID</span><span className="font-medium">{ticket.car_plate}</span></div>
-            <div className="flex justify-between"><span>Driver</span><span className="font-medium">{ticket.driver_name || "—"}</span></div>
-            <div className="flex justify-between"><span>Product</span><span className="font-medium">{ticket.product_name}</span></div>
-            <div className="flex justify-between"><span>Buyer/Seller</span><span className="font-medium">{ticket.party_name}</span></div>
-            {ticket.gross_kg != null && <div className="flex justify-between"><span>IN (Gross)</span><span className="font-medium">{fmt2(ticket.gross_kg)} kg</span></div>}
-            {ticket.moisture_pct != null && ticket.priced_at && <div className="flex justify-between"><span>Moisture</span><span className="font-medium">{fmt2(ticket.moisture_pct)} %</span></div>}
-            {ticket.outthrow_pct != null && ticket.priced_at && <div className="flex justify-between"><span>Outthrow</span><span className="font-medium">{fmt2(ticket.outthrow_pct)} %</span></div>}
-            {ticket.price_per_kg != null && ticket.priced_at && <div className="flex justify-between"><span>Price / Kg</span><span className="font-medium">{fmtRiel(ticket.price_per_kg)}</span></div>}
-            {ticket.tare_kg != null && <div className="flex justify-between"><span>OUT (Tare)</span><span className="font-medium">{fmt2(ticket.tare_kg)} kg</span></div>}
-            {netKg != null && <div className="flex justify-between border-t border-slate-200 pt-1"><span className="font-semibold">Net Weight</span><span className="font-bold">{fmt2(netKg)} kg</span></div>}
+        <div id="ticket-slip-root" className="rounded-lg border border-slate-300 p-6 text-sm">
+          {/* Header — same company info style as the final receipt */}
+          <div className="mb-3 text-center">
+            <p className="text-lg font-bold text-slate-800">{settings.company_name || "PaddyTrade"}</p>
+            {settings.company_name_kh && <p className="text-sm text-slate-500">{settings.company_name_kh}</p>}
+            <p className="text-xs text-slate-400">{settings.company_address || "Battambang, Cambodia"}</p>
+            {settings.company_phone && <p className="text-xs text-slate-400">{settings.company_phone}</p>}
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-6 text-xs">
+          <p className="text-center text-lg font-bold text-slate-800">Ticket {ticket.code}</p>
+          <p className="text-center text-xs text-slate-500">{ticket.stationName} · {ticket.type === "BUY" ? "Buy (from farmer)" : "Sell (to buyer)"}</p>
+          {ticket.paper_ticket_no && <p className="text-center text-xs text-slate-400">Quality Ticket No. {ticket.paper_ticket_no}</p>}
+
+          {/* Weight table — same LIST/TRUCK ID/DATE/TIME/WEIGHT layout as
+              the final receipt, so this reads consistently once printed. */}
+          <table className="my-4 w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100 text-slate-500">
+                <th className={`${cellCls} text-left font-medium`}>List</th>
+                <th className={`${cellCls} text-left font-medium`}>Truck ID</th>
+                <th className={`${cellCls} text-left font-medium`}>Date</th>
+                <th className={`${cellCls} text-left font-medium`}>Time</th>
+                <th className={`${cellCls} text-right font-medium`}>Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className={`${cellCls} font-medium text-slate-600`}>IN</td>
+                <td className={`${cellCls} text-slate-600`}>{ticket.car_plate || "—"}</td>
+                <td className={`${cellCls} text-slate-600`}>{inStamp.date}</td>
+                <td className={`${cellCls} text-slate-600`}>{inStamp.time}</td>
+                <td className={`${cellCls} text-right font-medium text-slate-700`}>{ticket.gross_kg != null ? `${fmt2(ticket.gross_kg)} KG` : "—"}</td>
+              </tr>
+              {ticket.tare_kg != null && (
+                <tr>
+                  <td className={`${cellCls} font-medium text-slate-600`}>OUT</td>
+                  <td className={`${cellCls} text-slate-600`}>{ticket.car_plate || "—"}</td>
+                  <td className={`${cellCls} text-slate-600`}>{outStamp.date}</td>
+                  <td className={`${cellCls} text-slate-600`}>{outStamp.time}</td>
+                  <td className={`${cellCls} text-right font-medium text-slate-700`}>{fmt2(ticket.tare_kg)} KG</td>
+                </tr>
+              )}
+              {netKg != null && (
+                <tr>
+                  <td colSpan={4} className={labelCellCls}>Net Weight</td>
+                  <td className={`${cellCls} text-right font-semibold text-slate-800`}>{fmt2(netKg)} KG</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Truck / party details */}
+          <div className="mb-3 overflow-hidden rounded-lg border border-slate-200">
+            <div className={rowCls}><span className="text-slate-500">{ticket.type === "BUY" ? "Seller (Farmer)" : "Buyer"}</span><span className="font-medium text-slate-700">{ticket.party_name}</span></div>
+            {ticket.phone && <div className={rowCls}><span className="text-slate-500">Phone</span><span className="font-medium text-slate-700">{ticket.phone}</span></div>}
+            <div className={rowCls}><span className="text-slate-500">Product</span><span className="font-medium text-slate-700">{ticket.product_name}</span></div>
+            <div className={rowCls}><span className="text-slate-500">Driver</span><span className="font-medium text-slate-700">{ticket.driver_name || "—"}</span></div>
+          </div>
+
+          {/* Once quality/price has been set, show it here too — useful if
+              this slip gets reprinted after Finish Ticket. */}
+          {isPriced && (
+            <div className="mb-3 overflow-hidden rounded-lg border border-slate-200">
+              {ticket.quality_grade && <div className={rowCls}><span className="text-slate-500">Quality Grade</span><span className="font-medium text-slate-700">{ticket.quality_grade}</span></div>}
+              <div className={rowCls}><span className="text-slate-500">Moisture / Outthrow</span><span className="font-medium text-slate-700">{fmt2(ticket.moisture_pct)}% / {fmt2(ticket.outthrow_pct)}%</span></div>
+              {ticket.price_per_kg != null && <div className={rowCls}><span className="text-slate-500">Price / Kg</span><span className="font-medium text-slate-700">{fmtRiel(ticket.price_per_kg)}</span></div>}
+              {ticket.bank_name && <div className={rowCls}><span className="text-slate-500">Bank</span><span className="font-medium text-slate-700">{ticket.bank_name}{ticket.bank_name !== "Cash" && ticket.bank_account ? ` — ${ticket.bank_account}` : ""}</span></div>}
+            </div>
+          )}
+
+          {/* Signature lines — larger and more spaced out for an actual pen */}
+          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-8 text-xs text-slate-500">
             <div>Statistics Officer / Price Set By: ..........................</div>
-            <div>Seller: ..........................</div>
+            <div>{ticket.type === "BUY" ? "Seller" : "Buyer"}: ..........................</div>
             <div>Weigher: ..........................</div>
             <div>Note: ..........................</div>
           </div>
@@ -527,6 +602,7 @@ export default function WeighingTickets() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("waiting");
+  const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [finishTicket, setFinishTicket] = useState(null);
   const [declineTicketRow, setDeclineTicketRow] = useState(null);
@@ -578,10 +654,19 @@ export default function WeighingTickets() {
   }, [syncStatus.syncing, syncStatus.pending]);
 
   const grouped = useMemo(() => {
-    const waiting = tickets.filter((t) => OPEN_STAGE_IDS.includes(t.stage));
-    const declined = tickets.filter((t) => t.stage === "declined");
+    const q = search.trim().toLowerCase();
+    // Search by ticket number, vehicle plate, or Quality Ticket No. — the
+    // things staff actually have in hand when looking a truck up (the
+    // driver rarely knows the farmer's exact registered name).
+    const matches = (t) =>
+      !q ||
+      (t.code || "").toLowerCase().includes(q) ||
+      (t.car_plate || "").toLowerCase().includes(q) ||
+      (t.paper_ticket_no || "").toLowerCase().includes(q);
+    const waiting = tickets.filter((t) => OPEN_STAGE_IDS.includes(t.stage) && matches(t));
+    const declined = tickets.filter((t) => t.stage === "declined" && matches(t));
     return { waiting, declined };
-  }, [tickets]);
+  }, [tickets, search]);
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -611,6 +696,15 @@ export default function WeighingTickets() {
             </button>
           </div>
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search ticket # or plate…"
+                className="w-48 rounded-lg border border-slate-200 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 sm:w-56"
+              />
+            </div>
             {isAdmin && locations.length > 1 && (
               <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
                 <option value="">All Locations</option>
@@ -629,7 +723,9 @@ export default function WeighingTickets() {
         {loading ? (
           <p className="text-center text-sm text-slate-400">Loading…</p>
         ) : grouped[tab]?.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">No tickets here right now.</p>
+          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
+            {search.trim() ? "No tickets match that search." : "No tickets here right now."}
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
