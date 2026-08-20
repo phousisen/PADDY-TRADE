@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { useLanguage } from "./i18n.jsx";
 import { api } from "./api.js";
+import { startAutoSync } from "./offlineQueue.js";
 import Login from "./pages/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
@@ -18,6 +19,7 @@ import PartyDetail from "./pages/PartyDetail.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
 import RolesPage from "./pages/RolesPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
+import RegisterFarmer from "./pages/RegisterFarmer.jsx";
 
 export default function App() {
   const { session, profile, loading } = useAuth();
@@ -54,6 +56,25 @@ export default function App() {
       api.getChangeRequests().then((rows) => setPendingRequests(rows.filter((r) => r.status === "pending").length));
     }
   }, [profile, page]);
+
+  // Start the offline sync/safety-net once someone's actually signed in —
+  // app-wide, not just while the Weighing Tickets screen happens to be
+  // open, so staff can be on Transactions/Reports/etc. and still have any
+  // still-pending changes finish syncing (and still get warned before
+  // closing the tab if something hasn't synced yet). Safe to call more
+  // than once; it only ever sets itself up the first time.
+  useEffect(() => {
+    if (session && profile) startAutoSync();
+  }, [session, profile]);
+
+  // Public self-registration for farmers -- reached by scanning a QR code
+  // at the entrance, no login needed. Checked before the login gate below
+  // since this has to work for someone who has never signed in at all.
+  // Example link: https://yourapp.vercel.app/?register=1&loc=<location id>
+  const regParams = new URLSearchParams(window.location.search);
+  if (regParams.get("register") === "1") {
+    return <RegisterFarmer locationId={regParams.get("loc") || null} />;
+  }
 
   if (loading) {
     return <div className="flex h-screen w-full items-center justify-center bg-slate-50 text-slate-400 text-sm">Loading…</div>;

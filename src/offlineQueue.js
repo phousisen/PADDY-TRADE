@@ -371,6 +371,17 @@ export function startAutoSync() {
   window.addEventListener("online", trySync);
   window.addEventListener("offline", notifyStatus);
   setInterval(trySync, 15000);
+  // Safety net: if this device still has changes that never made it to
+  // PaddyTrade's shared database (e.g. wifi never came back before
+  // closing up), warn before the tab/browser closes so staff don't walk
+  // away thinking today's tickets are saved to HQ when they're actually
+  // still sitting only on this one computer.
+  window.addEventListener("beforeunload", (e) => {
+    if (totalPending() > 0) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  });
   // Kick one off right away in case we're already online.
   trySync();
 }
