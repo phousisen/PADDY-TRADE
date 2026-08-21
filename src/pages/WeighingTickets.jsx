@@ -329,7 +329,8 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     const tareKg = parseFloat(tareWeight);
     if (!pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
     if (!tareKg || tareKg <= 0) { setError("Please enter the empty truck's weight."); return; }
-    if (!receiptPhotoUrl) { setError("Please take a photo of the finished, signed paper ticket."); return; }
+    // Photo of the paper ticket is off while testing — no camera on this
+    // computer yet. Re-add this check once photos are actually possible.
     setError("");
     setSaving(true);
     try {
@@ -459,9 +460,9 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
         <div className="rounded-lg border border-slate-200 p-4">
           <div className="mb-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
           <PhotoUpload
-            label="Photo of the finished, signed paper ticket" kind="receipt" required
+            label="Photo of the finished, signed paper ticket" kind="receipt"
             url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-            hint="So HQ can check it against what's entered here"
+            hint="So HQ can check it against what's entered here — optional for now, no camera on this computer yet"
           />
         </div>
       </div>
