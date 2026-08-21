@@ -108,10 +108,11 @@ export const api = {
     return data.map((p) => ({ ...p, locationName: p.locations?.name || "—", roleObj: p.roles || null }));
   },
 
-  async updateProfileRole(id, { roleId, locationId, role }) {
+  async updateProfileRole(id, { roleId, locationId, role, fullName }) {
     const patch = {};
     if (roleId !== undefined) patch.role_id = roleId;
     if (locationId !== undefined) patch.location_id = locationId;
+    if (fullName !== undefined) patch.full_name = fullName;
     // `role` here is the older, simpler admin/staff text column that most
     // of the app still reads directly (Sidebar sections, page access,
     // the Transactions read-only lock) — it predates the granular Roles
