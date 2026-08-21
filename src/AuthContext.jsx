@@ -17,6 +17,30 @@ const HEARTBEAT_MS = 20000;
 // offline.
 const STARTUP_TIMEOUT_MS = 5000;
 
+// The profile fetch itself (a separate network request, made right after
+// the session check) has the same problem — and in the most common
+// real-world "offline" case, the WiFi is still technically connected to a
+// router that just has no internet behind it, so the request doesn't fail
+// fast, it just sits there for a long time before the browser gives up.
+// This bounds that specific wait so we don't sit around waiting for the
+// browser to notice — we just fall back to the saved copy ourselves.
+const PROFILE_TIMEOUT_MS = 4000;
+
+// Races any promise against a plain timer. Never rejects — if `promise`
+// doesn't settle in time, resolves to `fallbackValue` instead, and the
+// original promise is left to keep running in the background (harmless;
+// if it does eventually resolve for real, whichever setProfile/setSession
+// call it makes just quietly becomes the freshest truth on screen).
+function withTimeout(promise, ms, fallbackValue) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallbackValue), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      () => { clearTimeout(timer); resolve(fallbackValue); }
+    );
+  });
+}
+
 // The one piece of the signed-in state we keep a local copy of, purely so
 // the app can still open while offline. Nothing new or more sensitive than
 // what's already sitting in this browser's page each time someone is
@@ -155,7 +179,12 @@ export function AuthProvider({ children }) {
   // bounce people back to the login screen the moment WiFi dropped, even
   // though their session itself was still perfectly valid.
   async function loadProfileWithOfflineFallback(userId) {
-    const ok = await loadProfile(userId);
+    // Bounded to PROFILE_TIMEOUT_MS — covers both "fails right away" (the
+    // try/catch inside loadProfile) AND "just hangs for a long time"
+    // (WiFi connected to a router with no real internet behind it, which
+    // is the more common real-world version of "offline" at these
+    // stations, as opposed to the radio being fully off).
+    const ok = await withTimeout(loadProfile(userId), PROFILE_TIMEOUT_MS, false);
     if (!ok) {
       const cached = loadCachedProfile();
       if (cached) setProfile(cached);
@@ -163,47 +192,44 @@ export function AuthProvider({ children }) {
   }
 
   useEffect(() => {
-    // `settled` makes sure only ONE of "the real Supabase check finished"
-    // or "we gave up and used the offline fallback" ever gets to decide
-    // what the app opens with — whichever happens first wins, so a slow
-    // network response that trickles in afterwards can't suddenly bounce
-    // someone back to the login screen.
-    let settled = false;
+    let cancelled = false;
 
     async function init() {
-      try {
-        const { data } = await supabase.auth.getSession();
-        const session = data?.session;
-        if (settled) return;
+      // Bounded the same way as the profile fetch below — if this hangs
+      // (WiFi connected to a router with no real internet behind it is
+      // the common real case, not just the radio being off), we stop
+      // waiting on our own terms instead of trusting the browser to give
+      // up in a reasonable time.
+      const result = await withTimeout(supabase.auth.getSession(), STARTUP_TIMEOUT_MS, null);
+      if (cancelled) return;
+
+      const session = result?.data?.session || null;
+
+      if (session) {
         setSession(session);
-        if (session) await loadProfileWithOfflineFallback(session.user.id);
-      } catch (_err) {
-        // Genuinely offline with nothing else to go on — the timeout
-        // fallback below covers this.
-      } finally {
-        if (!settled) {
-          settled = true;
-          setLoading(false);
+        await loadProfileWithOfflineFallback(session.user.id);
+      } else {
+        // Either there's genuinely no one logged in on this device, or
+        // the check above timed out while offline — in the second case,
+        // fall back to whatever was saved here the last time someone
+        // logged in, so the app still opens instead of showing the login
+        // screen for no real reason.
+        const cached = loadCachedProfile();
+        if (cached) {
+          setProfile(cached);
+          // We don't have a real Supabase session object in this case,
+          // but a couple of other places just check "is someone logged
+          // in" / need the user id (the heartbeat, logout) — this
+          // minimal stand-in covers that until a real session arrives
+          // via onAuthStateChange, if it ever does.
+          setSession({ user: { id: cached.id }, offline: true });
         }
       }
+
+      if (!cancelled) setLoading(false);
     }
 
     init();
-
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      const cached = loadCachedProfile();
-      if (cached) {
-        setProfile(cached);
-        // We don't have a real Supabase session object yet, but a couple
-        // of other places just check "is someone logged in" / need the
-        // user id (the heartbeat, logout) — this minimal stand-in covers
-        // that until the real session arrives via onAuthStateChange.
-        setSession((prev) => prev || { user: { id: cached.id }, offline: true });
-      }
-      setLoading(false);
-    }, STARTUP_TIMEOUT_MS);
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
@@ -229,7 +255,7 @@ export function AuthProvider({ children }) {
       }
     });
 
-    return () => { clearTimeout(timer); listener.subscription.unsubscribe(); };
+    return () => { cancelled = true; listener.subscription.unsubscribe(); };
   }, []);
 
   // Heartbeat: while someone is logged in, periodically mark this browser
