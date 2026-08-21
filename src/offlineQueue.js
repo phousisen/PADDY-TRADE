@@ -50,6 +50,24 @@ function cambodiaNow() {
   return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${hour}:${parts.minute}:${parts.second}` };
 }
 
+// Races an online-only lookup against a plain timer. Some "offline" is
+// actually WiFi still connected to a router with no real internet behind
+// it (common at these stations) — instead of that lookup sitting for a
+// long time before the browser gives up, we stop waiting on our own terms
+// and fall back to creating the record locally, same reasoning as
+// AuthContext.jsx's withTimeout for login. Never rejects — resolves to
+// `fallbackValue` if `promise` doesn't settle within `ms`.
+const ONLINE_LOOKUP_TIMEOUT_MS = 4000;
+export function withTimeout(promise, ms, fallbackValue) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(fallbackValue), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      () => { clearTimeout(timer); resolve(fallbackValue); }
+    );
+  });
+}
+
 export function newId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   // Fallback for older browsers that don't have crypto.randomUUID.
@@ -193,13 +211,14 @@ export function addCachedProduct(product) {
 // load, or right after a successful sync) so the lookup caches used
 // offline stay reasonably fresh.
 export async function refreshLookupCaches() {
-  try {
-    const [parties, products] = await Promise.all([api.getParties(), api.getProducts()]);
-    setCachedParties(parties);
-    setCachedProducts(products);
-  } catch {
-    // Offline or failed — just keep whatever's already cached.
-  }
+  const [parties, products] = await Promise.all([
+    withTimeout(api.getParties().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null),
+    withTimeout(api.getProducts().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null),
+  ]);
+  // Offline, timed out, or failed — just keep whatever's already cached
+  // rather than wiping it out with an empty/partial result.
+  if (parties) setCachedParties(parties);
+  if (products) setCachedProducts(products);
 }
 
 // ---------------------------------------------------------------------
@@ -284,10 +303,23 @@ async function runOp(op) {
       return api.setTicketTare(op.ticketId, op.payload);
     case "finalizeTicket":
       return api.finalizeTicket(op.ticketId, op.payload);
+    case "createTransaction":
+      return api.createTransaction(op.payload);
+    case "createPayment":
+      return api.createPayment(op.payload);
+    case "logAudit":
+      return api.logAudit(op.payload);
     default:
       throw new Error("Unknown queued operation: " + op.type);
   }
 }
+
+// Only these op types touch the ticket board's local cache once they land
+// on the server — a manually-entered Buy/Sell (createTransaction/
+// createPayment/logAudit, queued from TransactionForm.jsx) has no
+// ticketId and isn't a ticket at all, so it must never be folded into the
+// ticket cache below.
+const TICKET_OP_TYPES = new Set(["createTicket", "setTicketGross", "setTicketPrice", "setTicketTare", "finalizeTicket"]);
 
 // Processes the queue strictly in order (FIFO), stopping at the first
 // failure — a later op might depend on an earlier one having landed (e.g.
@@ -324,7 +356,7 @@ export function trySync() {
           // A ticket-related op just landed on the server — fold the
           // server's returned row into the local cache so the UI reflects
           // confirmed data as soon as it's available.
-          if (result && op.type !== "createParty" && op.type !== "createProduct" && op.type !== "updateParty") {
+          if (result && TICKET_OP_TYPES.has(op.type)) {
             upsertCachedTicket(normalizeSyncedTicket(op, result));
           }
           dequeueFirst();
@@ -412,21 +444,27 @@ export async function resolvePartyIdOffline(typedName, type, locationId, extra =
   if (cachedMatch) return cachedMatch.id;
 
   if (navigator.onLine) {
-    try {
-      const matches = await api.getParties({ type, q: trimmed });
-      const exact = matches.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
-      if (exact) {
-        addCachedParty(exact);
-        return exact.id;
-      }
-    } catch {
-      // Fall through and create it locally below.
+    const matches = await withTimeout(api.getParties({ type, q: trimmed }).catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null);
+    const exact = matches && matches.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+    if (exact) {
+      addCachedParty(exact);
+      return exact.id;
     }
   }
 
   const id = newId();
-  addCachedParty({ id, name: trimmed, type, location_id: locationId, phone: extra.phone || null, bank_name: extra.bankName || null, bank_account: extra.bankAccount || null });
-  enqueue({ type: "createParty", payload: { id, name: trimmed, type, locationId, phone: extra.phone, bankName: extra.bankName, bankAccount: extra.bankAccount } });
+  addCachedParty({
+    id, name: trimmed, type, location_id: locationId,
+    phone: extra.phone || null, bank_name: extra.bankName || null, bank_account: extra.bankAccount || null,
+    bank_qr_url: extra.bankQrUrl || null, id_number: extra.idNumber || null, company: extra.company || null, destination: extra.destination || null,
+  });
+  enqueue({
+    type: "createParty",
+    payload: {
+      id, name: trimmed, type, locationId, phone: extra.phone, bankName: extra.bankName, bankAccount: extra.bankAccount,
+      bankQrUrl: extra.bankQrUrl, idNumber: extra.idNumber, company: extra.company, destination: extra.destination,
+    },
+  });
   trySync();
   return id;
 }
@@ -460,13 +498,11 @@ export async function resolveProductIdOffline(typedName) {
   if (cachedMatch) return cachedMatch.id;
 
   if (navigator.onLine) {
-    try {
-      const all = await api.getProducts();
+    const all = await withTimeout(api.getProducts().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null);
+    if (all) {
       setCachedProducts(all);
       const exact = all.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
       if (exact) return exact.id;
-    } catch {
-      // Fall through and create it locally below.
     }
   }
 
@@ -616,4 +652,84 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     tax_amount: taxAmount,
     total_with_tax: amount + taxAmount,
   };
+}
+
+// ---------------------------------------------------------------------
+// Manual Buy/Sell entries — used by TransactionForm.jsx. Unlike a
+// Weighing Ticket, a manual entry has no multi-stage lifecycle: staff
+// fill in the whole thing and save it once. Same offline reasoning as
+// everything above though — the transaction (and its payment/audit
+// entries, if applicable) gets a real id immediately so the receipt
+// shown right after Save is the permanent record, not a preview, and the
+// actual writes are queued for whenever the connection allows them. This
+// is what fixes "the form loses everything I typed if the connection
+// drops" — nothing here waits on a network call to succeed.
+// ---------------------------------------------------------------------
+
+export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate }) {
+  const id = newId();
+  const code = genLocalTxCode(type);
+  const payableKg = Math.max(0, (quantityKg || 0) - (deductionKg || 0));
+  const staffFeeAmt = type === "BUY" ? (staffFee || 0) : 0;
+  const amount = Math.round(Math.max(0, payableKg * (pricePerKg || 0) - staffFeeAmt) * 100) / 100;
+  const taxAmount = taxApplicable ? Math.round(amount * (taxRate || 0)) / 100 : 0;
+  const { date: nowDate, time: nowTime } = cambodiaNow();
+
+  enqueue({
+    type: "createTransaction",
+    payload: {
+      id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId,
+      qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg,
+      staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
+    },
+  });
+  trySync();
+
+  return {
+    id, code, type,
+    tx_date: txDate || nowDate,
+    tx_time: nowTime,
+    location_id: locationId,
+    party_id: partyId,
+    product_id: productId,
+    quantity_kg: quantityKg,
+    payable_kg: payableKg,
+    price_per_kg: pricePerKg,
+    payment_status: paymentStatus,
+    quality_grade: qualityGrade || null,
+    moisture_pct: moisturePct || 0,
+    mixture_pct: mixturePct || 0,
+    outthrow_pct: outthrowPct || 0,
+    deduction_kg: deductionKg || 0,
+    note: note || null,
+    car_plate: carPlate || null,
+    driver_name: driverName || null,
+    receipt_photo_url: receiptPhotoUrl || null,
+    payment_proof_url: paymentProofUrl || null,
+    staff_fee: staffFeeAmt,
+    tax_applicable: !!taxApplicable,
+    tax_rate: taxApplicable ? (taxRate || 0) : 0,
+    amount,
+    tax_amount: taxAmount,
+    total_with_tax: amount + taxAmount,
+    created_by: userId,
+  };
+}
+
+// Records a cash payment made at the moment a manual transaction is
+// saved (the "already Paid" case) — same client-generated-id pattern, so
+// it lands on the server as the exact same record whenever it syncs.
+export function createPaymentOffline({ type, transactionId, locationId, amount, method, payDate, memo, userId }) {
+  const id = newId();
+  enqueue({ type: "createPayment", payload: { id, type, transactionId, locationId, amount, method, payDate, memo, userId } });
+  trySync();
+  return { id, type, transaction_id: transactionId, location_id: locationId, amount, method, pay_date: payDate, memo, created_by: userId };
+}
+
+// Queues an Activity Log entry without waiting on the network — used
+// alongside createTransactionOffline/createPaymentOffline so a new
+// manual entry is traceable later even if it was saved while offline.
+export function logAuditOffline(payload) {
+  enqueue({ type: "logAudit", payload });
+  trySync();
 }
