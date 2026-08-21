@@ -228,6 +228,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   const [memo, setMemo] = useState("");
   const [payDate, setPayDate] = useState(cambodiaDateStr());
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const isBuy = tx.type === "BUY";
 
   const paying = parseFloat(amount) || 0;
@@ -235,9 +236,16 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   const overpaying = paying > remaining;
 
   async function submit() {
+    setError("");
     setSaving(true);
-    await onSubmit(parseFloat(amount), method, memo, payDate);
-    setSaving(false);
+    try {
+      await onSubmit(parseFloat(amount), method, memo, payDate);
+    } catch (err) {
+      // Without this, a dropped connection left this button saying
+      // "Saving..." forever with no way to know it failed or try again.
+      setError(err.message || "Couldn't save this payment — check your connection and try again.");
+      setSaving(false);
+    }
   }
 
   return (
@@ -276,10 +284,12 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
 
         <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
         <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. partial payment"
-          className="mb-4 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+
+        {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
+          <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
           <button
             disabled={saving || !amount || parseFloat(amount) <= 0}
             onClick={submit}
@@ -635,7 +645,16 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
       setSaving(false);
       return;
     }
-    await onSubmit(parseFloat(amount));
+    try {
+      await onSubmit(parseFloat(amount));
+    } catch (err) {
+      // Same "stuck on Saving..." risk as recording a new payment — if the
+      // save itself fails (e.g. connection drops right after the password
+      // check succeeds), show why instead of freezing the button forever.
+      setError(err.message || "Couldn't save this correction — check your connection and try again.");
+      setSaving(false);
+      return;
+    }
     setSaving(false);
   }
 
