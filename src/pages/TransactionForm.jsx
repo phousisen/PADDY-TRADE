@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Save, ScanLine } from "lucide-react";
+import { Search, Save, ScanLine, WifiOff, RefreshCw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
@@ -7,6 +7,10 @@ import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
+import {
+  withTimeout, resolvePartyIdOffline, resolveProductIdOffline, updatePartyOffline,
+  createTransactionOffline, createPaymentOffline, logAuditOffline, onSyncStatusChange,
+} from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -80,6 +84,12 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTx, setSavedTx] = useState(null);
+  // Same offline-sync status used on the Weighing Tickets board — Save
+  // below never actually waits on the network (see handleSubmit), so this
+  // is the only thing that tells staff whether a save has actually reached
+  // PaddyTrade yet or is still waiting on this device for the connection.
+  const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
+  useEffect(() => onSyncStatusChange(setSyncStatus), []);
 
   // Note: this form used to auto-save/restore a draft to the browser's
   // local storage so a dropped connection or accidental reload wouldn't
@@ -176,14 +186,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillParty]);
 
-  async function resolveProductId() {
-    const name = productQuery.trim();
-    const existing = products.find((p) => p.name.toLowerCase() === name.toLowerCase());
-    if (existing) return existing.id;
-    const created = await api.createProduct(name);
-    return created.id;
-  }
-
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
@@ -196,17 +198,47 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     if (paymentProofRequired && !paymentProofUrl) { setError("A photo of the bank QR / payment proof is required when payment is marked as done."); return; }
     setSaving(true);
     try {
+      // Everything below saves to this device immediately and queues the
+      // real writes for whenever the connection allows them — same
+      // offline-first pattern already proven on the Weighing Tickets board
+      // (see offlineQueue.js). Nothing here waits on a network call to
+      // succeed, so a dropped connection can no longer wipe out what was
+      // just typed in.
       let party = selectedParty;
-      if (!party && partyPhone.trim()) {
-        // Someone with this exact phone number may already exist —
-        // reuse them instead of creating a duplicate.
-        const matches = await api.getParties({ type: isBuy ? "supplier" : "buyer", phone: partyPhone.trim() });
-        if (matches.length > 0) party = matches[0];
+      if (!party && partyPhone.trim() && navigator.onLine) {
+        // Someone with this exact phone number may already exist — reuse
+        // them instead of creating a duplicate. Bounded so a WiFi that's
+        // connected but not actually reaching the internet doesn't leave
+        // Save hanging — it just falls through to match-or-create by name.
+        const matches = await withTimeout(
+          api.getParties({ type: isBuy ? "supplier" : "buyer", phone: partyPhone.trim() }).catch(() => null),
+          4000, null
+        );
+        if (matches && matches.length > 0) party = matches[0];
       }
-      if (!party) {
-        party = await api.createParty({
-          name: partyQuery.trim(),
-          type: isBuy ? "supplier" : "buyer",
+
+      let partyId, partyName, partyBankName, partyBankAccount;
+      if (party) {
+        partyId = party.id;
+        partyName = party.name;
+        partyBankName = party.bank_name;
+        partyBankAccount = party.bank_account;
+        if (isBuy) {
+          // Existing farmer — if their bank details or QR code were
+          // corrected or added here, keep their saved profile in sync.
+          const patch = {};
+          if (bankName !== (party.bank_name || "")) patch.bankName = bankName;
+          if (bankAccount !== (party.bank_account || "")) patch.bankAccount = bankAccount;
+          if (bankName !== "Cash" && bankQrUrl && bankQrUrl !== (party.bank_qr_url || "")) patch.bankQrUrl = bankQrUrl;
+          if (Object.keys(patch).length > 0) {
+            updatePartyOffline(party.id, patch);
+            if (patch.bankName !== undefined) partyBankName = patch.bankName;
+            if (patch.bankAccount !== undefined) partyBankAccount = patch.bankAccount;
+          }
+        }
+      } else {
+        partyName = partyQuery.trim();
+        partyId = await resolvePartyIdOffline(partyName, isBuy ? "supplier" : "buyer", effectiveStationId, {
           phone: partyPhone,
           idNumber: partyIdNumber,
           bankName: isBuy ? bankName : undefined,
@@ -214,22 +246,15 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
           bankQrUrl: isBuy && bankName !== "Cash" ? bankQrUrl : undefined,
           company: !isBuy ? company : undefined,
           destination: !isBuy ? destination : undefined,
-          locationId: effectiveStationId,
         });
-      } else if (isBuy) {
-        // Existing farmer — if their bank details or QR code were corrected
-        // or added here, keep their saved profile in sync.
-        const patch = {};
-        if (bankName !== (party.bank_name || "")) patch.bankName = bankName;
-        if (bankAccount !== (party.bank_account || "")) patch.bankAccount = bankAccount;
-        if (bankName !== "Cash" && bankQrUrl && bankQrUrl !== (party.bank_qr_url || "")) patch.bankQrUrl = bankQrUrl;
-        if (Object.keys(patch).length > 0) {
-          try { await api.updateParty(party.id, patch); } catch (err) { console.error("Party profile update failed", err); }
-        }
+        partyBankName = isBuy ? bankName : undefined;
+        partyBankAccount = isBuy ? bankAccount : undefined;
       }
-      const productId = await resolveProductId();
-      const tx = await api.createTransaction({
-        type, locationId: effectiveStationId, partyId: party.id, productId,
+
+      const productId = await resolveProductIdOffline(productQuery.trim());
+
+      const tx = createTransactionOffline({
+        type, locationId: effectiveStationId, partyId, productId,
         quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
         txDate,
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
@@ -247,52 +272,48 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       // same reasoning as logging edits/payments: an audit trail is only
       // useful for finding mistakes if it captures the original entry too,
       // not just later corrections.
-      try {
-        await api.logAudit({
-          action: "create_transaction",
-          tableName: "transactions",
-          recordId: tx.id,
-          newData: {
-            code: tx.code, type, partyName: party.name, quantityKg: netKg, pricePerKg: parseFloat(pricePerKg),
-            amount: tx.amount, stationName: myStation?.name, txDate: tx.tx_date, paymentStatus,
-          },
-          userId: session.user.id,
-        });
-      } catch (logErr) {
-        console.error("Activity log failed", logErr);
-      }
+      logAuditOffline({
+        action: "create_transaction",
+        tableName: "transactions",
+        recordId: tx.id,
+        newData: {
+          code: tx.code, type, partyName, quantityKg: netKg, pricePerKg: parseFloat(pricePerKg),
+          amount: tx.amount, stationName: myStation?.name, txDate: tx.tx_date, paymentStatus,
+        },
+        userId: session.user.id,
+      });
 
       // If it was entered as already paid, record that cash movement immediately
       // so it shows up correctly in Accounts Payable/Receivable and Cash Flow.
       if (paymentStatus === "paid") {
-        try {
-          const createdPayment = await api.createPayment({
-            type: isBuy ? "pay_supplier" : "receive_customer",
-            transactionId: tx.id,
-            locationId: effectiveStationId,
-            amount: tx.total_with_tax ?? tx.amount,
-            method: "cash",
-            payDate: tx.tx_date,
-            memo: "Paid at time of transaction",
-            userId: session.user.id,
-          });
-          await api.logAudit({
-            action: "record_payment",
-            tableName: "payments",
-            recordId: createdPayment.id,
-            newData: {
-              amount: tx.total_with_tax ?? tx.amount, method: "cash", memo: "Paid at time of transaction",
-              code: tx.code, partyName: party.name, txType: type,
-            },
-            userId: session.user.id,
-          });
-        } catch (payErr) {
-          // Don't block the receipt over this — the transaction itself saved fine.
-          console.error("Auto-payment record failed", payErr);
-        }
+        const createdPayment = createPaymentOffline({
+          type: isBuy ? "pay_supplier" : "receive_customer",
+          transactionId: tx.id,
+          locationId: effectiveStationId,
+          amount: tx.total_with_tax ?? tx.amount,
+          method: "cash",
+          payDate: tx.tx_date,
+          memo: "Paid at time of transaction",
+          userId: session.user.id,
+        });
+        logAuditOffline({
+          action: "record_payment",
+          tableName: "payments",
+          recordId: createdPayment.id,
+          newData: {
+            amount: tx.total_with_tax ?? tx.amount, method: "cash", memo: "Paid at time of transaction",
+            code: tx.code, partyName, txType: type,
+          },
+          userId: session.user.id,
+        });
       }
 
-      setSavedTx({ ...tx, partyName: party.name, partyIdNumber: party.phone || party.id_number || "", bank_name: party.bank_name, bank_account: party.bank_account });
+      setSavedTx({
+        ...tx,
+        partyName, partyIdNumber: partyPhone || partyIdNumber || "",
+        bank_name: partyBankName, bank_account: partyBankAccount,
+        product_name: productQuery.trim(), stationName: myStation?.name,
+      });
     } catch (err) {
       const isNetworkError = err.message && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"));
       setError(
@@ -312,6 +333,16 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isBuy ? t("new_buy_title") : t("new_sell_title")} />
+      {(!syncStatus.online || syncStatus.pending > 0 || syncStatus.syncing) && (
+        <div className={`flex items-center gap-2 px-6 py-2 text-xs font-medium ${!syncStatus.online ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"}`}>
+          {!syncStatus.online ? <WifiOff size={13} /> : <RefreshCw size={13} className={syncStatus.syncing ? "animate-spin" : ""} />}
+          {!syncStatus.online
+            ? `No internet — working offline. ${syncStatus.pending > 0 ? `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} will sync once it's back.` : "Anything you save here is saved on this device."}`
+            : syncStatus.syncing
+              ? "Connected — syncing…"
+              : `Connected — ${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} waiting to sync…`}
+        </div>
+      )}
       <main className="flex-1 overflow-y-auto p-6">
         <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-5">
           <div className="col-span-2 space-y-5">
