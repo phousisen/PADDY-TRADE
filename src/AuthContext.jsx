@@ -92,48 +92,74 @@ export function AuthProvider({ children }) {
   // past logout would immediately kick the user again on their next login.
   const openedAtRef = useRef(new Date());
 
+  // Returns true if it actually managed to load a profile from the server
+  // (and set it via setProfile), false otherwise. Callers use this to know
+  // when they need to fall back to the cached copy themselves — this
+  // function deliberately does NOT clear an existing profile to null on
+  // failure, so a caller that already has something on screen doesn't get
+  // yanked back to the login page just because one background refresh
+  // failed (e.g. a momentary network blip).
   async function loadProfile(userId) {
-    // Try the full query with the roles join first.
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*, roles(id, name, scope, permissions)")
-      .eq("id", userId)
-      .single();
+    try {
+      // Try the full query with the roles join first.
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*, roles(id, name, scope, permissions)")
+        .eq("id", userId)
+        .single();
 
-    if (!error) {
+      if (!error) {
+        const built = {
+          ...data,
+          roleName: data.roles?.name || data.role,
+          permissions: data.roles?.permissions || [],
+          roleScope: data.roles?.scope || (data.role === "admin" ? "all" : "own_location"),
+          isOwner: (data.roles?.permissions || []).includes("manage_admins"),
+        };
+        setProfile(built);
+        cacheProfile(built);
+        return true;
+      }
+
+      // The roles table/column may not exist yet if the SQL migration
+      // hasn't been run (or hasn't been run yet in this exact order).
+      // Rather than lock everyone out of the app, fall back to the plain
+      // profile so login still works — the new role features just won't
+      // be active until that migration is applied.
+      console.warn("Roles join failed, falling back to plain profile:", error.message);
+      const fallback = await supabase.from("profiles").select("*").eq("id", userId).single();
+      if (fallback.error) {
+        console.error("Failed to load profile", fallback.error);
+        return false;
+      }
       const built = {
-        ...data,
-        roleName: data.roles?.name || data.role,
-        permissions: data.roles?.permissions || [],
-        roleScope: data.roles?.scope || (data.role === "admin" ? "all" : "own_location"),
-        isOwner: (data.roles?.permissions || []).includes("manage_admins"),
+        ...fallback.data,
+        roleName: fallback.data.role,
+        permissions: [],
+        roleScope: fallback.data.role === "admin" ? "all" : "own_location",
+        isOwner: false,
       };
       setProfile(built);
       cacheProfile(built);
-      return;
+      return true;
+    } catch (_err) {
+      // Genuinely offline (the fetch itself failed) — the caller falls
+      // back to whatever was cached from the last successful load.
+      return false;
     }
+  }
 
-    // The roles table/column may not exist yet if the SQL migration hasn't
-    // been run (or hasn't been run yet in this exact order). Rather than
-    // lock everyone out of the app, fall back to the plain profile so
-    // login still works — the new role features just won't be active
-    // until that migration is applied.
-    console.warn("Roles join failed, falling back to plain profile:", error.message);
-    const fallback = await supabase.from("profiles").select("*").eq("id", userId).single();
-    if (fallback.error) {
-      console.error("Failed to load profile", fallback.error);
-      setProfile(null);
-      return;
+  // Loads the real profile from the server; if that fails (e.g. no
+  // internet), falls back to the last copy saved on this device rather
+  // than leaving the app with no profile at all — which is what used to
+  // bounce people back to the login screen the moment WiFi dropped, even
+  // though their session itself was still perfectly valid.
+  async function loadProfileWithOfflineFallback(userId) {
+    const ok = await loadProfile(userId);
+    if (!ok) {
+      const cached = loadCachedProfile();
+      if (cached) setProfile(cached);
     }
-    const built = {
-      ...fallback.data,
-      roleName: fallback.data.role,
-      permissions: [],
-      roleScope: fallback.data.role === "admin" ? "all" : "own_location",
-      isOwner: false,
-    };
-    setProfile(built);
-    cacheProfile(built);
   }
 
   useEffect(() => {
@@ -150,7 +176,7 @@ export function AuthProvider({ children }) {
         const session = data?.session;
         if (settled) return;
         setSession(session);
-        if (session) await loadProfile(session.user.id);
+        if (session) await loadProfileWithOfflineFallback(session.user.id);
       } catch (_err) {
         // Genuinely offline with nothing else to go on — the timeout
         // fallback below covers this.
@@ -182,7 +208,7 @@ export function AuthProvider({ children }) {
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session) {
-        await loadProfile(session.user.id);
+        await loadProfileWithOfflineFallback(session.user.id);
         // Only record a fresh "login" on an actual sign-in — not on a page
         // reload restoring an existing session, and not on a background
         // token refresh, both of which also fire through this callback.
