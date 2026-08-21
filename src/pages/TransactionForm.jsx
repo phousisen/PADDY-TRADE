@@ -122,6 +122,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     if (settings.default_vat_rate) setTaxRate(settings.default_vat_rate);
   }, [settings]);
 
+  // Staff at the location only ever hand over cash on the spot — a bank
+  // transfer to a farmer is always sent later by HQ, from HQ, never by
+  // staff at the scale. So a Buy can only be marked "Paid" here when it's
+  // Cash; anything paid by bank transfer has to stay "Pending" until HQ
+  // records the transfer (Transactions -> Pay Supplier).
+  const isBankTransfer = isBuy && !!bankName && bankName !== "Cash";
+
   // If staff switch the bank field away from Cash while "Paid" was already
   // selected, drop it back to "Pending" — only HQ can mark a bank-transfer
   // purchase as paid, once they've actually sent the money.
@@ -131,12 +138,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
 
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
-  // Staff at the location only ever hand over cash on the spot — a bank
-  // transfer to a farmer is always sent later by HQ, from HQ, never by
-  // staff at the scale. So a Buy can only be marked "Paid" here when it's
-  // Cash; anything paid by bank transfer has to stay "Pending" until HQ
-  // records the transfer (Transactions -> Pay Supplier).
-  const isBankTransfer = isBuy && !!bankName && bankName !== "Cash";
   const paymentProofRequired = !isBuy && (paymentStatus === "paid" || paymentStatus === "deposit");
   const total = payableKg * (parseFloat(pricePerKg) || 0);
   // Staff/carrying fee — rare, only when our own staff carries the paddy
