@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw, Search } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
+import WeightField from "../components/WeightField.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
@@ -51,46 +52,6 @@ function splitCambodiaTimestamp(iso) {
 // actually uses two visits to the computer per truck, not four or five.
 const OPEN_STAGE_IDS = ["arrived", "weighed_in", "priced", "weighed_out"];
 const ALL_STAGE_IDS = [...OPEN_STAGE_IDS, "declined"];
-
-// ---- Live weight box (same pattern as the New Transaction form) ----------
-
-function useLiveWeight(locationId) {
-  const [liveWeight, setLiveWeight] = useState(null);
-  useEffect(() => {
-    if (!locationId) { setLiveWeight(null); return; }
-    let cancelled = false;
-    async function poll() {
-      const reading = await api.getLiveWeight(locationId).catch(() => null);
-      if (!cancelled) setLiveWeight(reading);
-    }
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [locationId]);
-  const ageMs = liveWeight?.updated_at ? Date.now() - new Date(liveWeight.updated_at).getTime() : Infinity;
-  return { connected: ageMs < 6000, weightKg: liveWeight?.weight_kg };
-}
-
-function LiveWeightBox({ locationId, label, onUse }) {
-  const { connected, weightKg } = useLiveWeight(locationId);
-  return (
-    <div className={`mb-3 flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${connected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
-      <div className="flex items-center gap-2.5">
-        <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
-        <div>
-          <p className={`text-xs font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>{connected ? (label || "Live Scale Weight") : "Scale not connected"}</p>
-          <p className={`text-lg font-bold ${connected ? "text-emerald-800" : "text-slate-300"}`}>{connected ? `${fmt2(weightKg)} kg` : "— kg"}</p>
-        </div>
-      </div>
-      {connected && (
-        <button type="button" onClick={() => onUse(weightKg)}
-          className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
-          Use This
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ---- Modal shell ----------------------------------------------------------
 
@@ -290,9 +251,13 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       </div>
 
       <div className="mt-4">
-        <LiveWeightBox locationId={locationId} onUse={(kg) => setGrossWeight(String(kg))} />
-        <label className={labelCls}>Gross Weight — loaded truck (kg)</label>
-        <input type="number" min="0" step="0.01" value={grossWeight} onChange={(e) => setGrossWeight(e.target.value)} className={inputCls} placeholder="0" />
+        <WeightField
+          locationId={locationId}
+          label="Gross Weight — loaded truck (kg)"
+          value={grossWeight}
+          onChange={setGrossWeight}
+          isAdmin={isAdmin}
+        />
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
@@ -306,7 +271,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
 // ---- Finish Ticket (combined — price + quality, weigh out, and finalize into a receipt, all in one screen) ----
 
-function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
+function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }) {
   const isBuy = ticket.type === "BUY";
   const [qualityGrade, setQualityGrade] = useState("");
   const [moisturePct, setMoisturePct] = useState("");
@@ -403,9 +368,14 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
       {/* 1. Weigh Out — the physical action happening right now */}
       <div className="mb-5">
         <SectionHeader num={1} title="Weigh Out" hint="The truck is empty and on the scale right now" />
-        <LiveWeightBox locationId={ticket.location_id} label="Live Scale Weight (empty truck)" onUse={(kg) => setTareWeight(String(kg))} />
-        <label className={labelCls}>Tare Weight — empty truck (kg)</label>
-        <input type="number" min="0" step="0.01" value={tareWeight} onChange={(e) => setTareWeight(e.target.value)} className={inputCls} placeholder="0" />
+        <WeightField
+          locationId={ticket.location_id}
+          label="Tare Weight — empty truck (kg)"
+          scaleLabel="Live Scale Weight (empty truck)"
+          value={tareWeight}
+          onChange={setTareWeight}
+          isAdmin={isAdmin}
+        />
       </div>
 
       {/* 2. Quality — transcribed from the paper ticket */}
@@ -837,6 +807,7 @@ export default function WeighingTickets() {
       {finishTicket && (
         <FinishTicketModal
           ticket={finishTicket}
+          isAdmin={isAdmin}
           onClose={() => setFinishTicket(null)}
           onFinalized={(tx) => {
             // finalizeTicketOffline already fills in partyName/partyIdNumber
