@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Search, Save, ScanLine } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
+import WeightField from "../components/WeightField.jsx";
 import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -121,9 +122,22 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     if (settings.default_vat_rate) setTaxRate(settings.default_vat_rate);
   }, [settings]);
 
+  // If staff switch the bank field away from Cash while "Paid" was already
+  // selected, drop it back to "Pending" — only HQ can mark a bank-transfer
+  // purchase as paid, once they've actually sent the money.
+  useEffect(() => {
+    if (isBankTransfer && paymentStatus === "paid") setPaymentStatus("pending");
+  }, [isBankTransfer, paymentStatus]);
+
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
-  const paymentProofRequired = paymentStatus === "paid" || paymentStatus === "deposit";
+  // Staff at the location only ever hand over cash on the spot — a bank
+  // transfer to a farmer is always sent later by HQ, from HQ, never by
+  // staff at the scale. So a Buy can only be marked "Paid" here when it's
+  // Cash; anything paid by bank transfer has to stay "Pending" until HQ
+  // records the transfer (Transactions -> Pay Supplier).
+  const isBankTransfer = isBuy && !!bankName && bankName !== "Cash";
+  const paymentProofRequired = !isBuy && (paymentStatus === "paid" || paymentStatus === "deposit");
   const total = payableKg * (parseFloat(pricePerKg) || 0);
   // Staff/carrying fee — rare, only when our own staff carries the paddy
   // for a farmer with no labor of their own — comes off the goods amount
@@ -136,28 +150,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const hasBreakdown = taxApplicable || staffFeeAmt > 0;
   const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
   const effectiveLocationId = isAdmin ? stationId : profile?.location_id;
-
-  // Live weighbridge connection — polls the scale_readings table (kept up
-  // to date by a small background "bridge" program at the location) every
-  // couple of seconds so this screen can show the truck's weight live. If
-  // the bridge hasn't reported in recently (not set up yet at this
-  // location, lost power, lost internet), the reading just goes stale and
-  // staff type the weight in by hand instead — this is purely an assist,
-  // never required to fill out the form.
-  const [liveWeight, setLiveWeight] = useState(null);
-  useEffect(() => {
-    if (!effectiveLocationId) { setLiveWeight(null); return; }
-    let cancelled = false;
-    async function poll() {
-      const reading = await api.getLiveWeight(effectiveLocationId).catch(() => null);
-      if (!cancelled) setLiveWeight(reading);
-    }
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [effectiveLocationId]);
-  const liveWeightAgeMs = liveWeight?.updated_at ? Date.now() - new Date(liveWeight.updated_at).getTime() : Infinity;
-  const liveWeightConnected = liveWeightAgeMs < 6000; // no update in 6s of polling = treat as disconnected
 
   function selectParty(p) {
     setSelectedParty(p);
@@ -425,35 +417,26 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <ScanLine size={16} /> {t("section2_weighbridge")}
               </h3>
 
-              <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 ${liveWeightConnected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
-                <div className="flex items-center gap-2.5">
-                  <span className={`h-2 w-2 rounded-full ${liveWeightConnected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
-                  <div>
-                    <p className={`text-xs font-medium ${liveWeightConnected ? "text-emerald-700" : "text-slate-400"}`}>
-                      {liveWeightConnected ? "Live Scale Weight" : "Scale not connected"}
-                    </p>
-                    <p className={`text-lg font-bold ${liveWeightConnected ? "text-emerald-800" : "text-slate-300"}`}>
-                      {liveWeightConnected ? `${fmt2(liveWeight.weight_kg)} kg` : "— kg"}
-                    </p>
-                  </div>
-                </div>
-                {liveWeightConnected && (
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => setGrossKg(String(liveWeight.weight_kg))}
-                      className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
-                      Use as Gross
-                    </button>
-                    <button type="button" onClick={() => setTareKg(String(liveWeight.weight_kg))}
-                      className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
-                      Use as Tare
-                    </button>
-                  </div>
-                )}
+              <div className="grid grid-cols-2 gap-3">
+                <WeightField
+                  locationId={effectiveLocationId}
+                  label={t("gross_weight")}
+                  scaleLabel="Live Scale Weight"
+                  value={grossKg}
+                  onChange={setGrossKg}
+                  isAdmin={isAdmin}
+                />
+                <WeightField
+                  locationId={effectiveLocationId}
+                  label={t("tare_weight")}
+                  scaleLabel="Live Scale Weight"
+                  value={tareKg}
+                  onChange={setTareKg}
+                  isAdmin={isAdmin}
+                />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="mb-1 block text-xs text-slate-500">{t("gross_weight")}</label><input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-                <div><label className="mb-1 block text-xs text-slate-500">{t("tare_weight")}</label><input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} placeholder="0" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("car_plate_number")}</label>
                   <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
@@ -519,8 +502,14 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("payment_status")}</label>
                   <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-                    {isBuy ? (<><option value="pending">{t("pendingpay")}</option><option value="paid">{t("paid")}</option></>) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
+                    {isBuy ? (
+                      <>
+                        <option value="pending">{t("pendingpay")}</option>
+                        {!isBankTransfer && <option value="paid">{t("paid")}</option>}
+                      </>
+                    ) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
                   </select>
+                  {isBankTransfer && <p className="mt-1 text-[11px] text-slate-400">Bank transfer — stays Pending until HQ sends the money and records it (Transactions → Pay Supplier).</p>}
                 </div>
               </div>
               <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.</p>
