@@ -3,21 +3,30 @@ import { useLiveWeight } from "./LiveWeightBox.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 
-// A weight field that staff can only ever fill by pressing "Capture" while
-// the scale is live — there is no box to type a number into, so there is
-// nothing for them to fake. This is the anti-fraud rule Baitang asked for:
-// staff can never type a weight.
+// TESTING PERIOD ONLY: the scales aren't wired up at every station yet, so
+// everyone (not just Admin/Owner) is temporarily allowed to type a weight
+// in by hand — otherwise no one could test/use the app at all at a station
+// that isn't connected yet. Flip this back to false once every station's
+// scale is wired up and confirmed working, to restore the "staff can never
+// type a weight" anti-fraud rule for everyone except Admin/Owner.
+const TESTING_ALLOW_STAFF_MANUAL_ENTRY = true;
+
+// A weight field that, once TESTING_ALLOW_STAFF_MANUAL_ENTRY is switched
+// back off, staff can only ever fill by pressing "Capture" while the scale
+// is live — there is no box to type a number into, so there is nothing for
+// them to fake. This is the anti-fraud rule Baitang asked for: staff can
+// never type a weight.
 //
-// Admin/Owner logins get a small, opt-in "Enter manually" link underneath —
-// an emergency-only override for the rare case the scale itself is down and
-// a truck still needs to be processed. Everyone else stays locked out of
-// typing entirely, even if the scale is disconnected.
+// Admin/Owner logins always get a small, opt-in "Enter manually" link
+// underneath — an emergency-only override for the rare case the scale
+// itself is down and a truck still needs to be processed.
 export default function WeightField({ locationId, label, scaleLabel, value, onChange, isAdmin }) {
   const { connected, weightKg } = useLiveWeight(locationId);
   const [manualMode, setManualMode] = useState(false);
 
+  const canEnterManually = isAdmin || TESTING_ALLOW_STAFF_MANUAL_ENTRY;
   const hasValue = value !== "" && value !== null && value !== undefined;
-  const showManualInput = isAdmin && manualMode;
+  const showManualInput = canEnterManually && manualMode;
 
   return (
     <div>
@@ -51,13 +60,17 @@ export default function WeightField({ locationId, label, scaleLabel, value, onCh
         </div>
       )}
 
-      {isAdmin && (
+      {canEnterManually && (
         <button
           type="button"
           onClick={() => setManualMode((m) => !m)}
           className="mt-1 text-[11px] text-slate-400 underline decoration-dotted hover:text-slate-600"
         >
-          {manualMode ? "Switch back to scale capture" : "Enter manually (admin override — use only if the scale is down)"}
+          {manualMode
+            ? "Switch back to scale capture"
+            : isAdmin
+              ? "Enter manually (admin override — use only if the scale is down)"
+              : "Enter manually (testing period — no scale connected here yet)"}
         </button>
       )}
     </div>
