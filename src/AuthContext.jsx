@@ -8,6 +8,38 @@ const AuthContext = createContext(null);
 // it to log out.
 const HEARTBEAT_MS = 20000;
 
+// If we're offline, supabase.auth.getSession() can sit waiting to reach the
+// server (e.g. to refresh an expired token) instead of failing fast — with
+// nothing else guarding it, that used to leave the whole app stuck on the
+// "Loading…" screen forever. If startup hasn't finished within this many
+// milliseconds, we stop waiting and fall back to whatever was saved on this
+// device the last time someone logged in here, so the app still opens while
+// offline.
+const STARTUP_TIMEOUT_MS = 5000;
+
+// The one piece of the signed-in state we keep a local copy of, purely so
+// the app can still open while offline. Nothing new or more sensitive than
+// what's already sitting in this browser's page each time someone is
+// logged in — just a snapshot of it, kept on this device only.
+const CACHED_PROFILE_KEY = "paddytrade_cached_profile";
+
+function loadCachedProfile() {
+  try {
+    const raw = localStorage.getItem(CACHED_PROFILE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+function cacheProfile(profile) {
+  try {
+    if (profile) localStorage.setItem(CACHED_PROFILE_KEY, JSON.stringify(profile));
+  } catch (_err) {
+    // Storage unavailable/full — not worth failing login over.
+  }
+}
+
 // A rough, plain-language guess at the browser/OS someone is using, read
 // straight from the browser itself (not a precise device fingerprint) —
 // just enough for the Users page to show e.g. "Chrome on Windows".
@@ -69,13 +101,15 @@ export function AuthProvider({ children }) {
       .single();
 
     if (!error) {
-      setProfile({
+      const built = {
         ...data,
         roleName: data.roles?.name || data.role,
         permissions: data.roles?.permissions || [],
         roleScope: data.roles?.scope || (data.role === "admin" ? "all" : "own_location"),
         isOwner: (data.roles?.permissions || []).includes("manage_admins"),
-      });
+      };
+      setProfile(built);
+      cacheProfile(built);
       return;
     }
 
@@ -91,21 +125,59 @@ export function AuthProvider({ children }) {
       setProfile(null);
       return;
     }
-    setProfile({
+    const built = {
       ...fallback.data,
       roleName: fallback.data.role,
       permissions: [],
       roleScope: fallback.data.role === "admin" ? "all" : "own_location",
       isOwner: false,
-    });
+    };
+    setProfile(built);
+    cacheProfile(built);
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session) await loadProfile(session.user.id);
+    // `settled` makes sure only ONE of "the real Supabase check finished"
+    // or "we gave up and used the offline fallback" ever gets to decide
+    // what the app opens with — whichever happens first wins, so a slow
+    // network response that trickles in afterwards can't suddenly bounce
+    // someone back to the login screen.
+    let settled = false;
+
+    async function init() {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const session = data?.session;
+        if (settled) return;
+        setSession(session);
+        if (session) await loadProfile(session.user.id);
+      } catch (_err) {
+        // Genuinely offline with nothing else to go on — the timeout
+        // fallback below covers this.
+      } finally {
+        if (!settled) {
+          settled = true;
+          setLoading(false);
+        }
+      }
+    }
+
+    init();
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const cached = loadCachedProfile();
+      if (cached) {
+        setProfile(cached);
+        // We don't have a real Supabase session object yet, but a couple
+        // of other places just check "is someone logged in" / need the
+        // user id (the heartbeat, logout) — this minimal stand-in covers
+        // that until the real session arrives via onAuthStateChange.
+        setSession((prev) => prev || { user: { id: cached.id }, offline: true });
+      }
       setLoading(false);
-    });
+    }, STARTUP_TIMEOUT_MS);
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
@@ -131,7 +203,7 @@ export function AuthProvider({ children }) {
       }
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => { clearTimeout(timer); listener.subscription.unsubscribe(); };
   }, []);
 
   // Heartbeat: while someone is logged in, periodically mark this browser
