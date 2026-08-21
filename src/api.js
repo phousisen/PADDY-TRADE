@@ -773,22 +773,21 @@ export const api = {
     return data.map((p) => ({ ...p, createdByName: p.profiles?.full_name || "—" }));
   },
 
-  async createPayment({ type, transactionId, locationId, amount, method, payDate, memo, userId }) {
-    const { data, error } = await supabase
-      .from("payments")
-      .insert({
-        type,
-        transaction_id: transactionId || null,
-        location_id: locationId,
-        amount,
-        method,
-        pay_date: payDate,
-        memo,
-        created_by: userId,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+  // `id` is optional — passed by the offline queue when a payment was
+  // already recorded locally (client-generated UUID) while offline, so a
+  // retried sync reuses that same id instead of recording it twice.
+  async createPayment({ id, type, transactionId, locationId, amount, method, payDate, memo, userId }) {
+    const row = {
+      ...(id ? { id } : {}),
+      type,
+      transaction_id: transactionId || null,
+      location_id: locationId,
+      amount,
+      method,
+      pay_date: payDate,
+      memo,
+      created_by: userId,
+    };
+    return insertOrFetchExisting("payments", row);
   },
 };
