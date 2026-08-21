@@ -35,6 +35,7 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const currentAmount = tx.amount;
   const proposedAmount = p
@@ -53,8 +54,26 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
       setSaving(false);
       return;
     }
-    await onApprove(req);
-    setSaving(false);
+    try {
+      await onApprove(req);
+    } catch (err) {
+      // Without this, a dropped connection left the button saying
+      // "Applying..." forever with no error and no way to tell whether it
+      // actually went through — the request would just sit unresolved.
+      setError(err.message || "Couldn't apply these changes — check your connection and try again.");
+      setSaving(false);
+    }
+  }
+
+  async function handleReject() {
+    setError("");
+    setRejecting(true);
+    try {
+      await onReject(req);
+    } catch (err) {
+      setError(err.message || "Couldn't reject this request — check your connection and try again.");
+      setRejecting(false);
+    }
   }
 
   return (
@@ -92,9 +111,11 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
           </div>
         )}
 
+        {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
+
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={() => onReject(req)} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"><X size={14} /> {t("reject")}</button>
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
+          <button onClick={handleReject} disabled={saving || rejecting} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40"><X size={14} /> {rejecting ? "Rejecting…" : t("reject")}</button>
+          <button onClick={onClose} disabled={saving || rejecting} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
         </div>
 
         {p && (
@@ -102,8 +123,7 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
             <label className="mb-1 block text-xs text-slate-500">Enter your own login password to approve &amp; apply these changes to the transaction</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" name="approve-own-password-not-autofillable"
               className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-            {error && <p className="mb-2 text-xs text-rose-500">{error}</p>}
-            <button disabled={saving || !password} onClick={approve} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+            <button disabled={saving || rejecting || !password} onClick={approve} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
               <Check size={16} /> {saving ? "Applying..." : "Approve & Apply to Transaction"}
             </button>
           </div>
