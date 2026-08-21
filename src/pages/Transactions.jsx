@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
+import DateRangeFilter from "../components/DateRangeFilter.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -735,6 +736,11 @@ export default function Transactions({ setPage }) {
   const [notReceivedOnly, setNotReceivedOnly] = useState(false);
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
+  // Date range filter (defaults to "All Time" — null/null) — filtered
+  // locally against tx_date, same approach as the location filter below,
+  // rather than round-tripping to the server for every date change.
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
@@ -789,8 +795,10 @@ export default function Transactions({ setPage }) {
     if (selectedLocationIds.length) {
       out = out.filter((tx) => selectedLocationIds.includes(tx.location_id));
     }
+    if (startDate) out = out.filter((tx) => tx.tx_date >= startDate);
+    if (endDate) out = out.filter((tx) => tx.tx_date <= endDate);
     return out;
-  }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds]);
+  }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds, startDate, endDate]);
 
   function exportCsv() {
     const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Car Plate", "Truck/Driver", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
@@ -953,47 +961,47 @@ export default function Transactions({ setPage }) {
       />
       <main className="flex-1 overflow-y-auto p-6">
         {!isAdmin && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          <div className="mb-4 flex items-center gap-2 rounded-lg border border-gold-300 bg-gold-50 px-3 py-2 text-xs text-gold-700">
             <Lock size={14} /> {t("cannot_edit")}
           </div>
         )}
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex gap-2">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
             {[{ v: "", l: t("all") }, { v: "BUY", l: t("buy") }, { v: "SELL", l: t("sell") }].map((opt) => (
-              <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${type === opt.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{opt.l}</button>
+              <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${type === opt.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{opt.l}</button>
             ))}
-            <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
-            <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm ${notReceivedOnly ? "border-amber-400 bg-amber-50 text-amber-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
-            <button className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50"><Filter size={14} /> {t("filter")}</button>
+            <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
+            <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
+            <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
             {isAdmin && locations.length > 1 && (
               <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"><Download size={14} /> {t("export_csv")}</button>
-            <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
-            <button onClick={() => setPage("new-sell")} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700"><Plus size={14} /> {t("new_sell")}</button>
+            <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> {t("export_csv")}</button>
+            <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
+            <button onClick={() => setPage("new-sell")} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"><Plus size={14} /> {t("new_sell")}</button>
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">#</th>
-                <th className="px-3 py-3 font-medium">Type</th>
-                <th className="px-3 py-3 font-medium">{t("col_id")}</th>
-                <th className="px-3 py-3 font-medium">{t("col_date")}</th>
-                <th className="px-3 py-3 font-medium">{t("col_station")}</th>
-                <th className="px-3 py-3 font-medium">{t("col_party")}</th>
-                <th className="px-3 py-3 font-medium">{t("col_qty")}</th>
-                <th className="px-3 py-3 font-medium">{t("col_amount")}</th>
-                <th className="px-3 py-3 font-medium">Paid</th>
-                <th className="px-3 py-3 font-medium">Remaining</th>
-                <th className="px-3 py-3 font-medium">{t("col_status")}</th>
-                <th className="px-3 py-3 font-medium">Photos</th>
-                <th className="px-3 py-3 font-medium">{t("hq_confirmation")}</th>
-                <th className="px-3 py-3 font-medium">{t("col_action")}</th>
+              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
+                <th className="px-5 py-3 font-semibold">#</th>
+                <th className="px-3 py-3 font-semibold">Type</th>
+                <th className="px-3 py-3 font-semibold">{t("col_id")}</th>
+                <th className="px-3 py-3 font-semibold">{t("col_date")}</th>
+                <th className="px-3 py-3 font-semibold">{t("col_station")}</th>
+                <th className="px-3 py-3 font-semibold">{t("col_party")}</th>
+                <th className="px-3 py-3 font-semibold">{t("col_qty")}</th>
+                <th className="px-3 py-3 font-semibold">{t("col_amount")}</th>
+                <th className="px-3 py-3 font-semibold">Paid</th>
+                <th className="px-3 py-3 font-semibold">Remaining</th>
+                <th className="px-3 py-3 font-semibold">{t("col_status")}</th>
+                <th className="px-3 py-3 font-semibold">Photos</th>
+                <th className="px-3 py-3 font-semibold">{t("hq_confirmation")}</th>
+                <th className="px-3 py-3 font-semibold">{t("col_action")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1003,13 +1011,13 @@ export default function Transactions({ setPage }) {
                 const remaining = remainingByTx[tx.id] || 0;
                 return (
                   <tr key={tx.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
-                    <td className="px-5 py-3 text-slate-400">{i + 1}</td>
-                    <td className="px-3 py-3">
-                      <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"}`}>
+                    <td className="px-5 py-3.5 text-slate-400">{i + 1}</td>
+                    <td className="px-3 py-3.5">
+                      <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-sky-100 text-sky-700"}`}>
                         {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </span>
                     </td>
-                    <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-sky-50 text-sky-600"}`}>{tx.code}</span></td>
+                    <td className="px-3 py-3.5"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-sky-50 text-sky-600"}`}>{tx.code}</span></td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}</td>
@@ -1018,26 +1026,26 @@ export default function Transactions({ setPage }) {
                       {fmtRiel(tx.total_with_tax ?? tx.amount)}
                       {tx.tax_applicable && <p className="text-[10px] font-normal text-slate-400">incl. {tx.tax_rate}% VAT</p>}
                     </td>
-                    <td className="px-3 py-3">
-                      <button onClick={() => setViewPaymentsTx(tx)} className="text-emerald-600 underline decoration-dotted hover:text-emerald-700">
+                    <td className="px-3 py-3.5">
+                      <button onClick={() => setViewPaymentsTx(tx)} className="font-medium text-brand-600 underline decoration-dotted hover:text-brand-700">
                         {fmtRiel(Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining))}
                       </button>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3.5">
                       {isCancelled ? (
                         <span className="text-xs text-slate-400">Excluded from reports</span>
                       ) : remaining > 0.01 ? (
                         isAdmin ? (
-                          <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-100">
+                          <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </button>
                         ) : (
-                          <span className="flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50/60 px-2 py-1 text-xs font-medium text-amber-600" title="Only HQ Admin / Owner can record a payment against a remaining balance">
+                          <span className="flex items-center gap-1 rounded-md border border-gold-100 bg-gold-50/60 px-2 py-1 text-xs font-medium text-gold-700" title="Only HQ Admin / Owner can record a payment against a remaining balance">
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </span>
                         )
                       ) : (
-                        <span className="text-xs text-emerald-600">Settled</span>
+                        <span className="text-xs font-medium text-brand-600">Settled</span>
                       )}
                     </td>
                     <td className="px-3 py-3">{tx.status === "confirmed" ? <CheckCircle2 size={16} className="text-emerald-500" /> : <AlertTriangle size={16} className="text-amber-500" />}</td>
