@@ -201,15 +201,28 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
   const [partners, setPartners] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
   const [loanEntries, setLoanEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    const [l, p, c, b] = await Promise.all([
-      api.getLocations(), api.getPartners(), api.getPartnerCapitalEntries(), api.getBankLoans(),
-    ]);
-    setLocations(l);
-    setPartners(p);
-    setCapitalEntries(c);
-    setLoanEntries(b);
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [l, p, c, b] = await Promise.all([
+        api.getLocations(), api.getPartners(), api.getPartnerCapitalEntries(), api.getBankLoans(),
+      ]);
+      setLocations(l);
+      setPartners(p);
+      setCapitalEntries(c);
+      setLoanEntries(b);
+    } catch (err) {
+      // Without this, a failed/dropped request silently showed empty
+      // tables — as if there were no partners or loans on file at all —
+      // instead of saying the load itself had failed.
+      setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -278,6 +291,12 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
   return (
     <div>
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          <span>{loadError}</span>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+        </div>
+      )}
       <div className="mb-8">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -310,7 +329,8 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.net)}</td>
                 </tr>
               ))}
-              {capByPartner.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No partner capital recorded yet.</td></tr>}
+              {loading && capByPartner.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {capByPartner.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No partner capital recorded yet.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -346,7 +366,8 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
                   <td className={`px-5 py-3 font-medium ${r.outstanding > 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtRiel(r.outstanding)}</td>
                 </tr>
               ))}
-              {loansByLender.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No bank loans recorded yet.</td></tr>}
+              {loading && loansByLender.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {loansByLender.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No bank loans recorded yet.</td></tr>}
             </tbody>
           </table>
         </div>
