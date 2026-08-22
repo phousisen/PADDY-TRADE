@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+// Every timestamp elsewhere in PaddyTrade is shown in Cambodia's own
+// wall-clock time regardless of the viewing device's timezone (see e.g.
+// cambodiaDateStr/cambodiaNow in the other pages) — this table was the one
+// place still using the browser's default toLocaleString(), which shows a
+// different time to anyone viewing from outside Cambodia's timezone.
+function fmtCambodiaDateTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+  return `${date}, ${time}`;
+}
 
 const ACTION_META = {
   create_transaction: { label: "Created a transaction", category: "transaction" },
@@ -134,11 +146,22 @@ function describeChange(log) {
 export default function ReportAuditLog() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [category, setCategory] = useState("all");
 
-  useEffect(() => {
-    api.getAuditLogs().then((data) => { setLogs(data); setLoading(false); });
-  }, []);
+  function load() {
+    setLoading(true);
+    setLoadError("");
+    api.getAuditLogs()
+      .then((data) => setLogs(data))
+      .catch((err) => {
+        // Without this, a failed/dropped request left this page stuck
+        // showing nothing, with no error and no way to retry.
+        setLoadError(err.message || "Couldn't load the activity log — check your connection and try again.");
+      })
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
 
   const categories = ["all", "payment", "transaction", "request", "user", "capital"];
 
@@ -152,6 +175,13 @@ export default function ReportAuditLog() {
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         Every action taken in the system — new transactions, payments recorded, edits, approvals, and cancellations — is logged here with who did it and when, so you can trace back any mistake, especially around payments.
       </div>
+
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          <span>{loadError}</span>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-1.5">
         {categories.map((c) => (
@@ -184,7 +214,7 @@ export default function ReportAuditLog() {
               const meta = actionMeta(l.action);
               return (
                 <tr key={l.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleString()}</td>
+                  <td className="px-5 py-3 text-slate-500 whitespace-nowrap">{fmtCambodiaDateTime(l.created_at)}</td>
                   <td className="px-3 py-3 font-medium text-slate-700 whitespace-nowrap">{l.userName}</td>
                   <td className="px-3 py-3 whitespace-nowrap">
                     <span
@@ -199,7 +229,10 @@ export default function ReportAuditLog() {
                 </tr>
               );
             })}
-            {filteredLogs.length === 0 && !loading && (
+            {loading && filteredLogs.length === 0 && (
+              <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+            )}
+            {filteredLogs.length === 0 && !loading && !loadError && (
               <tr>
                 <td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">
                   No activity recorded yet{category !== "all" ? ` for ${CATEGORY_LABELS[category].toLowerCase()}` : ""}.
