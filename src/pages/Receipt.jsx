@@ -25,13 +25,155 @@ function splitCambodiaTimestamp(iso) {
   return { date, time };
 }
 
-// This layout deliberately mirrors Baitang's own paper "Quality Inspection"
-// ticket field-for-field (weight table on top, then a two-column block —
-// product/party/quality/signatures on the left, net weight/price/total on
-// the right, weigher's line spanning the bottom) so staff who already know
-// the paper ticket by heart can read this one the same way. Bank details
-// and the bank QR photo are the only things added on top of Baitang's own
-// layout, so payment can be sent straight from the printed/saved copy.
+// Font stacks matching the real paper ticket's own fonts exactly (confirmed
+// by opening the source .xls and reading its font names directly) — these
+// are standard on Cambodian Windows PCs (the same PCs this gets printed
+// from), so no web font loading is needed. If a device doesn't have them,
+// the browser falls back to any other Khmer Unicode font it has.
+const FONT_TITLE = { fontFamily: "'Khmer OS Bokor', 'Khmer OS Muol Light', serif" };
+const FONT_BOLD = { fontFamily: "'Khmer OS Battambang', 'Khmer OS', sans-serif" };
+const FONT_BODY = { fontFamily: "'Khmer OS', 'Khmer OS Battambang', sans-serif" };
+
+// ---------------------------------------------------------------------------
+// Exact replica of Baitang's real printed weight ticket (a physical carbon-
+// copy coupon book before this app existed) — verified field-for-field,
+// including exact Khmer wording, against the original .xls forms
+// (Coupon_Import.xls / Coupon_Export.xls). Two versions exist on paper: an
+// "Import" coupon used when buying from a farmer, and an "Export" coupon
+// used when selling to a buyer — which one prints is decided by
+// isBuy below, exactly matching the BUY/SELL ticket type already used
+// throughout the rest of the app.
+// ---------------------------------------------------------------------------
+function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, companyPhoneLine, productName, hasWeighInOut, inStamp, outStamp }) {
+  // "លេខរៀង / Number in" on the real paper coupon is the sequential number
+  // on the guard-issued queue slip a farmer/truck already holds when they
+  // arrive (see the "Quality Ticket No." field on the Weigh-In screen) —
+  // not this app's own internal ticket code — so that's the more faithful
+  // match here, falling back to the ticket's own code if a paper number was
+  // never recorded (e.g. a manually-entered transaction).
+  const numberIn = tx.paper_ticket_no || tx.code;
+
+  // On the real coupon, the blank "Seller"/"Buyer" field on the side that
+  // ISN'T the farmer/counterparty is always filled in by hand with the
+  // company's own name (Baitang is consistently the other party in every
+  // transaction) — so that's what's printed here automatically.
+  const counterpartyLabelKh = isBuy ? "អ្នកលក់" : " អ្នកទិញ";
+  const counterpartyLabelEn = isBuy ? "Seller" : "Buyer";
+  const ownSideLabel = isBuy ? "អ្នកទិញ              Buyer" : "អ្នកលក់              Seller";
+
+  const cell = "border border-slate-900 px-2 py-1";
+
+  return (
+    <div>
+      {/* Header — company name/address/phone, exact wording and fonts from
+          the real coupon. */}
+      <div className="text-center">
+        <p className="text-2xl font-bold" style={FONT_TITLE}>{companyNameKh}</p>
+        <p className="text-base font-bold" style={FONT_BOLD}>{companyAddressKh}</p>
+        <p className="text-base font-bold" style={FONT_BOLD}>{companyPhoneLine}</p>
+        <p className="mt-1 text-sm font-bold">
+          {isBuy
+            ? <>WEIGHT TICKET / IMPORT ( <span style={FONT_BODY}>ទិញចូល</span> )</>
+            : <>WEIGHT TICKET / EXPORT ( <span style={FONT_BODY}>លក់ចេញ</span> )</>}
+        </p>
+      </div>
+
+      {/* Info block — two label/value columns, same order as the coupon. */}
+      <table className="mt-2 w-full text-xs">
+        <tbody>
+          <tr>
+            <td className="w-[13%] whitespace-nowrap py-0.5 align-top" style={FONT_BODY}>លេខរៀង</td>
+            <td className="w-[13%] py-0.5 align-top text-slate-600">Number in</td>
+            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top font-medium">{numberIn}</td>
+            <td className="w-[26%] whitespace-nowrap py-0.5 pl-3 align-top" style={FONT_BODY}>ថ្ងៃ ខែ ឆ្នាំ&nbsp;&nbsp;&nbsp;Date</td>
+            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top font-medium">{tx.tx_date}</td>
+          </tr>
+          <tr>
+            <td className="py-0.5 align-top" style={FONT_BODY}>ទំនិញ</td>
+            <td className="py-0.5 align-top text-slate-600">Product</td>
+            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{productName}</td>
+            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={FONT_BODY}>ឈ្មោះអ្នកបើកបរ Driver Name</td>
+            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{tx.driver_name || "—"}</td>
+          </tr>
+          <tr>
+            <td className="whitespace-nowrap py-0.5 align-top" style={FONT_BODY}>{counterpartyLabelKh}</td>
+            <td className="py-0.5 align-top text-slate-600">{counterpartyLabelEn}</td>
+            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{tx.partyName}</td>
+            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={FONT_BODY}>{ownSideLabel}</td>
+            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{companyNameKh}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* Weight grid — Item / Truck Number / Date / Time / Weight, same 5
+          columns, IN then OUT then NET W. / PRICE / AMOUNT, same as the
+          coupon's own table. */}
+      <table className="mt-2 w-full border-collapse text-[11px]">
+        <thead>
+          <tr style={FONT_BODY}>
+            <th className={`${cell} w-[13%] font-normal`}>ចូល/ចេញ Item</th>
+            <th className={`${cell} w-[19%] font-normal`}>លេខឡាន Truck Number</th>
+            <th className={`${cell} w-[16%] font-normal`}>ថ្ងៃ ខែ ឆ្នាំ Date</th>
+            <th className={`${cell} w-[24%] font-normal`}>ពេលវេលា Time</th>
+            <th className={`${cell} w-[21%] font-normal`} colSpan={2}>ទំងន់ Weight</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className={cell} style={FONT_BODY}>ចូល&nbsp;&nbsp;&nbsp;&nbsp;IN</td>
+            <td className={cell}>{tx.car_plate || "—"}</td>
+            <td className={cell}>{hasWeighInOut ? inStamp.date : "—"}</td>
+            <td className={cell}>{hasWeighInOut ? inStamp.time : "—"}</td>
+            <td className={`${cell} text-right font-medium`}>{hasWeighInOut ? fmt2(tx.gross_kg) : "—"}</td>
+            <td className={`${cell} text-center font-bold`}>Kg</td>
+          </tr>
+          <tr>
+            <td className={cell} style={FONT_BODY}>ចេញ&nbsp;&nbsp;&nbsp;OUT</td>
+            <td className={cell}>{tx.car_plate || "—"}</td>
+            <td className={cell}>{hasWeighInOut ? outStamp.date : "—"}</td>
+            <td className={cell}>{hasWeighInOut ? outStamp.time : "—"}</td>
+            <td className={`${cell} text-right font-medium`}>{hasWeighInOut ? fmt2(tx.tare_kg) : "—"}</td>
+            <td className={`${cell} text-center font-bold`}>Kg</td>
+          </tr>
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>ទំងន់សុទ្ធ&nbsp;&nbsp;&nbsp;&nbsp;NET W.</td>
+            <td className={`${cell} text-right font-bold`}>{fmt2(tx.quantity_kg)}</td>
+            <td className={`${cell} text-center font-bold`}>Kg</td>
+          </tr>
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃ&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRICE</td>
+            <td className={`${cell} text-right font-medium`} colSpan={2}>{fmtRiel(tx.price_per_kg)}</td>
+          </tr>
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃសរុប AMOUNT</td>
+            <td className={`${cell} text-right font-bold`} colSpan={2}>{fmtRiel(tx.amount)}</td>
+          </tr>
+          <tr>
+            <td className="pt-6 pb-1 text-center" colSpan={2}>
+              <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
+              <span style={FONT_BODY}>អ្នកថ្លឹង Operator</span>
+            </td>
+            <td className="pt-6 pb-1 text-center" colSpan={4}>
+              <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
+              <span style={FONT_BODY}>អ្នកបើកបរ Driver</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// This layout leads with an EXACT, field-for-field, wording-for-wording
+// replica of Baitang's own printed paper weight ticket (see
+// ExactWeightTicket above — verified directly against the source .xls
+// coupon files, not eyeballed from a photo), so staff who know the paper
+// ticket by heart can read the top of this one exactly the same way and it
+// can replace the old carbon-copy coupon book outright. Everything below
+// that — quality/deduction, bank details, tax, and the QR code — isn't on
+// the paper coupon; it's kept as an additional section underneath (same
+// idea as the previous version of this file), since payment and tax
+// tracking still need to happen somewhere and staff already rely on it.
 export default function Receipt({ tx, onDone }) {
   const { t } = useLanguage();
   const isBuy = tx.type === "BUY";
@@ -41,11 +183,14 @@ export default function Receipt({ tx, onDone }) {
     api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
-  const companyName = settings.company_name || "PaddyTrade";
-  const companyNameKh = settings.company_name_kh;
-  const companyAddress = settings.company_address || "Battambang, Cambodia";
-  const companyPhone = settings.company_phone;
-  const companyTaxId = settings.company_tax_id;
+  // Falls back to Baitang's real registered Khmer name/address/phone (as
+  // printed on the actual coupon) if these settings were never filled in,
+  // rather than a generic placeholder — so the ticket is correct out of the
+  // box for this business, and only needs settings if it's ever reused for
+  // a different company.
+  const companyNameKh = settings.company_name_kh || "ប៉ៃតង កម្ពុជា";
+  const companyAddressKh = settings.company_address || "ភូមិព្រៃទទឹង ឃុំរាំងកេសី ស្រុកសង្កែ ខេត្តបាត់ដំបង";
+  const companyPhoneLine = settings.company_phone ? `Tel: ${settings.company_phone}` : "Tel: 012 37 36 396 / 088 96 666 52";
   const footerNote = settings.receipt_footer_note || "Thank you for your business!";
 
   // Only tickets that went through Weighing Tickets (Weigh In -> Finish
@@ -69,9 +214,6 @@ export default function Receipt({ tx, onDone }) {
   const taxAmount = tx.tax_amount ?? (tx.tax_applicable ? Math.round(Number(tx.amount) * (Number(tx.tax_rate) || 0)) / 100 : 0);
   const total = tx.total_with_tax ?? (Number(tx.amount) + taxAmount);
 
-  const cellCls = "px-2 py-1 border border-slate-300";
-  const labelCellCls = `${cellCls} bg-slate-50 font-medium text-slate-600 whitespace-nowrap`;
-
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <div className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
@@ -88,76 +230,26 @@ export default function Receipt({ tx, onDone }) {
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
         <div id="receipt-root" className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-6 text-sm shadow-sm">
-          {/* Header — company info, same as Baitang's own printed ticket */}
-          <div className="mb-2 text-center">
-            <p className="text-lg font-bold text-slate-800">{companyName}</p>
-            {companyNameKh && <p className="text-sm text-slate-500">{companyNameKh}</p>}
-            <p className="text-xs text-slate-400">{companyAddress}</p>
-            {companyPhone && <p className="text-xs text-slate-400">{companyPhone}</p>}
-            {companyTaxId && <p className="text-xs text-slate-400">Tax ID: {companyTaxId}</p>}
-          </div>
-          <p className="mb-1 text-center text-base font-semibold uppercase tracking-wide text-slate-700">Ticket</p>
-          <div className="mb-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-0.5 text-center text-xs text-slate-400">
-            <span>Receipt #: <span className="font-medium text-slate-600">{tx.code}</span></span>
-            {tx.paper_ticket_no && <span>· Quality Ticket No: <span className="font-medium text-slate-600">{tx.paper_ticket_no}</span></span>}
-            <span>· {tx.tx_date} {fmtTime(tx.tx_time)}</span>
-          </div>
+          <ExactWeightTicket
+            tx={tx}
+            isBuy={isBuy}
+            companyNameKh={companyNameKh}
+            companyAddressKh={companyAddressKh}
+            companyPhoneLine={companyPhoneLine}
+            productName={productName}
+            hasWeighInOut={hasWeighInOut}
+            inStamp={inStamp}
+            outStamp={outStamp}
+          />
 
-          {/* Weight table — same fields, same order, as Baitang's own
-              printed ticket table (LIST / TRUCK ID / DATE / TIME / WEIGHT,
-              then NET WEIGHT / MOISTURE / OUTTHROW). */}
-          <table className="mb-3 w-full border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-100 text-slate-500">
-                <th className={`${cellCls} text-left font-medium`}>List</th>
-                <th className={`${cellCls} text-left font-medium`}>Truck ID</th>
-                <th className={`${cellCls} text-left font-medium`}>Date</th>
-                <th className={`${cellCls} text-left font-medium`}>Time</th>
-                <th className={`${cellCls} text-right font-medium`}>Weight</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td className={`${cellCls} font-medium text-slate-600`}>IN</td>
-                <td className={`${cellCls} text-slate-600`}>{tx.car_plate || "—"}</td>
-                <td className={`${cellCls} text-slate-600`}>{hasWeighInOut ? inStamp.date : "—"}</td>
-                <td className={`${cellCls} text-slate-600`}>{hasWeighInOut ? inStamp.time : "—"}</td>
-                <td className={`${cellCls} text-right font-medium text-slate-700`}>{hasWeighInOut ? `${fmt2(tx.gross_kg)} KG` : "—"}</td>
-              </tr>
-              <tr>
-                <td className={`${cellCls} font-medium text-slate-600`}>OUT</td>
-                <td className={`${cellCls} text-slate-600`}>{tx.car_plate || "—"}</td>
-                <td className={`${cellCls} text-slate-600`}>{hasWeighInOut ? outStamp.date : "—"}</td>
-                <td className={`${cellCls} text-slate-600`}>{hasWeighInOut ? outStamp.time : "—"}</td>
-                <td className={`${cellCls} text-right font-medium text-slate-700`}>{hasWeighInOut ? `${fmt2(tx.tare_kg)} KG` : "—"}</td>
-              </tr>
-              <tr>
-                <td colSpan={4} className={labelCellCls}>Net Weight</td>
-                <td className={`${cellCls} text-right font-semibold text-slate-800`}>{fmt2(tx.quantity_kg)} KG</td>
-              </tr>
-              <tr>
-                <td colSpan={4} className={labelCellCls}>Moisture</td>
-                <td className={`${cellCls} text-right text-slate-700`}>{tx.moisture_pct || 0}%</td>
-              </tr>
-              <tr>
-                <td colSpan={4} className={labelCellCls}>Outthrow</td>
-                <td className={`${cellCls} text-right text-slate-700`}>{tx.outthrow_pct || 0}%</td>
-              </tr>
-            </tbody>
-          </table>
+          {/* Everything below this line is not on the paper coupon — kept
+              as extra detail staff and accounting still rely on. */}
+          <div className="my-4 border-t border-dashed border-slate-300" />
 
-          {/* Two-column block — left mirrors Baitang's Product/Buyer-Seller/
-              Mixture/Note/signature column, right mirrors their Net/Price/
-              Total column. Bank details and the QR photo are the only
-              additions to Baitang's own layout. */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5 border border-slate-300 p-3">
-              <p><span className="text-slate-400">CN</span> <span className="font-medium text-slate-700">{tx.code}</span></p>
-              <p><span className="text-slate-400">Product name</span> <span className="font-medium text-slate-700">{productName}</span> {tx.stationName && <><span className="ml-2 text-slate-400">WH</span> <span className="font-medium text-slate-700">{tx.stationName}</span></>}</p>
-              <p><span className="text-slate-400">{isBuy ? "Seller name" : "Buyer name"}</span> <span className="font-medium text-slate-700">{tx.partyName}</span></p>
               {tx.partyIdNumber && <p><span className="text-slate-400">Phone</span> <span className="font-medium text-slate-700">{tx.partyIdNumber}</span></p>}
               {tx.bank_name && <p><span className="text-slate-400">Bank</span> <span className="font-medium text-slate-700">{tx.bank_name}{hasBankDetails && tx.bank_account ? ` — ${tx.bank_account}` : ""}</span></p>}
-              {tx.driver_name && <p><span className="text-slate-400">Driver</span> <span className="font-medium text-slate-700">{tx.driver_name}</span></p>}
               {tx.quality_grade && <p><span className="text-slate-400">Quality Grade</span> <span className="font-medium text-slate-700">{tx.quality_grade}</span></p>}
               <p><span className="text-slate-400">Mixture</span> <span className="font-medium text-slate-700">{tx.mixture_pct || 0}%</span></p>
               {tx.deduction_kg > 0 && (
@@ -167,25 +259,10 @@ export default function Receipt({ tx, onDone }) {
 
               <div className="mt-4 space-y-4 pt-2 text-xs text-slate-500">
                 <p>Statistics Officer: ..........................</p>
-                <p>{isBuy ? "Seller" : "Buyer"}: ..........................</p>
               </div>
             </div>
 
             <div className="space-y-2 border border-slate-300 p-3">
-              <p className="flex items-baseline justify-between">
-                <span className="text-slate-400">Net</span>
-                <span className="text-lg font-bold text-slate-800">{fmt2(tx.quantity_kg)} KG</span>
-              </p>
-              <p className="flex items-baseline justify-between">
-                <span className="text-slate-400">Price / Kg</span>
-                <span className="font-semibold text-slate-800">{fmtRiel(tx.price_per_kg)}</span>
-              </p>
-              {isBuy && tx.staff_fee > 0 && (
-                <p className="flex items-baseline justify-between text-xs">
-                  <span className="text-slate-400">Staff / Carrying Fee</span>
-                  <span className="text-rose-600">-{fmtRiel(tx.staff_fee)}</span>
-                </p>
-              )}
               {tx.tax_applicable && (
                 <p className="flex items-baseline justify-between text-xs">
                   <span className="text-slate-400">VAT ({tx.tax_rate}%)</span>
@@ -193,7 +270,7 @@ export default function Receipt({ tx, onDone }) {
                 </p>
               )}
               <div className="mt-2 rounded-lg bg-brand-50 p-3 text-center">
-                <p className="text-xs text-brand-700/70">Total</p>
+                <p className="text-xs text-brand-700/70">Total (incl. tax)</p>
                 <p className="text-2xl font-bold text-brand-800">{fmtRiel(total)}</p>
               </div>
 
@@ -206,12 +283,6 @@ export default function Receipt({ tx, onDone }) {
                 </div>
               )}
             </div>
-          </div>
-
-          {/* Weigher's signature — spans the full width, same as the bottom
-              line on Baitang's own printed ticket. */}
-          <div className="mt-4 border border-t-0 border-slate-300 p-3 text-xs text-slate-500">
-            Weigher: ..........................
           </div>
 
           <p className="mt-4 whitespace-pre-line text-center text-xs text-slate-400">{footerNote}</p>
