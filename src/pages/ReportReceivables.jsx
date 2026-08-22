@@ -19,13 +19,26 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
   const [allRows, setAllRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [view, setView] = useState("aging");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
-    Promise.all([api.getTransactions({ type: TYPE }), api.getPayments({ type: PAY_TYPE })]).then(([tx, pay]) => {
-      setAllRows(tx);
-      setPayments(pay);
-    });
-  }, []);
+  function load() {
+    setLoading(true);
+    setLoadError("");
+    Promise.all([api.getTransactions({ type: TYPE }), api.getPayments({ type: PAY_TYPE })])
+      .then(([tx, pay]) => {
+        setAllRows(tx);
+        setPayments(pay);
+      })
+      .catch((err) => {
+        // Without this, a failed/dropped request silently showed "Nothing
+        // outstanding" — as if every customer had paid in full — instead
+        // of saying the load itself had failed.
+        setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
+      })
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")
@@ -81,6 +94,12 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
 
   return (
     <div>
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          <span>{loadError}</span>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <p className="text-xs text-slate-400">Total Outstanding</p>
@@ -131,7 +150,8 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
                 </tr>
               ))}
-              {byParty.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && byParty.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {byParty.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
             </tbody>
           </table>
         )}
@@ -152,7 +172,8 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
                 </tr>
               ))}
-              {byLocation.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && byLocation.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {byLocation.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
             </tbody>
           </table>
         )}
@@ -179,7 +200,8 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.remaining)}</td>
                 </tr>
               ))}
-              {outstanding.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && outstanding.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {outstanding.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
             </tbody>
           </table>
         )}
