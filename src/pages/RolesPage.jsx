@@ -57,11 +57,12 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
 
   async function reassignMember(profileId, newRoleId) {
     setReassigning(profileId);
+    setError("");
     try {
       await api.updateProfileRole(profileId, { roleId: newRoleId });
       onMembersChanged();
     } catch (err) {
-      alert(err.message || String(err));
+      setError(err.message || String(err));
     } finally {
       setReassigning(null);
     }
@@ -170,16 +171,26 @@ export default function RolesPage() {
   const [profiles, setProfiles] = useState([]);
   const [editing, setEditing] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    const [r, p] = await Promise.all([api.getRoles(), api.getProfiles()]);
-    setRoles(r);
-    setProfiles(p);
-    setLoading(false);
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [r, p] = await Promise.all([api.getRoles(), api.getProfiles()]);
+      setRoles(r);
+      setProfiles(p);
+    } catch (err) {
+      // Without this, a failed/dropped request left the page stuck on
+      // "Loading…" forever with no way to tell what went wrong or retry.
+      setLoadError(err.message || "Couldn't load roles — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
-  const rolesMissing = roles.length === 0 && !loading;
+  const rolesMissing = roles.length === 0 && !loading && !loadError;
 
   function employeeCount(roleId) {
     return profiles.filter((p) => p.role_id === roleId).length;
@@ -213,6 +224,12 @@ export default function RolesPage() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Roles" subtitle="Custom access rights for everyone in PaddyTrade" />
       <main className="flex-1 overflow-y-auto p-6">
+        {loadError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
+        )}
         {rolesMissing ? (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -252,7 +269,8 @@ export default function RolesPage() {
                   <td className="px-3 py-3 text-slate-600">{employeeCount(r.id)}</td>
                 </tr>
               ))}
-              {roles.length === 0 && !loading && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No roles yet.</td></tr>}
+              {loading && roles.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {roles.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No roles yet.</td></tr>}
             </tbody>
           </table>
         </div>
