@@ -108,16 +108,29 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
   const [txById, setTxById] = useState({});
   const [partyById, setPartyById] = useState({});
   const [viewingTx, setViewingTx] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    const [payData, txData, partyData] = await Promise.all([
-      api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
-      api.getTransactions(),
-      api.getParties(),
-    ]);
-    setAllPayments(payData);
-    setTxById(Object.fromEntries(txData.map((t) => [t.id, t])));
-    setPartyById(Object.fromEntries(partyData.map((p) => [p.id, p])));
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [payData, txData, partyData] = await Promise.all([
+        api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
+        api.getTransactions(),
+        api.getParties(),
+      ]);
+      setAllPayments(payData);
+      setTxById(Object.fromEntries(txData.map((t) => [t.id, t])));
+      setPartyById(Object.fromEntries(partyData.map((p) => [p.id, p])));
+    } catch (err) {
+      // Without this, a failed/dropped request silently showed an empty
+      // cash flow — as if nothing had ever moved — instead of saying the
+      // load itself had failed.
+      setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -181,6 +194,12 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
 
   return (
     <div>
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          <span>{loadError}</span>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+        </div>
+      )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-4">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
@@ -238,7 +257,8 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
                 <td className="px-5 py-3 text-slate-700">{fmtRiel(p.balance)}</td>
               </tr>
             ))}
-            {ledger.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No cash movements recorded yet.</td></tr>}
+            {loading && ledger.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+            {ledger.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No cash movements recorded yet.</td></tr>}
           </tbody>
         </table>
       </div>
