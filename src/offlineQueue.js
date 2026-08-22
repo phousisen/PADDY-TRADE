@@ -343,10 +343,20 @@ export function trySync() {
   }
 
   syncPromise = (async () => {
-    if (!navigator.onLine) return;
     syncing = true;
     notifyStatus();
     try {
+      // NOTE: this offline check must stay INSIDE the try/finally below.
+      // It used to be a bare early-return before syncing=true/try even
+      // started, which skipped the `finally` block entirely — meaning
+      // syncPromise never got reset back to null while offline. Every
+      // later call to trySync() (including the periodic 15s heartbeat)
+      // then saw a stale non-null syncPromise and returned it immediately
+      // without ever retrying, so sync could permanently stop until the
+      // page was reloaded. Keeping the check in here lets `finally` always
+      // run and reset syncPromise, so sync resumes on its own once WiFi
+      // comes back.
+      if (!navigator.onLine) return;
       while (true) {
         const q = getQueue();
         if (q.length === 0) break;
