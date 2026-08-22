@@ -7,13 +7,25 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
   const [allStations, setAllStations] = useState([]);
   const [allTxs, setAllTxs] = useState([]);
   const [view, setView] = useState("summary");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
-    Promise.all([api.getLocations(), api.getTransactions()]).then(([s, t]) => {
-      setAllStations(s);
-      setAllTxs(t.slice().sort((a, b) => (a.tx_date + a.tx_time > b.tx_date + b.tx_time ? 1 : -1)));
-    });
-  }, []);
+  function load() {
+    setLoading(true);
+    setLoadError("");
+    Promise.all([api.getLocations(), api.getTransactions()])
+      .then(([s, t]) => {
+        setAllStations(s);
+        setAllTxs(t.slice().sort((a, b) => (a.tx_date + a.tx_time > b.tx_date + b.tx_time ? 1 : -1)));
+      })
+      .catch((err) => {
+        // Without this, a failed/dropped request silently showed an
+        // empty report instead of saying the load itself had failed.
+        setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
+      })
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
 
   const stations = selectedLocationIds.length ? allStations.filter((s) => selectedLocationIds.includes(s.id)) : allStations;
   const txs = allTxs
@@ -36,6 +48,12 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
 
   return (
     <div>
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          <span>{loadError}</span>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+        </div>
+      )}
       <div className="mb-4 flex justify-end gap-2">
         {[{ v: "summary", l: "Summary" }, { v: "detail", l: "Movement Detail" }].map((o) => (
           <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
@@ -65,6 +83,8 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
                   </tr>
                 );
               })}
+              {loading && stations.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {stations.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>}
             </tbody>
           </table>
         ) : (
@@ -90,7 +110,8 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
                   <td className="px-5 py-3 text-slate-700">{fmt2(m.runningBalance)}</td>
                 </tr>
               ))}
-              {movements.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">No stock movements yet.</td></tr>}
+              {loading && movements.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {movements.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">No stock movements yet.</td></tr>}
             </tbody>
           </table>
         )}
