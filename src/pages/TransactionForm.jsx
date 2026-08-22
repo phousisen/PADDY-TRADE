@@ -148,7 +148,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
 
   const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
-  const paymentProofRequired = !isBuy && (paymentStatus === "paid" || paymentStatus === "deposit");
+  // Previously required before saving — dropped per Baitang's decision so
+  // this matches the Weighing Tickets flow, which never required it either
+  // (no camera set up at stations yet). Staff can still attach one
+  // voluntarily; it's just no longer a blocker.
+  const showPaymentProofUpload = !isBuy && (paymentStatus === "paid" || paymentStatus === "deposit");
   const total = payableKg * (parseFloat(pricePerKg) || 0);
   // Staff/carrying fee — rare, only when our own staff carries the paddy
   // for a farmer with no labor of their own — comes off the goods amount
@@ -195,7 +199,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     if (!txDate) { setError("Please pick a transaction date."); return; }
     // Receipt photo is off while testing — no camera on this computer yet.
     // Re-add this check once photos are actually possible.
-    if (paymentProofRequired && !paymentProofUrl) { setError("A photo of the bank QR / payment proof is required when payment is marked as done."); return; }
     setSaving(true);
     try {
       // Everything below saves to this device immediately and queues the
@@ -492,7 +495,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <PhotoUpload
                   label="Physical Receipt Photo" kind="receipt"
                   url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-                  hint="Photo of the printed weighbridge ticket/receipt — optional for now, no camera on this computer yet"
+                  hint="Photo of the printed weighbridge ticket/receipt (optional)"
                 />
               </div>
             </section>
@@ -547,10 +550,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               </div>
               <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.</p>
 
-              {paymentProofRequired && (
+              {showPaymentProofUpload && (
                 <div className="mt-3">
                   <PhotoUpload
-                    label="Bank QR / Payment Proof Photo" kind="payment-proof" required
+                    label="Bank QR / Payment Proof Photo" kind="payment-proof"
                     url={paymentProofUrl} onUploaded={setPaymentProofUrl}
                     hint="Photo of the bank transfer QR code or payment confirmation"
                   />
