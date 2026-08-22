@@ -70,7 +70,7 @@ export default function WeightField({ locationId, label, scaleLabel, value, onCh
             ? "Switch back to scale capture"
             : isAdmin
               ? "Enter manually (admin override — use only if the scale is down)"
-              : "Enter manually (testing period — no scale connected here yet)"}
+              : "Enter manually (no scale connected at this station yet)"}
         </button>
       )}
     </div>
