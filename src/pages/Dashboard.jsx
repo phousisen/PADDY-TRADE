@@ -36,13 +36,23 @@ export default function Dashboard() {
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
     setLoading(true);
-    const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
-    setLocations(locs);
-    setTxs(transactions.filter((x) => (x.hq_status || "processing") !== "cancelled"));
-    setLoading(false);
+    setLoadError("");
+    try {
+      const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      setLocations(locs);
+      setTxs(transactions.filter((x) => (x.hq_status || "processing") !== "cancelled"));
+    } catch (err) {
+      // Without this, a failed/dropped request left the dashboard — the
+      // first thing anyone sees when they open PaddyTrade — stuck showing
+      // nothing, with no indication of why or how to retry.
+      setLoadError(err.message || "Couldn't load the dashboard — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -75,6 +85,12 @@ export default function Dashboard() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isAdmin ? "HQ Overview" : "Location Overview"} subtitle="Today's Operations Summary" />
       <main className="flex-1 overflow-y-auto p-6">
+        {loadError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
+        )}
         <div className="mb-5 grid grid-cols-4 gap-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-brand-600"><TrendingUp size={16} /></div>
@@ -139,7 +155,8 @@ export default function Dashboard() {
                     </td>
                   </tr>
                 ))}
-                {locations.length === 0 && !loading && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
+                {loading && locations.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -162,7 +179,8 @@ export default function Dashboard() {
                   <p className="shrink-0 whitespace-nowrap text-[10.5px] text-slate-400">{timeAgo(tx.tx_date, tx.tx_time)}</p>
                 </div>
               ))}
-              {liveFeed.length === 0 && !loading && <p className="px-4 py-10 text-center text-sm text-slate-400">No activity yet.</p>}
+              {loading && liveFeed.length === 0 && <p className="px-4 py-10 text-center text-sm text-slate-400">Loading…</p>}
+              {liveFeed.length === 0 && !loading && !loadError && <p className="px-4 py-10 text-center text-sm text-slate-400">No activity yet.</p>}
             </div>
           </div>
         </div>
