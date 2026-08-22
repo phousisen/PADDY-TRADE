@@ -9,4 +9,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Station WiFi is sometimes "connected" but has no real internet (router up,
+// ISP/modem down) — the browser's default fetch has no timeout for that
+// case, so every Supabase call could previously hang for 60s+ before
+// failing, instead of failing fast and letting the app's offline mode take
+// over. That hang is what made the app *feel* slow instead of just offline.
+// This wraps every request the Supabase client makes with an 8s timeout.
+const FETCH_TIMEOUT_MS = 8000;
+function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: options.signal || controller.signal }).finally(() =>
+    clearTimeout(timer)
+  );
+}
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  global: { fetch: fetchWithTimeout },
+});
