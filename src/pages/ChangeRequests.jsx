@@ -16,6 +16,22 @@ function cambodiaDateStr(d = new Date()) {
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
+// Every timestamp elsewhere in PaddyTrade is shown in Cambodia's own
+// wall-clock time regardless of the viewing device's own timezone — this
+// page was still using the browser's default toLocaleString()/
+// toLocaleDateString(), which shows a different time to anyone viewing
+// from outside Cambodia's timezone.
+function fmtCambodiaDateTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+  return `${date}, ${time}`;
+}
+function fmtCambodiaDate(iso) {
+  if (!iso) return "—";
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso));
+}
 
 function DiffRow({ label, current, proposed }) {
   const changed = String(current ?? "") !== String(proposed ?? "");
@@ -80,7 +96,7 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Eye size={16} className="text-brand-600" /> Review Change Request</h3>
-        <p className="mb-3 text-xs text-slate-400">{req.transactionCode} · Requested by {req.requestedByName} · {new Date(req.created_at).toLocaleString()}</p>
+        <p className="mb-3 text-xs text-slate-400">{req.transactionCode} · Requested by {req.requestedByName} · {fmtCambodiaDateTime(req.created_at)}</p>
 
         <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
           <span className="font-medium text-slate-500">Reason: </span>{req.reason}
@@ -168,32 +184,34 @@ export default function ChangeRequests() {
     // real money is on file for it, so Cash Flow and every payments-based
     // report actually reflect it instead of just this one label.
     if (updated.payment_status === "paid") {
-      try {
-        const payType = tx.type === "BUY" ? "pay_supplier" : "receive_customer";
-        const existing = await api.getPaymentsForTransaction(tx.id);
-        const alreadyPaid = existing.filter((pm) => pm.type === payType).reduce((s, pm) => s + Number(pm.amount), 0);
-        const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
-        if (stillOwed > 0.01) {
-          const createdPayment = await api.createPayment({
-            type: payType,
-            transactionId: tx.id,
-            locationId: updated.location_id,
-            amount: stillOwed,
-            method: "cash",
-            payDate: cambodiaDateStr(),
-            memo: "Marked paid via approved change request",
-            userId: session.user.id,
-          });
-          await api.logAudit({
-            action: "record_payment",
-            tableName: "payments",
-            recordId: createdPayment.id,
-            newData: { amount: stillOwed, method: "cash", memo: "Marked paid via approved change request", code: req.transactionCode, partyName: req.currentPartyName, txType: tx.type },
-            userId: session.user.id,
-          });
-        }
-      } catch (payErr) {
-        console.error("Auto-payment record failed", payErr);
+      // Deliberately NOT caught here — swallowing this used to let the
+      // approval "succeed" (the transaction now says Paid) while the
+      // actual payment record silently failed to save, leaving Cash Flow
+      // and Accounts Payable/Receivable quietly wrong with no sign
+      // anything was off. Letting it throw surfaces the error in the
+      // review modal instead, same as any other save failure.
+      const payType = tx.type === "BUY" ? "pay_supplier" : "receive_customer";
+      const existing = await api.getPaymentsForTransaction(tx.id);
+      const alreadyPaid = existing.filter((pm) => pm.type === payType).reduce((s, pm) => s + Number(pm.amount), 0);
+      const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
+      if (stillOwed > 0.01) {
+        const createdPayment = await api.createPayment({
+          type: payType,
+          transactionId: tx.id,
+          locationId: updated.location_id,
+          amount: stillOwed,
+          method: "cash",
+          payDate: cambodiaDateStr(),
+          memo: "Marked paid via approved change request",
+          userId: session.user.id,
+        });
+        await api.logAudit({
+          action: "record_payment",
+          tableName: "payments",
+          recordId: createdPayment.id,
+          newData: { amount: stillOwed, method: "cash", memo: "Marked paid via approved change request", code: req.transactionCode, partyName: req.currentPartyName, txType: tx.type },
+          userId: session.user.id,
+        });
       }
     }
     await api.logAudit({
@@ -244,7 +262,7 @@ export default function ChangeRequests() {
                 <tr key={r.id} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/60">
                   <td className="px-5 py-3 font-medium text-slate-700">{r.transactionCode}</td>
                   <td className="px-3 py-3 text-slate-600">{r.requestedByName}</td>
-                  <td className="px-3 py-3 text-slate-500">{new Date(r.created_at).toLocaleDateString()}</td>
+                  <td className="px-3 py-3 text-slate-500">{fmtCambodiaDate(r.created_at)}</td>
                   <td className="px-3 py-3 max-w-xs text-slate-600">{r.reason}</td>
                   <td className="px-3 py-3 text-xs text-slate-400">{r.proposed_data ? "Yes" : "Reason only"}</td>
                   <td className="px-3 py-3">
