@@ -13,16 +13,28 @@ export default function LocationDetail({ locationId, setPage }) {
   const [location, setLocation] = useState(null);
   const [txs, setTxs] = useState([]);
   const [editing, setEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
-    setAllLocations(locs);
-    if (isCombined) {
-      setLocation(null);
-      setTxs(transactions);
-    } else {
-      setLocation(locs.find((l) => l.id === locationId) || null);
-      setTxs(transactions.filter((t) => t.location_id === locationId));
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      setAllLocations(locs);
+      if (isCombined) {
+        setLocation(null);
+        setTxs(transactions);
+      } else {
+        setLocation(locs.find((l) => l.id === locationId) || null);
+        setTxs(transactions.filter((t) => t.location_id === locationId));
+      }
+    } catch (err) {
+      // Without this, a failed/dropped request left this whole page stuck
+      // showing "Loading…" forever with no error and no way to retry.
+      setLoadError(err.message || "Couldn't load this location — check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
   }
   useEffect(() => { load(); }, [locationId]);
@@ -48,7 +60,21 @@ export default function LocationDetail({ locationId, setPage }) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
         <Topbar title="Location" />
-        <main className="flex flex-1 items-center justify-center text-sm text-slate-400">Loading…</main>
+        <main className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-slate-400">
+          {loadError ? (
+            <>
+              <p className="text-rose-500">{loadError}</p>
+              <button onClick={load} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Retry</button>
+            </>
+          ) : loading ? (
+            "Loading…"
+          ) : (
+            <>
+              <p>This location couldn't be found.</p>
+              <button onClick={() => setPage("stations")} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Back to Locations</button>
+            </>
+          )}
+        </main>
       </div>
     );
   }
@@ -63,6 +89,12 @@ export default function LocationDetail({ locationId, setPage }) {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={displayName} subtitle={displayNameKh} />
       <main className="flex-1 overflow-y-auto p-6">
+        {loadError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
+        )}
         <div className="mb-4 flex items-center justify-between">
           <button onClick={() => setPage("stations")} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
             <ArrowLeft size={15} /> Back to Locations
