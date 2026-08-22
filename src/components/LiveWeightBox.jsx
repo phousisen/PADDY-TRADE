@@ -8,7 +8,7 @@ import { api } from "../api.js";
 // which does. Checking this FIRST means the scale stays "connected" here
 // 24/7 whenever the bridge program is running and the scale is plugged in,
 // completely independent of whether this computer's internet is working.
-const LOCAL_BRIDGE_URL = "http://localhost:8787/weight";
+const LOCAL_BRIDGE_URL = "http://127.0.0.1:8787/weight";
 
 async function pollLocalBridge() {
   try {
