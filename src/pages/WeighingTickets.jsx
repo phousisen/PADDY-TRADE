@@ -462,7 +462,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           <PhotoUpload
             label="Photo of the finished, signed paper ticket" kind="receipt"
             url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-            hint="So HQ can check it against what's entered here — optional for now, no camera on this computer yet"
+            hint="So HQ can check it against what's entered here (optional)"
           />
         </div>
       </div>
