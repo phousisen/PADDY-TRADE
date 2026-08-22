@@ -51,13 +51,24 @@ const FIELD_GROUPS = [
 export default function SettingsPage() {
   const [values, setValues] = useState({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [savingGroup, setSavingGroup] = useState(null);
   const [savedGroup, setSavedGroup] = useState(null);
+  const [groupErrors, setGroupErrors] = useState({});
 
   async function load() {
-    const data = await api.getSettings();
-    setValues(data);
-    setLoading(false);
+    setLoading(true);
+    setLoadError("");
+    try {
+      const data = await api.getSettings();
+      setValues(data);
+    } catch (err) {
+      // Without this, a failed/dropped request left this page stuck on
+      // "Loading…" forever with no way to tell what went wrong or retry.
+      setLoadError(err.message || "Couldn't load settings — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -67,6 +78,7 @@ export default function SettingsPage() {
 
   async function saveGroup(group) {
     setSavingGroup(group.key);
+    setGroupErrors((prev) => ({ ...prev, [group.key]: "" }));
     const entries = {};
     group.fields.forEach((f) => { entries[f.key] = values[f.key] || ""; });
     try {
@@ -74,7 +86,7 @@ export default function SettingsPage() {
       setSavedGroup(group.key);
       setTimeout(() => setSavedGroup(null), 2000);
     } catch (err) {
-      alert(err.message || String(err));
+      setGroupErrors((prev) => ({ ...prev, [group.key]: err.message || "Couldn't save — check your connection and try again." }));
     } finally {
       setSavingGroup(null);
     }
@@ -86,6 +98,11 @@ export default function SettingsPage() {
       <main className="flex-1 overflow-y-auto p-6">
         {loading ? (
           <p className="text-sm text-slate-400">Loading…</p>
+        ) : loadError ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
         ) : (
           <div className="grid max-w-5xl grid-cols-2 gap-5">
             {FIELD_GROUPS.map((group) => (
@@ -115,6 +132,7 @@ export default function SettingsPage() {
                   ))}
                 </div>
 
+                {groupErrors[group.key] && <p className="mt-3 text-xs text-rose-500">{groupErrors[group.key]}</p>}
                 <div className="mt-4 flex justify-end">
                   <button
                     onClick={() => saveGroup(group)}
