@@ -8,10 +8,23 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 export default function ReportTax({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allTxs, setAllTxs] = useState([]);
   const [view, setView] = useState("summary");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
-    api.getTransactions().then(setAllTxs);
-  }, []);
+  function load() {
+    setLoading(true);
+    setLoadError("");
+    api.getTransactions()
+      .then(setAllTxs)
+      .catch((err) => {
+        // Without this, a failed/dropped request silently showed "No
+        // taxable transactions" — as if nothing taxable had ever happened
+        // — instead of saying the load itself had failed.
+        setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
+      })
+      .finally(() => setLoading(false));
+  }
+  useEffect(() => { load(); }, []);
 
   const txs = allTxs
     .filter((t) => (t.hq_status || "processing") !== "cancelled")
@@ -28,6 +41,12 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
 
   return (
     <div>
+      {loadError && (
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+          <span>{loadError}</span>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+        </div>
+      )}
       <div className="mb-4 grid grid-cols-3 gap-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-400">Output Tax (collected on sales)</p>
@@ -74,7 +93,8 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
                 <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(t.total_with_tax)}</td>
               </tr>
             ))}
-            {sorted.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No taxable transactions recorded yet.</td></tr>}
+            {loading && sorted.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+            {sorted.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No taxable transactions recorded yet.</td></tr>}
           </tbody>
         </table>
       </div>
