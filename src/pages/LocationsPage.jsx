@@ -23,11 +23,24 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
   const [period, setPeriod] = useState("week");
   const [editingLocation, setEditingLocation] = useState(null);
   const [addingLocation, setAddingLocation] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   async function load() {
-    const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
-    setLocations(locs);
-    setTxs(transactions);
+    setLoading(true);
+    setLoadError("");
+    try {
+      const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      setLocations(locs);
+      setTxs(transactions);
+    } catch (err) {
+      // Without this, a failed/dropped request silently showed "No
+      // locations yet" — as if every station had been wiped out — instead
+      // of saying the load itself had failed.
+      setLoadError(err.message || "Couldn't load locations — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -53,6 +66,12 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Locations" />
       <main className="flex-1 overflow-y-auto p-6">
+        {loadError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
+        )}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-slate-800">All Locations</h2>
           <div className="flex items-center gap-2">
@@ -113,7 +132,8 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
                   </tr>
                 );
               })}
-              {locations.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
+              {loading && locations.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {locations.length === 0 && !loading && !loadError && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
             </tbody>
           </table>
         </div>
