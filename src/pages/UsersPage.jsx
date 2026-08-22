@@ -114,6 +114,11 @@ export default function UsersPage() {
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [passwordUser, setPasswordUser] = useState(null);
+  const [loadError, setLoadError] = useState("");
+  // A single inline banner for whatever the most recent row action (change
+  // role, rename, log out someone, etc.) reported — replaces the browser
+  // alert() popups this page used to use for both errors and confirmations.
+  const [actionMessage, setActionMessage] = useState(null); // { type: "error" | "success", text }
   const emailsLoadedRef = useRef(false);
   // Which row's name is currently being edited, and the in-progress text
   // for it — a plain click-to-edit pencil rather than a full form, since
@@ -122,7 +127,18 @@ export default function UsersPage() {
   const [nameDraft, setNameDraft] = useState("");
 
   async function load() {
-    const [u, r, l] = await Promise.all([api.getProfiles(), api.getRoles(), api.getLocations()]);
+    setLoading(true);
+    setLoadError("");
+    let u, r, l;
+    try {
+      [u, r, l] = await Promise.all([api.getProfiles(), api.getRoles(), api.getLocations()]);
+    } catch (err) {
+      // Without this, a failed/dropped request left this page stuck on
+      // "Loading…" forever with no way to tell what went wrong or retry.
+      setLoadError(err.message || "Couldn't load users — check your connection and try again.");
+      setLoading(false);
+      return;
+    }
     setUsers(u);
     setRoles(r);
     setLocations(l);
@@ -143,7 +159,7 @@ export default function UsersPage() {
   // Keep "who's online" fresh while this page is open, without the owner
   // needing to manually refresh.
   useEffect(() => {
-    const interval = setInterval(() => { api.getProfiles().then(setUsers); }, LIST_REFRESH_MS);
+    const interval = setInterval(() => { api.getProfiles().then(setUsers).catch(() => {}); }, LIST_REFRESH_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -172,7 +188,7 @@ export default function UsersPage() {
       });
       load();
     } catch (err) {
-      alert(err.message || String(err));
+      setActionMessage({ type: "error", text: err.message || "Couldn't change this person's role — check your connection and try again." });
       setSavingId(null);
     }
   }
@@ -196,7 +212,7 @@ export default function UsersPage() {
       cancelEditName();
       load();
     } catch (err) {
-      alert(err.message || String(err));
+      setActionMessage({ type: "error", text: err.message || "Couldn't save this name — check your connection and try again." });
       setSavingId(null);
     }
   }
@@ -207,7 +223,7 @@ export default function UsersPage() {
       await api.updateProfileRole(u.id, { locationId: locationId || null });
       load();
     } catch (err) {
-      alert(err.message || String(err));
+      setActionMessage({ type: "error", text: err.message || "Couldn't change this person's location — check your connection and try again." });
       setSavingId(null);
     }
   }
@@ -228,9 +244,9 @@ export default function UsersPage() {
     if (!window.confirm(msg)) return;
     try {
       await api.requestLogout(u.id);
-      alert(online ? `${u.full_name} will be signed out shortly.` : `${u.full_name} will be signed out next time they're active.`);
+      setActionMessage({ type: "success", text: online ? `${u.full_name} will be signed out shortly.` : `${u.full_name} will be signed out next time they're active.` });
     } catch (err) {
-      alert(err.message || String(err));
+      setActionMessage({ type: "error", text: err.message || "Couldn't log this person out — check your connection and try again." });
     }
   }
 
@@ -240,6 +256,18 @@ export default function UsersPage() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Users" subtitle="Everyone with access to PaddyTrade" />
       <main className="flex-1 overflow-y-auto p-6">
+        {loadError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
+        )}
+        {actionMessage && (
+          <div className={`mb-4 flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${actionMessage.type === "error" ? "border-rose-200 bg-rose-50 text-rose-600" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+            <span>{actionMessage.text}</span>
+            <button onClick={() => setActionMessage(null)} className="shrink-0 text-xs underline decoration-dotted opacity-70 hover:opacity-100">Dismiss</button>
+          </div>
+        )}
         {rolesMissing ? (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -369,7 +397,8 @@ export default function UsersPage() {
                   </tr>
                 );
               })}
-              {users.length === 0 && !loading && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">No users found.</td></tr>}
+              {loading && users.length === 0 && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {users.length === 0 && !loading && !loadError && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">No users found.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -396,7 +425,7 @@ export default function UsersPage() {
           user={passwordUser}
           ownerEmail={session?.user?.email}
           onClose={() => setPasswordUser(null)}
-          onDone={() => { setPasswordUser(null); alert(`Password updated for ${passwordUser.full_name}.`); }}
+          onDone={() => { setActionMessage({ type: "success", text: `Password updated for ${passwordUser.full_name}.` }); setPasswordUser(null); }}
         />
       )}
     </div>
