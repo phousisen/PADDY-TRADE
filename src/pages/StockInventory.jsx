@@ -13,15 +13,24 @@ export default function StockInventory() {
   const [products, setProducts] = useState([]);
   const [txs, setTxs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
 
   async function load() {
     setLoading(true);
-    const [st, tx, pr] = await Promise.all([api.getLocations(), api.getTransactions(), api.getProducts()]);
-    setStations(st);
-    setTxs(tx);
-    setProducts(pr);
-    setLoading(false);
+    setLoadError("");
+    try {
+      const [st, tx, pr] = await Promise.all([api.getLocations(), api.getTransactions(), api.getProducts()]);
+      setStations(st);
+      setTxs(tx);
+      setProducts(pr);
+    } catch (err) {
+      // Without this, a failed/dropped request left the refresh icon
+      // spinning forever with no error and no way to tell what happened.
+      setLoadError(err.message || "Couldn't load stock — check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -92,6 +101,12 @@ export default function StockInventory() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={t("stock_title")} />
       <main className="flex-1 overflow-y-auto p-6">
+        {loadError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
+        )}
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h2 className="text-2xl font-bold text-slate-800">{t("stock_title")}</h2>
@@ -182,7 +197,10 @@ export default function StockInventory() {
                   </Fragment>
                 );
               })}
-              {stations.length === 0 && !loading && (
+              {loading && stations.length === 0 && (
+                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+              )}
+              {stations.length === 0 && !loading && !loadError && (
                 <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>
               )}
             </tbody>
@@ -209,7 +227,7 @@ export default function StockInventory() {
                   <td className="px-5 py-3 font-medium text-slate-700">{fmtRiel(r.value)}</td>
                 </tr>
               ))}
-              {combinedRows.length === 0 && !loading && (
+              {combinedRows.length === 0 && !loading && !loadError && (
                 <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">No stock recorded yet.</td></tr>
               )}
             </tbody>
