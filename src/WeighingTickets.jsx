@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw } from "lucide-react";
+import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw, Search } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import PhotoUpload from "../components/PhotoUpload.jsx";
+import WeightField from "../components/WeightField.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
@@ -8,8 +10,14 @@ import {
   startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
-  onSyncStatusChange, pendingCountForTicket, getCachedProducts,
+  onSyncStatusChange, pendingCountForTicket, getCachedProducts, getCachedParties, updatePartyOffline,
+  suggestNextPaperTicketNo, withTimeout,
 } from "../offlineQueue.js";
+
+// Same reasoning as the offline queue's own lookups: don't let a slow/no
+// internet connection make a background phone lookup hang and, worse,
+// overwrite a farmer name staff already typed while waiting on it.
+const PHONE_LOOKUP_TIMEOUT_MS = 4000;
 
 // Same bank list as the New Transaction form, so staff see the same
 // choices in both places — "Cash" is first since most farmer payouts at
@@ -29,6 +37,16 @@ const BANK_OPTIONS = [
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+// Splits a timestamptz into Cambodia-local date/time strings — same
+// formatting Receipt.jsx uses, so the slip and the final receipt read the
+// same way.
+function splitCambodiaTimestamp(iso) {
+  if (!iso) return { date: "—", time: "—" };
+  const d = new Date(iso);
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "2-digit" }).format(d);
+  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+  return { date, time };
+}
 
 // These are the underlying stages a ticket moves through in the database
 // (unchanged from before — this is what keeps old data and the sync queue
@@ -39,46 +57,6 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 // actually uses two visits to the computer per truck, not four or five.
 const OPEN_STAGE_IDS = ["arrived", "weighed_in", "priced", "weighed_out"];
 const ALL_STAGE_IDS = [...OPEN_STAGE_IDS, "declined"];
-
-// ---- Live weight box (same pattern as the New Transaction form) ----------
-
-function useLiveWeight(locationId) {
-  const [liveWeight, setLiveWeight] = useState(null);
-  useEffect(() => {
-    if (!locationId) { setLiveWeight(null); return; }
-    let cancelled = false;
-    async function poll() {
-      const reading = await api.getLiveWeight(locationId).catch(() => null);
-      if (!cancelled) setLiveWeight(reading);
-    }
-    poll();
-    const interval = setInterval(poll, 2000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [locationId]);
-  const ageMs = liveWeight?.updated_at ? Date.now() - new Date(liveWeight.updated_at).getTime() : Infinity;
-  return { connected: ageMs < 6000, weightKg: liveWeight?.weight_kg };
-}
-
-function LiveWeightBox({ locationId, label, onUse }) {
-  const { connected, weightKg } = useLiveWeight(locationId);
-  return (
-    <div className={`mb-3 flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${connected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
-      <div className="flex items-center gap-2.5">
-        <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
-        <div>
-          <p className={`text-xs font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>{connected ? (label || "Live Scale Weight") : "Scale not connected"}</p>
-          <p className={`text-lg font-bold ${connected ? "text-emerald-800" : "text-slate-300"}`}>{connected ? `${fmt2(weightKg)} kg` : "— kg"}</p>
-        </div>
-      </div>
-      {connected && (
-        <button type="button" onClick={() => onUse(weightKg)}
-          className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
-          Use This
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ---- Modal shell ----------------------------------------------------------
 
@@ -102,6 +80,22 @@ function Modal({ title, subtitle, onClose, children, wide }) {
 const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1 block text-xs text-slate-500";
 
+// Small numbered section header — used to break the Finish Ticket form into
+// clear steps (weigh, quality, price, payment, proof) instead of one long
+// unbroken list of fields, so a new staff member can follow it top to
+// bottom without guessing what comes next.
+function SectionHeader({ num, title, hint }) {
+  return (
+    <div className="mb-2.5 flex items-center gap-2.5">
+      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">{num}</div>
+      <div>
+        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        {hint && <p className="text-xs text-slate-500">{hint}</p>}
+      </div>
+    </div>
+  );
+}
+
 // ---- New Ticket & Weigh In (combined — one screen, like the scale software's single window) ----
 
 function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated }) {
@@ -109,9 +103,6 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [locationId, setLocationId] = useState(defaultLocationId || "");
   const [partyName, setPartyName] = useState("");
   const [phone, setPhone] = useState("");
-  const [bankName, setBankName] = useState("");
-  const [bankIsOther, setBankIsOther] = useState(false);
-  const [bankAccount, setBankAccount] = useState("");
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
   const [productName, setProductName] = useState("");
@@ -120,6 +111,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [phoneLookupMsg, setPhoneLookupMsg] = useState("");
+  // Whatever bank name/account/QR photo this person already has on file
+  // (if any) — captured the moment their phone number matches someone, so
+  // it can ride along with the ticket from the very start instead of
+  // waiting until Finish Ticket to show up.
+  const [savedBank, setSavedBank] = useState(null);
   const { session } = useAuth();
   // Paddy types staff have already used before, so the field suggests them
   // instead of everyone typing (and misspelling) the same names over and
@@ -127,24 +123,59 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // works too.
   const [productOptions] = useState(() => getCachedProducts());
 
+  // Baitang's paper tickets come from a pre-numbered booklet, used in
+  // order — so as soon as a location is known, suggest the next number
+  // after whatever was last typed in for that location. Staff can still
+  // edit it (a spoiled ticket, a different booklet, etc.) — this only
+  // fills it in when it's still blank, so it never overwrites something
+  // they already typed.
+  useEffect(() => {
+    if (locationId && !paperTicketNo) {
+      const suggested = suggestNextPaperTicketNo(locationId);
+      if (suggested) setPaperTicketNo(suggested);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locationId]);
+
   // Looks up a farmer/buyer that already self-registered (via the QR
   // registration page) or has been entered before, by phone number, and
-  // fills in their saved name/bank details so staff don't retype them.
+  // fills in their saved name so staff don't retype it. Their saved bank
+  // name/account and QR photo (if any are on file) are pulled in here too
+  // — the actual Payment Method fields still live at Finish Ticket (that's
+  // when cash-vs-bank is really decided), but this way whatever was saved
+  // last time is already attached to the ticket from the moment it's
+  // created, instead of staff needing to re-enter or re-upload it later.
   async function lookupByPhone() {
     const trimmed = phone.trim();
-    if (!trimmed) { setPhoneLookupMsg(""); return; }
+    if (!trimmed) { setPhoneLookupMsg(""); setSavedBank(null); return; }
     setPhoneLookupMsg("Looking up…");
+    // Snapshot what staff had typed before we went to the network — if
+    // WiFi is up but no real internet, this used to hang with no limit
+    // (see supabaseClient.js) and could still land minutes later and
+    // stomp a name staff had since typed by hand.
+    const nameBeforeLookup = partyName;
     try {
-      const matches = await api.getParties({ type: type === "BUY" ? "supplier" : "buyer", phone: trimmed });
+      const matches = await withTimeout(
+        api.getParties({ type: type === "BUY" ? "supplier" : "buyer", phone: trimmed }).catch(() => null),
+        PHONE_LOOKUP_TIMEOUT_MS,
+        null
+      );
       if (matches && matches.length > 0) {
         const p = matches[0];
-        setPartyName(p.name || "");
-        setBankName(p.bank_name || "");
-        setBankIsOther(!!p.bank_name && !BANK_OPTIONS.includes(p.bank_name));
-        setBankAccount(p.bank_account || "");
+        // Only auto-fill if staff hasn't typed a name in the meantime.
+        if (partyName === nameBeforeLookup) setPartyName(p.name || "");
         setPhoneLookupMsg(`Found: ${p.name}`);
+        setSavedBank(
+          p.bank_name || p.bank_account || p.bank_qr_url
+            ? { bankName: p.bank_name || "", bankAccount: p.bank_account || "", bankQrUrl: p.bank_qr_url || null }
+            : null
+        );
+      } else if (matches === null) {
+        // Timed out or failed (likely offline) — don't claim "no record".
+        setPhoneLookupMsg("");
       } else {
         setPhoneLookupMsg("No record found — fill in details below.");
+        setSavedBank(null);
       }
     } catch {
       setPhoneLookupMsg("");
@@ -168,13 +199,16 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     setSaving(true);
     setError("");
     try {
-      const partyId = await resolvePartyIdOffline(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone, bankName, bankAccount });
+      const partyId = await resolvePartyIdOffline(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone });
       const productId = await resolveProductIdOffline(productName);
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
-        type, locationId, locationName, partyId, partyName: partyName.trim(), phone, bankName, bankAccount,
+        type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
+        bankName: savedBank?.bankName || undefined,
+        bankAccount: savedBank?.bankAccount || undefined,
+        bankQrUrl: savedBank?.bankQrUrl || undefined,
       });
       const weighedIn = setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id });
       onCreated(weighedIn);
@@ -201,31 +235,29 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={labelCls}>Quality Ticket No.</label>
+          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
+          <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong</p>
+        </div>
+        <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
         <div className="col-span-2">
           <label className={labelCls}>Phone (type it and tab/click away to look them up)</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={inputCls} />
           {phoneLookupMsg && <p className={`mt-1 text-xs ${phoneLookupMsg.startsWith("Found") ? "text-emerald-600" : "text-slate-400"}`}>{phoneLookupMsg}</p>}
-        </div>
-        <div className="col-span-2"><label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label><input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} /></div>
-        <div>
-          <label className={labelCls}>Bank</label>
-          <select
-            value={bankIsOther ? "__other__" : bankName}
-            onChange={(e) => {
-              if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
-              else { setBankIsOther(false); setBankName(e.target.value); }
-            }}
-            className={inputCls}
-          >
-            <option value="" disabled>Select payment method / bank</option>
-            {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-            <option value="__other__">Other...</option>
-          </select>
-          {bankIsOther && (
-            <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
+          {savedBank && (
+            <div className="mt-2 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+              {savedBank.bankQrUrl && (
+                <img src={savedBank.bankQrUrl} alt="Saved bank QR code" className="h-12 w-12 flex-shrink-0 rounded border border-emerald-200 object-cover" />
+              )}
+              <div className="text-xs text-emerald-700">
+                <p className="font-semibold">Saved payment on file — filled in automatically</p>
+                <p>{savedBank.bankName || "—"}{savedBank.bankAccount ? ` · ${savedBank.bankAccount}` : ""}</p>
+              </div>
+            </div>
           )}
         </div>
-        <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
+        <div className="col-span-2"><label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label><input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} /></div>
         <div>
           <label className={labelCls}>Product (paddy type)</label>
           <input list="paddy-type-options" value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" />
@@ -233,19 +265,17 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             {productOptions.map((p) => <option key={p.id} value={p.name} />)}
           </datalist>
         </div>
-        <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
-        <div>
-          <label className={labelCls}>Quality Ticket No.</label>
-          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
-          <p className="mt-1 text-[11px] text-slate-400">The red serial number printed on the paper quality ticket you're about to write on</p>
-        </div>
-        <div className="col-span-2"><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
+        <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
 
       <div className="mt-4">
-        <LiveWeightBox locationId={locationId} onUse={(kg) => setGrossWeight(String(kg))} />
-        <label className={labelCls}>Gross Weight — loaded truck (kg)</label>
-        <input type="number" min="0" step="0.01" value={grossWeight} onChange={(e) => setGrossWeight(e.target.value)} className={inputCls} placeholder="0" />
+        <WeightField
+          locationId={locationId}
+          label="Gross Weight — loaded truck (kg)"
+          value={grossWeight}
+          onChange={setGrossWeight}
+          isAdmin={isAdmin}
+        />
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
@@ -259,7 +289,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
 // ---- Finish Ticket (combined — price + quality, weigh out, and finalize into a receipt, all in one screen) ----
 
-function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
+function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }) {
   const isBuy = ticket.type === "BUY";
   const [qualityGrade, setQualityGrade] = useState("");
   const [moisturePct, setMoisturePct] = useState("");
@@ -272,9 +302,29 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
   const [tareWeight, setTareWeight] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [bankIsOther, setBankIsOther] = useState(false);
+  const [bankAccount, setBankAccount] = useState("");
+  const [bankQrUrl, setBankQrUrl] = useState(null);
+  const [receiptPhotoUrl, setReceiptPhotoUrl] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
+
+  // Cash-or-bank-transfer, and the actual bank details/QR, aren't known
+  // until now — the farmer only decides during the paper quality/price
+  // step between weigh-in and weigh-out. If they've paid this farmer
+  // before, prefill whatever's already saved on their profile so staff
+  // don't have to retype it every truckload.
+  useEffect(() => {
+    const savedParty = ticket.party_id ? getCachedParties().find((p) => p.id === ticket.party_id) : null;
+    const initialBank = ticket.bank_name || savedParty?.bank_name || "";
+    setBankName(initialBank);
+    setBankIsOther(!!initialBank && !BANK_OPTIONS.includes(initialBank));
+    setBankAccount(ticket.bank_account || savedParty?.bank_account || "");
+    setBankQrUrl(ticket.bank_qr_url || savedParty?.bank_qr_url || null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.id]);
 
   const netKg = Math.max(0, (ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
@@ -297,20 +347,35 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
     const tareKg = parseFloat(tareWeight);
     if (!pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
     if (!tareKg || tareKg <= 0) { setError("Please enter the empty truck's weight."); return; }
+    // Photo of the paper ticket is off while testing — no camera on this
+    // computer yet. Re-add this check once photos are actually possible.
     setError("");
     setSaving(true);
     try {
+      const finalBankQrUrl = isBuy && bankName && bankName !== "Cash" ? bankQrUrl : null;
       setTicketPriceOffline(ticket.id, {
         qualityGrade, moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
         pricePerKg: parseFloat(pricePerKg) || 0, staffFee: parseFloat(staffFee) || 0,
         taxApplicable, taxRate: parseFloat(taxRate) || 0, priceNote, userId: session.user.id, decline: false,
+        bankName, bankAccount, bankQrUrl: finalBankQrUrl,
       });
+      // Keep the farmer's saved profile in sync so next time they come by,
+      // their bank details/QR are already there to prefill — same as the
+      // manual Buy/Sell form does.
+      if (isBuy && ticket.party_id) {
+        const savedParty = getCachedParties().find((p) => p.id === ticket.party_id) || {};
+        const patch = {};
+        if (bankName !== (savedParty.bank_name || "")) patch.bankName = bankName;
+        if (bankAccount !== (savedParty.bank_account || "")) patch.bankAccount = bankAccount;
+        if (finalBankQrUrl && finalBankQrUrl !== (savedParty.bank_qr_url || "")) patch.bankQrUrl = finalBankQrUrl;
+        if (Object.keys(patch).length > 0) updatePartyOffline(ticket.party_id, patch);
+      }
       const tareUpdated = setTicketTareOffline(ticket.id, { tareKg, userId: session.user.id });
       // No date picker here on purpose — this is finalized the moment the
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
-      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id });
+      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl });
       onFinalized(tx);
     } finally {
       setSaving(false);
@@ -319,39 +384,105 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined }) {
 
   return (
     <Modal title={`Finish Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate} · Gross: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
-      <p className={labelCls}>Whatever was already agreed on the paper ticket — grade, moisture, price</p>
-      <div className="grid grid-cols-3 gap-3">
-        <div><label className={labelCls}>Quality Grade</label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Moisture %</label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Mixture %</label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Outthrow %</label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
-        <div><label className={labelCls}>Deduction (kg)</label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
-        {isBuy && (
-          <div><label className={labelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
-        )}
-        <div className="flex items-end gap-2">
-          <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> Tax applicable</label>
-          {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
+      {/* 1. Weigh Out — the physical action happening right now */}
+      <div className="mb-5">
+        <SectionHeader num={1} title="Weigh Out" hint="The truck is empty and on the scale right now" />
+        <WeightField
+          locationId={ticket.location_id}
+          label="Tare Weight — empty truck (kg)"
+          scaleLabel="Live Scale Weight (empty truck)"
+          value={tareWeight}
+          onChange={setTareWeight}
+          isAdmin={isAdmin}
+        />
+      </div>
+
+      {/* 2. Quality — transcribed from the paper ticket */}
+      <div className="mb-5">
+        <SectionHeader num={2} title="Quality" hint="The grade and quality readings already agreed on the paper ticket" />
+        <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 p-4">
+          <div><label className={labelCls}>Quality Grade</label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Moisture %</label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Mixture %</label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Outthrow %</label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Deduction (kg)</label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
         </div>
-        <div className="col-span-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
 
-      <div className="mt-4 rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
-        <label className="mb-1 block text-sm font-semibold text-brand-800">Price per kg (Riel) — the price agreed on the paper ticket</label>
-        <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="e.g. 1090"
-          className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+      {/* 3. Price & Total — everything that feeds the amount owed, with the running total right below it */}
+      <div className="mb-5">
+        <SectionHeader num={3} title="Price & Total" hint="What this truckload is worth" />
+        <div className="rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
+          <label className="mb-1 block text-sm font-semibold text-brand-800">Price per kg (Riel) — the price agreed on the paper ticket</label>
+          <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="e.g. 1090"
+            className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3">
+          {isBuy && (
+            <div><label className={labelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
+          )}
+          <div className="flex items-end gap-2">
+            <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> Tax applicable</label>
+            {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
+          </div>
+        </div>
+        <div className="mt-3 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
+          <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
+          {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
+          <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
+        </div>
       </div>
 
-      <div className="mt-4">
-        <LiveWeightBox locationId={ticket.location_id} label="Live Scale Weight (empty truck)" onUse={(kg) => setTareWeight(String(kg))} />
-        <label className={labelCls}>Tare Weight — empty truck (kg)</label>
-        <input type="number" min="0" step="0.01" value={tareWeight} onChange={(e) => setTareWeight(e.target.value)} className={inputCls} placeholder="0" />
+      {/* 4. Payment Method — decided after the total is known */}
+      <div className="mb-5">
+        <SectionHeader num={4} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
+        <div className="rounded-lg border border-slate-200 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>Bank (or Cash)</label>
+              <select
+                value={bankIsOther ? "__other__" : bankName}
+                onChange={(e) => {
+                  if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
+                  else { setBankIsOther(false); setBankName(e.target.value); }
+                }}
+                className={inputCls}
+              >
+                <option value="" disabled>Select payment method / bank</option>
+                {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                <option value="__other__">Other...</option>
+              </select>
+              {bankIsOther && (
+                <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
+              )}
+            </div>
+            <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
+          </div>
+          {isBuy && bankName && bankName !== "Cash" && (
+            <div className="mt-3">
+              <PhotoUpload
+                label="Bank QR Code (photo)"
+                kind="party-bank-qr"
+                url={bankQrUrl}
+                onUploaded={setBankQrUrl}
+                hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
-        <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
-        {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
-        <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
+      {/* 5. Note & Proof — wraps up the ticket; the required photo is the last thing before Save */}
+      <div className="mb-1">
+        <SectionHeader num={5} title="Note & Proof" hint="Optional note, and the signed paper ticket for HQ to check against" />
+        <div className="rounded-lg border border-slate-200 p-4">
+          <div className="mb-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
+          <PhotoUpload
+            label="Photo of the finished, signed paper ticket" kind="receipt"
+            url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
+            hint="So HQ can check it against what's entered here (optional)"
+          />
+        </div>
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
@@ -405,37 +536,102 @@ function DeclineModal({ ticket, onClose, onDeclined }) {
 // ---- Interim slip (printed at weigh-in, mirrors the paper queue ticket) ------
 
 function TicketSlip({ ticket, onClose }) {
+  const [settings, setSettings] = useState({});
+  useEffect(() => {
+    api.getSettings().then(setSettings).catch(() => {});
+  }, []);
+
   const netKg = ticket.gross_kg != null && ticket.tare_kg != null ? Math.max(0, ticket.gross_kg - ticket.tare_kg) : null;
+  const inStamp = splitCambodiaTimestamp(ticket.gross_at);
+  const outStamp = splitCambodiaTimestamp(ticket.tare_at);
+  const isPriced = !!ticket.priced_at;
+  const cellCls = "px-2 py-1.5 border border-slate-300";
+  const labelCellCls = `${cellCls} bg-slate-50 font-medium text-slate-600 whitespace-nowrap`;
+  const rowCls = "flex justify-between border-b border-slate-100 px-3 py-2 last:border-0";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <div className="no-print mb-3 flex items-center justify-between">
+      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+        <div className="no-print mb-4 flex items-center justify-between">
           <h3 className="font-semibold text-slate-700">Weigh-In Slip</h3>
           <div className="flex gap-2">
             <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"><Printer size={13} /> Print</button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
           </div>
         </div>
-        <div id="ticket-slip-root" className="border border-slate-300 p-4 text-sm">
-          <p className="text-center text-base font-bold">Ticket {ticket.code}</p>
-          <p className="text-center text-xs text-slate-500">{ticket.stationName}</p>
-          {ticket.paper_ticket_no && <p className="text-center text-xs text-slate-400">Quality Ticket No. {ticket.paper_ticket_no}</p>}
-          <hr className="my-2" />
-          <div className="space-y-1">
-            <div className="flex justify-between"><span>Truck ID</span><span className="font-medium">{ticket.car_plate}</span></div>
-            <div className="flex justify-between"><span>Driver</span><span className="font-medium">{ticket.driver_name || "—"}</span></div>
-            <div className="flex justify-between"><span>Product</span><span className="font-medium">{ticket.product_name}</span></div>
-            <div className="flex justify-between"><span>Buyer/Seller</span><span className="font-medium">{ticket.party_name}</span></div>
-            {ticket.gross_kg != null && <div className="flex justify-between"><span>IN (Gross)</span><span className="font-medium">{fmt2(ticket.gross_kg)} kg</span></div>}
-            {ticket.moisture_pct != null && ticket.priced_at && <div className="flex justify-between"><span>Moisture</span><span className="font-medium">{fmt2(ticket.moisture_pct)} %</span></div>}
-            {ticket.outthrow_pct != null && ticket.priced_at && <div className="flex justify-between"><span>Outthrow</span><span className="font-medium">{fmt2(ticket.outthrow_pct)} %</span></div>}
-            {ticket.price_per_kg != null && ticket.priced_at && <div className="flex justify-between"><span>Price / Kg</span><span className="font-medium">{fmtRiel(ticket.price_per_kg)}</span></div>}
-            {ticket.tare_kg != null && <div className="flex justify-between"><span>OUT (Tare)</span><span className="font-medium">{fmt2(ticket.tare_kg)} kg</span></div>}
-            {netKg != null && <div className="flex justify-between border-t border-slate-200 pt-1"><span className="font-semibold">Net Weight</span><span className="font-bold">{fmt2(netKg)} kg</span></div>}
+        <div id="ticket-slip-root" className="rounded-lg border border-slate-300 p-6 text-sm">
+          {/* Header — same company info style as the final receipt */}
+          <div className="mb-3 text-center">
+            <p className="text-lg font-bold text-slate-800">{settings.company_name || "PaddyTrade"}</p>
+            {settings.company_name_kh && <p className="text-sm text-slate-500">{settings.company_name_kh}</p>}
+            <p className="text-xs text-slate-400">{settings.company_address || "Battambang, Cambodia"}</p>
+            {settings.company_phone && <p className="text-xs text-slate-400">{settings.company_phone}</p>}
           </div>
-          <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-6 text-xs">
+          <p className="text-center text-lg font-bold text-slate-800">Ticket {ticket.code}</p>
+          <p className="text-center text-xs text-slate-500">{ticket.stationName} · {ticket.type === "BUY" ? "Buy (from farmer)" : "Sell (to buyer)"}</p>
+          {ticket.paper_ticket_no && <p className="text-center text-xs text-slate-400">Quality Ticket No. {ticket.paper_ticket_no}</p>}
+
+          {/* Weight table — same LIST/TRUCK ID/DATE/TIME/WEIGHT layout as
+              the final receipt, so this reads consistently once printed. */}
+          <table className="my-4 w-full border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100 text-slate-500">
+                <th className={`${cellCls} text-left font-medium`}>List</th>
+                <th className={`${cellCls} text-left font-medium`}>Truck ID</th>
+                <th className={`${cellCls} text-left font-medium`}>Date</th>
+                <th className={`${cellCls} text-left font-medium`}>Time</th>
+                <th className={`${cellCls} text-right font-medium`}>Weight</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className={`${cellCls} font-medium text-slate-600`}>IN</td>
+                <td className={`${cellCls} text-slate-600`}>{ticket.car_plate || "—"}</td>
+                <td className={`${cellCls} text-slate-600`}>{inStamp.date}</td>
+                <td className={`${cellCls} text-slate-600`}>{inStamp.time}</td>
+                <td className={`${cellCls} text-right font-medium text-slate-700`}>{ticket.gross_kg != null ? `${fmt2(ticket.gross_kg)} KG` : "—"}</td>
+              </tr>
+              {ticket.tare_kg != null && (
+                <tr>
+                  <td className={`${cellCls} font-medium text-slate-600`}>OUT</td>
+                  <td className={`${cellCls} text-slate-600`}>{ticket.car_plate || "—"}</td>
+                  <td className={`${cellCls} text-slate-600`}>{outStamp.date}</td>
+                  <td className={`${cellCls} text-slate-600`}>{outStamp.time}</td>
+                  <td className={`${cellCls} text-right font-medium text-slate-700`}>{fmt2(ticket.tare_kg)} KG</td>
+                </tr>
+              )}
+              {netKg != null && (
+                <tr>
+                  <td colSpan={4} className={labelCellCls}>Net Weight</td>
+                  <td className={`${cellCls} text-right font-semibold text-slate-800`}>{fmt2(netKg)} KG</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Truck / party details */}
+          <div className="mb-3 overflow-hidden rounded-lg border border-slate-200">
+            <div className={rowCls}><span className="text-slate-500">{ticket.type === "BUY" ? "Seller (Farmer)" : "Buyer"}</span><span className="font-medium text-slate-700">{ticket.party_name}</span></div>
+            {ticket.phone && <div className={rowCls}><span className="text-slate-500">Phone</span><span className="font-medium text-slate-700">{ticket.phone}</span></div>}
+            <div className={rowCls}><span className="text-slate-500">Product</span><span className="font-medium text-slate-700">{ticket.product_name}</span></div>
+            <div className={rowCls}><span className="text-slate-500">Driver</span><span className="font-medium text-slate-700">{ticket.driver_name || "—"}</span></div>
+          </div>
+
+          {/* Once quality/price has been set, show it here too — useful if
+              this slip gets reprinted after Finish Ticket. */}
+          {isPriced && (
+            <div className="mb-3 overflow-hidden rounded-lg border border-slate-200">
+              {ticket.quality_grade && <div className={rowCls}><span className="text-slate-500">Quality Grade</span><span className="font-medium text-slate-700">{ticket.quality_grade}</span></div>}
+              <div className={rowCls}><span className="text-slate-500">Moisture / Outthrow</span><span className="font-medium text-slate-700">{fmt2(ticket.moisture_pct)}% / {fmt2(ticket.outthrow_pct)}%</span></div>
+              {ticket.price_per_kg != null && <div className={rowCls}><span className="text-slate-500">Price / Kg</span><span className="font-medium text-slate-700">{fmtRiel(ticket.price_per_kg)}</span></div>}
+              {ticket.bank_name && <div className={rowCls}><span className="text-slate-500">Bank</span><span className="font-medium text-slate-700">{ticket.bank_name}{ticket.bank_name !== "Cash" && ticket.bank_account ? ` — ${ticket.bank_account}` : ""}</span></div>}
+            </div>
+          )}
+
+          {/* Signature lines — larger and more spaced out for an actual pen */}
+          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-8 text-xs text-slate-500">
             <div>Statistics Officer / Price Set By: ..........................</div>
-            <div>Seller: ..........................</div>
+            <div>{ticket.type === "BUY" ? "Seller" : "Buyer"}: ..........................</div>
             <div>Weigher: ..........................</div>
             <div>Note: ..........................</div>
           </div>
@@ -455,6 +651,7 @@ export default function WeighingTickets() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("waiting");
+  const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [finishTicket, setFinishTicket] = useState(null);
   const [declineTicketRow, setDeclineTicketRow] = useState(null);
@@ -506,10 +703,19 @@ export default function WeighingTickets() {
   }, [syncStatus.syncing, syncStatus.pending]);
 
   const grouped = useMemo(() => {
-    const waiting = tickets.filter((t) => OPEN_STAGE_IDS.includes(t.stage));
-    const declined = tickets.filter((t) => t.stage === "declined");
+    const q = search.trim().toLowerCase();
+    // Search by ticket number, vehicle plate, or Quality Ticket No. — the
+    // things staff actually have in hand when looking a truck up (the
+    // driver rarely knows the farmer's exact registered name).
+    const matches = (t) =>
+      !q ||
+      (t.code || "").toLowerCase().includes(q) ||
+      (t.car_plate || "").toLowerCase().includes(q) ||
+      (t.paper_ticket_no || "").toLowerCase().includes(q);
+    const waiting = tickets.filter((t) => OPEN_STAGE_IDS.includes(t.stage) && matches(t));
+    const declined = tickets.filter((t) => t.stage === "declined" && matches(t));
     return { waiting, declined };
-  }, [tickets]);
+  }, [tickets, search]);
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -539,6 +745,15 @@ export default function WeighingTickets() {
             </button>
           </div>
           <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search ticket # or plate…"
+                className="w-48 rounded-lg border border-slate-200 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 sm:w-56"
+              />
+            </div>
             {isAdmin && locations.length > 1 && (
               <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
                 <option value="">All Locations</option>
@@ -557,7 +772,9 @@ export default function WeighingTickets() {
         {loading ? (
           <p className="text-center text-sm text-slate-400">Loading…</p>
         ) : grouped[tab]?.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">No tickets here right now.</p>
+          <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
+            {search.trim() ? "No tickets match that search." : "No tickets here right now."}
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
@@ -609,6 +826,7 @@ export default function WeighingTickets() {
       {finishTicket && (
         <FinishTicketModal
           ticket={finishTicket}
+          isAdmin={isAdmin}
           onClose={() => setFinishTicket(null)}
           onFinalized={(tx) => {
             // finalizeTicketOffline already fills in partyName/partyIdNumber
@@ -628,7 +846,11 @@ export default function WeighingTickets() {
         />
       )}
       {slipTicket && <TicketSlip ticket={slipTicket} onClose={() => setSlipTicket(null)} />}
-      {finalReceipt && <Receipt tx={finalReceipt} onDone={() => setFinalReceipt(null)} />}
+      {finalReceipt && (
+        <div className="fixed inset-0 z-50 bg-white">
+          <Receipt tx={finalReceipt} onDone={() => setFinalReceipt(null)} />
+        </div>
+      )}
     </div>
   );
 }
