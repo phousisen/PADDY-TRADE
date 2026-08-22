@@ -29,13 +29,15 @@ export default function Reports({ initialTab = "overview" }) {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   useEffect(() => {
-    api.getLocations().then(setLocations);
+    api.getLocations().then(setLocations).catch(() => {});
   }, []);
 
   async function exportExcel() {
     setExporting(true);
+    setExportError("");
     try {
       const [txs, payments, capitalEntries, loanEntries] = await Promise.all([
         api.getTransactions(),
@@ -48,7 +50,7 @@ export default function Reports({ initialTab = "overview" }) {
         `PaddyTrade_Report_${cambodiaTimestamp()}.xlsx`
       );
     } catch (err) {
-      alert("Export failed: " + (err.message || err));
+      setExportError(err.message || "Export failed — check your connection and try again.");
     } finally {
       setExporting(false);
     }
@@ -102,6 +104,12 @@ export default function Reports({ initialTab = "overview" }) {
           </div>
         </div>
       </div>
+      {exportError && (
+        <div className="flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs font-medium text-rose-600">
+          <span>{exportError}</span>
+          <button onClick={exportExcel} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+        </div>
+      )}
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
         {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
         {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
