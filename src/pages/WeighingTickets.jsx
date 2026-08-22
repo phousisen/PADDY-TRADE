@@ -11,8 +11,13 @@ import {
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedProducts, getCachedParties, updatePartyOffline,
-  suggestNextPaperTicketNo,
+  suggestNextPaperTicketNo, withTimeout,
 } from "../offlineQueue.js";
+
+// Same reasoning as the offline queue's own lookups: don't let a slow/no
+// internet connection make a background phone lookup hang and, worse,
+// overwrite a farmer name staff already typed while waiting on it.
+const PHONE_LOOKUP_TIMEOUT_MS = 4000;
 
 // Same bank list as the New Transaction form, so staff see the same
 // choices in both places — "Cash" is first since most farmer payouts at
@@ -144,17 +149,30 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     const trimmed = phone.trim();
     if (!trimmed) { setPhoneLookupMsg(""); setSavedBank(null); return; }
     setPhoneLookupMsg("Looking up…");
+    // Snapshot what staff had typed before we went to the network — if
+    // WiFi is up but no real internet, this used to hang with no limit
+    // (see supabaseClient.js) and could still land minutes later and
+    // stomp a name staff had since typed by hand.
+    const nameBeforeLookup = partyName;
     try {
-      const matches = await api.getParties({ type: type === "BUY" ? "supplier" : "buyer", phone: trimmed });
+      const matches = await withTimeout(
+        api.getParties({ type: type === "BUY" ? "supplier" : "buyer", phone: trimmed }).catch(() => null),
+        PHONE_LOOKUP_TIMEOUT_MS,
+        null
+      );
       if (matches && matches.length > 0) {
         const p = matches[0];
-        setPartyName(p.name || "");
+        // Only auto-fill if staff hasn't typed a name in the meantime.
+        if (partyName === nameBeforeLookup) setPartyName(p.name || "");
         setPhoneLookupMsg(`Found: ${p.name}`);
         setSavedBank(
           p.bank_name || p.bank_account || p.bank_qr_url
             ? { bankName: p.bank_name || "", bankAccount: p.bank_account || "", bankQrUrl: p.bank_qr_url || null }
             : null
         );
+      } else if (matches === null) {
+        // Timed out or failed (likely offline) — don't claim "no record".
+        setPhoneLookupMsg("");
       } else {
         setPhoneLookupMsg("No record found — fill in details below.");
         setSavedBank(null);
