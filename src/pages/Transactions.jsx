@@ -923,27 +923,29 @@ export default function Transactions({ setPage }) {
         .reduce((s, p) => s + Number(p.amount), 0);
       const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
       if (stillOwed > 0.01) {
-        try {
-          const createdPayment = await api.createPayment({
-            type: payType,
-            transactionId: editTx.id,
-            locationId: updated.location_id,
-            amount: stillOwed,
-            method: "cash",
-            payDate: cambodiaDateStr(),
-            memo: "Marked paid via Edit Transaction",
-            userId: session.user.id,
-          });
-          await api.logAudit({
-            action: "record_payment",
-            tableName: "payments",
-            recordId: createdPayment.id,
-            newData: { amount: stillOwed, method: "cash", memo: "Marked paid via Edit Transaction", code: editTx.code, partyName: editTx.partyName, txType: editTx.type },
-            userId: session.user.id,
-          });
-        } catch (payErr) {
-          console.error("Auto-payment record failed", payErr);
-        }
+        // Deliberately NOT caught here — swallowing this used to let the
+        // edit "succeed" (the transaction now says Paid) while the actual
+        // payment record silently failed to save, leaving Cash Flow and
+        // Accounts Payable/Receivable quietly wrong with no sign anything
+        // was off. Letting it throw surfaces the error in the modal
+        // instead, same as any other save failure.
+        const createdPayment = await api.createPayment({
+          type: payType,
+          transactionId: editTx.id,
+          locationId: updated.location_id,
+          amount: stillOwed,
+          method: "cash",
+          payDate: cambodiaDateStr(),
+          memo: "Marked paid via Edit Transaction",
+          userId: session.user.id,
+        });
+        await api.logAudit({
+          action: "record_payment",
+          tableName: "payments",
+          recordId: createdPayment.id,
+          newData: { amount: stillOwed, method: "cash", memo: "Marked paid via Edit Transaction", code: editTx.code, partyName: editTx.partyName, txType: editTx.type },
+          userId: session.user.id,
+        });
       }
     }
     await api.logAudit({
