@@ -652,6 +652,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   const [outthrowPct, setOutthrowPct] = useState("");
   const [deductionKg, setDeductionKg] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
+  // Sell only — paddy sometimes goes out to Baitang or another outside
+  // buyer before a price has been agreed at all (not just "not typed in
+  // yet"). Checking this is the explicit way to say that, instead of
+  // relying on staff just leaving the box empty — it also blanks/locks the
+  // price field so nobody accidentally types a placeholder number in.
+  const [priceNotGiven, setPriceNotGiven] = useState(false);
   const [staffFee, setStaffFee] = useState("");
   const [taxApplicable, setTaxApplicable] = useState(false);
   const [taxRate, setTaxRate] = useState("10");
@@ -688,7 +694,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     : (parseFloat(tareWeight) || 0) - (ticket.gross_kg || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
   const staffFeeAmt = isBuy ? (parseFloat(staffFee) || 0) : 0;
-  const subtotal = Math.max(0, payableKg * (parseFloat(pricePerKg) || 0) - staffFeeAmt);
+  const subtotal = Math.max(0, payableKg * (priceNotGiven ? 0 : (parseFloat(pricePerKg) || 0)) - staffFeeAmt);
   const taxAmount = taxApplicable ? Math.round(subtotal * (parseFloat(taxRate) || 0)) / 100 : 0;
   const total = subtotal + taxAmount;
 
@@ -717,10 +723,19 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     setSaving(true);
     try {
       const finalBankQrUrl = isBuy && bankName && bankName !== "Cash" ? bankQrUrl : null;
+      // Buy always has a real number here (required above). Sell stores
+      // an actual null — not 0 — whenever the price isn't settled yet
+      // (either the checkbox was ticked, or the field was just left
+      // blank), so the receipt and every report can tell "no price yet"
+      // apart from "genuinely priced at 0" and the amount doesn't print
+      // as a fake ៛0.
+      const finalPricePerKg = isBuy
+        ? (parseFloat(pricePerKg) || 0)
+        : (priceNotGiven || pricePerKg === "" ? null : (parseFloat(pricePerKg) || 0));
       setTicketPriceOffline(ticket.id, {
         qualityGrade, moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
-        pricePerKg: parseFloat(pricePerKg) || 0, staffFee: parseFloat(staffFee) || 0,
+        pricePerKg: finalPricePerKg, staffFee: parseFloat(staffFee) || 0,
         taxApplicable, taxRate: parseFloat(taxRate) || 0, priceNote, userId: session.user.id, decline: false,
         bankName, bankAccount, bankQrUrl: finalBankQrUrl,
       });
@@ -783,8 +798,16 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           <label className="mb-1 block text-sm font-semibold text-brand-800">
             {isBuy ? "Price per kg (Riel) — the price agreed on the paper ticket" : "Price per kg (Riel) — optional, if already agreed"}
           </label>
-          <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder={isBuy ? "e.g. 1090" : "leave blank if not decided yet"}
-            className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
+          <input type="number" min="0" step="1" value={pricePerKg} disabled={!isBuy && priceNotGiven}
+            onChange={(e) => setPricePerKg(e.target.value)} placeholder={isBuy ? "e.g. 1090" : "leave blank if not decided yet"}
+            className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-400" />
+          {!isBuy && (
+            <label className="mt-2 flex items-center gap-2 text-xs font-medium text-brand-700">
+              <input type="checkbox" checked={priceNotGiven}
+                onChange={(e) => { setPriceNotGiven(e.target.checked); if (e.target.checked) setPricePerKg(""); }} />
+              Price not given yet — sending out to Baitang / another buyer for pricing
+            </label>
+          )}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {isBuy && (
@@ -798,7 +821,14 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
         <div className="mt-3 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
           <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
           {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
-          <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="font-semibold text-slate-700">Total</span><span className="font-bold text-brand-700">{fmtRiel(total)}</span></div>
+          <div className="flex justify-between border-t border-slate-200 pt-1.5">
+            <span className="font-semibold text-slate-700">Total</span>
+            {!isBuy && priceNotGiven ? (
+              <span className="font-bold text-amber-600">Price pending</span>
+            ) : (
+              <span className="font-bold text-brand-700">{fmtRiel(total)}</span>
+            )}
+          </div>
         </div>
       </div>
 
