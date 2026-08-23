@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
-import { Check, RotateCcw, Save } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, Check, Download, RotateCcw, Save, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
+import { cambodiaTimestamp } from "../reportExport.js";
 import { DEFAULT_RECEIPT_TEMPLATE, mergeReceiptTemplate, ExactWeightTicket } from "./Receipt.jsx";
 
 // Every editable Khmer/English label pair on the ticket, grouped the same
@@ -30,6 +32,26 @@ const LABEL_ROWS = [
   { group: "Weight grid", title: "Weight unit", en: "kgLabel", kh: null },
   { group: "Signatures", title: "Operator", en: "operatorEn", kh: "operatorKh" },
   { group: "Signatures", title: "Driver", en: "driverEn", kh: "driverKh" },
+];
+
+// Every editable style setting, in the same "title text <-> tpl.style key"
+// shape as LABEL_ROWS above, so the Excel import/export can share one
+// simple lookup pattern for both sheets. The title text is what the boss
+// actually sees in the "Setting" column of the downloaded file — matching
+// is done on that text, so the Field/Setting columns must come back
+// unchanged on re-upload (only the Value/English/Khmer columns should be
+// edited). This is explained on the "Instructions" sheet of the download.
+const STYLE_ROWS = [
+  { title: "Header alignment (type: center or left)", key: "headerAlign" },
+  { title: "Company name size (pt)", key: "titleSizePx" },
+  { title: "Company name / address / phone color (hex, e.g. #0f172a)", key: "titleColor" },
+  { title: "Address / phone size (pt)", key: "subLineSizePx" },
+  { title: "Address / phone color (hex)", key: "subLineColor" },
+  { title: "\"Weight Ticket\" line size (pt)", key: "ticketTypeSizePx" },
+  { title: "Field caption color (hex, e.g. \"Product\", \"Seller\")", key: "labelColor" },
+  { title: "Filled-in value color (hex, names/numbers)", key: "valueColor" },
+  { title: "Bold values (type: TRUE or FALSE)", key: "valueBold" },
+  { title: "Table text size (pt)", key: "bodyFontSizePx" },
 ];
 
 // Sample data for the live preview only — never saved, never sent to the
@@ -65,6 +87,9 @@ export default function ReceiptTemplateEditor() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const fileInputRef = useRef(null);
+  const [importedOk, setImportedOk] = useState(false);
+  const [importError, setImportError] = useState("");
 
   async function load() {
     setLoading(true);
@@ -94,6 +119,110 @@ export default function ReceiptTemplateEditor() {
 
   function resetToDefaults() {
     setTpl(mergeReceiptTemplate(null));
+  }
+
+  // Downloads the current draft (whatever's on screen right now, saved or
+  // not) as a real .xlsx file the boss can open and edit in actual Excel
+  // (or Google Sheets, LibreOffice, etc.) — not this web page. Three
+  // sheets: plain-language instructions, every label (English/Khmer side
+  // by side), and every style setting.
+  function exportToExcel() {
+    const wb = XLSX.utils.book_new();
+
+    const wsInstructions = XLSX.utils.aoa_to_sheet([
+      ["How to edit the receipt in Excel"],
+      [""],
+      ["1. Open the \"Labels\" sheet (tab at the bottom). Only type into the English and Khmer columns — leave the Field column exactly as it is."],
+      ["2. Open the \"Style\" sheet. Only type into the Value column — leave the Setting column exactly as it is."],
+      ["3. Save this file, keeping it as .xlsx (File > Save, or File > Save As if your program asks)."],
+      ["4. Back on the Receipt Template page in PaddyTrade, click \"Upload from Excel\" and pick this saved file."],
+      ["5. Check the live preview on that page looks right, then click \"Save changes\" to make it the real receipt."],
+      [""],
+      ["Colors must be typed as a hex code starting with #, for example #0f172a."],
+      ["Header alignment must be typed as exactly: center   or   left"],
+      ["Bold values must be typed as exactly: TRUE   or   FALSE"],
+    ]);
+    wsInstructions["!cols"] = [{ wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, wsInstructions, "Instructions");
+
+    const labelRows = [["Field", "English", "Khmer"]];
+    LABEL_ROWS.forEach((row) => {
+      labelRows.push([row.title, tpl.labels[row.en] || "", row.kh ? (tpl.labels[row.kh] || "") : ""]);
+    });
+    const wsLabels = XLSX.utils.aoa_to_sheet(labelRows);
+    wsLabels["!cols"] = [{ wch: 28 }, { wch: 34 }, { wch: 34 }];
+    XLSX.utils.book_append_sheet(wb, wsLabels, "Labels");
+
+    const styleRows = [["Setting", "Value"]];
+    STYLE_ROWS.forEach((row) => {
+      const raw = tpl.style[row.key];
+      styleRows.push([row.title, row.key === "valueBold" ? (raw ? "TRUE" : "FALSE") : raw]);
+    });
+    const wsStyle = XLSX.utils.aoa_to_sheet(styleRows);
+    wsStyle["!cols"] = [{ wch: 50 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, wsStyle, "Style");
+
+    XLSX.writeFile(wb, `receipt-template_${cambodiaTimestamp()}.xlsx`);
+  }
+
+  // Reads a .xlsx file back in (must have come from "Download as Excel"
+  // above, or at least match its sheet names/column layout) and loads it
+  // into the draft — same as typing changes into the on-screen table. It
+  // does NOT save automatically; the boss still reviews the preview and
+  // hits "Save changes" themselves.
+  async function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setImportError("");
+    setImportedOk(false);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const labelsSheet = wb.Sheets["Labels"];
+      const styleSheet = wb.Sheets["Style"];
+      if (!labelsSheet || !styleSheet) {
+        throw new Error('This doesn\'t look like a Receipt Template Excel file — it\'s missing the "Labels" or "Style" sheet. Use "Download as Excel" first to get the right format, edit that file, then upload it back.');
+      }
+
+      const labelByTitle = {};
+      LABEL_ROWS.forEach((row) => { labelByTitle[row.title.trim().toLowerCase()] = row; });
+      const styleByTitle = {};
+      STYLE_ROWS.forEach((row) => { styleByTitle[row.title.trim().toLowerCase()] = row; });
+
+      const newLabels = { ...tpl.labels };
+      XLSX.utils.sheet_to_json(labelsSheet, { header: 1 }).slice(1).forEach((r) => {
+        const match = labelByTitle[String(r[0] || "").trim().toLowerCase()];
+        if (!match) return;
+        newLabels[match.en] = String(r[1] ?? "").trim();
+        if (match.kh) newLabels[match.kh] = String(r[2] ?? "").trim();
+      });
+
+      const newStyle = { ...tpl.style };
+      const numericKeys = ["titleSizePx", "subLineSizePx", "ticketTypeSizePx", "bodyFontSizePx"];
+      XLSX.utils.sheet_to_json(styleSheet, { header: 1 }).slice(1).forEach((r) => {
+        const match = styleByTitle[String(r[0] || "").trim().toLowerCase()];
+        if (!match) return;
+        const raw = r[1];
+        if (match.key === "valueBold") {
+          newStyle.valueBold = String(raw).trim().toUpperCase() === "TRUE";
+        } else if (match.key === "headerAlign") {
+          newStyle.headerAlign = String(raw).trim().toLowerCase() === "left" ? "left" : "center";
+        } else if (numericKeys.includes(match.key)) {
+          const n = Number(raw);
+          newStyle[match.key] = Number.isFinite(n) && n > 0 ? n : DEFAULT_RECEIPT_TEMPLATE.style[match.key];
+        } else {
+          const v = String(raw ?? "").trim();
+          newStyle[match.key] = /^#[0-9a-fA-F]{3,8}$/.test(v) ? v : DEFAULT_RECEIPT_TEMPLATE.style[match.key];
+        }
+      });
+
+      setTpl({ labels: newLabels, style: newStyle });
+      setImportedOk(true);
+      setTimeout(() => setImportedOk(false), 4000);
+    } catch (err) {
+      setImportError(err.message || "Couldn't read that file — make sure it's the .xlsx file downloaded from this page.");
+    }
   }
 
   async function save() {
@@ -133,8 +262,31 @@ export default function ReceiptTemplateEditor() {
                 English cell and a Khmer cell, editable in place. ---- */}
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-200 p-4">
-                <h3 className="font-semibold text-slate-700">Every word on the ticket</h3>
-                <p className="text-xs text-slate-400">Click any cell and type to change it — exactly like editing a spreadsheet. Changes show in the preview instantly and only take effect on printed tickets after you hit Save.</p>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-slate-700">Every word on the ticket</h3>
+                    <p className="text-xs text-slate-400">Click any cell below and type to change it, or edit it in real Excel. Changes show in the preview instantly and only take effect on printed tickets after you hit Save.</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      onClick={exportToExcel}
+                      title="Download this template as a real .xlsx file to edit in Excel"
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      <Download size={13} /> Download as Excel
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Load a .xlsx file you edited in Excel back into this page"
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      <Upload size={13} /> Upload from Excel
+                    </button>
+                    <input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleImportFile} className="hidden" />
+                  </div>
+                </div>
+                {importedOk && <p className="mt-2 text-xs font-medium text-emerald-600">Loaded from Excel — check the preview, then hit Save changes to make it real.</p>}
+                {importError && <p className="mt-2 flex items-start gap-1 text-xs text-rose-500"><AlertCircle size={12} className="mt-0.5 shrink-0" /> {importError}</p>}
               </div>
               <table className="w-full border-collapse text-sm">
                 <thead>
