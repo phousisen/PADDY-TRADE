@@ -54,12 +54,14 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
   const numberIn = tx.paper_ticket_no || tx.code;
 
   // On the real coupon, the blank "Seller"/"Buyer" field on the side that
-  // ISN'T the farmer/counterparty is always filled in by hand with the
-  // company's own name (Baitang is consistently the other party in every
-  // transaction) — so that's what's printed here automatically.
+  // ISN'T the farmer/counterparty is filled in by hand with the name of
+  // whichever staff member recorded this ticket (tx.recorded_by_name) —
+  // falling back to the company's own name only for older tickets that
+  // were created before that field existed and never had a name recorded.
   const counterpartyLabelKh = isBuy ? "អ្នកលក់" : " អ្នកទិញ";
   const counterpartyLabelEn = isBuy ? "Seller" : "Buyer";
   const ownSideLabel = isBuy ? "អ្នកទិញ              Buyer" : "អ្នកលក់              Seller";
+  const ownSideName = tx.recorded_by_name || companyNameKh;
 
   const cell = "border border-slate-900 px-2 py-1";
 
@@ -100,7 +102,7 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
             <td className="py-0.5 align-top text-slate-600">{counterpartyLabelEn}</td>
             <td className="border-b border-slate-500 py-0.5 align-top font-medium">{tx.partyName}</td>
             <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={FONT_BODY}>{ownSideLabel}</td>
-            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{companyNameKh}</td>
+            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{ownSideName}</td>
           </tr>
         </tbody>
       </table>
@@ -140,23 +142,14 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
             <td className={`${cell} text-right font-bold`}>{fmt2(tx.quantity_kg)}</td>
             <td className={`${cell} text-center font-bold`}>Kg</td>
           </tr>
-          {/* Price/Amount only print on the Buy (Import) side — the price
-              to a buyer on a Sell often isn't settled yet at weigh-out
-              time, so showing "0 ៛" here would just be misleading. Once
-              the price IS agreed, the transaction can be edited from the
-              Transactions list and this reprints correctly. */}
-          {isBuy && (
-            <>
-              <tr>
-                <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃ&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRICE</td>
-                <td className={`${cell} text-right font-medium`} colSpan={2}>{fmtRiel(tx.price_per_kg)}</td>
-              </tr>
-              <tr>
-                <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃសរុប AMOUNT</td>
-                <td className={`${cell} text-right font-bold`} colSpan={2}>{fmtRiel(tx.amount)}</td>
-              </tr>
-            </>
-          )}
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃ&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRICE</td>
+            <td className={`${cell} text-right font-medium`} colSpan={2}>{fmtRiel(tx.price_per_kg)}</td>
+          </tr>
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃសរុប AMOUNT</td>
+            <td className={`${cell} text-right font-bold`} colSpan={2}>{fmtRiel(tx.amount)}</td>
+          </tr>
           <tr>
             <td className="pt-6 pb-1 text-center" colSpan={2}>
               <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
