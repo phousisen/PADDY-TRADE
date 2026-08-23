@@ -193,6 +193,39 @@ export function addCachedParty(party) {
   }
 }
 
+// Fixes up local state after a queued createParty op turns out to have
+// reused an EXISTING party (same phone + location) instead of actually
+// inserting a new one under the id we generated on this device — see the
+// comment in api.js's createParty. Every ticket, and every still-queued
+// op, that was already pointing at the id that didn't end up being used
+// gets repointed at the real one, so nothing downstream (like this same
+// ticket's own createTicket op, sitting right behind this one in the
+// queue) tries to save against a party id that was never actually
+// inserted.
+function remapPartyId(oldId, newId) {
+  if (!oldId || oldId === newId) return;
+
+  const tickets = getCachedTickets();
+  let ticketsChanged = false;
+  for (const t of tickets) {
+    if (t.party_id === oldId) { t.party_id = newId; ticketsChanged = true; }
+  }
+  if (ticketsChanged) writeJSON(CACHE_KEY, tickets);
+
+  const q = getQueue();
+  let queueChanged = false;
+  for (const op of q) {
+    if (op.payload && op.payload.partyId === oldId) { op.payload.partyId = newId; queueChanged = true; }
+  }
+  if (queueChanged) writeJSON(QUEUE_KEY, q);
+
+  // Drop the placeholder cache row keyed by the id that never actually
+  // made it to the server, so nothing offline resolves a fresh lookup to
+  // it again.
+  const parties = getCachedParties().filter((p) => p.id !== oldId);
+  writeJSON(PARTY_CACHE_KEY, parties);
+}
+
 export function getCachedProducts() {
   return readJSON(PRODUCT_CACHE_KEY, []);
 }
@@ -279,6 +312,13 @@ async function runOp(op) {
     case "createParty": {
       const party = await api.createParty(op.payload);
       addCachedParty(party);
+      // api.createParty can resolve to an EXISTING party instead of the
+      // one we asked it to create (same phone number already on file at
+      // this location) — when that happens, fix up anything that was
+      // already pointing at the unused local id.
+      if (op.payload.id && party.id !== op.payload.id) {
+        remapPartyId(op.payload.id, party.id);
+      }
       return party;
     }
     case "createProduct": {
