@@ -123,6 +123,33 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // works too.
   const [productOptions] = useState(() => getCachedProducts());
 
+  // Farmers/buyers already on file for this ticket type (BUY -> supplier,
+  // SELL -> buyer) — this is the actual shortcut being asked for: when the
+  // SAME person brings in several trucks, staff can now just start typing
+  // their name, pick them from the suggestions, and their phone number
+  // fills in on its own instead of asking "what's your phone number again"
+  // for every single truck. Only name + phone autofill this way on
+  // purpose — plate/driver/product still need to be entered per truck,
+  // since those genuinely differ load to load.
+  const partyOptions = useMemo(
+    () => getCachedParties().filter((p) => p.type === (type === "BUY" ? "supplier" : "buyer")),
+    [type]
+  );
+
+  function handlePartyNameChange(value) {
+    setPartyName(value);
+    const match = partyOptions.find((p) => (p.name || "").trim().toLowerCase() === value.trim().toLowerCase());
+    if (match) {
+      if (match.phone) setPhone(match.phone);
+      setPhoneLookupMsg(match.name ? `Found: ${match.name}` : "");
+      setSavedBank(
+        match.bank_name || match.bank_account || match.bank_qr_url
+          ? { bankName: match.bank_name || "", bankAccount: match.bank_account || "", bankQrUrl: match.bank_qr_url || null }
+          : null
+      );
+    }
+  }
+
   // Baitang's paper tickets come from a pre-numbered booklet, used in
   // order — so as soon as a location is known, suggest the next number
   // after whatever was last typed in for that location. Staff can still
@@ -257,7 +284,20 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             </div>
           )}
         </div>
-        <div className="col-span-2"><label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label><input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} /></div>
+        <div className="col-span-2">
+          <label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label>
+          <input
+            list="party-name-options"
+            value={partyName}
+            onChange={(e) => handlePartyNameChange(e.target.value)}
+            className={inputCls}
+            placeholder="Start typing — repeat farmers/buyers show up here"
+          />
+          <datalist id="party-name-options">
+            {partyOptions.map((p) => <option key={p.id} value={p.name} />)}
+          </datalist>
+          <p className="mt-1 text-[11px] text-slate-400">Picking a name already on file fills in their phone number automatically</p>
+        </div>
         <div>
           <label className={labelCls}>Product (paddy type)</label>
           <input list="paddy-type-options" value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" />
