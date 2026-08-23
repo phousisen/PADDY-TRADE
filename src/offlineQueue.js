@@ -226,6 +226,25 @@ function remapPartyId(oldId, newId) {
   writeJSON(PARTY_CACHE_KEY, parties);
 }
 
+// Called when the server tells us a queued ticket change (weigh-in,
+// price, weigh-out, or finalize) targets a weighing ticket that no
+// longer exists — most likely a database reset ran (e.g. clearing test
+// data) after this device queued the change while it was offline.
+// Clears it off the local board and drops every OTHER still-queued
+// change for that same ticket too, since none of them can succeed
+// either — otherwise the very next one just blocks the queue again the
+// same way, one at a time. Leaves the op currently being processed
+// (always at the front of the queue) for the normal dequeue step right
+// after this runs, rather than removing it here too.
+function dropOtherOpsForGoneTicket(ticketId) {
+  if (!ticketId) return;
+  removeCachedTicket(ticketId);
+  const q = getQueue();
+  if (q.length === 0) return;
+  const filtered = [q[0], ...q.slice(1).filter((op) => op.ticketId !== ticketId)];
+  writeJSON(QUEUE_KEY, filtered);
+}
+
 export function getCachedProducts() {
   return readJSON(PRODUCT_CACHE_KEY, []);
 }
@@ -335,14 +354,26 @@ async function runOp(op) {
     }
     case "createTicket":
       return api.createTicket(op.payload);
-    case "setTicketGross":
-      return api.setTicketGross(op.ticketId, op.payload);
-    case "setTicketPrice":
-      return api.setTicketPrice(op.ticketId, op.payload);
-    case "setTicketTare":
-      return api.setTicketTare(op.ticketId, op.payload);
-    case "finalizeTicket":
-      return api.finalizeTicket(op.ticketId, op.payload);
+    case "setTicketGross": {
+      const result = await api.setTicketGross(op.ticketId, op.payload);
+      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      return result;
+    }
+    case "setTicketPrice": {
+      const result = await api.setTicketPrice(op.ticketId, op.payload);
+      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      return result;
+    }
+    case "setTicketTare": {
+      const result = await api.setTicketTare(op.ticketId, op.payload);
+      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      return result;
+    }
+    case "finalizeTicket": {
+      const result = await api.finalizeTicket(op.ticketId, op.payload);
+      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      return result;
+    }
     case "createTransaction":
       return api.createTransaction(op.payload);
     case "createPayment":
