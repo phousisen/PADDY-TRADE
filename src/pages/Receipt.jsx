@@ -164,16 +164,11 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
   );
 }
 
-// This layout leads with an EXACT, field-for-field, wording-for-wording
-// replica of Baitang's own printed paper weight ticket (see
-// ExactWeightTicket above — verified directly against the source .xls
-// coupon files, not eyeballed from a photo), so staff who know the paper
-// ticket by heart can read the top of this one exactly the same way and it
-// can replace the old carbon-copy coupon book outright. Everything below
-// that — quality/deduction, bank details, tax, and the QR code — isn't on
-// the paper coupon; it's kept as an additional section underneath (same
-// idea as the previous version of this file), since payment and tax
-// tracking still need to happen somewhere and staff already rely on it.
+// This layout is now an EXACT, field-for-field, wording-for-wording replica
+// of Baitang's own printed paper weight ticket only (see ExactWeightTicket
+// above — verified directly against the source .xls coupon files) — nothing
+// else is printed below it anymore, so it matches the real coupon 1:1 for a
+// clean print on the station's customized paper size.
 export default function Receipt({ tx, onDone }) {
   const { t } = useLanguage();
   const isBuy = tx.type === "BUY";
@@ -191,7 +186,6 @@ export default function Receipt({ tx, onDone }) {
   const companyNameKh = settings.company_name_kh || "ប៉ៃតង កម្ពុជា";
   const companyAddressKh = settings.company_address || "ភូមិព្រៃទទឹង ឃុំរាំងកេសី ស្រុកសង្កែ ខេត្តបាត់ដំបង";
   const companyPhoneLine = settings.company_phone ? `Tel: ${settings.company_phone}` : "Tel: 012 37 36 396 / 088 96 666 52";
-  const footerNote = settings.receipt_footer_note || "Thank you for your business!";
 
   // Only tickets that went through Weighing Tickets (Weigh In -> Finish
   // Ticket) carry separate gross/tare weighings — a manually-entered Buy/
@@ -200,19 +194,11 @@ export default function Receipt({ tx, onDone }) {
   const hasWeighInOut = tx.gross_kg != null;
   const inStamp = splitCambodiaTimestamp(tx.gross_at);
   const outStamp = splitCambodiaTimestamp(tx.tare_at);
-  const hasBankDetails = tx.bank_name && tx.bank_name !== "Cash";
   // A freshly-finalized ticket hands this component a snake_case
   // `product_name`; a transaction reopened later (fetched via
   // getTransactions, which joins/maps it as camelCase `productName`)
   // doesn't — accept either so the receipt reads the same either way.
   const productName = tx.product_name || tx.productName || "—";
-  const payableKg = tx.deduction_kg > 0 ? (tx.payable_kg ?? (tx.quantity_kg - tx.deduction_kg)) : null;
-  // tax_amount/total_with_tax aren't columns on the transaction itself —
-  // they're recomputed here from what is stored (amount, tax_applicable,
-  // tax_rate) so a taxed transaction still totals correctly when reopened
-  // later, not just right after it was first saved.
-  const taxAmount = tx.tax_amount ?? (tx.tax_applicable ? Math.round(Number(tx.amount) * (Number(tx.tax_rate) || 0)) / 100 : 0);
-  const total = tx.total_with_tax ?? (Number(tx.amount) + taxAmount);
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -241,51 +227,6 @@ export default function Receipt({ tx, onDone }) {
             inStamp={inStamp}
             outStamp={outStamp}
           />
-
-          {/* Everything below this line is not on the paper coupon — kept
-              as extra detail staff and accounting still rely on. */}
-          <div className="my-4 border-t border-dashed border-slate-300" />
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5 border border-slate-300 p-3">
-              {tx.partyIdNumber && <p><span className="text-slate-400">Phone</span> <span className="font-medium text-slate-700">{tx.partyIdNumber}</span></p>}
-              {tx.bank_name && <p><span className="text-slate-400">Bank</span> <span className="font-medium text-slate-700">{tx.bank_name}{hasBankDetails && tx.bank_account ? ` — ${tx.bank_account}` : ""}</span></p>}
-              {tx.quality_grade && <p><span className="text-slate-400">Quality Grade</span> <span className="font-medium text-slate-700">{tx.quality_grade}</span></p>}
-              <p><span className="text-slate-400">Mixture</span> <span className="font-medium text-slate-700">{tx.mixture_pct || 0}%</span></p>
-              {tx.deduction_kg > 0 && (
-                <p><span className="text-slate-400">Deduction</span> <span className="font-medium text-rose-600">-{fmt2(tx.deduction_kg)} KG</span> {payableKg != null && <span className="ml-2 text-slate-400">Payable</span>} {payableKg != null && <span className="font-medium text-slate-700">{fmt2(payableKg)} KG</span>}</p>
-              )}
-              <p className="text-slate-500">Note: {tx.note || "......"}</p>
-
-              <div className="mt-4 space-y-4 pt-2 text-xs text-slate-500">
-                <p>Statistics Officer: ..........................</p>
-              </div>
-            </div>
-
-            <div className="space-y-2 border border-slate-300 p-3">
-              {tx.tax_applicable && (
-                <p className="flex items-baseline justify-between text-xs">
-                  <span className="text-slate-400">VAT ({tx.tax_rate}%)</span>
-                  <span className="text-slate-700">{fmtRiel(taxAmount)}</span>
-                </p>
-              )}
-              <div className="mt-2 rounded-lg bg-brand-50 p-3 text-center">
-                <p className="text-xs text-brand-700/70">Total (incl. tax)</p>
-                <p className="text-2xl font-bold text-brand-800">{fmtRiel(total)}</p>
-              </div>
-
-              {/* Bank QR code photo, captured by staff at Weigh In, so
-                  payment can be sent straight from this printed copy. */}
-              {tx.bank_qr_url && (
-                <div className="mt-2 text-center">
-                  <p className="mb-1 text-xs text-slate-400">Scan to pay</p>
-                  <img src={tx.bank_qr_url} alt="Bank QR code" className="mx-auto h-32 w-32 rounded-lg border border-slate-200 object-contain" />
-                </div>
-              )}
-            </div>
-          </div>
-
-          <p className="mt-4 whitespace-pre-line text-center text-xs text-slate-400">{footerNote}</p>
         </div>
       </main>
     </div>
