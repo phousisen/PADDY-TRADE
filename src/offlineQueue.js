@@ -613,7 +613,11 @@ export function setTicketTareOffline(id, { tareKg, userId }) {
 export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl }) {
   const transactionId = newId();
   const transactionCode = genLocalTxCode(ticket.type);
-  const netKg = Math.max(0, (ticket.gross_kg || 0) - (ticket.tare_kg || 0));
+  // Same fix as api.js's finalizeTicket (kept in sync with it on purpose):
+  // Sell tickets arrive empty and leave loaded, the reverse of Buy, so
+  // tare_kg ends up bigger than gross_kg — Math.abs handles both
+  // directions instead of clamping Sell's net weight to 0.
+  const netKg = Math.abs((ticket.gross_kg || 0) - (ticket.tare_kg || 0));
   const payableKg = Math.max(0, netKg - (ticket.deduction_kg || 0));
   const staffFeeAmt = ticket.type === "BUY" ? (ticket.staff_fee || 0) : 0;
   const subtotal = Math.max(0, payableKg * (ticket.price_per_kg || 0) - staffFeeAmt);
