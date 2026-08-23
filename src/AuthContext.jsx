@@ -14,8 +14,10 @@ const HEARTBEAT_MS = 20000;
 // "Loading…" screen forever. If startup hasn't finished within this many
 // milliseconds, we stop waiting and fall back to whatever was saved on this
 // device the last time someone logged in here, so the app still opens while
-// offline.
-const STARTUP_TIMEOUT_MS = 5000;
+// offline. This is only the fallback for "WiFi connected but not really
+// working" — genuinely no connection at all skips straight to the cached
+// copy below with no wait at all, see init().
+const STARTUP_TIMEOUT_MS = 3000;
 
 // The profile fetch itself (a separate network request, made right after
 // the session check) has the same problem — and in the most common
@@ -24,7 +26,7 @@ const STARTUP_TIMEOUT_MS = 5000;
 // fast, it just sits there for a long time before the browser gives up.
 // This bounds that specific wait so we don't sit around waiting for the
 // browser to notice — we just fall back to the saved copy ourselves.
-const PROFILE_TIMEOUT_MS = 4000;
+const PROFILE_TIMEOUT_MS = 2500;
 
 // Races any promise against a plain timer. Never rejects — if `promise`
 // doesn't settle in time, resolves to `fallbackValue` instead, and the
@@ -179,6 +181,14 @@ export function AuthProvider({ children }) {
   // bounce people back to the login screen the moment WiFi dropped, even
   // though their session itself was still perfectly valid.
   async function loadProfileWithOfflineFallback(userId) {
+    // No connection at all — same reasoning as init() below: don't spend
+    // any time attempting a request that can't succeed, go straight to
+    // the cached copy.
+    if (!navigator.onLine) {
+      const cached = loadCachedProfile();
+      if (cached) setProfile(cached);
+      return;
+    }
     // Bounded to PROFILE_TIMEOUT_MS — covers both "fails right away" (the
     // try/catch inside loadProfile) AND "just hangs for a long time"
     // (WiFi connected to a router with no real internet behind it, which
@@ -195,12 +205,18 @@ export function AuthProvider({ children }) {
     let cancelled = false;
 
     async function init() {
-      // Bounded the same way as the profile fetch below — if this hangs
-      // (WiFi connected to a router with no real internet behind it is
-      // the common real case, not just the radio being off), we stop
-      // waiting on our own terms instead of trusting the browser to give
-      // up in a reasonable time.
-      const result = await withTimeout(supabase.auth.getSession(), STARTUP_TIMEOUT_MS, null);
+      // If the browser already knows there's no connection at all (radio
+      // off, cable unplugged, no network chosen — as opposed to "connected
+      // to a router with no real internet behind it", which navigator's
+      // online flag can't detect), don't even attempt this — go straight
+      // to whatever was cached below with zero wait. That's the common
+      // case right after this computer boots with no WiFi yet: the app
+      // used to spend several seconds attempting (and timing out on) a
+      // network call that had no chance of succeeding, before falling
+      // back to the exact same cached copy it could have used instantly.
+      const result = navigator.onLine
+        ? await withTimeout(supabase.auth.getSession(), STARTUP_TIMEOUT_MS, null)
+        : null;
       if (cancelled) return;
 
       const session = result?.data?.session || null;
