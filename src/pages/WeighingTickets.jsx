@@ -62,6 +62,36 @@ function addCustomPaddyType(name) {
   }
 }
 
+// Same idea, for the "Buyer"/"Seller" (whoever is actually filling in the
+// ticket) field below — no fixed starting list like paddy types, since
+// there's no "official" set of staff names to seed it with. It just starts
+// empty and grows as names get typed in on this device, via "+ Add new
+// name…", numbered the same way so staff can jump to a name by pressing
+// its number.
+const RECORDED_BY_NAMES_KEY = "ptw_recorded_by_names_v1";
+function getRecordedByNames() {
+  try {
+    const raw = localStorage.getItem(RECORDED_BY_NAMES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+function addRecordedByName(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  try {
+    const list = getRecordedByNames();
+    if (!list.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      list.push(trimmed);
+      localStorage.setItem(RECORDED_BY_NAMES_KEY, JSON.stringify(list));
+    }
+  } catch {
+    // Storage full/unavailable — worst case this device just re-offers
+    // "+ Add new name…" again next time instead of remembering it.
+  }
+}
+
 // Same bank list as the New Transaction form, so staff see the same
 // choices in both places — "Cash" is first since most farmer payouts at
 // the scale are cash in hand, not a bank transfer.
@@ -181,6 +211,8 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // logged-in account, since a station's login is often shared by several
   // people during a shift.
   const [recordedByName, setRecordedByName] = useState("");
+  const [recordedByOptions] = useState(() => getRecordedByNames());
+  const [recordedByIsCustom, setRecordedByIsCustom] = useState(recordedByOptions.length === 0);
 
   // "Use previous Seller/Buyer" button — the actual shortcut being asked
   // for: when the SAME person brings in several trucks back to back, staff
@@ -349,6 +381,8 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       // its own numbered option next time (see PADDY_TYPE_SEED above) —
       // a no-op if it was already picked from the list.
       if (productIsCustom) addCustomPaddyType(productName);
+      // Same for a newly-typed "Buyer"/"Seller" name.
+      if (recordedByIsCustom) addRecordedByName(recordedByName);
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
@@ -475,12 +509,39 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
         <div className="col-span-2">
           <label className={labelCls}>{type === "BUY" ? "Buyer" : "Seller"}</label>
-          <input
-            value={recordedByName}
-            onChange={(e) => setRecordedByName(e.target.value)}
-            className={inputCls}
-            placeholder="Your name (whoever is filling in this ticket)"
-          />
+          {recordedByIsCustom ? (
+            <div>
+              <input
+                autoFocus={recordedByOptions.length > 0}
+                value={recordedByName}
+                onChange={(e) => setRecordedByName(e.target.value)}
+                className={inputCls}
+                placeholder="Your name (whoever is filling in this ticket)"
+              />
+              {recordedByOptions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { setRecordedByIsCustom(false); setRecordedByName(""); }}
+                  className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+                >
+                  ← Back to list
+                </button>
+              )}
+            </div>
+          ) : (
+            <select
+              value={recordedByOptions.includes(recordedByName) ? recordedByName : ""}
+              onChange={(e) => {
+                if (e.target.value === "__other__") { setRecordedByIsCustom(true); setRecordedByName(""); }
+                else setRecordedByName(e.target.value);
+              }}
+              className={inputCls}
+            >
+              <option value="" disabled>Select your name…</option>
+              {recordedByOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
+              <option value="__other__">+ Add new name…</option>
+            </select>
+          )}
           <p className="mt-1 text-[11px] text-slate-400">
             {type === "BUY"
               ? "You're the one buying this paddy on PaddyTrade's behalf — put your name here, not the farmer's."
