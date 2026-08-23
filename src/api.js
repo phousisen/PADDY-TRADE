@@ -552,13 +552,14 @@ export const api = {
   // transaction via the existing createTransaction path above, so
   // everything downstream (reports, stock, AP/AR) is unaffected.
 
-  async getTickets({ locationId, stages } = {}) {
+  async getTickets({ locationId, stages, limit } = {}) {
     let query = supabase
       .from("weighing_tickets")
       .select("*, locations(name), gross_profile:gross_by(full_name), priced_profile:priced_by(full_name), tare_profile:tare_by(full_name), created_profile:created_by(full_name)")
       .order("created_at", { ascending: false });
     if (locationId) query = query.eq("location_id", locationId);
     if (stages && stages.length) query = query.in("stage", stages);
+    if (limit) query = query.limit(limit);
     const { data, error } = await query;
     if (error) throw error;
     return data.map((t) => ({
