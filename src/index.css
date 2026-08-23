@@ -18,15 +18,12 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* Real measured size of the actual continuous-feed paper loaded in the
-   printer, taken from a photo with the paper held right-side-up (text
-   reading normally): 22cm wide x 14cm tall (220mm x 140mm). Wider than
-   tall — a natural fit for this ticket's own wide table layout (IN/OUT
-   rows with several columns side by side). The first measurement photo
-   had the paper rotated for the shot, which read the two numbers
-   backwards. */
+/* Paper size for the printed ticket: 210mm x 140mm (updated from the
+   earlier 220mm x 140mm measurement — Owner confirmed the correct size).
+   Wider than tall — a natural fit for this ticket's own wide table layout
+   (IN/OUT rows with several columns side by side). */
 @page {
-  size: 220mm 140mm;
+  size: 210mm 140mm;
   margin: 0;
 }
 
@@ -50,25 +47,26 @@ input[type="number"] {
     visibility: visible !important;
   }
 
-  /* Width matched to the real paper: 220mm wide minus a small margin on
-     each side, pinned to the top-left corner. This is roomier than the
-     130mm this was briefly narrowed to under the wrong (portrait) reading
-     of the measurement — the table has plenty of width to lay out
-     comfortably now that the paper's real shape is confirmed landscape.
-     Height is NOT capped — better to run long than silently clip a field,
-     though at 140mm tall the ticket should comfortably fit in one pass. */
+  /* Width matched to the 210mm-wide paper minus a small margin on each
+     side (200mm of actual content), centered horizontally on the page
+     with `left: 50%` + `transform: translateX(-50%)` rather than pinned
+     to the top-left corner — so there's an even gap on the left and right
+     no matter how the printer interprets the page. Height is NOT capped —
+     better to run long than silently clip a field, though at 140mm tall
+     the ticket should comfortably fit in one pass. */
   #receipt-root {
     position: absolute !important;
-    top: 0 !important;
-    left: 0 !important;
+    top: 3mm !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
-    width: 210mm !important;
-    max-width: 210mm !important;
+    width: 200mm !important;
+    max-width: 200mm !important;
     height: auto !important;
-    margin: 5mm !important;
-    padding: 3mm 4mm !important;
+    margin: 0 !important;
+    padding: 2mm 4mm !important;
     overflow: visible !important;
     page-break-inside: avoid;
     -webkit-print-color-adjust: exact;
