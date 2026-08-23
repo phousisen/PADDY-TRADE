@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -7,6 +7,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase } from "../supabaseClient.js";
+import { onSyncStatusChange } from "../offlineQueue.js";
 import Receipt from "./Receipt.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -773,19 +774,72 @@ export default function Transactions({ setPage }) {
   // or a farmer/buyer needs another one later.
   const [receiptTx, setReceiptTx] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Whether the last attempt to reach the server actually failed (as
+  // opposed to just still being in progress) — lets the page tell staff
+  // "can't reach the server right now" instead of leaving them staring at
+  // a spinner forever, or a blank list, with no explanation.
+  const [loadError, setLoadError] = useState(false);
+  const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
 
   async function load() {
-    setLoading(true);
-    const [txData, payData] = await Promise.all([
-      api.getTransactions({ type: type || undefined }),
-      api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
-    ]);
-    setRows(txData);
-    setPayments(payData);
-    setLoading(false);
+    // Only show the big "Loading…" state the very first time — once
+    // something's already on screen, a background refresh (e.g. right
+    // after the offline queue finishes syncing) shouldn't make the whole
+    // list flash/reload in front of someone reading it.
+    if (rows.length === 0) setLoading(true);
+    try {
+      const [txData, payData] = await Promise.all([
+        api.getTransactions({ type: type || undefined }),
+        api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
+      ]);
+      setRows(txData);
+      setPayments(payData);
+      setLoadError(false);
+    } catch (err) {
+      // Most likely this device has no real internet right now. Keep
+      // showing whatever was already loaded instead of clearing the list
+      // — load() automatically retries once the connection (or a queued
+      // ticket) actually syncs, see the effect below.
+      console.warn("[Transactions] load failed:", err?.message || err);
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, [type]);
+
+  // Same pattern as the Weighing Tickets board: watch the offline sync
+  // queue and refresh this list on its own once there's actually
+  // something new to show, so a Buy/Sell finalized on this device (or any
+  // other station) appears here the moment it really reaches the shared
+  // database — nobody has to remember to reload the page.
+  useEffect(() => {
+    const unsub = onSyncStatusChange(setSyncStatus);
+    return unsub;
+  }, []);
+  useEffect(() => {
+    if (!syncStatus.syncing && syncStatus.pending === 0) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStatus.syncing, syncStatus.pending]);
+  // And the moment the browser itself comes back online, in case the very
+  // first load() above happened to fail because this page was opened
+  // while offline.
+  useEffect(() => {
+    if (syncStatus.online && loadError) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncStatus.online]);
+  // Covers the remaining case: a one-off failed request (a slow response
+  // that timed out, a brief blip) while the connection never actually
+  // dropped and nothing was queued to trigger the sync-based refresh
+  // above. Keep quietly retrying every 15s until a load actually
+  // succeeds, same safety-net interval the offline queue itself uses.
+  useEffect(() => {
+    if (!loadError) return;
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadError]);
 
   // Only HQ Admin sees every location's transactions — staff logins are
   // already scoped to their own location, so the picker only makes sense
@@ -986,6 +1040,21 @@ export default function Transactions({ setPage }) {
             : `${selectedLocationIds.length} locations selected`
         }
       />
+      {(!syncStatus.online || syncStatus.pending > 0 || syncStatus.syncing) && (
+        <div className={`flex items-center gap-2 px-6 py-2 text-xs font-medium ${!syncStatus.online ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"}`}>
+          {!syncStatus.online ? <WifiOff size={13} /> : <RefreshCw size={13} className={syncStatus.syncing ? "animate-spin" : ""} />}
+          {!syncStatus.online
+            ? `No internet — working offline. ${syncStatus.pending > 0 ? `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} will sync once it's back, and appear here automatically.` : "This list will refresh automatically once you're back online."}`
+            : syncStatus.syncing
+              ? "Connected — syncing changes to PaddyTrade…"
+              : `Connected — ${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} waiting to sync…`}
+        </div>
+      )}
+      {loadError && syncStatus.online && (
+        <div className="flex items-center gap-2 bg-rose-50 px-6 py-2 text-xs font-medium text-rose-700">
+          <WifiOff size={13} /> Couldn't reach the server just now — showing the last data loaded. Retrying automatically.
+        </div>
+      )}
       <main className="flex-1 overflow-y-auto p-6">
         {!isAdmin && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-gold-300 bg-gold-50 px-3 py-2 text-xs text-gold-700">
