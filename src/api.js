@@ -254,7 +254,27 @@ export const api = {
   // instead of making a duplicate.
   async createProduct(name, id) {
     const row = id ? { id, name } : { name };
-    return insertOrFetchExisting("products", row);
+    try {
+      return await insertOrFetchExisting("products", row);
+    } catch (error) {
+      // Same situation as createParty above: two devices (or two tickets
+      // on the same device, before either has synced) can each decide a
+      // paddy type is new. insertOrFetchExisting already handles a retry
+      // of the exact same insert (conflict on id); if the database
+      // rejected this for any OTHER reason, the only other realistic
+      // cause is a duplicate product name — reuse the existing one
+      // instead of leaving the queue stuck forever on an insert that can
+      // never succeed.
+      if (error?.code === "23505" && name) {
+        const { data: existing, error: fetchErr } = await supabase
+          .from("products")
+          .select("*")
+          .ilike("name", name)
+          .limit(1);
+        if (!fetchErr && existing && existing.length) return existing[0];
+      }
+      throw error;
+    }
   },
 
   // Partners (investors) at a location, and the running ledger of their
