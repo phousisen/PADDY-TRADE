@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -7,6 +7,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase } from "../supabaseClient.js";
+import Receipt from "./Receipt.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -766,6 +767,11 @@ export default function Transactions({ setPage }) {
   const [cancelConfirmTx, setCancelConfirmTx] = useState(null);
   const [viewPaymentsTx, setViewPaymentsTx] = useState(null);
   const [photosTx, setPhotosTx] = useState(null);
+  // Reprinting a receipt for a transaction that's already been saved —
+  // same Receipt component used right after finishing a ticket, just
+  // opened from the list instead, for whenever a copy gets lost, smudged,
+  // or a farmer/buyer needs another one later.
+  const [receiptTx, setReceiptTx] = useState(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
@@ -1093,15 +1099,20 @@ export default function Transactions({ setPage }) {
                       )}
                     </td>
                     <td className="px-3 py-3">
-                      {isAdmin ? (
-                        <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                          <Pencil size={12} /> Edit
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={() => setReceiptTx(tx)} title="View / print receipt" className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
+                          <Printer size={12} /> Receipt
                         </button>
-                      ) : (
-                        <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
-                          <Flag size={12} /> {t("request_change")}
-                        </button>
-                      )}
+                        {isAdmin ? (
+                          <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
+                            <Pencil size={12} /> Edit
+                          </button>
+                        ) : (
+                          <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
+                            <Flag size={12} /> {t("request_change")}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1116,6 +1127,11 @@ export default function Transactions({ setPage }) {
       {editTx && <EditTransactionModal tx={editTx} locations={locations} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
       {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} />}
       {photosTx && <PhotosModal tx={photosTx} onClose={() => setPhotosTx(null)} />}
+      {receiptTx && (
+        <div className="fixed inset-0 z-50 bg-white">
+          <Receipt tx={receiptTx} onDone={() => setReceiptTx(null)} />
+        </div>
+      )}
       {cancelConfirmTx && (
         <ConfirmCancelModal
           tx={cancelConfirmTx}
