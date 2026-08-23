@@ -583,7 +583,15 @@ export const api = {
       .eq("id", id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // PGRST116 = the update matched zero rows: this ticket doesn't
+      // exist on the server anymore (most likely a database reset ran
+      // after this device queued the change while offline). Nothing left
+      // to update — treat it as already-handled instead of leaving the
+      // whole offline queue stuck forever retrying a ticket that's gone.
+      if (error.code === "PGRST116") return null;
+      throw error;
+    }
     return data;
   },
 
@@ -615,7 +623,12 @@ export const api = {
       .eq("id", id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // Same reasoning as setTicketGross above: the ticket is gone, not a
+      // real failure — nothing to retry.
+      if (error.code === "PGRST116") return null;
+      throw error;
+    }
     return data;
   },
 
@@ -626,7 +639,10 @@ export const api = {
       .eq("id", id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      if (error.code === "PGRST116") return null;
+      throw error;
+    }
     return data;
   },
 
@@ -640,7 +656,12 @@ export const api = {
   // reads the transactions table works without any changes.
   async finalizeTicket(id, { userId, txDate, transactionId, transactionCode, receiptPhotoUrl }) {
     const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
-    if (fetchErr) throw fetchErr;
+    if (fetchErr) {
+      // Same reasoning as setTicketGross above: nothing to finalize if
+      // the ticket itself no longer exists on the server.
+      if (fetchErr.code === "PGRST116") return null;
+      throw fetchErr;
+    }
     // If this ticket was already finalized (e.g. this op is being replayed
     // after a connection drop right after the first attempt succeeded),
     // don't create a second transaction — just return the existing one.
