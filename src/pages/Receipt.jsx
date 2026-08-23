@@ -94,17 +94,23 @@ export const DEFAULT_RECEIPT_TEMPLATE = {
     driverEn: "Driver",
     driverKh: "អ្នកបើកបរ",
   },
+  // Sizes bumped up from the original defaults (30/18/16/14px) after the
+  // Owner asked for clearer text on the actual printed ticket — the ticket
+  // prints on a small 220mm x 140mm continuous-feed paper (see index.css),
+  // so slightly larger, bolder text goes a long way toward legibility
+  // without changing the paper size itself. Owner can still fine-tune any
+  // of these from the Receipt Template page.
   style: {
     headerAlign: "center",
-    titleSizePx: 30,
+    titleSizePx: 34,
     titleColor: "#0f172a",
-    subLineSizePx: 18,
+    subLineSizePx: 20,
     subLineColor: "#0f172a",
-    ticketTypeSizePx: 16,
-    labelColor: "#334155",
-    valueColor: "#0f172a",
+    ticketTypeSizePx: 19,
+    labelColor: "#1e293b",
+    valueColor: "#000000",
     valueBold: true,
-    bodyFontSizePx: 14,
+    bodyFontSizePx: 17,
   },
 };
 
