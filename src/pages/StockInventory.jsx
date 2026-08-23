@@ -38,7 +38,15 @@ export default function StockInventory() {
   const totalStockKg = stations.reduce((s, x) => s + Number(x.current_stock_kg), 0);
   const totalCapacityKg = stations.reduce((s, x) => s + Number(x.capacity_kg), 0);
   const capacityPct = totalCapacityKg ? Math.round((totalStockKg / totalCapacityKg) * 100) : 0;
-  const avgPrice = txs.length ? txs.reduce((s, x) => s + Number(x.price_per_kg), 0) / txs.length : 0;
+
+  // A cancelled transaction never actually moved any real paddy in or out —
+  // same reasoning as every report page (Overview, Stock report, Balance
+  // Sheet, Payables/Receivables, Purchases/Sales, Tax, Party Detail, Location
+  // Detail all filter this out too) — so it shouldn't count toward the price
+  // average or the per-paddy-type breakdown below, either.
+  const activeTxs = useMemo(() => txs.filter((t) => (t.hq_status || "processing") !== "cancelled"), [txs]);
+
+  const avgPrice = activeTxs.length ? activeTxs.reduce((s, x) => s + Number(x.price_per_kg), 0) / activeTxs.length : 0;
   const estimatedValue = Math.round(totalStockKg * avgPrice);
 
   const productsById = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
@@ -49,7 +57,7 @@ export default function StockInventory() {
   // Buys and subtracting it for Sells, grouped by location and paddy type.
   const stockByLocationProduct = useMemo(() => {
     const map = {};
-    for (const tx of txs) {
+    for (const tx of activeTxs) {
       if (!tx.location_id || !tx.product_id) continue;
       const payable = Math.max(0, Number(tx.quantity_kg || 0) - Number(tx.deduction_kg || 0));
       const delta = tx.type === "BUY" ? payable : -payable;
@@ -57,7 +65,7 @@ export default function StockInventory() {
       map[tx.location_id][tx.product_id] = (map[tx.location_id][tx.product_id] || 0) + delta;
     }
     return map;
-  }, [txs]);
+  }, [activeTxs]);
 
   const combinedByProduct = useMemo(() => {
     const map = {};
@@ -73,7 +81,7 @@ export default function StockInventory() {
   // blended average, so a premium type doesn't get under/over-valued.
   const avgPriceByProduct = useMemo(() => {
     const sums = {}, counts = {};
-    for (const tx of txs) {
+    for (const tx of activeTxs) {
       if (!tx.product_id) continue;
       sums[tx.product_id] = (sums[tx.product_id] || 0) + Number(tx.price_per_kg || 0);
       counts[tx.product_id] = (counts[tx.product_id] || 0) + 1;
@@ -81,7 +89,7 @@ export default function StockInventory() {
     const out = {};
     for (const id in sums) out[id] = sums[id] / counts[id];
     return out;
-  }, [txs]);
+  }, [activeTxs]);
 
   function productRows(byProduct) {
     return Object.entries(byProduct)
