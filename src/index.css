@@ -18,10 +18,11 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* The printer is loaded with a normal FULL A4 sheet, LANDSCAPE orientation
-   (wider than tall — 297mm across, 210mm top-to-bottom). */
+/* The printer is loaded with a normal FULL A4 sheet, PORTRAIT orientation
+   (taller than wide — 210mm across, 297mm top-to-bottom, the standard way
+   A4 paper sits). */
 @page {
-  size: A4 landscape;
+  size: A4 portrait;
   margin: 0;
 }
 
