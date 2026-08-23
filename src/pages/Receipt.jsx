@@ -34,6 +34,91 @@ const FONT_TITLE = { fontFamily: "'Khmer OS Bokor', 'Khmer OS Muol Light', serif
 const FONT_BOLD = { fontFamily: "'Khmer OS Battambang', 'Khmer OS', sans-serif" };
 const FONT_BODY = { fontFamily: "'Khmer OS', 'Khmer OS Battambang', sans-serif" };
 
+// A wide gap between the Khmer word and the English word on the same line,
+// matching the spacing used on the real paper coupon for the "own side"
+// field (e.g. "អ្នកទិញ              Buyer") — kept as one constant so both
+// the Buy and Sell version of that line line up the same way.
+const LABEL_GAP = " ".repeat(14);
+
+// ---------------------------------------------------------------------------
+// Every piece of text on the ticket, and every adjustable style knob, lives
+// here as ONE plain object — this is what the Owner-only Receipt Template
+// page (ReceiptTemplateEditor.jsx) reads, edits, and saves (as JSON, under
+// the existing generic `system_settings` table, key "receipt_template" — no
+// new database table needed). Printing always merges whatever was saved
+// onto these defaults (see mergeReceiptTemplate below), so a ticket never
+// breaks just because a field was added here after someone already saved a
+// customized template.
+// ---------------------------------------------------------------------------
+export const DEFAULT_RECEIPT_TEMPLATE = {
+  labels: {
+    ticketTypeBuyEn: "WEIGHT TICKET / IMPORT",
+    ticketTypeBuyKh: "ទិញចូល",
+    ticketTypeSellEn: "WEIGHT TICKET / EXPORT",
+    ticketTypeSellKh: "លក់ចេញ",
+    numberInEn: "Number in",
+    numberInKh: "លេខរៀង",
+    dateEn: "Date",
+    dateKh: "ថ្ងៃ ខែ ឆ្នាំ",
+    productEn: "Product",
+    productKh: "ទំនិញ",
+    driverNameEn: "Driver Name",
+    driverNameKh: "ឈ្មោះអ្នកបើកបរ",
+    sellerEn: "Seller",
+    sellerKh: "អ្នកលក់",
+    buyerEn: "Buyer",
+    buyerKh: "អ្នកទិញ",
+    itemEn: "Item",
+    itemKh: "ចូល/ចេញ",
+    truckNumberEn: "Truck Number",
+    truckNumberKh: "លេខឡាន",
+    weightDateEn: "Date",
+    weightDateKh: "ថ្ងៃ ខែ ឆ្នាំ",
+    timeEn: "Time",
+    timeKh: "ពេលវេលា",
+    weightEn: "Weight",
+    weightKh: "ទំងន់",
+    inEn: "IN",
+    inKh: "ចូល",
+    outEn: "OUT",
+    outKh: "ចេញ",
+    netWEn: "NET W.",
+    netWKh: "ទំងន់សុទ្ធ",
+    priceEn: "PRICE",
+    priceKh: "តម្លៃ",
+    amountEn: "AMOUNT",
+    amountKh: "តម្លៃសរុប",
+    kgLabel: "Kg",
+    operatorEn: "Operator",
+    operatorKh: "អ្នកថ្លឹង",
+    driverEn: "Driver",
+    driverKh: "អ្នកបើកបរ",
+  },
+  style: {
+    headerAlign: "center",
+    titleSizePx: 30,
+    titleColor: "#0f172a",
+    subLineSizePx: 18,
+    subLineColor: "#0f172a",
+    ticketTypeSizePx: 16,
+    labelColor: "#334155",
+    valueColor: "#0f172a",
+    valueBold: true,
+    bodyFontSizePx: 14,
+  },
+};
+
+// Deep-merges a saved template (possibly missing fields added after it was
+// last saved, or entirely null/corrupt) onto the defaults above, so both
+// the printed ticket and the editor always have every key filled in.
+export function mergeReceiptTemplate(saved) {
+  const s = saved || {};
+  return {
+    labels: { ...DEFAULT_RECEIPT_TEMPLATE.labels, ...(s.labels || {}) },
+    style: { ...DEFAULT_RECEIPT_TEMPLATE.style, ...(s.style || {}) },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Exact replica of Baitang's real printed weight ticket (a physical carbon-
 // copy coupon book before this app existed) — verified field-for-field,
@@ -42,9 +127,14 @@ const FONT_BODY = { fontFamily: "'Khmer OS', 'Khmer OS Battambang', sans-serif" 
 // "Import" coupon used when buying from a farmer, and an "Export" coupon
 // used when selling to a buyer — which one prints is decided by
 // isBuy below, exactly matching the BUY/SELL ticket type already used
-// throughout the rest of the app.
+// throughout the rest of the app. Every word and every size/color below
+// comes from `tpl` (see DEFAULT_RECEIPT_TEMPLATE above) instead of being
+// hardcoded, so the Owner-only Receipt Template page can change any of it.
 // ---------------------------------------------------------------------------
-function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, companyPhoneLine, productName, hasWeighInOut, inStamp, outStamp }) {
+export function ExactWeightTicket({ tx, isBuy, tpl, companyNameKh, companyAddressKh, companyPhoneLine, productName, hasWeighInOut, inStamp, outStamp }) {
+  const L = tpl.labels;
+  const S = tpl.style;
+
   // "លេខរៀង / Number in" on the real paper coupon is the sequential number
   // on the guard-issued queue slip a farmer/truck already holds when they
   // arrive (see the "Quality Ticket No." field on the Weigh-In screen) —
@@ -58,51 +148,54 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
   // whichever staff member recorded this ticket (tx.recorded_by_name) —
   // falling back to the company's own name only for older tickets that
   // were created before that field existed and never had a name recorded.
-  const counterpartyLabelKh = isBuy ? "អ្នកលក់" : " អ្នកទិញ";
-  const counterpartyLabelEn = isBuy ? "Seller" : "Buyer";
-  const ownSideLabel = isBuy ? "អ្នកទិញ              Buyer" : "អ្នកលក់              Seller";
+  const counterpartyLabelKh = isBuy ? L.sellerKh : ` ${L.buyerKh}`;
+  const counterpartyLabelEn = isBuy ? L.sellerEn : L.buyerEn;
+  const ownSideLabel = isBuy ? `${L.buyerKh}${LABEL_GAP}${L.buyerEn}` : `${L.sellerKh}${LABEL_GAP}${L.sellerEn}`;
   const ownSideName = tx.recorded_by_name || companyNameKh;
 
   const cell = "border border-slate-900 px-2 py-1";
+  const labelStyle = { ...FONT_BODY, color: S.labelColor };
+  const valueStyle = { color: S.valueColor, fontWeight: S.valueBold ? 700 : 500 };
+  const bodyPx = { fontSize: `${S.bodyFontSizePx}px` };
 
   return (
-    <div>
+    <div style={bodyPx}>
       {/* Header — company name/address/phone, exact wording and fonts from
           the real coupon. */}
-      <div className="text-center">
-        <p className="text-3xl font-bold" style={FONT_TITLE}>{companyNameKh}</p>
-        <p className="text-lg font-bold" style={FONT_BOLD}>{companyAddressKh}</p>
-        <p className="text-lg font-bold" style={FONT_BOLD}>{companyPhoneLine}</p>
-        <p className="mt-1 text-base font-bold">
+      <div style={{ textAlign: S.headerAlign }}>
+        <p className="font-bold" style={{ ...FONT_TITLE, fontSize: `${S.titleSizePx}px`, color: S.titleColor }}>{companyNameKh}</p>
+        <p className="font-bold" style={{ ...FONT_BOLD, fontSize: `${S.subLineSizePx}px`, color: S.subLineColor }}>{companyAddressKh}</p>
+        <p className="font-bold" style={{ ...FONT_BOLD, fontSize: `${S.subLineSizePx}px`, color: S.subLineColor }}>{companyPhoneLine}</p>
+        <p className="mt-1 font-bold" style={{ fontSize: `${S.ticketTypeSizePx}px` }}>
           {isBuy
-            ? <>WEIGHT TICKET / IMPORT ( <span style={FONT_BODY}>ទិញចូល</span> )</>
-            : <>WEIGHT TICKET / EXPORT ( <span style={FONT_BODY}>លក់ចេញ</span> )</>}
+            ? <>{L.ticketTypeBuyEn} ( <span style={FONT_BODY}>{L.ticketTypeBuyKh}</span> )</>
+            : <>{L.ticketTypeSellEn} ( <span style={FONT_BODY}>{L.ticketTypeSellKh}</span> )</>}
         </p>
       </div>
 
       {/* Info block — two label/value columns, same order as the coupon. */}
-      <table className="mt-2 w-full text-sm">
+      <table className="mt-2 w-full" style={bodyPx}>
         <tbody>
           <tr>
-            <td className="w-[13%] whitespace-nowrap py-0.5 align-top" style={FONT_BODY}>លេខរៀង</td>
-            <td className="w-[13%] py-0.5 align-top text-slate-600">Number in</td>
-            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top font-medium">{numberIn}</td>
-            <td className="w-[26%] whitespace-nowrap py-0.5 pl-3 align-top" style={FONT_BODY}>ថ្ងៃ ខែ ឆ្នាំ&nbsp;&nbsp;&nbsp;Date</td>
-            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top font-medium">{tx.tx_date}</td>
+            <td className="w-[13%] whitespace-nowrap py-0.5 align-top" style={labelStyle}>{L.numberInKh}</td>
+            <td className="w-[13%] py-0.5 align-top" style={{ color: S.labelColor }}>{L.numberInEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{numberIn}</td>
+            <td className="w-[26%] whitespace-nowrap py-0.5 pl-3 align-top" style={labelStyle}>{L.dateKh}&nbsp;&nbsp;&nbsp;{L.dateEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{tx.tx_date}</td>
           </tr>
           <tr>
-            <td className="py-0.5 align-top" style={FONT_BODY}>ទំនិញ</td>
-            <td className="py-0.5 align-top text-slate-600">Product</td>
-            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{productName}</td>
-            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={FONT_BODY}>ឈ្មោះអ្នកបើកបរ Driver Name</td>
-            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{tx.driver_name || "—"}</td>
+            <td className="py-0.5 align-top" style={labelStyle}>{L.productKh}</td>
+            <td className="py-0.5 align-top" style={{ color: S.labelColor }}>{L.productEn}</td>
+            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{productName}</td>
+            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={labelStyle}>{L.driverNameKh} {L.driverNameEn}</td>
+            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{tx.driver_name || "—"}</td>
           </tr>
           <tr>
-            <td className="whitespace-nowrap py-0.5 align-top" style={FONT_BODY}>{counterpartyLabelKh}</td>
-            <td className="py-0.5 align-top text-slate-600">{counterpartyLabelEn}</td>
-            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{tx.partyName}</td>
-            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={FONT_BODY}>{ownSideLabel}</td>
-            <td className="border-b border-slate-500 py-0.5 align-top font-medium">{ownSideName}</td>
+            <td className="whitespace-nowrap py-0.5 align-top" style={labelStyle}>{counterpartyLabelKh}</td>
+            <td className="py-0.5 align-top" style={{ color: S.labelColor }}>{counterpartyLabelEn}</td>
+            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{tx.partyName}</td>
+            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={labelStyle}>{ownSideLabel}</td>
+            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{ownSideName}</td>
           </tr>
         </tbody>
       </table>
@@ -110,58 +203,58 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
       {/* Weight grid — Item / Truck Number / Date / Time / Weight, same 5
           columns, IN then OUT then NET W. / PRICE / AMOUNT, same as the
           coupon's own table. */}
-      <table className="mt-2 w-full border-collapse text-sm">
+      <table className="mt-2 w-full border-collapse" style={bodyPx}>
         <thead>
           <tr style={FONT_BODY}>
-            <th className={`${cell} w-[13%] font-normal`}>ចូល/ចេញ Item</th>
-            <th className={`${cell} w-[19%] font-normal`}>លេខឡាន Truck Number</th>
-            <th className={`${cell} w-[16%] font-normal`}>ថ្ងៃ ខែ ឆ្នាំ Date</th>
-            <th className={`${cell} w-[24%] font-normal`}>ពេលវេលា Time</th>
-            <th className={`${cell} w-[21%] font-normal`} colSpan={2}>ទំងន់ Weight</th>
+            <th className={`${cell} w-[13%] font-normal`}>{L.itemKh} {L.itemEn}</th>
+            <th className={`${cell} w-[19%] font-normal`}>{L.truckNumberKh} {L.truckNumberEn}</th>
+            <th className={`${cell} w-[16%] font-normal`}>{L.weightDateKh} {L.weightDateEn}</th>
+            <th className={`${cell} w-[24%] font-normal`}>{L.timeKh} {L.timeEn}</th>
+            <th className={`${cell} w-[21%] font-normal`} colSpan={2}>{L.weightKh} {L.weightEn}</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td className={cell} style={FONT_BODY}>ចូល&nbsp;&nbsp;&nbsp;&nbsp;IN</td>
+            <td className={cell} style={FONT_BODY}>{L.inKh}&nbsp;&nbsp;&nbsp;&nbsp;{L.inEn}</td>
             <td className={cell}>{tx.car_plate || "—"}</td>
             <td className={cell}>{hasWeighInOut ? inStamp.date : "—"}</td>
             <td className={cell}>{hasWeighInOut ? inStamp.time : "—"}</td>
             <td className={`${cell} text-right font-medium`}>{hasWeighInOut ? fmt2(tx.gross_kg) : "—"}</td>
-            <td className={`${cell} text-center font-bold`}>Kg</td>
+            <td className={`${cell} text-center font-bold`}>{L.kgLabel}</td>
           </tr>
           <tr>
-            <td className={cell} style={FONT_BODY}>ចេញ&nbsp;&nbsp;&nbsp;OUT</td>
+            <td className={cell} style={FONT_BODY}>{L.outKh}&nbsp;&nbsp;&nbsp;{L.outEn}</td>
             <td className={cell}>{tx.car_plate || "—"}</td>
             <td className={cell}>{hasWeighInOut ? outStamp.date : "—"}</td>
             <td className={cell}>{hasWeighInOut ? outStamp.time : "—"}</td>
             <td className={`${cell} text-right font-medium`}>{hasWeighInOut ? fmt2(tx.tare_kg) : "—"}</td>
-            <td className={`${cell} text-center font-bold`}>Kg</td>
+            <td className={`${cell} text-center font-bold`}>{L.kgLabel}</td>
           </tr>
           <tr>
-            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>ទំងន់សុទ្ធ&nbsp;&nbsp;&nbsp;&nbsp;NET W.</td>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>{L.netWKh}&nbsp;&nbsp;&nbsp;&nbsp;{L.netWEn}</td>
             <td className={`${cell} text-right font-bold`}>{fmt2(tx.quantity_kg)}</td>
-            <td className={`${cell} text-center font-bold`}>Kg</td>
+            <td className={`${cell} text-center font-bold`}>{L.kgLabel}</td>
           </tr>
           {/* A ticket sent out for pricing later (price_per_kg not yet set)
               never had a real amount to print — showing "0 ៛" here would
               read as a completed, free transaction. Print a plain dash
               instead so it's obviously still pending. */}
           <tr>
-            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃ&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRICE</td>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>{L.priceKh}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{L.priceEn}</td>
             <td className={`${cell} text-right font-medium`} colSpan={2}>{tx.price_per_kg != null ? fmtRiel(tx.price_per_kg) : "—"}</td>
           </tr>
           <tr>
-            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃសរុប AMOUNT</td>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>{L.amountKh} {L.amountEn}</td>
             <td className={`${cell} text-right font-bold`} colSpan={2}>{tx.price_per_kg != null ? fmtRiel(tx.amount) : "—"}</td>
           </tr>
           <tr>
             <td className="pt-6 pb-1 text-center" colSpan={2}>
               <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
-              <span style={FONT_BODY}>អ្នកថ្លឹង Operator</span>
+              <span style={FONT_BODY}>{L.operatorKh} {L.operatorEn}</span>
             </td>
             <td className="pt-6 pb-1 text-center" colSpan={4}>
               <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
-              <span style={FONT_BODY}>អ្នកបើកបរ Driver</span>
+              <span style={FONT_BODY}>{L.driverKh} {L.driverEn}</span>
             </td>
           </tr>
         </tbody>
@@ -192,6 +285,15 @@ export default function Receipt({ tx, onDone }) {
   const companyNameKh = settings.company_name_kh || "ប៉ៃតង កម្ពុជា";
   const companyAddressKh = settings.company_address || "ភូមិព្រៃទទឹង ឃុំរាំងកេសី ស្រុកសង្កែ ខេត្តបាត់ដំបង";
   const companyPhoneLine = settings.company_phone ? `Tel: ${settings.company_phone}` : "Tel: 012 37 36 396 / 088 96 666 52";
+
+  // The Owner's customized wording/style (Receipt Template page), parsed
+  // from JSON and merged onto the built-in defaults — falls back to plain
+  // defaults if nothing was ever saved, or if the saved JSON is corrupt.
+  let savedTpl = null;
+  if (settings.receipt_template) {
+    try { savedTpl = JSON.parse(settings.receipt_template); } catch { savedTpl = null; }
+  }
+  const tpl = mergeReceiptTemplate(savedTpl);
 
   // Only tickets that went through Weighing Tickets (Weigh In -> Finish
   // Ticket) carry separate gross/tare weighings — a manually-entered Buy/
@@ -225,6 +327,7 @@ export default function Receipt({ tx, onDone }) {
           <ExactWeightTicket
             tx={tx}
             isBuy={isBuy}
+            tpl={tpl}
             companyNameKh={companyNameKh}
             companyAddressKh={companyAddressKh}
             companyPhoneLine={companyPhoneLine}
