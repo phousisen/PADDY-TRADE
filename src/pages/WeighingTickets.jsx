@@ -123,31 +123,45 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // works too.
   const [productOptions] = useState(() => getCachedProducts());
 
-  // Farmers/buyers already on file for this ticket type (BUY -> supplier,
-  // SELL -> buyer) — this is the actual shortcut being asked for: when the
-  // SAME person brings in several trucks, staff can now just start typing
-  // their name, pick them from the suggestions, and their phone number
-  // fills in on its own instead of asking "what's your phone number again"
-  // for every single truck. Only name + phone autofill this way on
-  // purpose — plate/driver/product still need to be entered per truck,
-  // since those genuinely differ load to load.
-  const partyOptions = useMemo(
-    () => getCachedParties().filter((p) => p.type === (type === "BUY" ? "supplier" : "buyer")),
-    [type]
-  );
+  // "Use previous Seller/Buyer" button — the actual shortcut being asked
+  // for: when the SAME person brings in several trucks back to back, staff
+  // shouldn't have to ask their name and phone number again for every
+  // single truck. One click grabs whoever was most recently entered as a
+  // seller/buyer (of the matching Buy/Sell type) from this station's own
+  // ticket history and fills in ONLY their name + phone — plate, driver,
+  // and product are left alone since those genuinely differ truck to
+  // truck, even for the same person.
+  const previousParty = useMemo(() => {
+    const matchType = type === "BUY" ? "supplier" : "buyer";
+    const candidates = getCachedTickets()
+      .filter((t) => t.type === type && t.party_name && (t.phone || t.party_id))
+      .filter((t) => !locationId || t.location_id === locationId)
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    if (candidates.length === 0) return null;
+    const last = candidates[0];
+    // Pull the freshest phone/bank details from the party cache if we have
+    // them (ticket history only guarantees the name), falling back to
+    // whatever was stored on the ticket itself.
+    const cachedMatch = getCachedParties().find((p) => p.type === matchType && p.id === last.party_id);
+    return {
+      name: last.party_name,
+      phone: cachedMatch?.phone || last.phone || "",
+      bankName: cachedMatch?.bank_name || last.bank_name || "",
+      bankAccount: cachedMatch?.bank_account || last.bank_account || "",
+      bankQrUrl: cachedMatch?.bank_qr_url || last.bank_qr_url || null,
+    };
+  }, [type, locationId]);
 
-  function handlePartyNameChange(value) {
-    setPartyName(value);
-    const match = partyOptions.find((p) => (p.name || "").trim().toLowerCase() === value.trim().toLowerCase());
-    if (match) {
-      if (match.phone) setPhone(match.phone);
-      setPhoneLookupMsg(match.name ? `Found: ${match.name}` : "");
-      setSavedBank(
-        match.bank_name || match.bank_account || match.bank_qr_url
-          ? { bankName: match.bank_name || "", bankAccount: match.bank_account || "", bankQrUrl: match.bank_qr_url || null }
-          : null
-      );
-    }
+  function usePreviousParty() {
+    if (!previousParty) return;
+    setPartyName(previousParty.name || "");
+    setPhone(previousParty.phone || "");
+    setPhoneLookupMsg(previousParty.phone ? `Filled in: ${previousParty.name}` : "");
+    setSavedBank(
+      previousParty.bankName || previousParty.bankAccount || previousParty.bankQrUrl
+        ? { bankName: previousParty.bankName, bankAccount: previousParty.bankAccount, bankQrUrl: previousParty.bankQrUrl }
+        : null
+    );
   }
 
   // Baitang's paper tickets come from a pre-numbered booklet, used in
@@ -285,18 +299,20 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           )}
         </div>
         <div className="col-span-2">
-          <label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label>
-          <input
-            list="party-name-options"
-            value={partyName}
-            onChange={(e) => handlePartyNameChange(e.target.value)}
-            className={inputCls}
-            placeholder="Start typing — repeat farmers/buyers show up here"
-          />
-          <datalist id="party-name-options">
-            {partyOptions.map((p) => <option key={p.id} value={p.name} />)}
-          </datalist>
-          <p className="mt-1 text-[11px] text-slate-400">Picking a name already on file fills in their phone number automatically</p>
+          <div className="mb-1 flex items-center justify-between">
+            <label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label>
+            {previousParty && (
+              <button
+                type="button"
+                onClick={usePreviousParty}
+                className="mb-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
+                title={`Fill in name + phone for ${previousParty.name}`}
+              >
+                Use previous {type === "BUY" ? "seller" : "buyer"}: {previousParty.name}
+              </button>
+            )}
+          </div>
+          <input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} />
         </div>
         <div>
           <label className={labelCls}>Product (paddy type)</label>
