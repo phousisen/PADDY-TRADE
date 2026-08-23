@@ -18,6 +18,15 @@ input[type="number"] {
   appearance: textfield;
 }
 
+/* Paper size locked to match the real ticket printer exactly (A4 portrait,
+   same margins as the source coupon .xls page setup) — without this the
+   browser's own print dialog defaults to Letter size in some regions,
+   which throws off the printer's custom paper alignment. */
+@page {
+  size: 210mm 297mm;
+  margin: 5mm 6mm 4mm 3mm;
+}
+
 @media print {
   .no-print { display: none !important; }
   body { background: white !important; }
@@ -25,5 +34,7 @@ input[type="number"] {
     box-shadow: none !important;
     border: none !important;
     max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 !important;
   }
 }
