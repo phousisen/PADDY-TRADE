@@ -169,14 +169,16 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // after whatever was last typed in for that location. Staff can still
   // edit it (a spoiled ticket, a different booklet, etc.) — this only
   // fills it in when it's still blank, so it never overwrites something
-  // they already typed.
+  // they already typed. Selling to a buyer doesn't use this paper quality
+  // ticket booklet at all — that's a Buy-from-farmer thing only — so this
+  // is skipped entirely on the Sell side.
   useEffect(() => {
-    if (locationId && !paperTicketNo) {
+    if (type === "BUY" && locationId && !paperTicketNo) {
       const suggested = suggestNextPaperTicketNo(locationId);
       if (suggested) setPaperTicketNo(suggested);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId]);
+  }, [locationId, type]);
 
   // Looks up a farmer/buyer that already self-registered (via the QR
   // registration page) or has been entered before, by phone number, and
@@ -229,7 +231,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setError("Please fill in location, party name, product, and plate number.");
       return;
     }
-    if (!paperTicketNo.trim()) {
+    if (type === "BUY" && !paperTicketNo.trim()) {
       setError("Please enter the number printed on the paper quality ticket.");
       return;
     }
@@ -276,12 +278,18 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </div>
       )}
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={labelCls}>Quality Ticket No.</label>
-          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
-          <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong</p>
-        </div>
-        <div><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
+        {/* Not shown for Sell — the paper quality ticket booklet is only
+            used when buying from a farmer, so this field (and its
+            required-field check below) is skipped entirely on the Sell
+            side. */}
+        {type === "BUY" && (
+          <div>
+            <label className={labelCls}>Quality Ticket No.</label>
+            <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
+            <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong</p>
+          </div>
+        )}
+        <div className={type === "BUY" ? "" : "col-span-2"}><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
         <div className="col-span-2">
           <label className={labelCls}>Phone (type it and tab/click away to look them up)</label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={inputCls} />
@@ -325,9 +333,15 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       </div>
 
       <div className="mt-4">
+        {/* Buy: the truck shows up already loaded with paddy from the
+            farmer, so this first weighing is the heavier "gross" number.
+            Sell: it's the reverse — the truck shows up empty and only
+            gets loaded (for delivery to the buyer) after Finish Ticket,
+            so this first weighing is actually the lighter, empty weight.
+            The label follows which one is physically true right now. */}
         <WeightField
           locationId={locationId}
-          label="Gross Weight — loaded truck (kg)"
+          label={type === "BUY" ? "Gross Weight — loaded truck (kg)" : "Weight — empty truck (kg)"}
           value={grossWeight}
           onChange={setGrossWeight}
           isAdmin={isAdmin}
@@ -382,7 +396,10 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.id]);
 
-  const netKg = Math.max(0, (ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0));
+  // Buy arrives loaded then leaves empty (gross bigger); Sell arrives
+  // empty then leaves loaded (the second weighing bigger) — Math.abs
+  // handles both instead of clamping Sell's net weight to 0.
+  const netKg = Math.abs((ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
   const staffFeeAmt = isBuy ? (parseFloat(staffFee) || 0) : 0;
   const subtotal = Math.max(0, payableKg * (parseFloat(pricePerKg) || 0) - staffFeeAmt);
@@ -401,8 +418,13 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
   async function submitFinish() {
     const tareKg = parseFloat(tareWeight);
-    if (!pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
-    if (!tareKg || tareKg <= 0) { setError("Please enter the empty truck's weight."); return; }
+    // Buy: the price was already agreed with the farmer on the paper
+    // ticket, so it's required here. Sell: the price to the buyer often
+    // isn't settled yet at this point — the ticket can be finished with
+    // price left blank (0), and corrected later from the Transactions
+    // list once it's actually agreed.
+    if (isBuy && !pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
+    if (!tareKg || tareKg <= 0) { setError(isBuy ? "Please enter the empty truck's weight." : "Please enter the loaded truck's weight."); return; }
     // Photo of the paper ticket is off while testing — no camera on this
     // computer yet. Re-add this check once photos are actually possible.
     setError("");
@@ -439,14 +461,17 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   }
 
   return (
-    <Modal title={`Finish Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate} · Gross: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
-      {/* 1. Weigh Out — the physical action happening right now */}
+    <Modal title={`Finish Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate} · ${isBuy ? "Gross" : "Weighed in"}: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
+      {/* 1. Weigh Out — the physical action happening right now. Buy: the
+          truck is empty now, having dropped off its paddy. Sell: it's the
+          opposite — the truck was empty at weigh-in and is now loaded up
+          for delivery to the buyer. */}
       <div className="mb-5">
-        <SectionHeader num={1} title="Weigh Out" hint="The truck is empty and on the scale right now" />
+        <SectionHeader num={1} title="Weigh Out" hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
         <WeightField
           locationId={ticket.location_id}
-          label="Tare Weight — empty truck (kg)"
-          scaleLabel="Live Scale Weight (empty truck)"
+          label={isBuy ? "Tare Weight — empty truck (kg)" : "Weight — loaded truck (kg)"}
+          scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
           value={tareWeight}
           onChange={setTareWeight}
           isAdmin={isAdmin}
@@ -467,10 +492,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
       {/* 3. Price & Total — everything that feeds the amount owed, with the running total right below it */}
       <div className="mb-5">
-        <SectionHeader num={3} title="Price & Total" hint="What this truckload is worth" />
+        <SectionHeader num={3} title="Price & Total" hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
         <div className="rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
-          <label className="mb-1 block text-sm font-semibold text-brand-800">Price per kg (Riel) — the price agreed on the paper ticket</label>
-          <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder="e.g. 1090"
+          <label className="mb-1 block text-sm font-semibold text-brand-800">
+            {isBuy ? "Price per kg (Riel) — the price agreed on the paper ticket" : "Price per kg (Riel) — optional, if already agreed"}
+          </label>
+          <input type="number" min="0" step="1" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)} placeholder={isBuy ? "e.g. 1090" : "leave blank if not decided yet"}
             className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -597,7 +624,7 @@ function TicketSlip({ ticket, onClose }) {
     api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
-  const netKg = ticket.gross_kg != null && ticket.tare_kg != null ? Math.max(0, ticket.gross_kg - ticket.tare_kg) : null;
+  const netKg = ticket.gross_kg != null && ticket.tare_kg != null ? Math.abs(ticket.gross_kg - ticket.tare_kg) : null;
   const inStamp = splitCambodiaTimestamp(ticket.gross_at);
   const outStamp = splitCambodiaTimestamp(ticket.tare_at);
   const isPriced = !!ticket.priced_at;
