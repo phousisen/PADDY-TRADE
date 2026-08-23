@@ -18,11 +18,15 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* The printer is loaded with a normal FULL A4 sheet, PORTRAIT orientation
-   (taller than wide — 210mm across, 297mm top-to-bottom, the standard way
-   A4 paper sits). */
+/* Real measured size of the actual continuous-feed paper loaded in the
+   printer, taken from a photo with the paper held right-side-up (text
+   reading normally): 22cm wide x 14cm tall (220mm x 140mm). Wider than
+   tall — a natural fit for this ticket's own wide table layout (IN/OUT
+   rows with several columns side by side). The first measurement photo
+   had the paper rotated for the shot, which read the two numbers
+   backwards. */
 @page {
-  size: A4 portrait;
+  size: 220mm 140mm;
   margin: 0;
 }
 
@@ -46,12 +50,13 @@ input[type="number"] {
     visibility: visible !important;
   }
 
-  /* Width locked to half of an A4 sheet's usable width, pinned to the
-     top-left of the page with the same margins as the source coupon
-     file, so the ticket occupies roughly the top half of the sheet and
-     the print stays crisp instead of being auto-scaled to fill all of
-     A4. Height is intentionally NOT capped — better to run slightly
-     past halfway than to silently clip a field off a real ticket. */
+  /* Width matched to the real paper: 220mm wide minus a small margin on
+     each side, pinned to the top-left corner. This is roomier than the
+     130mm this was briefly narrowed to under the wrong (portrait) reading
+     of the measurement — the table has plenty of width to lay out
+     comfortably now that the paper's real shape is confirmed landscape.
+     Height is NOT capped — better to run long than silently clip a field,
+     though at 140mm tall the ticket should comfortably fit in one pass. */
   #receipt-root {
     position: absolute !important;
     top: 0 !important;
@@ -59,10 +64,10 @@ input[type="number"] {
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
-    width: 200mm !important;
-    max-width: 200mm !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
     height: auto !important;
-    margin: 5mm 5mm 0 5mm !important;
+    margin: 5mm !important;
     padding: 3mm 4mm !important;
     overflow: visible !important;
     page-break-inside: avoid;
