@@ -18,23 +18,60 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* Paper size locked to match the real ticket printer exactly (A4 portrait,
-   same margins as the source coupon .xls page setup) — without this the
-   browser's own print dialog defaults to Letter size in some regions,
-   which throws off the printer's custom paper alignment. */
+/* The printer is loaded with normal A4 paper — the ticket itself only needs
+   to fill the TOP HALF of that sheet (matching the old paper coupon book's
+   size), not be stretched across the whole page. */
 @page {
   size: 210mm 297mm;
-  margin: 5mm 6mm 4mm 3mm;
+  margin: 0;
 }
 
 @media print {
   .no-print { display: none !important; }
   body { background: white !important; }
+
+  /* The on-screen layout uses h-screen/overflow-hidden/flex so the page UI
+     fits the browser window — none of that makes sense on paper, and
+     forcing 100vh onto a printed page is what was making the ticket get
+     stretched and rasterized (blurry/pixelated) to fill the full A4 sheet.
+     Undo all of it for print so the ticket prints at its own natural,
+     crisp size instead. */
+  #receipt-page,
+  #receipt-page main {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Width locked to half of an A4 sheet's usable width, anchored to the
+     top-left of the page with the same margins as the source coupon file,
+     so the ticket occupies roughly the top half of the sheet and the
+     print stays crisp instead of being auto-scaled to fill all of A4.
+     Height is intentionally NOT capped — better to run slightly past
+     148.5mm than to silently clip a field off a real ticket. */
   #receipt-root {
     box-shadow: none !important;
     border: none !important;
-    max-width: 100% !important;
-    width: 100% !important;
-    padding: 0 !important;
+    border-radius: 0 !important;
+    width: 200mm !important;
+    max-width: 200mm !important;
+    height: auto !important;
+    margin: 5mm 5mm 0 5mm !important;
+    padding: 3mm 4mm !important;
+    overflow: visible !important;
+    page-break-inside: avoid;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Crisper text: no anti-alias fuzz, no fractional scaling from the
+     browser trying to fit content into a page size it doesn't match. */
+  #receipt-root, #receipt-root * {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 }
