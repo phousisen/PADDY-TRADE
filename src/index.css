@@ -18,11 +18,14 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* The printer is loaded with normal A4 paper — the ticket itself only needs
-   to fill the TOP HALF of that sheet (matching the old paper coupon book's
-   size), not be stretched across the whole page. */
+/* The printer is physically loaded with paper already cut to half of A4
+   (210mm x 148.5mm) — NOT full A4. Telling the browser the page is full
+   A4 (297mm tall) was the bug: the ticket content correctly fit on the
+   real half-sheet, but the browser still thought there was another
+   148.5mm of page left over, so it printed a second, mostly-blank sheet
+   to use it up. Matching @page to the real paper size fixes that. */
 @page {
-  size: 210mm 297mm;
+  size: 210mm 148.5mm;
   margin: 0;
 }
 
