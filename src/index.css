@@ -18,12 +18,13 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* Paper size for the printed ticket: 210mm x 140mm (updated from the
-   earlier 220mm x 140mm measurement — Owner confirmed the correct size).
-   Wider than tall — a natural fit for this ticket's own wide table layout
-   (IN/OUT rows with several columns side by side). */
+/* Standard A4 page (210mm x 297mm) — using the standard preset instead of
+   a custom page size, since some printers/browsers were silently falling
+   back to A4 anyway when a non-standard size was requested. The ticket
+   itself still only occupies the top 140mm of that A4 sheet (see
+   #receipt-root below), matching the Owner's actual paper. */
 @page {
-  size: 210mm 140mm;
+  size: A4;
   margin: 0;
 }
 
@@ -47,13 +48,19 @@ input[type="number"] {
     visibility: visible !important;
   }
 
-  /* Width matched to the 210mm-wide paper minus a small margin on each
-     side (200mm of actual content), centered horizontally on the page
-     with `left: 50%` + `transform: translateX(-50%)` rather than pinned
-     to the top-left corner — so there's an even gap on the left and right
-     no matter how the printer interprets the page. Height is NOT capped —
-     better to run long than silently clip a field, though at 140mm tall
-     the ticket should comfortably fit in one pass. */
+  /* Width matched to the 210mm-wide A4 page minus a small margin on each
+     side (196mm of actual content), centered horizontally with
+     `left: 50%` + `transform: translateX(-50%)` rather than pinned to the
+     top-left corner — so there's an even gap on the left and right no
+     matter how the printer interprets the page. Sits within the top
+     140mm of the A4 sheet (the Owner's actual paper height) — measured
+     with a real print render, the ticket's content lands around 130mm
+     tall with this padding/line-height, leaving a small safety margin
+     under the 140mm limit. (An earlier, roomier version of this padding
+     pushed the ticket past 140mm entirely, so this is deliberately kept
+     tight — the "words touching" complaint is fixed at the field level in
+     Receipt.jsx instead, capping any long name at 2 lines, rather than by
+     adding blanket padding everywhere.) */
   #receipt-root {
     position: absolute !important;
     top: 3mm !important;
@@ -62,15 +69,16 @@ input[type="number"] {
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
-    width: 200mm !important;
-    max-width: 200mm !important;
+    width: 196mm !important;
+    max-width: 196mm !important;
     height: auto !important;
     margin: 0 !important;
-    padding: 2mm 4mm !important;
+    padding: 2mm 5mm !important;
     overflow: visible !important;
     page-break-inside: avoid;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    line-height: 1.2;
   }
 
   /* Crisper text: no anti-alias fuzz, no fractional scaling from the
