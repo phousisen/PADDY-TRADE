@@ -322,6 +322,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
+  const [recordedByName, setRecordedByName] = useState(tx.recorded_by_name || "");
   const [note, setNote] = useState(tx.note || "");
   const [txDate, setTxDate] = useState(tx.tx_date || cambodiaDateStr());
   const [password, setPassword] = useState("");
@@ -359,6 +360,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
         staffFee: isBuy ? (parseFloat(staffFee) || 0) : 0,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
+        recordedByName: recordedByName.trim() || null,
         note: note.trim() || null,
         txDate,
         oldData: {
@@ -366,7 +368,8 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           party_id: tx.party_id, partyName: tx.partyName, quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
           amount: tx.amount, payment_status: tx.payment_status, quality_grade: tx.quality_grade, tax_applicable: tx.tax_applicable,
           tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
-          deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name, note: tx.note, tx_date: tx.tx_date,
+          deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name,
+          recorded_by_name: tx.recorded_by_name, note: tx.note, tx_date: tx.tx_date,
         },
       });
     } catch (err) {
@@ -444,6 +447,12 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
               <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
               <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Buyer" : "Seller"} <span className="text-slate-400">(staff who recorded this)</span></label>
+              <input value={recordedByName} onChange={(e) => setRecordedByName(e.target.value)} placeholder="Staff name"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              <p className="mt-1 text-[11px] text-slate-400">This is the name printed on the receipt's own "{isBuy ? "Buyer" : "Seller"}" line — not the {isBuy ? "farmer" : "buyer"} above.</p>
             </div>
           </div>
 
