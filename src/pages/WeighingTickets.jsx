@@ -19,6 +19,14 @@ import {
 // overwrite a farmer name staff already typed while waiting on it.
 const PHONE_LOOKUP_TIMEOUT_MS = 4000;
 
+// The paddy types every station should see right away, always offered
+// first and in this order, even on a brand new device with nothing
+// cached yet. Anything actually used before (typed in on any station,
+// once synced) is appended after these — see productOptions below —
+// and a brand new type typed in that isn't here yet just becomes a new
+// option for next time, same as it always has.
+const PADDY_TYPE_SEED = ["សែន ក្រអូប", "ផ្កា ម្លីះ", "ស្រង៉ែ", "ផ្កា រំដួល", "5451"];
+
 // Same bank list as the New Transaction form, so staff see the same
 // choices in both places — "Cash" is first since most farmer payouts at
 // the scale are cash in hand, not a bank transfer.
@@ -117,11 +125,28 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // waiting until Finish Ticket to show up.
   const [savedBank, setSavedBank] = useState(null);
   const { session } = useAuth();
-  // Paddy types staff have already used before, so the field suggests them
+  // Paddy types to choose from: the fixed starter list first, then
+  // whatever's actually been used before (typed in on any station, once
+  // synced) that isn't already one of those, so staff pick from a list
   // instead of everyone typing (and misspelling) the same names over and
-  // over — still a free-text field underneath, so a brand new type just
-  // works too.
-  const [productOptions] = useState(() => getCachedProducts());
+  // over — "+ Add new type…" below still lets a brand new type through.
+  const [productOptions] = useState(() => {
+    const seen = new Set();
+    const merged = [];
+    for (const name of PADDY_TYPE_SEED) {
+      const key = name.trim().toLowerCase();
+      if (!seen.has(key)) { seen.add(key); merged.push(name); }
+    }
+    for (const p of getCachedProducts()) {
+      const name = (p.name || "").trim();
+      const key = name.toLowerCase();
+      if (name && !seen.has(key)) { seen.add(key); merged.push(name); }
+    }
+    return merged;
+  });
+  // Whether the Product field is showing the dropdown list, or a text box
+  // for typing a brand new type not already on it.
+  const [productIsCustom, setProductIsCustom] = useState(false);
 
   // "Use previous Seller/Buyer" button — the actual shortcut being asked
   // for: when the SAME person brings in several trucks back to back, staff
@@ -162,6 +187,44 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         ? { bankName: previousParty.bankName, bankAccount: previousParty.bankAccount, bankQrUrl: previousParty.bankQrUrl }
         : null
     );
+  }
+
+  // Every seller/buyer already on file for this type (and this station, if
+  // one's picked) — not just the most recent one above — so the Name field
+  // can offer a searchable list of everyone staff have dealt with before,
+  // not only whoever the last truck happened to be.
+  const partyOptions = useMemo(() => {
+    const matchType = type === "BUY" ? "supplier" : "buyer";
+    const names = getCachedParties()
+      .filter((p) => p.type === matchType && (!locationId || p.location_id === locationId) && (p.name || "").trim())
+      .map((p) => p.name.trim());
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+  }, [type, locationId]);
+
+  // Fires on every keystroke in the Name field (not just a pick from the
+  // dropdown list — a browser datalist doesn't distinguish the two, and
+  // typing out an exact match by hand should work exactly the same way).
+  // The moment what's typed exactly matches someone already on file, pull
+  // in their phone + saved bank details too, the same as the phone lookup
+  // and "Use previous" button both already do — so picking a name from
+  // the list is a genuine one-step shortcut, not just the name by itself.
+  function handlePartyNameChange(value) {
+    setPartyName(value);
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    const matchType = type === "BUY" ? "supplier" : "buyer";
+    const match = getCachedParties().find(
+      (p) => p.type === matchType && (!locationId || p.location_id === locationId) && (p.name || "").trim().toLowerCase() === trimmed.toLowerCase()
+    );
+    if (match) {
+      setPhone(match.phone || "");
+      setPhoneLookupMsg(match.phone ? `Filled in: ${match.name}` : "");
+      setSavedBank(
+        match.bank_name || match.bank_account || match.bank_qr_url
+          ? { bankName: match.bank_name || "", bankAccount: match.bank_account || "", bankQrUrl: match.bank_qr_url || null }
+          : null
+      );
+    }
   }
 
   // Baitang's paper tickets come from a pre-numbered booklet, used in
@@ -320,14 +383,50 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
               </button>
             )}
           </div>
-          <input value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} />
+          <input
+            list="new-ticket-party-options"
+            value={partyName}
+            onChange={(e) => handlePartyNameChange(e.target.value)}
+            className={inputCls}
+            placeholder="Start typing to search, or type a new name"
+          />
+          <datalist id="new-ticket-party-options">
+            {partyOptions.map((name) => <option key={name} value={name} />)}
+          </datalist>
         </div>
         <div>
           <label className={labelCls}>Product (paddy type)</label>
-          <input list="paddy-type-options" value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="e.g. Sror Ngae" />
-          <datalist id="paddy-type-options">
-            {productOptions.map((p) => <option key={p.id} value={p.name} />)}
-          </datalist>
+          {productIsCustom ? (
+            <div>
+              <input
+                autoFocus
+                value={productName}
+                onChange={(e) => setProductName(e.target.value)}
+                className={inputCls}
+                placeholder="Type the new paddy type"
+              />
+              <button
+                type="button"
+                onClick={() => { setProductIsCustom(false); setProductName(""); }}
+                className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+              >
+                ← Back to list
+              </button>
+            </div>
+          ) : (
+            <select
+              value={productOptions.includes(productName) ? productName : ""}
+              onChange={(e) => {
+                if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
+                else setProductName(e.target.value);
+              }}
+              className={inputCls}
+            >
+              <option value="" disabled>Select paddy type…</option>
+              {productOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+              <option value="__other__">+ Add new type…</option>
+            </select>
+          )}
         </div>
         <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
       </div>
