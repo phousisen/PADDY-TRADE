@@ -927,10 +927,16 @@ export default function WeighingTickets() {
     // become a normal transaction and belongs in the Transactions list
     // instead, not on this board.
     let serverRows = null;
-    try {
-      serverRows = await api.getTickets({ locationId: effectiveLocationId || undefined, stages: ALL_STAGE_IDS });
-    } catch {
-      serverRows = null; // offline, or the request failed — fall back to the local cache below
+    // No connection at all — skip the attempt entirely instead of waiting
+    // out a request that can't succeed before falling back to the exact
+    // same cache below. This is what made the board feel slow to open
+    // right after this computer boots with no WiFi yet.
+    if (navigator.onLine) {
+      try {
+        serverRows = await api.getTickets({ locationId: effectiveLocationId || undefined, stages: ALL_STAGE_IDS });
+      } catch {
+        serverRows = null; // WiFi connected but not really working — fall back to the local cache below
+      }
     }
     const merged = serverRows ? mergeServerTickets(serverRows) : getCachedTickets();
     const visible = merged.filter((t) => ALL_STAGE_IDS.includes(t.stage) && (!effectiveLocationId || t.location_id === effectiveLocationId));
