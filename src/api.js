@@ -390,7 +390,31 @@ export const api = {
       destination,
       location_id: locationId,
     };
-    return insertOrFetchExisting("parties", row);
+    try {
+      return await insertOrFetchExisting("parties", row);
+    } catch (error) {
+      // Two devices (or two tickets on the same device, right after a
+      // long stretch offline) can both decide "this is a new supplier"
+      // for the same phone number at the same station before either one
+      // has synced. The database only allows one party per phone number
+      // per location (constraint parties_unique_phone_per_location) —
+      // when THAT specific rule is what failed, reuse the record that's
+      // already there instead of leaving the offline queue permanently
+      // stuck retrying an insert that can never succeed.
+      // (offlineQueue.js's runOp() checks whether the id it gets back
+      // here differs from the id it asked for, and fixes up anything
+      // already pointing at the id that didn't end up being used.)
+      if (phone && locationId && error?.code === "23505" && String(error?.message || "").includes("parties_unique_phone_per_location")) {
+        const { data: existing, error: fetchErr } = await supabase
+          .from("parties")
+          .select("*")
+          .eq("phone", phone)
+          .eq("location_id", locationId)
+          .limit(1);
+        if (!fetchErr && existing && existing.length) return existing[0];
+      }
+      throw error;
+    }
   },
 
   async updateParty(id, { bankName, bankAccount, bankQrUrl }) {
