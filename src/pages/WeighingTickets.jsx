@@ -270,14 +270,54 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     };
   }, [type, locationId]);
 
+  // previousParty above only ever finds someone whose ticket is STILL on
+  // the open board (arrived/weighed_in/priced/weighed_out/declined) — the
+  // moment a ticket is finished it becomes a transaction and drops off that
+  // board entirely, which used to make the "Use previous…" button vanish
+  // for Buy far more often than Sell (farmers' tickets tend to get finished
+  // same-day; a Sell ticket to a buyer more often sits open for a bit).
+  // This fills that gap by asking the server directly for the most recent
+  // FINISHED ticket of this type at this location — same shortcut, just
+  // covering full history instead of only what's still in progress. It's
+  // skipped entirely while offline and bounded to 1.5s, so it never adds
+  // any lag; worst case the button just doesn't show.
+  const [previousPartyFallback, setPreviousPartyFallback] = useState(null);
+  useEffect(() => {
+    setPreviousPartyFallback(null);
+    if (previousParty || !locationId || !navigator.onLine) return;
+    let cancelled = false;
+    (async () => {
+      const rows = await withTimeout(
+        api.getTickets({ locationId, stages: ["finalized"], limit: 20 }).catch(() => null),
+        1500,
+        null
+      );
+      if (cancelled || !rows) return;
+      const last = rows.find((t) => t.type === type && t.party_name && (t.phone || t.party_id));
+      if (!last) return;
+      const matchType = type === "BUY" ? "supplier" : "buyer";
+      const cachedMatch = getCachedParties().find((p) => p.type === matchType && p.id === last.party_id);
+      setPreviousPartyFallback({
+        name: last.party_name,
+        phone: cachedMatch?.phone || last.phone || "",
+        bankName: cachedMatch?.bank_name || last.bank_name || "",
+        bankAccount: cachedMatch?.bank_account || last.bank_account || "",
+        bankQrUrl: cachedMatch?.bank_qr_url || last.bank_qr_url || null,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [type, locationId, previousParty]);
+
+  const effectivePreviousParty = previousParty || previousPartyFallback;
+
   function usePreviousParty() {
-    if (!previousParty) return;
-    setPartyName(previousParty.name || "");
-    setPhone(previousParty.phone || "");
-    setPhoneLookupMsg(previousParty.phone ? `Filled in: ${previousParty.name}` : "");
+    if (!effectivePreviousParty) return;
+    setPartyName(effectivePreviousParty.name || "");
+    setPhone(effectivePreviousParty.phone || "");
+    setPhoneLookupMsg(effectivePreviousParty.phone ? `Filled in: ${effectivePreviousParty.name}` : "");
     setSavedBank(
-      previousParty.bankName || previousParty.bankAccount || previousParty.bankQrUrl
-        ? { bankName: previousParty.bankName, bankAccount: previousParty.bankAccount, bankQrUrl: previousParty.bankQrUrl }
+      effectivePreviousParty.bankName || effectivePreviousParty.bankAccount || effectivePreviousParty.bankQrUrl
+        ? { bankName: effectivePreviousParty.bankName, bankAccount: effectivePreviousParty.bankAccount, bankQrUrl: effectivePreviousParty.bankQrUrl }
         : null
     );
   }
@@ -476,14 +516,14 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         <div className="col-span-2">
           <div className="mb-1 flex items-center justify-between">
             <label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label>
-            {previousParty && (
+            {effectivePreviousParty && (
               <button
                 type="button"
                 onClick={usePreviousParty}
                 className="mb-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
-                title={`Fill in name + phone for ${previousParty.name}`}
+                title={`Fill in name + phone for ${effectivePreviousParty.name}`}
               >
-                Use previous {type === "BUY" ? "seller" : "buyer"}: {previousParty.name}
+                Use previous {type === "BUY" ? "seller" : "buyer"}: {effectivePreviousParty.name}
               </button>
             )}
           </div>
