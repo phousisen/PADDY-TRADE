@@ -396,10 +396,11 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.id]);
 
-  // Buy arrives loaded then leaves empty (gross bigger); Sell arrives
-  // empty then leaves loaded (the second weighing bigger) — Math.abs
-  // handles both instead of clamping Sell's net weight to 0.
-  const netKg = Math.abs((ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0));
+  // Buy: paddy weight is In minus Out (arrives loaded, leaves empty).
+  // Sell: it's Out minus In (arrives empty, leaves loaded for delivery).
+  const netKg = Math.max(0, isBuy
+    ? (ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0)
+    : (parseFloat(tareWeight) || 0) - (ticket.gross_kg || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
   const staffFeeAmt = isBuy ? (parseFloat(staffFee) || 0) : 0;
   const subtotal = Math.max(0, payableKg * (parseFloat(pricePerKg) || 0) - staffFeeAmt);
@@ -624,7 +625,11 @@ function TicketSlip({ ticket, onClose }) {
     api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
-  const netKg = ticket.gross_kg != null && ticket.tare_kg != null ? Math.abs(ticket.gross_kg - ticket.tare_kg) : null;
+  // Buy: In minus Out. Sell: Out minus In (see NewTicketModal/
+  // FinishTicketModal above for why the two are reversed).
+  const netKg = ticket.gross_kg != null && ticket.tare_kg != null
+    ? Math.max(0, ticket.type === "BUY" ? ticket.gross_kg - ticket.tare_kg : ticket.tare_kg - ticket.gross_kg)
+    : null;
   const inStamp = splitCambodiaTimestamp(ticket.gross_at);
   const outStamp = splitCambodiaTimestamp(ticket.tare_at);
   const isPriced = !!ticket.priced_at;
