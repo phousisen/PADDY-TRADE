@@ -295,6 +295,10 @@ export function addCachedProduct(product) {
 // load, or right after a successful sync) so the lookup caches used
 // offline stay reasonably fresh.
 export async function refreshLookupCaches() {
+  // No connection at all — skip straight out instead of spending up to
+  // ONLINE_LOOKUP_TIMEOUT_MS x2 waiting on requests that have no chance of
+  // succeeding. Whatever's already cached stays exactly as it was.
+  if (!navigator.onLine) return;
   const [parties, products] = await Promise.all([
     withTimeout(api.getParties().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null),
     withTimeout(api.getProducts().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null),
