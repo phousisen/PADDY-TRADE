@@ -68,23 +68,30 @@ function addCustomPaddyType(name) {
 // empty and grows as names get typed in on this device, via "+ Add new
 // name…", numbered the same way so staff can jump to a name by pressing
 // its number.
-const RECORDED_BY_NAMES_KEY = "ptw_recorded_by_names_v1";
-function getRecordedByNames() {
+//
+// Kept as a SEPARATE list per location (not one shared list device-wide),
+// since the staff working the scale — and so the names worth remembering —
+// are different from station to station. This only actually matters for an
+// HQ Admin who can switch the Location dropdown above between stations;
+// ordinary staff are always on their own single assigned location anyway.
+const RECORDED_BY_NAMES_KEY_PREFIX = "ptw_recorded_by_names_v1__";
+function getRecordedByNames(locationId) {
   try {
-    const raw = localStorage.getItem(RECORDED_BY_NAMES_KEY);
+    const raw = localStorage.getItem(RECORDED_BY_NAMES_KEY_PREFIX + (locationId || "none"));
     return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
-function addRecordedByName(name) {
+function addRecordedByName(locationId, name) {
   const trimmed = (name || "").trim();
   if (!trimmed) return;
   try {
-    const list = getRecordedByNames();
+    const key = RECORDED_BY_NAMES_KEY_PREFIX + (locationId || "none");
+    const list = getRecordedByNames(locationId);
     if (!list.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
       list.push(trimmed);
-      localStorage.setItem(RECORDED_BY_NAMES_KEY, JSON.stringify(list));
+      localStorage.setItem(key, JSON.stringify(list));
     }
   } catch {
     // Storage full/unavailable — worst case this device just re-offers
@@ -211,8 +218,18 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // logged-in account, since a station's login is often shared by several
   // people during a shift.
   const [recordedByName, setRecordedByName] = useState("");
-  const [recordedByOptions] = useState(() => getRecordedByNames());
+  // Recomputed whenever locationId changes (an HQ Admin picking a different
+  // station above) — see the per-location storage key above.
+  const recordedByOptions = useMemo(() => getRecordedByNames(locationId), [locationId]);
   const [recordedByIsCustom, setRecordedByIsCustom] = useState(recordedByOptions.length === 0);
+  // Switching location mid-form (Admin only) means the remembered-name list
+  // just changed under this field, so re-decide list-vs-typing mode and
+  // clear whatever name was picked for the old station — it isn't
+  // necessarily anyone at the new one.
+  useEffect(() => {
+    setRecordedByIsCustom(recordedByOptions.length === 0);
+    setRecordedByName("");
+  }, [locationId]);
 
   // "Use previous Seller/Buyer" button — the actual shortcut being asked
   // for: when the SAME person brings in several trucks back to back, staff
@@ -382,7 +399,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       // a no-op if it was already picked from the list.
       if (productIsCustom) addCustomPaddyType(productName);
       // Same for a newly-typed "Buyer"/"Seller" name.
-      if (recordedByIsCustom) addRecordedByName(recordedByName);
+      if (recordedByIsCustom) addRecordedByName(locationId, recordedByName);
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
