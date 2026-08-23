@@ -10,7 +10,7 @@ import {
   startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
-  onSyncStatusChange, pendingCountForTicket, getCachedProducts, getCachedParties, updatePartyOffline,
+  onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
   suggestNextPaperTicketNo, withTimeout,
 } from "../offlineQueue.js";
 
@@ -19,13 +19,48 @@ import {
 // overwrite a farmer name staff already typed while waiting on it.
 const PHONE_LOOKUP_TIMEOUT_MS = 4000;
 
-// The paddy types every station should see right away, always offered
-// first and in this order, even on a brand new device with nothing
-// cached yet. Anything actually used before (typed in on any station,
-// once synced) is appended after these — see productOptions below —
-// and a brand new type typed in that isn't here yet just becomes a new
-// option for next time, same as it always has.
+// The ONLY paddy types shown by default — deliberately just these 5, in
+// this order, not whatever else happens to already be sitting in the
+// products table from earlier testing/history. Each option is labeled
+// "1. សែន ក្រអូប" etc. so staff can jump straight to one just by pressing
+// its number key while the list is focused (standard dropdown behavior:
+// typing a character jumps to the option whose label starts with it) —
+// the full name is still right there next to the number, never hidden.
+// A type typed in via "+ Add new type…" (see productOptions below) is
+// remembered on this device and appended after these as 6, 7, ... — see
+// addCustomPaddyType/getCustomPaddyTypes.
 const PADDY_TYPE_SEED = ["សែន ក្រអូប", "ផ្កា ម្លីះ", "ស្រង៉ែ", "ផ្កា រំដួល", "5451"];
+
+// A staff-typed paddy type that isn't one of the 5 above still gets saved
+// as a real product record on the server (via resolveProductIdOffline,
+// unchanged) — but the dropdown itself intentionally does NOT pull in
+// every product that's ever existed in that table (old test data, one-off
+// typos, etc. would otherwise clutter it right back up). Instead, this
+// device remembers just the types actually added here, so the list stays
+// exactly "the 5, plus whatever's genuinely been typed in since."
+const CUSTOM_PADDY_TYPES_KEY = "ptw_custom_paddy_types_v1";
+function getCustomPaddyTypes() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_PADDY_TYPES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+function addCustomPaddyType(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  try {
+    const list = getCustomPaddyTypes();
+    if (!list.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      list.push(trimmed);
+      localStorage.setItem(CUSTOM_PADDY_TYPES_KEY, JSON.stringify(list));
+    }
+  } catch {
+    // Storage full/unavailable — worst case this device just re-offers
+    // "+ Add new type…" again next time instead of remembering it.
+  }
+}
 
 // Same bank list as the New Transaction form, so staff see the same
 // choices in both places — "Cash" is first since most farmer payouts at
@@ -125,28 +160,27 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // waiting until Finish Ticket to show up.
   const [savedBank, setSavedBank] = useState(null);
   const { session } = useAuth();
-  // Paddy types to choose from: the fixed starter list first, then
-  // whatever's actually been used before (typed in on any station, once
-  // synced) that isn't already one of those, so staff pick from a list
-  // instead of everyone typing (and misspelling) the same names over and
-  // over — "+ Add new type…" below still lets a brand new type through.
+  // Paddy types to choose from: exactly the 5-item starter list, plus
+  // anything staff have typed in via "+ Add new type…" on this device
+  // (see addCustomPaddyType above) — deliberately NOT everything that
+  // happens to already exist in the products table.
   const [productOptions] = useState(() => {
-    const seen = new Set();
-    const merged = [];
-    for (const name of PADDY_TYPE_SEED) {
-      const key = name.trim().toLowerCase();
-      if (!seen.has(key)) { seen.add(key); merged.push(name); }
-    }
-    for (const p of getCachedProducts()) {
-      const name = (p.name || "").trim();
-      const key = name.toLowerCase();
-      if (name && !seen.has(key)) { seen.add(key); merged.push(name); }
-    }
-    return merged;
+    const seen = new Set(PADDY_TYPE_SEED.map((n) => n.toLowerCase()));
+    const extras = getCustomPaddyTypes().filter((name) => {
+      const key = (name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [...PADDY_TYPE_SEED, ...extras];
   });
   // Whether the Product field is showing the dropdown list, or a text box
   // for typing a brand new type not already on it.
   const [productIsCustom, setProductIsCustom] = useState(false);
+  // Which staff member actually filled in this ticket — separate from the
+  // logged-in account, since a station's login is often shared by several
+  // people during a shift.
+  const [recordedByName, setRecordedByName] = useState("");
 
   // "Use previous Seller/Buyer" button — the actual shortcut being asked
   // for: when the SAME person brings in several trucks back to back, staff
@@ -294,6 +328,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setError("Please fill in location, party name, product, and plate number.");
       return;
     }
+    if (!recordedByName.trim()) {
+      setError(`Please enter the name of the ${type === "BUY" ? "buyer" : "seller"} filling in this ticket.`);
+      return;
+    }
     if (type === "BUY" && !paperTicketNo.trim()) {
       setError("Please enter the number printed on the paper quality ticket.");
       return;
@@ -307,11 +345,16 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     try {
       const partyId = await resolvePartyIdOffline(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone });
       const productId = await resolveProductIdOffline(productName);
+      // Remember a brand new paddy type on this device so it shows up as
+      // its own numbered option next time (see PADDY_TYPE_SEED above) —
+      // a no-op if it was already picked from the list.
+      if (productIsCustom) addCustomPaddyType(productName);
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
+        recordedByName: recordedByName.trim(),
         bankName: savedBank?.bankName || undefined,
         bankAccount: savedBank?.bankAccount || undefined,
         bankQrUrl: savedBank?.bankQrUrl || undefined,
@@ -423,12 +466,27 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
               className={inputCls}
             >
               <option value="" disabled>Select paddy type…</option>
-              {productOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+              {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
               <option value="__other__">+ Add new type…</option>
             </select>
           )}
+          {!productIsCustom && <p className="mt-1 text-[11px] text-slate-400">Tip: click the list, then press a number key to jump straight to it</p>}
         </div>
         <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
+        <div className="col-span-2">
+          <label className={labelCls}>{type === "BUY" ? "Buyer" : "Seller"}</label>
+          <input
+            value={recordedByName}
+            onChange={(e) => setRecordedByName(e.target.value)}
+            className={inputCls}
+            placeholder="Your name (whoever is filling in this ticket)"
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            {type === "BUY"
+              ? "You're the one buying this paddy on PaddyTrade's behalf — put your name here, not the farmer's."
+              : "You're the one selling this paddy on PaddyTrade's behalf — put your name here, not the buyer's."}
+          </p>
+        </div>
       </div>
 
       <div className="mt-4">
@@ -983,6 +1041,7 @@ export default function WeighingTickets() {
                   <p className="text-slate-500">{t.product_name}</p>
                   {t.gross_kg != null && <p className="text-slate-500">Gross: {fmt2(t.gross_kg)} kg {t.grossByName && <span className="text-slate-400">by {t.grossByName}</span>}</p>}
                   {t.paper_ticket_no && <p className="text-xs text-slate-400">Quality Ticket No. {t.paper_ticket_no}</p>}
+                  {t.recorded_by_name && <p className="text-xs text-slate-400">{t.type === "BUY" ? "Buyer" : "Seller"}: {t.recorded_by_name}</p>}
                 </div>
                 {tab === "waiting" && (
                   <div className="flex gap-2">
