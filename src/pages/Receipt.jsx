@@ -163,6 +163,20 @@ export function ExactWeightTicket({ tx, isBuy, tpl, companyNameKh, companyAddres
   const labelStyle = { ...FONT_BODY, color: S.labelColor };
   const valueStyle = { color: S.valueColor, fontWeight: S.valueBold ? 700 : 500 };
   const bodyPx = { fontSize: `${S.bodyFontSizePx}px` };
+  // Product name, driver name, and the buyer/seller name are the only
+  // free-text fields here — an unusually long one (a long company name,
+  // say) could otherwise wrap to several lines and push the ticket past
+  // the printed paper's 140mm height. Capping those specific fields at 2
+  // lines with an ellipsis keeps the ticket's total height predictable no
+  // matter what gets typed in, while the short fields (ticket number,
+  // date) are never long enough to need it.
+  //
+  // This clamp style goes on an inner <div>, NEVER directly on the <td>
+  // itself — `display: -webkit-box` overrides a table cell's required
+  // `display: table-cell`, which breaks that column's width under
+  // `table-fixed` (confirmed by testing: it silently crushed that whole
+  // column, corrupting every row sharing it, not just the long-text one).
+  const clampStyle = { ...valueStyle, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" };
 
   return (
     <div style={bodyPx}>
@@ -180,28 +194,28 @@ export function ExactWeightTicket({ tx, isBuy, tpl, companyNameKh, companyAddres
       </div>
 
       {/* Info block — two label/value columns, same order as the coupon. */}
-      <table className="mt-2 w-full" style={bodyPx}>
+      <table className="mt-2 w-full table-fixed" style={bodyPx}>
         <tbody>
           <tr>
-            <td className="w-[13%] whitespace-nowrap py-0.5 align-top" style={labelStyle}>{L.numberInKh}</td>
-            <td className="w-[13%] py-0.5 align-top" style={{ color: S.labelColor }}>{L.numberInEn}</td>
-            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{numberIn}</td>
-            <td className="w-[26%] whitespace-nowrap py-0.5 pl-3 align-top" style={labelStyle}>{L.dateKh}&nbsp;&nbsp;&nbsp;{L.dateEn}</td>
-            <td className="w-[24%] border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{tx.tx_date}</td>
+            <td className="w-[13%] whitespace-nowrap py-1 align-top" style={labelStyle}>{L.numberInKh}</td>
+            <td className="w-[13%] py-1 align-top" style={{ color: S.labelColor }}>{L.numberInEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top leading-snug" style={valueStyle}>{numberIn}</td>
+            <td className="w-[26%] whitespace-nowrap py-1 pl-3 align-top" style={labelStyle}>{L.dateKh}&nbsp;&nbsp;&nbsp;{L.dateEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top leading-snug" style={valueStyle}>{tx.tx_date}</td>
           </tr>
           <tr>
-            <td className="py-0.5 align-top" style={labelStyle}>{L.productKh}</td>
-            <td className="py-0.5 align-top" style={{ color: S.labelColor }}>{L.productEn}</td>
-            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{productName}</td>
-            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={labelStyle}>{L.driverNameKh} {L.driverNameEn}</td>
-            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{tx.driver_name || "—"}</td>
+            <td className="w-[13%] py-1 align-top" style={labelStyle}>{L.productKh}</td>
+            <td className="w-[13%] py-1 align-top" style={{ color: S.labelColor }}>{L.productEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{productName}</div></td>
+            <td className="w-[26%] whitespace-nowrap py-1 pl-3 align-top" style={labelStyle}>{L.driverNameKh} {L.driverNameEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{tx.driver_name || "—"}</div></td>
           </tr>
           <tr>
-            <td className="whitespace-nowrap py-0.5 align-top" style={labelStyle}>{counterpartyLabelKh}</td>
-            <td className="py-0.5 align-top" style={{ color: S.labelColor }}>{counterpartyLabelEn}</td>
-            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{tx.partyName}</td>
-            <td className="whitespace-nowrap py-0.5 pl-3 align-top" style={labelStyle}>{ownSideLabel}</td>
-            <td className="border-b border-slate-500 py-0.5 align-top" style={valueStyle}>{ownSideName}</td>
+            <td className="w-[13%] whitespace-nowrap py-1 align-top" style={labelStyle}>{counterpartyLabelKh}</td>
+            <td className="w-[13%] py-1 align-top" style={{ color: S.labelColor }}>{counterpartyLabelEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{tx.partyName}</div></td>
+            <td className="w-[26%] whitespace-nowrap py-1 pl-3 align-top" style={labelStyle}>{ownSideLabel}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{ownSideName}</div></td>
           </tr>
         </tbody>
       </table>
@@ -209,7 +223,7 @@ export function ExactWeightTicket({ tx, isBuy, tpl, companyNameKh, companyAddres
       {/* Weight grid — Item / Truck Number / Date / Time / Weight, same 5
           columns, IN then OUT then NET W. / PRICE / AMOUNT, same as the
           coupon's own table. */}
-      <table className="mt-2 w-full border-collapse" style={bodyPx}>
+      <table className="mt-2 w-full border-collapse table-fixed" style={bodyPx}>
         <thead>
           <tr style={FONT_BODY}>
             <th className={`${cell} w-[13%] font-normal`}>{L.itemKh} {L.itemEn}</th>
