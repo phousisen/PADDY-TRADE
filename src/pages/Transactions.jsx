@@ -787,6 +787,15 @@ export default function Transactions({ setPage }) {
     // after the offline queue finishes syncing) shouldn't make the whole
     // list flash/reload in front of someone reading it.
     if (rows.length === 0) setLoading(true);
+    // No connection at all — skip straight to "couldn't reach the server"
+    // instead of waiting out a request that can't succeed. The 15s retry
+    // effect below (and the online/sync-triggered effects) pick this back
+    // up automatically the moment there's a real connection again.
+    if (!navigator.onLine) {
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
     try {
       const [txData, payData] = await Promise.all([
         api.getTransactions({ type: type || undefined }),
