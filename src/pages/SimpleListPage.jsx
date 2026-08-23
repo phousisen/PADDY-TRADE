@@ -31,9 +31,16 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
       // report), not from the transaction's own payment_status field —
       // that field doesn't update itself once a payment is recorded later,
       // so it can quietly drift from what's actually been paid.
-      const paidMap = paidStatusMap(txs, payments);
+      // Cancelled transactions must not count toward a farmer/buyer's
+      // totals here — same rule as every report and the Transaction
+      // History table on their own profile page. Without this, a
+      // cancelled sale still added its kg/amount into "Total Sold" /
+      // "Amount Received" on this list even though it never really
+      // happened.
+      const activeTxs = txs.filter((tx) => (tx.hq_status || "processing") !== "cancelled");
+      const paidMap = paidStatusMap(activeTxs, payments);
       const totalsByParty = {};
-      txs.forEach((tx) => {
+      activeTxs.forEach((tx) => {
         if (!totalsByParty[tx.party_id]) totalsByParty[tx.party_id] = { count: 0, qty: 0, amount: 0, paid: 0, remaining: 0 };
         totalsByParty[tx.party_id].count += 1;
         totalsByParty[tx.party_id].qty += Number(tx.quantity_kg);
