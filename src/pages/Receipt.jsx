@@ -68,10 +68,10 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
       {/* Header — company name/address/phone, exact wording and fonts from
           the real coupon. */}
       <div className="text-center">
-        <p className="text-2xl font-bold" style={FONT_TITLE}>{companyNameKh}</p>
-        <p className="text-base font-bold" style={FONT_BOLD}>{companyAddressKh}</p>
-        <p className="text-base font-bold" style={FONT_BOLD}>{companyPhoneLine}</p>
-        <p className="mt-1 text-sm font-bold">
+        <p className="text-3xl font-bold" style={FONT_TITLE}>{companyNameKh}</p>
+        <p className="text-lg font-bold" style={FONT_BOLD}>{companyAddressKh}</p>
+        <p className="text-lg font-bold" style={FONT_BOLD}>{companyPhoneLine}</p>
+        <p className="mt-1 text-base font-bold">
           {isBuy
             ? <>WEIGHT TICKET / IMPORT ( <span style={FONT_BODY}>ទិញចូល</span> )</>
             : <>WEIGHT TICKET / EXPORT ( <span style={FONT_BODY}>លក់ចេញ</span> )</>}
@@ -79,7 +79,7 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
       </div>
 
       {/* Info block — two label/value columns, same order as the coupon. */}
-      <table className="mt-2 w-full text-xs">
+      <table className="mt-2 w-full text-sm">
         <tbody>
           <tr>
             <td className="w-[13%] whitespace-nowrap py-0.5 align-top" style={FONT_BODY}>លេខរៀង</td>
@@ -108,7 +108,7 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
       {/* Weight grid — Item / Truck Number / Date / Time / Weight, same 5
           columns, IN then OUT then NET W. / PRICE / AMOUNT, same as the
           coupon's own table. */}
-      <table className="mt-2 w-full border-collapse text-[11px]">
+      <table className="mt-2 w-full border-collapse text-sm">
         <thead>
           <tr style={FONT_BODY}>
             <th className={`${cell} w-[13%] font-normal`}>ចូល/ចេញ Item</th>
@@ -201,7 +201,7 @@ export default function Receipt({ tx, onDone }) {
   const productName = tx.product_name || tx.productName || "—";
 
   return (
-    <div className="flex h-screen flex-1 flex-col overflow-hidden">
+    <div id="receipt-page" className="flex h-screen flex-1 flex-col overflow-hidden">
       <div className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
         <h1 className="text-lg font-semibold text-slate-800">Receipt</h1>
         <div className="flex gap-2">
