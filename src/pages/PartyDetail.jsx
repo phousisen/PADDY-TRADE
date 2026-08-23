@@ -53,10 +53,18 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
       .slice()
       .sort((a, b) => (a.tx_date + (a.tx_time || "") < b.tx_date + (b.tx_time || "") ? 1 : -1))
       .map((r) => {
+        const isCancelled = (r.hq_status || "processing") === "cancelled";
         const remaining = paidMap[r.id]?.remaining || 0;
         const paidSoFar = paidMap[r.id]?.paid || 0;
-        const status = remaining <= 0.01 ? "paid" : paidSoFar > 0 ? "partial" : "unpaid";
-        return { ...r, payStatus: status, remaining, paidSoFar, paidDate: paidDateByTx[r.id] || null };
+        // A cancelled bill is never "paid"/"partial"/"unpaid" — those
+        // labels describe money still owed on a real transaction, and a
+        // cancelled one isn't counted in the totals above at all. Without
+        // this it silently showed as "Received" like any other row, which
+        // is exactly what looked wrong: the summary cards above (correctly)
+        // skip cancelled rows, but this table used to show every row with
+        // no way to tell which ones were cancelled.
+        const status = isCancelled ? "cancelled" : remaining <= 0.01 ? "paid" : paidSoFar > 0 ? "partial" : "unpaid";
+        return { ...r, payStatus: status, isCancelled, remaining, paidSoFar, paidDate: paidDateByTx[r.id] || null };
       });
   }, [rows, paidMap, paidDateByTx]);
 
@@ -216,7 +224,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
             </thead>
             <tbody>
               {history.map((r) => (
-                <tr key={r.id} onClick={() => setViewingTx(r)} title="Click to view receipt" className="cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                <tr key={r.id} onClick={() => setViewingTx(r)} title="Click to view receipt" className={`cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${r.isCancelled ? "opacity-50" : ""}`}>
                   <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{r.code}</td>
                   <td className="px-5 py-3 text-slate-600">{r.stationName}</td>
@@ -224,10 +232,11 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                   <td className="px-5 py-3 text-slate-500">{r.driver_name || "—"}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(r.quantity_kg)}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>
-                  <td className={`px-5 py-3 font-medium ${r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
-                    {r.payStatus === "paid" ? (isSupplier ? "Paid" : "Received") : r.payStatus === "partial" ? "Partial" : (isSupplier ? "Unpaid" : "Not Received")}
+                  <td className={`px-5 py-3 font-medium ${r.payStatus === "cancelled" ? "text-slate-400 line-through" : r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
+                    {r.payStatus === "cancelled" ? "Cancelled" : r.payStatus === "paid" ? (isSupplier ? "Paid" : "Received") : r.payStatus === "partial" ? "Partial" : (isSupplier ? "Unpaid" : "Not Received")}
+                    {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">Not counted above</div>}
                     {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} of {fmtRiel(r.amount)}</div>}
-                    {r.payStatus !== "unpaid" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
+                    {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
                   </td>
                 </tr>
               ))}
