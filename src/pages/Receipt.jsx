@@ -140,14 +140,23 @@ function ExactWeightTicket({ tx, isBuy, companyNameKh, companyAddressKh, company
             <td className={`${cell} text-right font-bold`}>{fmt2(tx.quantity_kg)}</td>
             <td className={`${cell} text-center font-bold`}>Kg</td>
           </tr>
-          <tr>
-            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃ&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRICE</td>
-            <td className={`${cell} text-right font-medium`} colSpan={2}>{fmtRiel(tx.price_per_kg)}</td>
-          </tr>
-          <tr>
-            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃសរុប AMOUNT</td>
-            <td className={`${cell} text-right font-bold`} colSpan={2}>{fmtRiel(tx.amount)}</td>
-          </tr>
+          {/* Price/Amount only print on the Buy (Import) side — the price
+              to a buyer on a Sell often isn't settled yet at weigh-out
+              time, so showing "0 ៛" here would just be misleading. Once
+              the price IS agreed, the transaction can be edited from the
+              Transactions list and this reprints correctly. */}
+          {isBuy && (
+            <>
+              <tr>
+                <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃ&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PRICE</td>
+                <td className={`${cell} text-right font-medium`} colSpan={2}>{fmtRiel(tx.price_per_kg)}</td>
+              </tr>
+              <tr>
+                <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>តម្លៃសរុប AMOUNT</td>
+                <td className={`${cell} text-right font-bold`} colSpan={2}>{fmtRiel(tx.amount)}</td>
+              </tr>
+            </>
+          )}
           <tr>
             <td className="pt-6 pb-1 text-center" colSpan={2}>
               <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
