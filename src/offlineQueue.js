@@ -631,7 +631,7 @@ export async function resolveProductIdOffline(typedName) {
 
 // Opens a brand new ticket the instant a truck arrives — no network
 // required. `locationName` is only used for the on-screen/print label.
-export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl }) {
+export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
   const id = newId();
   const code = genLocalTicketCode();
   const ticket = {
@@ -643,6 +643,12 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     product_id: productId || null, product_name: productName,
     paper_ticket_no: paperTicketNo || null,
     bank_qr_url: bankQrUrl || null,
+    // Whichever staff member actually typed this ticket in — "Buyer" on a
+    // Buy ticket (they're acting as PaddyTrade's buyer), "Seller" on a
+    // Sell ticket — separate from `created_by`, which is just whichever
+    // account is logged in on this device and may be shared by several
+    // people during a shift.
+    recorded_by_name: recordedByName || null,
     stage: "arrived",
     gross_kg: null, gross_at: null, gross_by: null, grossByName: null,
     quality_grade: null, moisture_pct: null, mixture_pct: null, outthrow_pct: null,
@@ -653,7 +659,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     created_by: userId, createdByName: null, created_at: new Date().toISOString(),
   };
   upsertCachedTicket(ticket);
-  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl } });
+  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
@@ -766,6 +772,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     bank_qr_url: ticket.bank_qr_url,
     receipt_photo_url: receiptPhotoUrl || null,
     note: ticket.note,
+    recorded_by_name: ticket.recorded_by_name,
     tax_applicable: ticket.tax_applicable,
     staff_fee: ticket.staff_fee,
     amount,
