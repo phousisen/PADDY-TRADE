@@ -18,13 +18,10 @@ input[type="number"] {
   appearance: textfield;
 }
 
-/* The printer is loaded with a normal FULL A4 sheet — the ticket itself
-   only needs to fill the TOP HALF of that sheet (matching the old paper
-   coupon book's size), leaving the bottom half of the same physical page
-   blank. That's intentional, not a bug: the page size below is the real,
-   full A4 sheet loaded in the tray. */
+/* The printer is loaded with a normal FULL A4 sheet, LANDSCAPE orientation
+   (wider than tall — 297mm across, 210mm top-to-bottom). */
 @page {
-  size: 210mm 297mm;
+  size: A4 landscape;
   margin: 0;
 }
 
