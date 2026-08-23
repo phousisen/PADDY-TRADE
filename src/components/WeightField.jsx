@@ -3,13 +3,13 @@ import { useLiveWeight } from "./LiveWeightBox.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 
-// TESTING PERIOD ONLY: the scales aren't wired up at every station yet, so
-// everyone (not just Admin/Owner) is temporarily allowed to type a weight
-// in by hand — otherwise no one could test/use the app at all at a station
-// that isn't connected yet. Flip this back to false once every station's
-// scale is wired up and confirmed working, to restore the "staff can never
-// type a weight" anti-fraud rule for everyone except Admin/Owner.
-const TESTING_ALLOW_STAFF_MANUAL_ENTRY = true;
+// Testing period is over (PONG RO's scale is live and confirmed working)
+// — staff can no longer type a weight in by hand at all. Only Admin/Owner
+// logins still get the small "Enter manually" emergency override below,
+// for the rare case a scale itself goes down. If another station starts
+// up before its own scale is wired in, flip this back to true so staff
+// there aren't blocked in the meantime.
+const TESTING_ALLOW_STAFF_MANUAL_ENTRY = false;
 
 // A weight field that, once TESTING_ALLOW_STAFF_MANUAL_ENTRY is switched
 // back off, staff can only ever fill by pressing "Capture" while the scale
