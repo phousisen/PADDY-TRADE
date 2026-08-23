@@ -624,7 +624,17 @@ export const api = {
       const { data: existingTx, error: txErr } = await supabase.from("transactions").select("*").eq("id", ticket.transaction_id).single();
       if (!txErr && existingTx) return existingTx;
     }
-    const netKg = Math.max(0, (ticket.gross_kg || 0) - (ticket.tare_kg || 0));
+    // Buy: truck arrives LOADED (gross_kg captured first at weigh-in) and
+    // leaves EMPTY (tare_kg captured second at Finish Ticket) — gross is
+    // the bigger number. Sell: truck arrives EMPTY (captured first, into
+    // the same gross_kg column) and leaves LOADED after being filled for
+    // delivery (captured second, into tare_kg) — so for Sell it's tare_kg
+    // that ends up bigger. Either way the real net weight is just the
+    // difference between the two weighings — using Math.abs instead of
+    // assuming "gross is always bigger" is what was making every Sell
+    // ticket's net weight come out as 0 (clamped by the old Math.max(0,
+    // gross - tare) once tare > gross).
+    const netKg = Math.abs((ticket.gross_kg || 0) - (ticket.tare_kg || 0));
     const tx = await this.createTransaction({
       id: transactionId,
       code: transactionCode,
