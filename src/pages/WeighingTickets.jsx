@@ -63,12 +63,11 @@ function addCustomPaddyType(name) {
 }
 
 // Same idea, for the "Buyer"/"Seller" (whoever is actually filling in the
-// ticket) field below — no fixed starting list like paddy types, since
-// there's no "official" set of staff names to seed it with. It just starts
-// empty and grows as names get typed in on this device, via "+ Add new
-// name…", numbered the same way so staff can jump to a name by pressing
-// its number.
-//
+// ticket) field below — starts with this one known name, and grows as more
+// get typed in on this device via "+ Add new name…", numbered the same way
+// so staff can jump to a name by pressing its number.
+const RECORDED_BY_NAME_SEED = ["Malis Bopha"];
+
 // Kept as a SEPARATE list per location (not one shared list device-wide),
 // since the staff working the scale — and so the names worth remembering —
 // are different from station to station. This only actually matters for an
@@ -218,9 +217,20 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // logged-in account, since a station's login is often shared by several
   // people during a shift.
   const [recordedByName, setRecordedByName] = useState("");
-  // Recomputed whenever locationId changes (an HQ Admin picking a different
-  // station above) — see the per-location storage key above.
-  const recordedByOptions = useMemo(() => getRecordedByNames(locationId), [locationId]);
+  // The seed name, plus anything typed in via "+ Add new name…" for this
+  // specific location — recomputed whenever locationId changes (an HQ
+  // Admin picking a different station above). Same merge/dedup approach as
+  // productOptions above.
+  const recordedByOptions = useMemo(() => {
+    const seen = new Set(RECORDED_BY_NAME_SEED.map((n) => n.toLowerCase()));
+    const extras = getRecordedByNames(locationId).filter((name) => {
+      const key = (name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [...RECORDED_BY_NAME_SEED, ...extras];
+  }, [locationId]);
   const [recordedByIsCustom, setRecordedByIsCustom] = useState(recordedByOptions.length === 0);
   // Switching location mid-form (Admin only) means the remembered-name list
   // just changed under this field, so re-decide list-vs-typing mode and
