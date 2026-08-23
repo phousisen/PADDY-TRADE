@@ -57,7 +57,15 @@ function cambodiaNow() {
 // and fall back to creating the record locally, same reasoning as
 // AuthContext.jsx's withTimeout for login. Never rejects — resolves to
 // `fallbackValue` if `promise` doesn't settle within `ms`.
-const ONLINE_LOOKUP_TIMEOUT_MS = 4000;
+// Kept short on purpose: this is what New Ticket's Save button actually
+// waits on (see resolvePartyIdOffline/resolveProductIdOffline below), so
+// a flaky connection shouldn't make staff sit and stare at "Saving…" for
+// several seconds before a ticket appears. It's safe to keep this tight
+// now that a same-phone/same-name conflict at sync time is handled
+// gracefully too (see api.js's createParty/createProduct) instead of
+// getting the whole offline queue stuck — this lookup only has to be
+// fast, not the only line of defense against a duplicate.
+const ONLINE_LOOKUP_TIMEOUT_MS = 1200;
 export function withTimeout(promise, ms, fallbackValue) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(fallbackValue), ms);
@@ -226,6 +234,30 @@ function remapPartyId(oldId, newId) {
   writeJSON(PARTY_CACHE_KEY, parties);
 }
 
+// Same idea as remapPartyId above, for products — a queued createProduct
+// op can also resolve to an EXISTING row (same name) instead of actually
+// inserting a new one under the id generated on this device.
+function remapProductId(oldId, newId) {
+  if (!oldId || oldId === newId) return;
+
+  const tickets = getCachedTickets();
+  let ticketsChanged = false;
+  for (const t of tickets) {
+    if (t.product_id === oldId) { t.product_id = newId; ticketsChanged = true; }
+  }
+  if (ticketsChanged) writeJSON(CACHE_KEY, tickets);
+
+  const q = getQueue();
+  let queueChanged = false;
+  for (const op of q) {
+    if (op.payload && op.payload.productId === oldId) { op.payload.productId = newId; queueChanged = true; }
+  }
+  if (queueChanged) writeJSON(QUEUE_KEY, q);
+
+  const products = getCachedProducts().filter((p) => p.id !== oldId);
+  writeJSON(PRODUCT_CACHE_KEY, products);
+}
+
 // Called when the server tells us a queued ticket change (weigh-in,
 // price, weigh-out, or finalize) targets a weighing ticket that no
 // longer exists — most likely a database reset ran (e.g. clearing test
@@ -343,6 +375,9 @@ async function runOp(op) {
     case "createProduct": {
       const product = await api.createProduct(op.payload.name, op.payload.id);
       addCachedProduct(product);
+      if (op.payload.id && product.id !== op.payload.id) {
+        remapProductId(op.payload.id, product.id);
+      }
       return product;
     }
     case "updateParty": {
