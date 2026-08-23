@@ -170,11 +170,14 @@ export default function LocationDetail({ locationId, setPage }) {
                 <th className="px-5 py-3 font-medium">Party</th>
                 <th className="px-5 py-3 font-medium">Qty (kg)</th>
                 <th className="px-5 py-3 font-medium">Amount</th>
+                <th className="px-5 py-3 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
-              {txs.slice().sort((a, b) => (a.tx_date + a.tx_time < b.tx_date + b.tx_time ? 1 : -1)).map((t) => (
-                <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+              {txs.slice().sort((a, b) => (a.tx_date + a.tx_time < b.tx_date + b.tx_time ? 1 : -1)).map((t) => {
+                const isCancelled = (t.hq_status || "processing") === "cancelled";
+                return (
+                <tr key={t.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
                   <td className="px-5 py-3 text-slate-500">{t.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{t.code}</td>
                   {isCombined && <td className="px-5 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{t.stationName}</div></td>}
@@ -182,9 +185,16 @@ export default function LocationDetail({ locationId, setPage }) {
                   <td className="px-5 py-3 text-slate-700">{t.partyName}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(t.quantity_kg)}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(t.amount)}</td>
+                  <td className="px-5 py-3">
+                    {isCancelled ? (
+                      <span className="text-xs font-medium text-slate-400 line-through">Cancelled</span>
+                    ) : (
+                      <span className="text-xs text-slate-300">—</span>
+                    )}
+                  </td>
                 </tr>
-              ))}
-              {txs.length === 0 && <tr><td colSpan={isCombined ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">No transactions yet.</td></tr>}
+              );})}
+              {txs.length === 0 && <tr><td colSpan={isCombined ? 8 : 7} className="px-5 py-10 text-center text-sm text-slate-400">No transactions yet.</td></tr>}
             </tbody>
           </table>
         </div>
