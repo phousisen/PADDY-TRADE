@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Printer, ArrowLeft } from "lucide-react";
+import { Printer, ArrowLeft, AlertTriangle } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { api } from "../api.js";
+import { isTransactionPendingSync, onSyncStatusChange } from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -297,6 +298,22 @@ export default function Receipt({ tx, onDone }) {
     api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
+  // Printing has never meant "saved" — the paper ticket is built from this
+  // component's local `tx` object the instant Save is clicked, before any
+  // network write is even attempted (see offlineQueue.js's
+  // createTransactionOffline/finalizeTicketOffline). That's necessary for
+  // offline stations to keep working, but it means a receipt can be handed
+  // to a farmer/buyer while the actual database write is still sitting
+  // queued on this one device. This checks that directly and warns on
+  // screen (never on the printed paper itself — this sits outside
+  // #receipt-root, which print CSS already hides) so staff don't walk away
+  // from a device holding the only copy of a just-printed transaction.
+  const [pendingSync, setPendingSync] = useState(() => isTransactionPendingSync(tx.id));
+  useEffect(() => {
+    const unsub = onSyncStatusChange(() => setPendingSync(isTransactionPendingSync(tx.id)));
+    return unsub;
+  }, [tx.id]);
+
   // Falls back to Baitang's real registered Khmer name/address/phone (as
   // printed on the actual coupon) if these settings were never filled in,
   // rather than a generic placeholder — so the ticket is correct out of the
@@ -341,6 +358,13 @@ export default function Receipt({ tx, onDone }) {
           </button>
         </div>
       </div>
+
+      {pendingSync && (
+        <div className="no-print flex items-center gap-2 bg-rose-600 px-6 py-2.5 text-xs font-semibold text-white">
+          <AlertTriangle size={14} />
+          Not yet saved to PaddyTrade's server — this transaction only exists on this device so far. Do not close this browser, clear its data, or switch devices until it finishes syncing (see the banner at the top of the screen), or this record could be lost even though it's already printed.
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
         <div id="receipt-root" className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-6 text-sm shadow-sm">
