@@ -211,7 +211,7 @@ export default function Dashboard() {
             <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalBuyAmt)} paid out</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 text-sky-600"><TrendingDown size={16} /></div>
+            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-600"><TrendingDown size={16} /></div>
             <p className="text-xs font-medium text-slate-500">Total Sell ({rangeLabel})</p>
             <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totalSellKg)} kg</p>
             <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalSellAmt)} received</p>
@@ -262,7 +262,7 @@ export default function Dashboard() {
                       </div>
                     </td>
                     <td className="px-3 py-3.5 font-medium text-brand-600">{buyKg > 0 ? `+${fmt2(buyKg)}` : "—"}</td>
-                    <td className="px-3 py-3.5 font-medium text-sky-600">{sellKg > 0 ? `-${fmt2(sellKg)}` : "—"}</td>
+                    <td className="px-3 py-3.5 font-medium text-rose-600">{sellKg > 0 ? `-${fmt2(sellKg)}` : "—"}</td>
                     <td className="px-3 py-3.5 text-slate-600">
                       <div className="flex items-center gap-2.5">
                         <span>{fmt2(loc.current_stock_kg)} kg</span>
@@ -288,7 +288,7 @@ export default function Dashboard() {
             <div className="max-h-96 overflow-y-auto">
               {liveFeed.map((tx) => (
                 <div key={tx.id} className="flex items-start gap-2.5 border-b border-slate-50 px-4 py-3.5 last:border-0">
-                  <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-sky-100 text-sky-700"}`}>
+                  <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
                     {tx.type === "BUY" ? "▲" : "▼"}
                   </span>
                   <div className="min-w-0 flex-1">
