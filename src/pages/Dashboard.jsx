@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import DateRangeFilter from "../components/DateRangeFilter.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -134,9 +135,29 @@ export default function Dashboard() {
   const totalBuyAmt = periodBuy.reduce((s, t) => s + Number(t.total_with_tax ?? t.amount), 0);
   const totalSellKg = periodSell.reduce((s, t) => s + Number(t.quantity_kg), 0);
   const totalSellAmt = periodSell.reduce((s, t) => s + Number(t.total_with_tax ?? t.amount), 0);
-  // This one is deliberately NOT period-filtered — it's the real running
-  // total on hand right now, not "how much moved during the period".
+  // This one is deliberately NOT tied to the global period tabs above —
+  // it's the real running total on hand right now, not "how much moved
+  // during the period". It gets its own independent range picker instead
+  // (below), so switching Today/Yesterday/Week/Month up top never changes
+  // what this card shows.
   const netStockKg = locations.reduce((s, l) => s + Number(l.current_stock_kg), 0);
+
+  // Net-stock card's own period, decoupled from the dashboard-wide period
+  // tabs. null/null (the DateRangeFilter's "All Time" preset) means "show
+  // the real running total", matching this card's original behavior.
+  const [netStart, setNetStart] = useState(null);
+  const [netEnd, setNetEnd] = useState(null);
+  const netStockIsAllTime = !netStart && !netEnd;
+  const netStockTxs = useMemo(() => {
+    if (netStockIsAllTime) return [];
+    const s = netStart || netEnd;
+    const e = netEnd || netStart;
+    const [rs, re] = s <= e ? [s, e] : [e, s];
+    return txs.filter((t) => t.tx_date >= rs && t.tx_date <= re);
+  }, [txs, netStart, netEnd, netStockIsAllTime]);
+  const netStockBuyKg = netStockTxs.filter((t) => t.type === "BUY").reduce((s, t) => s + Number(t.quantity_kg), 0);
+  const netStockSellKg = netStockTxs.filter((t) => t.type === "SELL").reduce((s, t) => s + Number(t.quantity_kg), 0);
+  const netStockChangeKg = netStockBuyKg - netStockSellKg;
 
   const locationPerformance = useMemo(() => {
     return locations.map((loc) => {
@@ -211,23 +232,41 @@ export default function Dashboard() {
             <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalBuyAmt)} paid out</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-600"><TrendingDown size={16} /></div>
+            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-sky-100 text-sky-600"><TrendingDown size={16} /></div>
             <p className="text-xs font-medium text-slate-500">Total Sell ({rangeLabel})</p>
             <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totalSellKg)} kg</p>
             <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalSellAmt)} received</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Warehouse size={16} /></div>
-            <p className="text-xs font-medium text-slate-500">Current Stock (All-Time)</p>
-            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(netStockKg)} kg</p>
-            {/* This is deliberately NOT "today's buy minus today's sell" —
-                it's the real running total built up over the location's
-                entire history. Sitting next to the two "Today" cards made
-                it look like it should equal them, which it never will
-                unless the location's stock happened to start today at
-                zero. Spelling that out here so it reads correctly at a
-                glance instead of looking like a math error. */}
-            <p className="mt-1 text-[11px] text-slate-400">on hand right now, across {locations.length} location(s) — not just today</p>
+            <div className="mb-3.5 flex items-center justify-between">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Warehouse size={16} /></div>
+              <DateRangeFilter compact startDate={netStart} endDate={netEnd} onChange={(s, e) => { setNetStart(s); setNetEnd(e); }} />
+            </div>
+            {netStockIsAllTime ? (
+              <>
+                <p className="text-xs font-medium text-slate-500">Current Stock (All-Time)</p>
+                <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(netStockKg)} kg</p>
+                {/* This is deliberately NOT "today's buy minus today's sell" —
+                    it's the real running total built up over the location's
+                    entire history. Sitting next to the two "Today" cards made
+                    it look like it should equal them, which it never will
+                    unless the location's stock happened to start today at
+                    zero. Spelling that out here so it reads correctly at a
+                    glance instead of looking like a math error. */}
+                <p className="mt-1 text-[11px] text-slate-400">on hand right now, across {locations.length} location(s) — not just today</p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-medium text-slate-500">Net Stock</p>
+                <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">
+                  {netStockChangeKg >= 0 ? "+" : ""}{fmt2(netStockChangeKg)} kg
+                </p>
+                {/* Net change for the picked range only (buy minus sell) —
+                    not the running total. Switch back to "All Time" above
+                    to see the real on-hand figure. */}
+                <p className="mt-1 text-[11px] text-slate-400">Buy {fmt2(netStockBuyKg)} − Sell {fmt2(netStockSellKg)} · {locations.length} location(s)</p>
+              </>
+            )}
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-gold-100 text-gold-700"><MapPin size={16} /></div>
@@ -262,7 +301,7 @@ export default function Dashboard() {
                       </div>
                     </td>
                     <td className="px-3 py-3.5 font-medium text-brand-600">{buyKg > 0 ? `+${fmt2(buyKg)}` : "—"}</td>
-                    <td className="px-3 py-3.5 font-medium text-rose-600">{sellKg > 0 ? `-${fmt2(sellKg)}` : "—"}</td>
+                    <td className="px-3 py-3.5 font-medium text-sky-600">{sellKg > 0 ? `-${fmt2(sellKg)}` : "—"}</td>
                     <td className="px-3 py-3.5 text-slate-600">
                       <div className="flex items-center gap-2.5">
                         <span>{fmt2(loc.current_stock_kg)} kg</span>
@@ -288,7 +327,7 @@ export default function Dashboard() {
             <div className="max-h-96 overflow-y-auto">
               {liveFeed.map((tx) => (
                 <div key={tx.id} className="flex items-start gap-2.5 border-b border-slate-50 px-4 py-3.5 last:border-0">
-                  <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
+                  <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-sky-100 text-sky-700"}`}>
                     {tx.type === "BUY" ? "▲" : "▼"}
                   </span>
                   <div className="min-w-0 flex-1">
