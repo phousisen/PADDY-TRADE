@@ -105,7 +105,7 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
                   <td className="px-5 py-3 text-slate-500">{m.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{m.code}</td>
                   <td className="px-5 py-3 text-slate-600">{m.stationName}</td>
-                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${m.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-sky-50 text-sky-600"}`}>{m.type}</span></td>
+                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${m.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{m.type}</span></td>
                   <td className={`px-5 py-3 font-medium ${m.delta >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{m.delta >= 0 ? "+" : ""}{fmt2(m.delta)}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(m.runningBalance)}</td>
                 </tr>
