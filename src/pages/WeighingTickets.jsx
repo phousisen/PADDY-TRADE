@@ -184,6 +184,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [phone, setPhone] = useState("");
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
   const [productName, setProductName] = useState("");
   const [paperTicketNo, setPaperTicketNo] = useState("");
   const [grossWeight, setGrossWeight] = useState("");
@@ -453,7 +454,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
-        carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
+        carPlate, driverName, driverPhone, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
         recordedByName: recordedByName.trim(),
         bankName: savedBank?.bankName || undefined,
@@ -573,7 +574,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           )}
           {!productIsCustom && <p className="mt-1 text-[11px] text-slate-400">Tip: click the list, then press a number key to jump straight to it</p>}
         </div>
-        <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
+        <div>
+          <label className={labelCls}>Driver Name</label>
+          <input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" />
+          <label className={`${labelCls} mt-2`}>Driver Phone</label>
+          <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} className={inputCls} placeholder="optional" />
+        </div>
         <div className="col-span-2">
           <label className={labelCls}>{type === "BUY" ? "Buyer" : "Seller"}</label>
           {recordedByIsCustom ? (
@@ -1018,6 +1024,7 @@ function TicketSlip({ ticket, onClose }) {
             {ticket.phone && <div className={rowCls}><span className="text-slate-500">Phone</span><span className="font-medium text-slate-700">{ticket.phone}</span></div>}
             <div className={rowCls}><span className="text-slate-500">Product</span><span className="font-medium text-slate-700">{ticket.product_name}</span></div>
             <div className={rowCls}><span className="text-slate-500">Driver</span><span className="font-medium text-slate-700">{ticket.driver_name || "—"}</span></div>
+            {ticket.driver_phone && <div className={rowCls}><span className="text-slate-500">Driver Phone</span><span className="font-medium text-slate-700">{ticket.driver_phone}</span></div>}
           </div>
 
           {/* Once quality/price has been set, show it here too — useful if
@@ -1187,7 +1194,7 @@ export default function WeighingTickets() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
-              <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div key={t.id} className={`rounded-xl border-l-4 border border-slate-200 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-l-emerald-400" : "border-l-rose-400"}`}>
                 <div className="mb-2 flex items-start justify-between">
                   <div>
                     <p className="flex items-center gap-1.5 font-semibold text-slate-800">
@@ -1196,7 +1203,11 @@ export default function WeighingTickets() {
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-400">{t.stationName} · {t.type}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                    <p className="text-xs text-slate-400">
+                      {t.stationName} ·{" "}
+                      <span className={`font-semibold ${t.type === "BUY" ? "text-emerald-600" : "text-rose-600"}`}>{t.type === "BUY" ? "BUY" : "SELL"}</span>
+                      {t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}
+                    </p>
                   </div>
                   <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
                 </div>
