@@ -85,7 +85,7 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
               <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                 <td className="px-5 py-3 text-slate-500">{t.tx_date}</td>
                 <td className="px-3 py-3 font-medium text-slate-700">{t.code}</td>
-                <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-sky-50 text-sky-600"}`}>{t.type}</span></td>
+                <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t.type}</span></td>
                 <td className="px-3 py-3 text-slate-700">{t.partyName}</td>
                 <td className="px-3 py-3 text-slate-600">{fmtRiel(t.amount)}</td>
                 <td className="px-3 py-3 text-slate-600">{t.tax_rate}%</td>
