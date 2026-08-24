@@ -138,6 +138,39 @@ function writeJSON(key, value) {
   }
 }
 
+// Re-reads the queue immediately after every write and retries the whole
+// read-modify-write if what's actually stored doesn't match what we just
+// wrote — this closes a real data-loss window: two tabs/windows of
+// PaddyTrade open on the same computer at once (e.g. someone checking
+// Transactions in one tab while another person is mid-entry on New Buy in
+// a second tab) both read and write this same localStorage key with no
+// locking otherwise, and whichever tab's write lands last silently erases
+// whatever the other tab had just added — including a brand-new,
+// already-printed transaction that exists nowhere else yet. localStorage
+// has no real cross-tab lock, so this isn't a perfect guarantee, but it
+// narrows the unsafe window from "the entire life of the tab" down to the
+// handful of milliseconds between our own write and our own verify-read.
+function mutateQueue(mutator) {
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const current = getQueue();
+    const next = mutator(current.slice());
+    writeJSON(QUEUE_KEY, next);
+    const verify = getQueue();
+    if (JSON.stringify(verify) === JSON.stringify(next)) {
+      notifyStatus();
+      return next;
+    }
+    // Another tab wrote in between our write and this read-back — redo the
+    // mutation against whatever's actually there now instead of silently
+    // discarding it.
+  }
+  // 25 collisions in a row would mean something is pathologically wrong
+  // (not just two tabs racing occasionally) — fall back to whatever is
+  // currently stored rather than looping forever.
+  notifyStatus();
+  return getQueue();
+}
+
 // ---------------------------------------------------------------------
 // Ticket cache — a local mirror of the ticket board so it still renders
 // with no network at all.
@@ -220,12 +253,12 @@ function remapPartyId(oldId, newId) {
   }
   if (ticketsChanged) writeJSON(CACHE_KEY, tickets);
 
-  const q = getQueue();
-  let queueChanged = false;
-  for (const op of q) {
-    if (op.payload && op.payload.partyId === oldId) { op.payload.partyId = newId; queueChanged = true; }
-  }
-  if (queueChanged) writeJSON(QUEUE_KEY, q);
+  mutateQueue((q) => {
+    for (const op of q) {
+      if (op.payload && op.payload.partyId === oldId) op.payload.partyId = newId;
+    }
+    return q;
+  });
 
   // Drop the placeholder cache row keyed by the id that never actually
   // made it to the server, so nothing offline resolves a fresh lookup to
@@ -247,12 +280,12 @@ function remapProductId(oldId, newId) {
   }
   if (ticketsChanged) writeJSON(CACHE_KEY, tickets);
 
-  const q = getQueue();
-  let queueChanged = false;
-  for (const op of q) {
-    if (op.payload && op.payload.productId === oldId) { op.payload.productId = newId; queueChanged = true; }
-  }
-  if (queueChanged) writeJSON(QUEUE_KEY, q);
+  mutateQueue((q) => {
+    for (const op of q) {
+      if (op.payload && op.payload.productId === oldId) op.payload.productId = newId;
+    }
+    return q;
+  });
 
   const products = getCachedProducts().filter((p) => p.id !== oldId);
   writeJSON(PRODUCT_CACHE_KEY, products);
@@ -271,10 +304,7 @@ function remapProductId(oldId, newId) {
 function dropOtherOpsForGoneTicket(ticketId) {
   if (!ticketId) return;
   removeCachedTicket(ticketId);
-  const q = getQueue();
-  if (q.length === 0) return;
-  const filtered = [q[0], ...q.slice(1).filter((op) => op.ticketId !== ticketId)];
-  writeJSON(QUEUE_KEY, filtered);
+  mutateQueue((q) => (q.length === 0 ? q : [q[0], ...q.slice(1).filter((op) => op.ticketId !== ticketId)]));
 }
 
 export function getCachedProducts() {
@@ -316,19 +346,12 @@ export async function refreshLookupCaches() {
 export function getQueue() {
   return readJSON(QUEUE_KEY, []);
 }
-function setQueue(q) {
-  writeJSON(QUEUE_KEY, q);
-  notifyStatus();
-}
 export function enqueue(op) {
-  const q = getQueue();
-  q.push(op);
-  setQueue(q);
+  mutateQueue((q) => { q.push(op); return q; });
 }
 function dequeueFirst() {
-  const q = getQueue();
-  q.shift();
-  setQueue(q);
+  mutateQueue((q) => { q.shift(); return q; });
+  clearStuckTracking();
 }
 
 export function pendingCountForTicket(ticketId) {
@@ -336,6 +359,21 @@ export function pendingCountForTicket(ticketId) {
 }
 export function totalPending() {
   return getQueue().length;
+}
+
+// True if this specific transaction only exists locally right now (still
+// queued, not yet confirmed saved to the shared database) — whether it was
+// entered manually (createTransaction) or came from finalizing a Weighing
+// Ticket (finalizeTicket). Used by Receipt.jsx to warn staff BEFORE they
+// walk away from a just-printed receipt that isn't actually in PaddyTrade
+// yet — printing has never meant "saved"; this makes that visible instead
+// of silent.
+export function isTransactionPendingSync(transactionId) {
+  if (!transactionId) return false;
+  return getQueue().some((op) =>
+    (op.type === "createTransaction" && op.payload?.id === transactionId) ||
+    (op.type === "finalizeTicket" && op.payload?.transactionId === transactionId)
+  );
 }
 
 // ---------------------------------------------------------------------
@@ -350,8 +388,59 @@ export function onSyncStatusChange(fn) {
   fn(getStatus());
   return () => listeners.delete(fn);
 }
+
+// Tracks whether the item at the FRONT of the queue is genuinely stuck —
+// meaning we're online and it has failed to save several times in a row for
+// a real reason (bad data, a permissions/RLS problem, a server-side bug) —
+// as opposed to plain "offline, waiting for WiFi", which isn't a problem at
+// all and shouldn't look like one. These are very different situations for
+// staff: one resolves itself the moment the connection returns, the other
+// won't resolve on its own no matter how long you wait, and everything
+// behind it in the queue is blocked too. Surfacing them the same way (as
+// this code used to) makes a genuinely broken sync look identical to a
+// normal, harmless delay.
+let stuckOpSignature = null;
+let stuckSince = null;
+let stuckAttempts = 0;
+let lastStuckError = null;
+const STUCK_THRESHOLD = 3; // consecutive failed attempts, while online, before we call it "stuck"
+
+function noteOpFailure(op, err) {
+  if (!navigator.onLine) {
+    // Not actually stuck — just offline, which is expected and resolves on
+    // its own. Don't let a failure recorded here linger and misreport as
+    // "stuck" once the connection comes back and this same op succeeds on
+    // its very first real attempt.
+    clearStuckTracking();
+    return;
+  }
+  const sig = JSON.stringify({ type: op.type, ticketId: op.ticketId, payload: op.payload });
+  if (sig === stuckOpSignature) {
+    stuckAttempts += 1;
+  } else {
+    stuckOpSignature = sig;
+    stuckSince = new Date().toISOString();
+    stuckAttempts = 1;
+  }
+  lastStuckError = (err && err.message) || String(err);
+}
+function clearStuckTracking() {
+  stuckOpSignature = null;
+  stuckSince = null;
+  stuckAttempts = 0;
+  lastStuckError = null;
+}
+
 function getStatus() {
-  return { online: navigator.onLine, syncing, pending: totalPending() };
+  return {
+    online: navigator.onLine,
+    syncing,
+    pending: totalPending(),
+    stuck: stuckAttempts >= STUCK_THRESHOLD,
+    stuckSince,
+    stuckAttempts,
+    lastStuckError,
+  };
 }
 function notifyStatus() {
   const s = getStatus();
@@ -418,7 +507,11 @@ async function runOp(op) {
     case "createPayment":
       return api.createPayment(op.payload);
     case "logAudit":
-      return api.logAudit(op.payload);
+      // logAuditStrict (not the plain logAudit every other caller in the
+      // app uses) — a failed audit-log write for a brand-new transaction
+      // needs to retry like everything else in this queue, not vanish
+      // silently with nothing but a console.error nobody was watching.
+      return api.logAuditStrict(op.payload);
     default:
       throw new Error("Unknown queued operation: " + op.type);
   }
@@ -484,6 +577,7 @@ export function trySync() {
           // Network still down, or a real error — either way, stop here
           // and try again later rather than skipping ahead out of order.
           console.warn("[offlineQueue] sync paused:", err?.message || err);
+          noteOpFailure(op, err);
           break;
         }
       }
@@ -635,7 +729,7 @@ export async function resolveProductIdOffline(typedName) {
 
 // Opens a brand new ticket the instant a truck arrives — no network
 // required. `locationName` is only used for the on-screen/print label.
-export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
   const id = newId();
   const code = genLocalTicketCode();
   const ticket = {
@@ -643,7 +737,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     location_id: locationId, stationName: locationName || "—",
     party_id: partyId || null, party_name: partyName,
     phone: phone || null, bank_name: bankName || null, bank_account: bankAccount || null,
-    car_plate: carPlate || null, driver_name: driverName || null, driver_phone: driverPhone || null,
+    car_plate: carPlate || null, driver_name: driverName || null,
     product_id: productId || null, product_name: productName,
     paper_ticket_no: paperTicketNo || null,
     bank_qr_url: bankQrUrl || null,
@@ -663,7 +757,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     created_by: userId, createdByName: null, created_at: new Date().toISOString(),
   };
   upsertCachedTicket(ticket);
-  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
+  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
@@ -772,7 +866,6 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     price_per_kg: ticket.price_per_kg,
     car_plate: ticket.car_plate,
     driver_name: ticket.driver_name,
-    driver_phone: ticket.driver_phone,
     paper_ticket_no: ticket.paper_ticket_no,
     bank_qr_url: ticket.bank_qr_url,
     receipt_photo_url: receiptPhotoUrl || null,
@@ -799,7 +892,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
 // drops" — nothing here waits on a network call to succeed.
 // ---------------------------------------------------------------------
 
-export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate }) {
+export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate }) {
   const id = newId();
   const code = genLocalTxCode(type);
   const payableKg = Math.max(0, (quantityKg || 0) - (deductionKg || 0));
@@ -813,7 +906,7 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     payload: {
       id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId,
       qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg,
-      staffFee: staffFeeAmt, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate,
+      staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
     },
   });
   trySync();
@@ -837,7 +930,6 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     note: note || null,
     car_plate: carPlate || null,
     driver_name: driverName || null,
-    driver_phone: driverPhone || null,
     receipt_photo_url: receiptPhotoUrl || null,
     payment_proof_url: paymentProofUrl || null,
     staff_fee: staffFeeAmt,
