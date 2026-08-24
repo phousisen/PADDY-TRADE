@@ -21,6 +21,7 @@ function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); retu
 function startOfWeek(d) { const r = new Date(d); const day = (r.getDay() + 6) % 7; return addDays(r, -day); } // Monday start
 function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
+function startOfYear(d) { return new Date(d.getFullYear(), 0, 1); }
 
 function presets() {
   const t = today();
@@ -31,6 +32,7 @@ function presets() {
     { label: "Last Week", start: toIso(addDays(startOfWeek(t), -7)), end: toIso(addDays(startOfWeek(t), -1)) },
     { label: "This Month", start: toIso(startOfMonth(t)), end: toIso(t) },
     { label: "Last Month", start: toIso(startOfMonth(addDays(startOfMonth(t), -1))), end: toIso(endOfMonth(addDays(startOfMonth(t), -1))) },
+    { label: "This Year", start: toIso(startOfYear(t)), end: toIso(t) },
     { label: "Last 7 Days", start: toIso(addDays(t, -6)), end: toIso(t) },
     { label: "Last 30 Days", start: toIso(addDays(t, -29)), end: toIso(t) },
     { label: "All Time", start: null, end: null },
@@ -43,7 +45,7 @@ function fmtDisplay(iso) {
   return `${d}/${m}/${y}`;
 }
 
-export default function DateRangeFilter({ startDate, endDate, onChange }) {
+export default function DateRangeFilter({ startDate, endDate, onChange, compact = false }) {
   const [open, setOpen] = useState(false);
   const [tempStart, setTempStart] = useState(startDate);
   const [tempEnd, setTempEnd] = useState(endDate);
@@ -79,10 +81,17 @@ export default function DateRangeFilter({ startDate, endDate, onChange }) {
 
   return (
     <div className="relative" ref={ref}>
-      <button onClick={openPopover} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
-        <Calendar size={14} className="text-slate-400" />
+      <button
+        onClick={openPopover}
+        className={
+          compact
+            ? "flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+            : "flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
+        }
+      >
+        {!compact && <Calendar size={14} className="text-slate-400" />}
         {matchingPreset ? matchingPreset.label : label}
-        <ChevronDown size={14} className="text-slate-400" />
+        <ChevronDown size={compact ? 11 : 14} className="text-slate-400" />
       </button>
 
       {open && (
