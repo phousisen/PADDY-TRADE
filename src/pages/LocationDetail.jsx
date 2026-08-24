@@ -181,7 +181,7 @@ export default function LocationDetail({ locationId, setPage }) {
                   <td className="px-5 py-3 text-slate-500">{t.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{t.code}</td>
                   {isCombined && <td className="px-5 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{t.stationName}</div></td>}
-                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-sky-50 text-sky-600"}`}>{t.type}</span></td>
+                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t.type}</span></td>
                   <td className="px-5 py-3 text-slate-700">{t.partyName}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(t.quantity_kg)}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(t.amount)}</td>
