@@ -489,7 +489,7 @@ export const api = {
     }));
   },
 
-  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
+  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -523,7 +523,6 @@ export const api = {
       note: note || null,
       car_plate: carPlate || null,
       driver_name: driverName || null,
-      driver_phone: driverPhone || null,
       receipt_photo_url: receiptPhotoUrl || null,
       // Weigh In / Weigh Out numbers — carried over from the weighing
       // ticket (undefined for a manually-entered Buy/Sell, which only
@@ -576,7 +575,7 @@ export const api = {
   // `id` is optional — passed by the offline queue when a ticket was
   // already opened locally (client-generated UUID) while offline, so a
   // retried sync reuses that same id instead of opening a second ticket.
-  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
     const row = {
       ...(id ? { id } : {}),
       code: code || genTicketCode(),
@@ -589,7 +588,6 @@ export const api = {
       bank_account: bankAccount || null,
       car_plate: carPlate || null,
       driver_name: driverName || null,
-      driver_phone: driverPhone || null,
       product_id: productId || null,
       product_name: productName,
       stage: "arrived",
@@ -726,7 +724,6 @@ export const api = {
       note: ticket.note,
       carPlate: ticket.car_plate,
       driverName: ticket.driver_name,
-      driverPhone: ticket.driver_phone,
       txDate,
       staffFee: ticket.staff_fee,
       paperTicketNo: ticket.paper_ticket_no,
@@ -750,7 +747,7 @@ export const api = {
     const { data, error } = await supabase
       .from("change_requests")
       .select(
-        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, driver_phone, amount, party_id, staff_fee, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
+        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
       )
       .order("created_at", { ascending: false });
     if (error) throw error;
@@ -790,7 +787,7 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, driverPhone, partyId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     const { data, error } = await supabase
@@ -806,7 +803,6 @@ export const api = {
         ...(note !== undefined ? { note: note || null } : {}),
         ...(carPlate !== undefined ? { car_plate: carPlate || null } : {}),
         ...(driverName !== undefined ? { driver_name: driverName || null } : {}),
-        ...(driverPhone !== undefined ? { driver_phone: driverPhone || null } : {}),
         ...(recordedByName !== undefined ? { recorded_by_name: recordedByName || null } : {}),
         ...(partyId !== undefined && partyId ? { party_id: partyId } : {}),
         ...(txDate !== undefined && txDate ? { tx_date: txDate } : {}),
@@ -848,6 +844,23 @@ export const api = {
       user_id: userId, action, table_name: tableName, record_id: recordId, old_data: oldData, new_data: newData,
     });
     if (error) console.error("audit log failed", error);
+  },
+
+  // Same insert as logAudit above, but re-throws on failure instead of
+  // swallowing it. Used ONLY by the offline sync queue (offlineQueue.js):
+  // a queued audit-log entry for a brand-new transaction/payment needs to
+  // retry like every other change in that queue if it fails, not vanish
+  // silently with nothing but a console.error nobody was watching. Every
+  // other caller in the app calls logAudit above directly and deliberately
+  // keeps its fire-and-forget behavior, since those calls happen right
+  // after their real mutation already succeeded and shouldn't turn a
+  // successful save into a visible error just because the audit trail
+  // lagged behind it.
+  async logAuditStrict({ action, tableName, recordId, oldData, newData, userId }) {
+    const { error } = await supabase.from("audit_logs").insert({
+      user_id: userId, action, table_name: tableName, record_id: recordId, old_data: oldData, new_data: newData,
+    });
+    if (error) throw error;
   },
 
   async getAuditLogs() {
