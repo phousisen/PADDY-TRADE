@@ -28,6 +28,34 @@ function cambodiaDateStr(d = new Date()) {
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
+// Splits a stored gross_at/tare_at timestamp into the plain
+// YYYY-MM-DD / HH:mm strings that <input type="date"> and
+// <input type="time"> expect, read as Cambodia wall-clock time regardless
+// of the viewing device's own timezone — same idea as splitCambodiaTimestamp
+// in Receipt.jsx, just in the 24h/ISO shape these two input types need
+// instead of the "23 Aug 26" / "2:31 PM" shape used for display there.
+function splitCambodiaTimestampForInputs(iso) {
+  if (!iso) return { date: "", time: "" };
+  const d = new Date(iso);
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  // Midnight can come back as "24" from this formatter in some browsers —
+  // normalize it to "00" so the <input type="time"> doesn't reject it.
+  const hour = parts.hour === "24" ? "00" : parts.hour;
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${hour}:${parts.minute}` };
+}
+// The reverse — a Cambodia-local date + time picked in the edit form,
+// combined into the UTC ISO timestamp the database actually stores.
+// Cambodia is a fixed UTC+7 with no daylight saving, so appending that
+// offset directly and letting the Date constructor do the UTC conversion
+// is exact, no manual hour math needed.
+function combineCambodiaToISO(dateStr, timeStr) {
+  if (!dateStr || !timeStr) return null;
+  const d = new Date(`${dateStr}T${timeStr}:00+07:00`);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
 
 // "Request a change" doesn't edit the live transaction — it redoes the Buy/Sell
 // entry with corrected values and files it as a pending proposal. Nothing on
@@ -329,6 +357,15 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const [grossKg, setGrossKg] = useState(String(tx.gross_kg ?? ""));
+  const [tareKg, setTareKg] = useState(String(tx.tare_kg ?? ""));
+  const grossSplit = splitCambodiaTimestampForInputs(tx.gross_at);
+  const tareSplit = splitCambodiaTimestampForInputs(tx.tare_at);
+  const [grossInDate, setGrossInDate] = useState(grossSplit.date);
+  const [grossInTime, setGrossInTime] = useState(grossSplit.time);
+  const [tareOutDate, setTareOutDate] = useState(tareSplit.date);
+  const [tareOutTime, setTareOutTime] = useState(tareSplit.time);
+
   const newAmount = Math.max(0, Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
   const canSubmit = !saving && password && partyQuery.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0;
 
@@ -363,6 +400,10 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
         recordedByName: recordedByName.trim() || null,
         note: note.trim() || null,
         txDate,
+        grossKg: grossKg.trim() !== "" ? (parseFloat(grossKg) || 0) : null,
+        tareKg: tareKg.trim() !== "" ? (parseFloat(tareKg) || 0) : null,
+        grossAt: combineCambodiaToISO(grossInDate, grossInTime),
+        tareAt: combineCambodiaToISO(tareOutDate, tareOutTime),
         oldData: {
           location_id: tx.location_id, stationName: tx.stationName,
           party_id: tx.party_id, partyName: tx.partyName, quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
@@ -370,6 +411,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
           deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name,
           recorded_by_name: tx.recorded_by_name, note: tx.note, tx_date: tx.tx_date,
+          gross_kg: tx.gross_kg, gross_at: tx.gross_at, tare_kg: tx.tare_kg, tare_at: tx.tare_at,
         },
       });
     } catch (err) {
@@ -463,6 +505,37 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
               <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
               <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
               <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-slate-200 p-3">
+            <p className="mb-2 text-xs font-medium text-slate-500">Weigh In / Weigh Out (optional — for the printed receipt)</p>
+            <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is.</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">Weigh-In (kg)</label>
+                <input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">In Date</label>
+                <input type="date" value={grossInDate} onChange={(e) => setGrossInDate(e.target.value)} max={cambodiaDateStr()} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">In Time</label>
+                <input type="time" value={grossInTime} onChange={(e) => setGrossInTime(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">Weigh-Out (kg)</label>
+                <input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">Out Date</label>
+                <input type="date" value={tareOutDate} onChange={(e) => setTareOutDate(e.target.value)} max={cambodiaDateStr()} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-slate-400">Out Time</label>
+                <input type="time" value={tareOutTime} onChange={(e) => setTareOutTime(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
             </div>
           </div>
 
