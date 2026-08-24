@@ -635,7 +635,7 @@ export async function resolveProductIdOffline(typedName) {
 
 // Opens a brand new ticket the instant a truck arrives — no network
 // required. `locationName` is only used for the on-screen/print label.
-export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
   const id = newId();
   const code = genLocalTicketCode();
   const ticket = {
@@ -643,7 +643,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     location_id: locationId, stationName: locationName || "—",
     party_id: partyId || null, party_name: partyName,
     phone: phone || null, bank_name: bankName || null, bank_account: bankAccount || null,
-    car_plate: carPlate || null, driver_name: driverName || null,
+    car_plate: carPlate || null, driver_name: driverName || null, driver_phone: driverPhone || null,
     product_id: productId || null, product_name: productName,
     paper_ticket_no: paperTicketNo || null,
     bank_qr_url: bankQrUrl || null,
@@ -663,7 +663,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     created_by: userId, createdByName: null, created_at: new Date().toISOString(),
   };
   upsertCachedTicket(ticket);
-  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
+  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
@@ -772,6 +772,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     price_per_kg: ticket.price_per_kg,
     car_plate: ticket.car_plate,
     driver_name: ticket.driver_name,
+    driver_phone: ticket.driver_phone,
     paper_ticket_no: ticket.paper_ticket_no,
     bank_qr_url: ticket.bank_qr_url,
     receipt_photo_url: receiptPhotoUrl || null,
@@ -798,7 +799,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
 // drops" — nothing here waits on a network call to succeed.
 // ---------------------------------------------------------------------
 
-export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate }) {
+export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate }) {
   const id = newId();
   const code = genLocalTxCode(type);
   const payableKg = Math.max(0, (quantityKg || 0) - (deductionKg || 0));
@@ -812,7 +813,7 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     payload: {
       id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId,
       qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg,
-      staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
+      staffFee: staffFeeAmt, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate,
     },
   });
   trySync();
@@ -836,6 +837,7 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     note: note || null,
     car_plate: carPlate || null,
     driver_name: driverName || null,
+    driver_phone: driverPhone || null,
     receipt_photo_url: receiptPhotoUrl || null,
     payment_proof_url: paymentProofUrl || null,
     staff_fee: staffFeeAmt,
