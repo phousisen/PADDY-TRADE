@@ -853,11 +853,14 @@ export default function Transactions({ setPage }) {
   const [notReceivedOnly, setNotReceivedOnly] = useState(false);
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
-  // Date range filter (defaults to "All Time" — null/null) — filtered
-  // locally against tx_date, same approach as the location filter below,
-  // rather than round-tripping to the server for every date change.
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
+  // Date range filter — defaults to "Today" (Cambodia calendar date) on
+  // load rather than "All Time", since that's the common case; the other
+  // presets (This Week, All Time, etc.) are still one click away in
+  // DateRangeFilter. Filtered locally against tx_date, same approach as
+  // the location filter below, rather than round-tripping to the server
+  // for every date change.
+  const [startDate, setStartDate] = useState(() => cambodiaDateStr());
+  const [endDate, setEndDate] = useState(() => cambodiaDateStr());
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
@@ -990,7 +993,35 @@ export default function Transactions({ setPage }) {
       const remaining = remainingByTx[tx.id] || 0;
       return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.car_plate || "", tx.driver_name || "", tx.quantity_kg, tx.amount, Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining), remaining, tx.hq_status || "processing"];
     });
-    const csv = [header, ...lines].map((r) => r.join(",")).join("\n");
+
+    // Summary block appended after the transaction rows — counts and totals
+    // for whatever's currently visible (same rows the on-screen list and
+    // the exported rows above reflect, respecting the active date/location/
+    // type filters), so the export always adds up to what the user was
+    // actually looking at. Amounts here are gross (tx.amount), matching the
+    // "Amount (Riel)" column above — not net of payments already received.
+    const buys = visibleRows.filter((tx) => tx.type === "BUY");
+    const sells = visibleRows.filter((tx) => tx.type === "SELL");
+    const sum = (rows, key) => rows.reduce((s, tx) => s + Number(tx[key] || 0), 0);
+    const buyQty = sum(buys, "quantity_kg");
+    const sellQty = sum(sells, "quantity_kg");
+    const buyAmt = sum(buys, "amount");
+    const sellAmt = sum(sells, "amount");
+    const summaryLines = [
+      [],
+      ["SUMMARY"],
+      ["Total Buy Transactions", buys.length],
+      ["Total Sell Transactions", sells.length],
+      ["Total Buy Qty (kg)", buyQty],
+      ["Total Sell Qty (kg)", sellQty],
+      ["Total Buy Amount (Riel)", buyAmt],
+      ["Total Sell Amount (Riel)", sellAmt],
+      ["Grand Total Transactions", visibleRows.length],
+      ["Grand Total Qty (kg)", buyQty + sellQty],
+      ["Grand Total Amount (Riel)", buyAmt + sellAmt],
+    ];
+
+    const csv = [header, ...lines, ...summaryLines].map((r) => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
