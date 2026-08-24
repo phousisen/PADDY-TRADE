@@ -90,6 +90,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
+  const [driverPhone, setDriverPhone] = useState(tx.driver_phone || "");
   const [note, setNote] = useState(tx.note || "");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
@@ -119,6 +120,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
         staffFee: isBuy ? (parseFloat(staffFee) || 0) : 0,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
+        driverPhone: driverPhone.trim() || null,
         note: note.trim() || null,
       };
       await onSubmit(reason.trim(), proposedData);
@@ -190,6 +192,11 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
           <div>
             <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
             <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-slate-500">Driver Phone</label>
+            <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} placeholder="optional"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
         </div>
@@ -350,6 +357,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
+  const [driverPhone, setDriverPhone] = useState(tx.driver_phone || "");
   const [recordedByName, setRecordedByName] = useState(tx.recorded_by_name || "");
   const [note, setNote] = useState(tx.note || "");
   const [txDate, setTxDate] = useState(tx.tx_date || cambodiaDateStr());
@@ -397,6 +405,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
         staffFee: isBuy ? (parseFloat(staffFee) || 0) : 0,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
+        driverPhone: driverPhone.trim() || null,
         recordedByName: recordedByName.trim() || null,
         note: note.trim() || null,
         txDate,
@@ -409,7 +418,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           party_id: tx.party_id, partyName: tx.partyName, quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
           amount: tx.amount, payment_status: tx.payment_status, quality_grade: tx.quality_grade, tax_applicable: tx.tax_applicable,
           tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
-          deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name,
+          deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name, driver_phone: tx.driver_phone,
           recorded_by_name: tx.recorded_by_name, note: tx.note, tx_date: tx.tx_date,
           gross_kg: tx.gross_kg, gross_at: tx.gross_at, tare_kg: tx.tare_kg, tare_at: tx.tare_at,
         },
@@ -488,6 +497,11 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
             <div>
               <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
               <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-slate-500">Driver Phone</label>
+              <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} placeholder="optional"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div className="col-span-2">
@@ -1109,7 +1123,7 @@ export default function Transactions({ setPage }) {
         party_id: updated.party_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
         payment_status: updated.payment_status, quality_grade: updated.quality_grade, tax_applicable: updated.tax_applicable,
         tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,
-        deduction_kg: updated.deduction_kg, staff_fee: updated.staff_fee, car_plate: updated.car_plate, driver_name: updated.driver_name, note: updated.note, tx_date: updated.tx_date,
+        deduction_kg: updated.deduction_kg, staff_fee: updated.staff_fee, car_plate: updated.car_plate, driver_name: updated.driver_name, driver_phone: updated.driver_phone, note: updated.note, tx_date: updated.tx_date,
       },
       userId: session.user.id,
     });
@@ -1200,11 +1214,11 @@ export default function Transactions({ setPage }) {
                   <tr key={tx.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
                     <td className="px-5 py-3.5 text-slate-400">{i + 1}</td>
                     <td className="px-3 py-3.5">
-                      <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-sky-100 text-sky-700"}`}>
+                      <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
                         {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </span>
                     </td>
-                    <td className="px-3 py-3.5"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-sky-50 text-sky-600"}`}>{tx.code}</span></td>
+                    <td className="px-3 py-3.5"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"}`}>{tx.code}</span></td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? "Buyer" : "Seller"}: {tx.recorded_by_name}</p>}</td>
