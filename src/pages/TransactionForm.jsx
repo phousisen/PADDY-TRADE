@@ -63,6 +63,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [bankQrUrl, setBankQrUrl] = useState(null);
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
   const [company, setCompany] = useState("");
   const [destination, setDestination] = useState("dest_hq");
   const [qualityGrade, setQualityGrade] = useState("");
@@ -268,6 +269,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         note: note.trim() || null,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
+        driverPhone: driverPhone.trim() || null,
         receiptPhotoUrl, paymentProofUrl,
       });
 
@@ -481,6 +483,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("driver_name")}</label>
                   <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-slate-500">{t("driver_phone")}</label>
+                  <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} placeholder="optional"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                 </div>
               </div>
