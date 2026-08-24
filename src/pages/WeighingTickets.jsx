@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Printer, X, ArrowRight, Ban, Check, WifiOff, RefreshCw, Search } from "lucide-react";
+import { Plus, Printer, X, ArrowRight, Ban, Check, Search } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
@@ -11,7 +11,7 @@ import {
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
-  suggestNextPaperTicketNo, withTimeout,
+  suggestNextPaperTicketNo, withTimeout, logAuditOffline,
 } from "../offlineQueue.js";
 
 // Same reasoning as the offline queue's own lookups: don't let a slow/no
@@ -184,7 +184,6 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [phone, setPhone] = useState("");
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
-  const [driverPhone, setDriverPhone] = useState("");
   const [productName, setProductName] = useState("");
   const [paperTicketNo, setPaperTicketNo] = useState("");
   const [grossWeight, setGrossWeight] = useState("");
@@ -454,7 +453,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
-        carPlate, driverName, driverPhone, productId, productName: productName.trim(), userId: session.user.id,
+        carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
         recordedByName: recordedByName.trim(),
         bankName: savedBank?.bankName || undefined,
@@ -574,12 +573,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           )}
           {!productIsCustom && <p className="mt-1 text-[11px] text-slate-400">Tip: click the list, then press a number key to jump straight to it</p>}
         </div>
-        <div>
-          <label className={labelCls}>Driver Name</label>
-          <input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" />
-          <label className={`${labelCls} mt-2`}>Driver Phone</label>
-          <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} className={inputCls} placeholder="optional" />
-        </div>
+        <div><label className={labelCls}>Driver Name</label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
         <div className="col-span-2">
           <label className={labelCls}>{type === "BUY" ? "Buyer" : "Seller"}</label>
           {recordedByIsCustom ? (
@@ -761,6 +755,22 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
       const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl });
+      // Same reasoning as the manual Buy/Sell form (TransactionForm.jsx):
+      // every new transaction should show up in the Activity Log, including
+      // the original entry, not just later edits. This path (finalizing a
+      // Weighing Ticket) never logged this at all before — found while
+      // investigating a missing receipt, where it meant the Activity Log had
+      // no record of any ticket-based transaction ever being created.
+      logAuditOffline({
+        action: "create_transaction",
+        tableName: "transactions",
+        recordId: tx.id,
+        newData: {
+          code: tx.code, type: tx.type, partyName: tx.partyName, quantityKg: tx.quantity_kg,
+          pricePerKg: tx.price_per_kg, amount: tx.amount, stationName: tx.stationName, txDate: tx.tx_date,
+        },
+        userId: session.user.id,
+      });
       onFinalized(tx);
     } finally {
       setSaving(false);
@@ -1024,7 +1034,6 @@ function TicketSlip({ ticket, onClose }) {
             {ticket.phone && <div className={rowCls}><span className="text-slate-500">Phone</span><span className="font-medium text-slate-700">{ticket.phone}</span></div>}
             <div className={rowCls}><span className="text-slate-500">Product</span><span className="font-medium text-slate-700">{ticket.product_name}</span></div>
             <div className={rowCls}><span className="text-slate-500">Driver</span><span className="font-medium text-slate-700">{ticket.driver_name || "—"}</span></div>
-            {ticket.driver_phone && <div className={rowCls}><span className="text-slate-500">Driver Phone</span><span className="font-medium text-slate-700">{ticket.driver_phone}</span></div>}
           </div>
 
           {/* Once quality/price has been set, show it here too — useful if
@@ -1137,16 +1146,9 @@ export default function WeighingTickets() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Weighing Tickets" subtitle="Weigh in once, finish the ticket once the truck's back and empty" />
 
-      {(!syncStatus.online || syncStatus.pending > 0 || syncStatus.syncing) && (
-        <div className={`flex items-center gap-2 px-6 py-2 text-xs font-medium ${!syncStatus.online ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"}`}>
-          {!syncStatus.online ? <WifiOff size={13} /> : <RefreshCw size={13} className={syncStatus.syncing ? "animate-spin" : ""} />}
-          {!syncStatus.online
-            ? `No internet — working offline. ${syncStatus.pending > 0 ? `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} will sync once it's back.` : "Everything you do here is saved on this device."}`
-            : syncStatus.syncing
-              ? "Connected — syncing changes to PaddyTrade…"
-              : `Connected — ${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} waiting to sync…`}
-        </div>
-      )}
+      {/* The global "unsynced changes" banner in Topbar.jsx now covers this
+          on every page — the syncStatus subscription below stays, since
+          this board also uses it to auto-reload once a sync finishes. */}
 
       <div className="border-b border-slate-200 bg-white px-6 py-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -1194,7 +1196,7 @@ export default function WeighingTickets() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
-              <div key={t.id} className={`rounded-xl border-l-4 border border-slate-200 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-l-emerald-400" : "border-l-rose-400"}`}>
+              <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-2 flex items-start justify-between">
                   <div>
                     <p className="flex items-center gap-1.5 font-semibold text-slate-800">
@@ -1203,11 +1205,7 @@ export default function WeighingTickets() {
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-400">
-                      {t.stationName} ·{" "}
-                      <span className={`font-semibold ${t.type === "BUY" ? "text-emerald-600" : "text-rose-600"}`}>{t.type === "BUY" ? "BUY" : "SELL"}</span>
-                      {t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}
-                    </p>
+                    <p className="text-xs text-slate-400">{t.stationName} · {t.type}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
                   </div>
                   <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
                 </div>
