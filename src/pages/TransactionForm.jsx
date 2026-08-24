@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Save, ScanLine, WifiOff, RefreshCw } from "lucide-react";
+import { Search, Save, ScanLine } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
@@ -9,7 +9,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import {
   withTimeout, resolvePartyIdOffline, resolveProductIdOffline, updatePartyOffline,
-  createTransactionOffline, createPaymentOffline, logAuditOffline, onSyncStatusChange,
+  createTransactionOffline, createPaymentOffline, logAuditOffline,
 } from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -63,7 +63,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [bankQrUrl, setBankQrUrl] = useState(null);
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
-  const [driverPhone, setDriverPhone] = useState("");
   const [company, setCompany] = useState("");
   const [destination, setDestination] = useState("dest_hq");
   const [qualityGrade, setQualityGrade] = useState("");
@@ -85,12 +84,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedTx, setSavedTx] = useState(null);
-  // Same offline-sync status used on the Weighing Tickets board — Save
-  // below never actually waits on the network (see handleSubmit), so this
-  // is the only thing that tells staff whether a save has actually reached
-  // PaddyTrade yet or is still waiting on this device for the connection.
-  const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
-  useEffect(() => onSyncStatusChange(setSyncStatus), []);
+  // The global "unsynced changes" banner in Topbar.jsx now covers this —
+  // Save below never actually waits on the network (see handleSubmit), and
+  // that banner is what tells staff whether a save has actually reached
+  // PaddyTrade yet or is still waiting on this device, on every screen, not
+  // just this one.
 
   // Note: this form used to auto-save/restore a draft to the browser's
   // local storage so a dropped connection or accidental reload wouldn't
@@ -269,7 +267,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         note: note.trim() || null,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
-        driverPhone: driverPhone.trim() || null,
         receiptPhotoUrl, paymentProofUrl,
       });
 
@@ -338,16 +335,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isBuy ? t("new_buy_title") : t("new_sell_title")} />
-      {(!syncStatus.online || syncStatus.pending > 0 || syncStatus.syncing) && (
-        <div className={`flex items-center gap-2 px-6 py-2 text-xs font-medium ${!syncStatus.online ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"}`}>
-          {!syncStatus.online ? <WifiOff size={13} /> : <RefreshCw size={13} className={syncStatus.syncing ? "animate-spin" : ""} />}
-          {!syncStatus.online
-            ? `No internet — working offline. ${syncStatus.pending > 0 ? `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} will sync once it's back.` : "Anything you save here is saved on this device."}`
-            : syncStatus.syncing
-              ? "Connected — syncing…"
-              : `Connected — ${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} waiting to sync…`}
-        </div>
-      )}
       <main className="flex-1 overflow-y-auto p-6">
         <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-5">
           <div className="col-span-2 space-y-5">
@@ -483,11 +470,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("driver_name")}</label>
                   <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("driver_phone")}</label>
-                  <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} placeholder="optional"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                 </div>
               </div>
