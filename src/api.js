@@ -787,7 +787,7 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate, staffFee, locationId, recordedByName }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     const { data, error } = await supabase
@@ -807,6 +807,14 @@ export const api = {
         ...(partyId !== undefined && partyId ? { party_id: partyId } : {}),
         ...(txDate !== undefined && txDate ? { tx_date: txDate } : {}),
         ...(locationId !== undefined && locationId ? { location_id: locationId } : {}),
+        // Manual weigh-in/weigh-out entry (for a typed-in transaction that never
+        // went through the actual scale) — null clears it back to "—" on the
+        // receipt, a number/timestamp fills it in. Only touched when the caller
+        // explicitly passes these keys, so every other edit path is unaffected.
+        ...(grossKg !== undefined ? { gross_kg: grossKg } : {}),
+        ...(grossAt !== undefined ? { gross_at: grossAt } : {}),
+        ...(tareKg !== undefined ? { tare_kg: tareKg } : {}),
+        ...(tareAt !== undefined ? { tare_at: tareAt } : {}),
       })
       .eq("id", id)
       .select()
