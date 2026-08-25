@@ -18,6 +18,100 @@ input[type="number"] {
   appearance: textfield;
 }
 
+/* ===========================================================================
+   On-screen preview for the Receipt / Weigh-In Slip [2026-08-25]
+   ---------------------------------------------------------------------------
+   Everything below mirrors the @media print design further down this file
+   (same structure, same class names) but sized in px for a normal browser
+   window instead of mm for paper. Without this, #receipt-root/
+   #ticket-slip-root had ZERO styling outside of printing — the print rules
+   only take effect while actually printing, so on a plain page load (or in
+   the New/Finish Ticket modal, before anyone hits Print) it rendered as
+   plain, unstyled, run-together text with a giant unstyled logo. This block
+   fixes that so the on-screen view already looks like the real document —
+   the print version below still takes over (and still controls the exact
+   physical sizing) whenever the page is actually printed.
+   =========================================================================== */
+#receipt-root, #ticket-slip-root {
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 18px 22px 22px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  color: #0f172a;
+}
+#receipt-root .head, #ticket-slip-root .head { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #000; padding-bottom: 6px; }
+#receipt-root .head-logo, #ticket-slip-root .head-logo { width: 64px; height: auto; flex-shrink: 0; }
+#receipt-root .head-mid, #ticket-slip-root .head-mid { flex: 1; min-width: 0; }
+#receipt-root .co-address, #ticket-slip-root .co-address { font-size: 15px; font-weight: 800; line-height: 1.25; }
+#receipt-root .co-phone, #ticket-slip-root .co-phone { font-size: 11px; font-weight: 600; margin-top: 2px; color: #334155; }
+#receipt-root .head-right, #ticket-slip-root .head-right { text-align: right; flex-shrink: 0; }
+#receipt-root .doc-type, #ticket-slip-root .doc-type {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;
+  border: 1.3px solid #000; border-radius: 4px; padding: 2px 7px; display: inline-block;
+}
+#receipt-root .doc-no, #ticket-slip-root .doc-no { font-size: 13px; font-weight: 800; margin-top: 3px; }
+#receipt-root .doc-sub, #ticket-slip-root .doc-sub { font-size: 9px; color: #374151; margin-top: 1px; }
+
+#receipt-root .fields, #ticket-slip-root .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; margin-top: 8px; }
+#receipt-root .field, #ticket-slip-root .field {
+  display: flex; justify-content: space-between; align-items: baseline;
+  border-bottom: 1px dotted #94a3b8; padding: 3px 0;
+}
+#receipt-root .field .lbl, #ticket-slip-root .field .lbl { display: flex; flex-direction: column; line-height: 1.15; }
+#receipt-root .field .lbl .kh, #ticket-slip-root .field .lbl .kh { font-size: 10.5px; font-weight: 700; }
+#receipt-root .field .lbl .en, #ticket-slip-root .field .lbl .en { font-size: 8px; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; }
+#receipt-root .field .val, #ticket-slip-root .field .val { font-size: 11.5px; font-weight: 700; text-align: right; }
+
+#receipt-root table.weights, #ticket-slip-root table.weights { width: 100%; border-collapse: collapse; margin-top: 10px; }
+#receipt-root table.weights th, #ticket-slip-root table.weights th {
+  border: 1px solid #000; font-weight: 800; text-align: left;
+  padding: 4px 8px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.3px;
+}
+#receipt-root table.weights th.num, #receipt-root table.weights td.num,
+#ticket-slip-root table.weights th.num, #ticket-slip-root table.weights td.num { text-align: right; }
+#receipt-root table.weights td, #ticket-slip-root table.weights td { border: 1px solid #000; padding: 4px 8px; font-size: 11px; }
+#receipt-root table.weights tr.net td, #ticket-slip-root table.weights tr.net td { border-top: 2px solid #000; font-weight: 800; font-size: 11.5px; }
+#receipt-root th .kh, #receipt-root th .en, #ticket-slip-root th .kh, #ticket-slip-root th .en { display: block; }
+#receipt-root th .en, #ticket-slip-root th .en { font-size: 7.5px; font-weight: 400; text-transform: none; }
+
+#receipt-root .cards, #ticket-slip-root .cards { display: flex; gap: 8px; margin-top: 10px; }
+#receipt-root .card, #ticket-slip-root .card { border: 1.2px solid #000; border-radius: 4px; padding: 6px 9px; }
+#receipt-root .card.quality, #ticket-slip-root .card.quality { flex: 0.78; }
+#receipt-root .card.payment, #ticket-slip-root .card.payment { flex: 1.22; display: flex; gap: 6px; align-items: stretch; }
+#receipt-root .card-h, #ticket-slip-root .card-h {
+  font-size: 8.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.4px;
+  border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 3px;
+}
+#receipt-root .row, #ticket-slip-root .row { display: flex; justify-content: space-between; font-size: 9.5px; padding: 1.5px 0; }
+#receipt-root .row .k, #ticket-slip-root .row .k { color: #475569; }
+#receipt-root .row .v, #ticket-slip-root .row .v { font-weight: 700; }
+#receipt-root .row.price .k, #receipt-root .row.price .v,
+#ticket-slip-root .row.price .k, #ticket-slip-root .row.price .v { font-size: 13px; }
+#receipt-root .row.price, #ticket-slip-root .row.price { padding: 3px 0; border-bottom: 1px solid #000; margin-bottom: 3px; }
+#receipt-root .payment-fields, #ticket-slip-root .payment-fields { flex: 1; min-width: 0; }
+#receipt-root .payment-qr, #ticket-slip-root .payment-qr {
+  width: 52px; flex-shrink: 0; border: 1.3px dashed #000; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center; font-size: 7.5px; color: #64748b; text-align: center; overflow: hidden;
+}
+#receipt-root .payment-qr img, #ticket-slip-root .payment-qr img { width: 100%; height: 100%; object-fit: contain; }
+
+#receipt-root .total-band, #ticket-slip-root .total-band {
+  margin-top: 10px; border: 2px solid #000; border-radius: 4px;
+  padding: 7px 12px; display: flex; justify-content: space-between; align-items: center;
+}
+#receipt-root .total-band .lab, #ticket-slip-root .total-band .lab { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+#receipt-root .total-band .amt, #ticket-slip-root .total-band .amt { font-size: 18px; font-weight: 800; }
+
+#receipt-root .sig-row, #ticket-slip-root .sig-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; margin-top: 18px; }
+#receipt-root .sig-box, #ticket-slip-root .sig-box { text-align: center; }
+#receipt-root .sig-line, #ticket-slip-root .sig-line { border-top: 1px solid #000; margin-bottom: 4px; }
+#receipt-root .sig-box .kh, #ticket-slip-root .sig-box .kh { font-size: 9.5px; font-weight: 700; }
+#receipt-root .sig-box .en, #ticket-slip-root .sig-box .en { font-size: 8px; color: #475569; }
+
 /* Standard A4 page (210mm x 297mm) — the only paper size this printer's
    dialog offers, confirmed by the user. Both printed documents below only
    occupy the top portion of that A4 sheet, matching the real 210mm x
