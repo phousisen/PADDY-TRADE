@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Warehouse, Receipt, Users, ShoppingCart, MapPin, BarChart3,
-  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Printer,
+  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale,
 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -29,9 +29,10 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
         { id: "users", label: "Users", icon: UserCog },
         { id: "roles", label: "Roles", icon: ShieldCheck },
         { id: "settings", label: t("nav_settings"), icon: Settings },
-        // Owner-only, not just any admin — matches App.jsx's own gating on
-        // profile.isOwner for the "receipt-template" page.
-        ...(isOwner ? [{ id: "receipt-template", label: "Receipt Template", icon: Printer }] : []),
+        // "Receipt Template" nav entry removed [2026-08-25] — that page no
+        // longer affects the printed receipt/slip design (see App.jsx), so
+        // it's no longer linked from here. The route itself still exists
+        // and shows a plain notice if anyone has it bookmarked.
       ]
     : [];
 
