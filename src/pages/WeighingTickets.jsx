@@ -184,7 +184,6 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [phone, setPhone] = useState("");
   const [carPlate, setCarPlate] = useState("");
   const [driverName, setDriverName] = useState("");
-  const [driverPhone, setDriverPhone] = useState("");
   const [productName, setProductName] = useState("");
   const [paperTicketNo, setPaperTicketNo] = useState("");
   const [grossWeight, setGrossWeight] = useState("");
@@ -454,7 +453,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       const locationName = locations.find((l) => l.id === locationId)?.name;
       const ticket = createTicketOffline({
         type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
-        carPlate, driverName, driverPhone, productId, productName: productName.trim(), userId: session.user.id,
+        carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
         recordedByName: recordedByName.trim(),
         bankName: savedBank?.bankName || undefined,
@@ -471,10 +470,14 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   }
 
   return (
-    <Modal title="New Ticket — Weigh In (Loaded)" subtitle="Farmer already has their guard-issued queue slip in hand" onClose={onClose} wide>
+    <Modal
+      title={<>New Ticket — Weigh In (Loaded)<span className="font-khmer block text-sm font-normal text-slate-500">សំបុត្រថ្មី — ថ្លឹងចូល (ដឹកទំនិញ)</span></>}
+      subtitle={<>Farmer already has their guard-issued queue slip in hand<span className="font-khmer block">កសិករមានសំបុត្រជួរដែលអាណាព្យាបាលបានចេញរួចហើយ</span></>}
+      onClose={onClose} wide
+    >
       <div className="mb-3 flex gap-2">
-        <button onClick={() => setType("BUY")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "BUY" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Buy (from farmer)</button>
-        <button onClick={() => setType("SELL")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "SELL" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Sell (to buyer)</button>
+        <button onClick={() => setType("BUY")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "BUY" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Buy (from farmer)<span className="font-khmer block text-xs font-normal">ទិញ (ពីកសិករ)</span></button>
+        <button onClick={() => setType("SELL")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "SELL" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Sell (to buyer)<span className="font-khmer block text-xs font-normal">លក់ (ទៅអ្នកទិញ)</span></button>
       </div>
       {isAdmin && (
         <div className="mb-3">
@@ -492,14 +495,14 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             side. */}
         {type === "BUY" && (
           <div>
-            <label className={labelCls}>Quality Ticket No.</label>
+            <label className={labelCls}>Quality Ticket No.<span className="font-khmer block text-brand-600">លេខសំបុត្រគុណភាព</span></label>
             <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
             <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong</p>
           </div>
         )}
-        <div className={type === "BUY" ? "" : "col-span-2"}><label className={labelCls}>Vehicle Plate Number</label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
+        <div className={type === "BUY" ? "" : "col-span-2"}><label className={labelCls}>Vehicle Plate Number<span className="font-khmer block text-brand-600">លេខផ្លាកយានយន្ត</span></label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
         <div className="col-span-2">
-          <label className={labelCls}>Phone (type it and tab/click away to look them up)</label>
+          <label className={labelCls}>Phone (type it and tab/click away to look them up)<span className="font-khmer block text-brand-600">លេខទូរស័ព្ទ (វាយបញ្ចូល រួចចុចចេញ ដើម្បីស្វែងរក)</span></label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={inputCls} />
           {phoneLookupMsg && <p className={`mt-1 text-xs ${phoneLookupMsg.startsWith("Found") ? "text-emerald-600" : "text-slate-400"}`}>{phoneLookupMsg}</p>}
           {savedBank && (
@@ -516,7 +519,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </div>
         <div className="col-span-2">
           <div className="mb-1 flex items-center justify-between">
-            <label className={labelCls}>{type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}</label>
+            <label className={labelCls}>
+              {type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}
+              <span className="font-khmer block text-brand-600">{type === "BUY" ? "ឈ្មោះអ្នកលក់ (កសិករ)" : "ឈ្មោះអ្នកទិញ"}</span>
+            </label>
             {effectivePreviousParty && (
               <button
                 type="button"
@@ -540,7 +546,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           </datalist>
         </div>
         <div>
-          <label className={labelCls}>Product (paddy type)</label>
+          <label className={labelCls}>Product (paddy type)<span className="font-khmer block text-brand-600">ផលិតផល (ប្រភេទស្រូវ)</span></label>
           {productIsCustom ? (
             <div>
               <input
@@ -574,14 +580,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           )}
           {!productIsCustom && <p className="mt-1 text-[11px] text-slate-400">Tip: click the list, then press a number key to jump straight to it</p>}
         </div>
-        <div>
-          <label className={labelCls}>Driver Name</label>
-          <input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" />
-          <label className={`${labelCls} mt-2`}>Driver Phone</label>
-          <input value={driverPhone} onChange={(e) => setDriverPhone(e.target.value)} className={inputCls} placeholder="optional" />
-        </div>
+        <div><label className={labelCls}>Driver Name<span className="font-khmer block text-brand-600">ឈ្មោះអ្នកបើកបរ</span></label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
         <div className="col-span-2">
-          <label className={labelCls}>{type === "BUY" ? "Buyer" : "Seller"}</label>
+          <label className={labelCls}>
+            {type === "BUY" ? "Buyer" : "Seller"}
+            <span className="font-khmer block text-brand-600">{type === "BUY" ? "អ្នកទិញ" : "អ្នកលក់"}</span>
+          </label>
           {recordedByIsCustom ? (
             <div>
               <input
@@ -633,6 +637,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         <WeightField
           locationId={locationId}
           label={type === "BUY" ? "Gross Weight — loaded truck (kg)" : "Weight — empty truck (kg)"}
+          labelKm={type === "BUY" ? "ទម្ងន់សរុប — រថយន្តដឹកទំនិញ (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)"}
           value={grossWeight}
           onChange={setGrossWeight}
           isAdmin={isAdmin}
@@ -641,8 +646,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Saving…" : "Save & Print Weigh-In Slip"}</button>
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
+        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+          {saving ? "Saving…" : (<>Save & Print Weigh-In Slip<span className="font-khmer block text-xs font-normal text-emerald-100">រក្សាទុក និង បោះពុម្ពសំបុត្រថ្លឹង</span></>)}
+        </button>
       </div>
     </Modal>
   );
@@ -1040,7 +1047,6 @@ function TicketSlip({ ticket, onClose }) {
             {ticket.phone && <div className={rowCls}><span className="text-slate-500">Phone</span><span className="font-medium text-slate-700">{ticket.phone}</span></div>}
             <div className={rowCls}><span className="text-slate-500">Product</span><span className="font-medium text-slate-700">{ticket.product_name}</span></div>
             <div className={rowCls}><span className="text-slate-500">Driver</span><span className="font-medium text-slate-700">{ticket.driver_name || "—"}</span></div>
-            {ticket.driver_phone && <div className={rowCls}><span className="text-slate-500">Driver Phone</span><span className="font-medium text-slate-700">{ticket.driver_phone}</span></div>}
           </div>
 
           {/* Once quality/price has been set, show it here too — useful if
@@ -1203,7 +1209,7 @@ export default function WeighingTickets() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
-              <div key={t.id} className={`rounded-xl border-l-4 border border-slate-200 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-l-emerald-400" : "border-l-rose-400"}`}>
+              <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-2 flex items-start justify-between">
                   <div>
                     <p className="flex items-center gap-1.5 font-semibold text-slate-800">
@@ -1212,11 +1218,7 @@ export default function WeighingTickets() {
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-400">
-                      {t.stationName} ·{" "}
-                      <span className={`font-semibold ${t.type === "BUY" ? "text-emerald-600" : "text-rose-600"}`}>{t.type === "BUY" ? "BUY" : "SELL"}</span>
-                      {t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}
-                    </p>
+                    <p className="text-xs text-slate-400">{t.stationName} · {t.type}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
                   </div>
                   <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
                 </div>
