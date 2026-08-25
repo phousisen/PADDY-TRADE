@@ -1,8 +1,10 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 html, body, #root { height: 100%; }
 body { @apply bg-paper text-slate-800 font-sans; }
+
 /* Hide the up/down spinner arrows on number inputs everywhere in the app
    (weights, prices, percentages, etc.) — they don't add anything useful
    here and just clutter the field. */
@@ -15,6 +17,7 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
 /* Standard A4 page (210mm x 297mm) — the only paper size this printer's
    dialog offers, confirmed by the user. Both printed documents below only
    occupy the top portion of that A4 sheet, matching the real 210mm x
@@ -142,20 +145,15 @@ input[type="number"] {
 
   /* ===================================================================
      Receipt (Receipt.jsx) — shares the exact same verified design as the
-     Weigh-In Slip above — bordered
-     lines-only monochrome design, approved [2026-08-25]: logo +
-     per-location address/phone header, doc-type badge with ticket/truck
-     number, dotted field grid, bordered weight table, Quality +
-     Price&Payment cards (QR built into the payment card), bold bordered
-     Total Amount band, generous signature space. Zero fills anywhere —
-     deliberate, since the target printer is a monochrome dot-matrix and
-     solid fills print as dense, ink-heavy blocks on that class of
-     printer. Verified against a real print-height render at 122mm of
-     the 140mm physical form — 18mm safety margin. `overflow: hidden` is a
-     deliberate hard cap: on this continuous-feed printer, silently
-     clipping excess content is a smaller problem than it silently
-     overflowing onto a second, mostly-blank physical form the way the
-     untuned version used to. */
+     Weigh-In Slip above — bordered lines-only monochrome design,
+     approved [2026-08-25]. Zero fills anywhere — deliberate, since the
+     target printer is a monochrome dot-matrix and solid fills print as
+     dense, ink-heavy blocks on that class of printer. Verified against a
+     real print-height render at 122mm of the 140mm physical form — 18mm
+     safety margin. `overflow: hidden` is a deliberate hard cap: on this
+     continuous-feed printer, silently clipping excess content is a
+     smaller problem than it silently overflowing onto a second,
+     mostly-blank physical form the way the untuned version used to. */
   #receipt-root {
     position: absolute !important;
     top: 3mm !important;
