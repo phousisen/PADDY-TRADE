@@ -6,154 +6,344 @@ import { isTransactionPendingSync, onSyncStatusChange } from "../offlineQueue.js
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+function fmtTime(t) {
+  if (!t) return "";
+  const [hh, mm] = t.split(":");
+  let h = parseInt(hh, 10);
+  const period = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  return `${h}:${mm} ${period}`;
+}
+// Splits a timestamptz (from gross_at/tare_at) into Cambodia-local date and
+// time strings for the IN/OUT weight table, same as everywhere else in the
+// app that shows Cambodia wall-clock time regardless of the viewer's own
+// device timezone.
 function splitCambodiaTimestamp(iso) {
-  if (!iso) return { time: "—" };
+  if (!iso) return { date: "—", time: "—" };
   const d = new Date(iso);
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "2-digit" }).format(d);
   const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
-  return { time };
+  return { date, time };
 }
-function ddmmyyyy(dateStr) {
-  if (!dateStr) return "—";
-  const [y, m, d] = dateStr.split("-");
-  return `${d}-${m}-${y}`;
+
+// Font stacks matching the real paper ticket's own fonts exactly (confirmed
+// by opening the source .xls and reading its font names directly) — these
+// are standard on Cambodian Windows PCs (the same PCs this gets printed
+// from), so no web font loading is needed. If a device doesn't have them,
+// the browser falls back to any other Khmer Unicode font it has.
+const FONT_TITLE = { fontFamily: "'Khmer OS Bokor', 'Khmer OS Muol Light', serif" };
+const FONT_BOLD = { fontFamily: "'Khmer OS Battambang', 'Khmer OS', sans-serif" };
+const FONT_BODY = { fontFamily: "'Khmer OS', 'Khmer OS Battambang', sans-serif" };
+
+// A wide gap between the Khmer word and the English word on the same line,
+// matching the spacing used on the real paper coupon for the "own side"
+// field (e.g. "អ្នកទិញ              Buyer") — kept as one constant so both
+// the Buy and Sell version of that line line up the same way.
+const LABEL_GAP = " ".repeat(14);
+
+// ---------------------------------------------------------------------------
+// Every piece of text on the ticket, and every adjustable style knob, lives
+// here as ONE plain object — this is what the Owner-only Receipt Template
+// page (ReceiptTemplateEditor.jsx) reads, edits, and saves (as JSON, under
+// the existing generic `system_settings` table, key "receipt_template" — no
+// new database table needed). Printing always merges whatever was saved
+// onto these defaults (see mergeReceiptTemplate below), so a ticket never
+// breaks just because a field was added here after someone already saved a
+// customized template.
+// ---------------------------------------------------------------------------
+export const DEFAULT_RECEIPT_TEMPLATE = {
+  labels: {
+    ticketTypeBuyEn: "WEIGHT TICKET / IMPORT",
+    ticketTypeBuyKh: "ទិញចូល",
+    ticketTypeSellEn: "WEIGHT TICKET / EXPORT",
+    ticketTypeSellKh: "លក់ចេញ",
+    numberInEn: "Number in",
+    numberInKh: "លេខរៀង",
+    dateEn: "Date",
+    dateKh: "ថ្ងៃ ខែ ឆ្នាំ",
+    productEn: "Product",
+    productKh: "ទំនិញ",
+    driverNameEn: "Driver Name",
+    driverNameKh: "ឈ្មោះអ្នកបើកបរ",
+    sellerEn: "Seller",
+    sellerKh: "អ្នកលក់",
+    buyerEn: "Buyer",
+    buyerKh: "អ្នកទិញ",
+    itemEn: "Item",
+    itemKh: "ចូល/ចេញ",
+    truckNumberEn: "Truck Number",
+    truckNumberKh: "លេខឡាន",
+    weightDateEn: "Date",
+    weightDateKh: "ថ្ងៃ ខែ ឆ្នាំ",
+    timeEn: "Time",
+    timeKh: "ពេលវេលា",
+    weightEn: "Weight",
+    weightKh: "ទំងន់",
+    inEn: "IN",
+    inKh: "ចូល",
+    outEn: "OUT",
+    outKh: "ចេញ",
+    netWEn: "NET W.",
+    netWKh: "ទំងន់សុទ្ធ",
+    priceEn: "PRICE",
+    priceKh: "តម្លៃ",
+    amountEn: "AMOUNT",
+    amountKh: "តម្លៃសរុប",
+    kgLabel: "Kg",
+    operatorEn: "Operator",
+    operatorKh: "អ្នកថ្លឹង",
+    driverEn: "Driver",
+    driverKh: "អ្នកបើកបរ",
+  },
+  // Sizes bumped up from the original defaults (30/18/16/14px) after the
+  // Owner asked for clearer text on the actual printed ticket — the ticket
+  // prints on a small 220mm x 140mm continuous-feed paper (see index.css),
+  // so slightly larger, bolder text goes a long way toward legibility
+  // without changing the paper size itself. Owner can still fine-tune any
+  // of these from the Receipt Template page.
+  style: {
+    headerAlign: "center",
+    titleSizePx: 34,
+    titleColor: "#0f172a",
+    subLineSizePx: 20,
+    subLineColor: "#0f172a",
+    ticketTypeSizePx: 19,
+    labelColor: "#1e293b",
+    valueColor: "#000000",
+    valueBold: true,
+    bodyFontSizePx: 17,
+  },
+};
+
+// Deep-merges a saved template (possibly missing fields added after it was
+// last saved, or entirely null/corrupt) onto the defaults above, so both
+// the printed ticket and the editor always have every key filled in.
+export function mergeReceiptTemplate(saved) {
+  const s = saved || {};
+  return {
+    labels: { ...DEFAULT_RECEIPT_TEMPLATE.labels, ...(s.labels || {}) },
+    style: { ...DEFAULT_RECEIPT_TEMPLATE.style, ...(s.style || {}) },
+  };
 }
 
 // ---------------------------------------------------------------------------
-// Final approved design [2026-08-25]: replaces the earlier exact-paper-
-// coupon replica with the bordered, lines-only monochrome layout shared
-// with the Weigh-In Slip (WeighingTickets.jsx's TicketSlip) — logo +
-// per-location address/phone header, doc-type badge with ticket/truck
-// number, dotted field grid, bordered weight table, Quality +
-// Price&Payment cards (QR built into the payment card), bold bordered
-// Total Amount band, generous signature space. Verified against a real
-// print-height render at 122mm of the 140mm physical form.
-//
-// NOTE: this intentionally replaces the earlier ExactWeightTicket /
-// DEFAULT_RECEIPT_TEMPLATE customization system (labels/sizes editable via
-// a separate Owner-only Receipt Template settings page). That editor page
-// no longer has any effect on what gets printed and should be removed or
-// clearly disabled.
-//
-// NOTE: bank_name/bank_account aren't currently stored on a finalized
-// transaction — only bank_qr_url is carried over from the weighing ticket
-// (see api.js's finalizeTicket). Prints "—" for Bank/Account until those
-// two columns are added and wired through; the QR image works today.
+// Exact replica of Baitang's real printed weight ticket (a physical carbon-
+// copy coupon book before this app existed) — verified field-for-field,
+// including exact Khmer wording, against the original .xls forms
+// (Coupon_Import.xls / Coupon_Export.xls). Two versions exist on paper: an
+// "Import" coupon used when buying from a farmer, and an "Export" coupon
+// used when selling to a buyer — which one prints is decided by
+// isBuy below, exactly matching the BUY/SELL ticket type already used
+// throughout the rest of the app. Every word and every size/color below
+// comes from `tpl` (see DEFAULT_RECEIPT_TEMPLATE above) instead of being
+// hardcoded, so the Owner-only Receipt Template page can change any of it.
 // ---------------------------------------------------------------------------
-function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
-  const inStamp = splitCambodiaTimestamp(tx.gross_at);
-  const outStamp = splitCambodiaTimestamp(tx.tare_at);
-  const hasWeighInOut = tx.gross_kg != null;
-  const productName = tx.product_name || tx.productName || "—";
+export function ExactWeightTicket({ tx, isBuy, tpl, companyNameKh, companyAddressKh, companyPhoneLine, productName, hasWeighInOut, inStamp, outStamp }) {
+  const L = tpl.labels;
+  const S = tpl.style;
 
-  const partyLabelKh = isBuy ? "អ្នកលក់" : "អ្នកទិញ";
-  const partyLabelEn = isBuy ? "Seller" : "Buyer";
-  const staffLabelKh = isBuy ? "អ្នកទិញ" : "អ្នកលក់";
-  const staffLabelEn = isBuy ? "Buyer (staff)" : "Seller (staff)";
+  // "លេខរៀង / Number in" on the real paper coupon is the sequential number
+  // on the guard-issued queue slip a farmer/truck already holds when they
+  // arrive (see the "Quality Ticket No." field on the Weigh-In screen) —
+  // not this app's own internal ticket code — so that's the more faithful
+  // match here, falling back to the ticket's own code if a paper number was
+  // never recorded (e.g. a manually-entered transaction).
+  const numberIn = tx.paper_ticket_no || tx.code;
+
+  // On the real coupon, the blank "Seller"/"Buyer" field on the side that
+  // ISN'T the farmer/counterparty is filled in by hand with the name of
+  // whichever staff member recorded this ticket (tx.recorded_by_name) —
+  // falling back to the company's own name only for older tickets that
+  // were created before that field existed and never had a name recorded.
+  const counterpartyLabelKh = isBuy ? L.sellerKh : ` ${L.buyerKh}`;
+  const counterpartyLabelEn = isBuy ? L.sellerEn : L.buyerEn;
+  const ownSideLabel = isBuy ? `${L.buyerKh}${LABEL_GAP}${L.buyerEn}` : `${L.sellerKh}${LABEL_GAP}${L.sellerEn}`;
+  const ownSideName = tx.recorded_by_name || companyNameKh;
+
+  const cell = "border border-slate-900 px-2 py-1";
+  const labelStyle = { ...FONT_BODY, color: S.labelColor };
+  const valueStyle = { color: S.valueColor, fontWeight: S.valueBold ? 700 : 500 };
+  const bodyPx = { fontSize: `${S.bodyFontSizePx}px` };
+  // Product name, driver name, and the buyer/seller name are the only
+  // free-text fields here — an unusually long one (a long company name,
+  // say) could otherwise wrap to several lines and push the ticket past
+  // the printed paper's 140mm height. Capping those specific fields at 2
+  // lines with an ellipsis keeps the ticket's total height predictable no
+  // matter what gets typed in, while the short fields (ticket number,
+  // date) are never long enough to need it.
+  //
+  // This clamp style goes on an inner <div>, NEVER directly on the <td>
+  // itself — `display: -webkit-box` overrides a table cell's required
+  // `display: table-cell`, which breaks that column's width under
+  // `table-fixed` (confirmed by testing: it silently crushed that whole
+  // column, corrupting every row sharing it, not just the long-text one).
+  const clampStyle = { ...valueStyle, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" };
 
   return (
-    <div id="receipt-root">
-      <div className="head">
-        <img className="head-logo" src="/logo-paitong.png" alt="Company logo" />
-        <div className="head-mid">
-          <div className="co-address">{stationAddress || "—"}</div>
-          <div className="co-phone">Tel: {stationPhone || "—"}</div>
-        </div>
-        <div className="head-right">
-          <span className="doc-type">Weight Ticket — {isBuy ? "Import" : "Export"}</span>
-          <div className="doc-no">No. {tx.code}</div>
-          <div className="doc-sub">Truck No. {tx.car_plate || "—"}</div>
-        </div>
+    <div style={bodyPx}>
+      {/* Header — company name/address/phone, exact wording and fonts from
+          the real coupon. */}
+      <div style={{ textAlign: S.headerAlign }}>
+        <p className="font-bold" style={{ ...FONT_TITLE, fontSize: `${S.titleSizePx}px`, color: S.titleColor }}>{companyNameKh}</p>
+        <p className="font-bold" style={{ ...FONT_BOLD, fontSize: `${S.subLineSizePx}px`, color: S.subLineColor }}>{companyAddressKh}</p>
+        <p className="font-bold" style={{ ...FONT_BOLD, fontSize: `${S.subLineSizePx}px`, color: S.subLineColor }}>{companyPhoneLine}</p>
+        <p className="mt-1 font-bold" style={{ fontSize: `${S.ticketTypeSizePx}px` }}>
+          {isBuy
+            ? <>{L.ticketTypeBuyEn} ( <span style={FONT_BODY}>{L.ticketTypeBuyKh}</span> )</>
+            : <>{L.ticketTypeSellEn} ( <span style={FONT_BODY}>{L.ticketTypeSellKh}</span> )</>}
+        </p>
       </div>
 
-      <div className="fields">
-        <div className="field"><span className="lbl"><span className="kh">ទំនិញ</span><span className="en">Product</span></span><span className="val">{productName}</span></div>
-        <div className="field"><span className="lbl"><span className="kh">ថ្ងៃ</span><span className="en">Date</span></span><span className="val">{ddmmyyyy(tx.tx_date)}</span></div>
-        <div className="field"><span className="lbl"><span className="kh">{partyLabelKh}</span><span className="en">{partyLabelEn}</span></span><span className="val">{tx.partyName}{tx.partyIdNumber ? ` · ${tx.partyIdNumber}` : ""}</span></div>
-        <div className="field"><span className="lbl"><span className="kh">អ្នកបើកបរ</span><span className="en">Driver</span></span><span className="val">{tx.driver_name || "—"}{tx.driver_phone ? ` · ${tx.driver_phone}` : ""}</span></div>
-        <div className="field"><span className="lbl"><span className="kh">លេខសំបុត្រ</span><span className="en">Ticket No.</span></span><span className="val">{tx.paper_ticket_no || tx.code}</span></div>
-        <div className="field"><span className="lbl"><span className="kh">{staffLabelKh}</span><span className="en">{staffLabelEn}</span></span><span className="val">{tx.recorded_by_name || "—"}</span></div>
-      </div>
-
-      <table className="weights">
-        <thead>
-          <tr>
-            <th><span className="kh">ចូល/ចេញ</span><span className="en">Item</span></th>
-            <th><span className="kh">ថ្ងៃ</span><span className="en">Date</span></th>
-            <th><span className="kh">ពេលវេលា</span><span className="en">Time</span></th>
-            <th className="num"><span className="kh">ទម្ងន់</span><span className="en">Weight</span></th>
-          </tr>
-        </thead>
+      {/* Info block — two label/value columns, same order as the coupon. */}
+      <table className="mt-2 w-full table-fixed" style={bodyPx}>
         <tbody>
           <tr>
-            <td>ចូល IN</td>
-            <td>{hasWeighInOut ? ddmmyyyy(tx.tx_date) : "—"}</td>
-            <td>{hasWeighInOut ? inStamp.time : "—"}</td>
-            <td className="num">{hasWeighInOut ? `${fmt2(tx.gross_kg)} kg` : "—"}</td>
+            <td className="w-[13%] whitespace-nowrap py-1 align-top" style={labelStyle}>{L.numberInKh}</td>
+            <td className="w-[13%] py-1 align-top" style={{ color: S.labelColor }}>{L.numberInEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top leading-snug" style={valueStyle}>{numberIn}</td>
+            <td className="w-[26%] whitespace-nowrap py-1 pl-3 align-top" style={labelStyle}>{L.dateKh}&nbsp;&nbsp;&nbsp;{L.dateEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top leading-snug" style={valueStyle}>{tx.tx_date}</td>
           </tr>
           <tr>
-            <td>ចេញ OUT</td>
-            <td>{hasWeighInOut ? ddmmyyyy(tx.tx_date) : "—"}</td>
-            <td>{hasWeighInOut ? outStamp.time : "—"}</td>
-            <td className="num">{hasWeighInOut ? `${fmt2(tx.tare_kg)} kg` : "—"}</td>
+            <td className="w-[13%] py-1 align-top" style={labelStyle}>{L.productKh}</td>
+            <td className="w-[13%] py-1 align-top" style={{ color: S.labelColor }}>{L.productEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{productName}</div></td>
+            <td className="w-[26%] whitespace-nowrap py-1 pl-3 align-top" style={labelStyle}>{L.driverNameKh} {L.driverNameEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{tx.driver_name || "—"}</div></td>
           </tr>
-          <tr className="net">
-            <td colSpan={3}>ទម្ងន់សុទ្ធ Net Weight</td>
-            <td className="num">{fmt2(tx.quantity_kg)} kg</td>
+          <tr>
+            <td className="w-[13%] whitespace-nowrap py-1 align-top" style={labelStyle}>{counterpartyLabelKh}</td>
+            <td className="w-[13%] py-1 align-top" style={{ color: S.labelColor }}>{counterpartyLabelEn}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{tx.partyName}</div></td>
+            <td className="w-[26%] whitespace-nowrap py-1 pl-3 align-top" style={labelStyle}>{ownSideLabel}</td>
+            <td className="w-[24%] border-b border-slate-500 py-1 align-top"><div className="leading-snug" style={clampStyle}>{ownSideName}</div></td>
           </tr>
         </tbody>
       </table>
 
-      <div className="cards">
-        <div className="card quality">
-          <div className="card-h">គុណភាព · Quality</div>
-          <div className="row"><span className="k">Grade</span><span className="v">{tx.quality_grade || "—"}</span></div>
-          <div className="row"><span className="k">Moisture</span><span className="v">{fmt2(tx.moisture_pct)}%</span></div>
-          <div className="row"><span className="k">Mixture / Outthrow</span><span className="v">{fmt2(tx.mixture_pct)}% / {fmt2(tx.outthrow_pct)}%</span></div>
-          <div className="row"><span className="k">Deduction</span><span className="v">{fmt2(tx.deduction_kg)} kg</span></div>
-        </div>
-        <div className="card payment">
-          <div className="payment-fields">
-            <div className="card-h">តម្លៃ និង ការទូទាត់ · Price &amp; Payment</div>
-            <div className="row price"><span className="k">Price / kg</span><span className="v">{tx.price_per_kg != null ? fmtRiel(tx.price_per_kg) : "—"}</span></div>
-            <div className="row"><span className="k">Bank</span><span className="v">—</span></div>
-            {isBuy && <div className="row"><span className="k">Staff Fee</span><span className="v">{tx.staff_fee ? fmtRiel(tx.staff_fee) : "—"}</span></div>}
-            <div className="row"><span className="k">Account</span><span className="v">—</span></div>
-          </div>
-          <div className="payment-qr">
-            {tx.bank_qr_url
-              ? <img src={tx.bank_qr_url} alt="Payment QR" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-              : "QR"}
-          </div>
-        </div>
-      </div>
-
-      {tx.price_per_kg != null && (
-        <div className="total-band">
-          <span className="lab">តម្លៃសរុប · Total Amount</span>
-          <span className="amt">{fmtRiel(tx.total_with_tax ?? tx.amount)}</span>
-        </div>
-      )}
-
-      <div className="sig-row">
-        <div className="sig-box"><div className="sig-line"></div><span className="kh">អ្នកថ្លឹង</span> <span className="en">Operator</span></div>
-        <div className="sig-box"><div className="sig-line"></div><span className="kh">អ្នកបើកបរ</span> <span className="en">Driver</span></div>
-      </div>
+      {/* Weight grid — Item / Truck Number / Date / Time / Weight, same 5
+          columns, IN then OUT then NET W. / PRICE / AMOUNT, same as the
+          coupon's own table. */}
+      <table className="mt-2 w-full border-collapse table-fixed" style={bodyPx}>
+        <thead>
+          <tr style={FONT_BODY}>
+            <th className={`${cell} w-[13%] font-normal`}>{L.itemKh} {L.itemEn}</th>
+            <th className={`${cell} w-[19%] font-normal`}>{L.truckNumberKh} {L.truckNumberEn}</th>
+            <th className={`${cell} w-[16%] font-normal`}>{L.weightDateKh} {L.weightDateEn}</th>
+            <th className={`${cell} w-[24%] font-normal`}>{L.timeKh} {L.timeEn}</th>
+            <th className={`${cell} w-[21%] font-normal`} colSpan={2}>{L.weightKh} {L.weightEn}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className={cell} style={FONT_BODY}>{L.inKh}&nbsp;&nbsp;&nbsp;&nbsp;{L.inEn}</td>
+            <td className={cell}>{tx.car_plate || "—"}</td>
+            <td className={cell}>{hasWeighInOut ? inStamp.date : "—"}</td>
+            <td className={cell}>{hasWeighInOut ? inStamp.time : "—"}</td>
+            <td className={`${cell} text-right font-medium`}>{hasWeighInOut ? fmt2(tx.gross_kg) : "—"}</td>
+            <td className={`${cell} text-center font-bold`}>{L.kgLabel}</td>
+          </tr>
+          <tr>
+            <td className={cell} style={FONT_BODY}>{L.outKh}&nbsp;&nbsp;&nbsp;{L.outEn}</td>
+            <td className={cell}>{tx.car_plate || "—"}</td>
+            <td className={cell}>{hasWeighInOut ? outStamp.date : "—"}</td>
+            <td className={cell}>{hasWeighInOut ? outStamp.time : "—"}</td>
+            <td className={`${cell} text-right font-medium`}>{hasWeighInOut ? fmt2(tx.tare_kg) : "—"}</td>
+            <td className={`${cell} text-center font-bold`}>{L.kgLabel}</td>
+          </tr>
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>{L.netWKh}&nbsp;&nbsp;&nbsp;&nbsp;{L.netWEn}</td>
+            <td className={`${cell} text-right font-bold`}>{fmt2(tx.quantity_kg)}</td>
+            <td className={`${cell} text-center font-bold`}>{L.kgLabel}</td>
+          </tr>
+          {/* A ticket sent out for pricing later (price_per_kg not yet set)
+              never had a real amount to print — showing "0 ៛" here would
+              read as a completed, free transaction. Print a plain dash
+              instead so it's obviously still pending. */}
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>{L.priceKh}&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{L.priceEn}</td>
+            <td className={`${cell} text-right font-medium`} colSpan={2}>{tx.price_per_kg != null ? fmtRiel(tx.price_per_kg) : "—"}</td>
+          </tr>
+          <tr>
+            <td className={`${cell} text-right`} colSpan={4} style={FONT_BODY}>{L.amountKh} {L.amountEn}</td>
+            <td className={`${cell} text-right font-bold`} colSpan={2}>{tx.price_per_kg != null ? fmtRiel(tx.amount) : "—"}</td>
+          </tr>
+          <tr>
+            <td className="pt-6 pb-1 text-center" colSpan={2}>
+              <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
+              <span style={FONT_BODY}>{L.operatorKh} {L.operatorEn}</span>
+            </td>
+            <td className="pt-6 pb-1 text-center" colSpan={4}>
+              <div className="mx-auto mb-1 w-4/5 border-t border-dotted border-slate-700" />
+              <span style={FONT_BODY}>{L.driverKh} {L.driverEn}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
 
+// This layout is now an EXACT, field-for-field, wording-for-wording replica
+// of Baitang's own printed paper weight ticket only (see ExactWeightTicket
+// above — verified directly against the source .xls coupon files) — nothing
+// else is printed below it anymore, so it matches the real coupon 1:1 for a
+// clean print on the station's customized paper size.
 export default function Receipt({ tx, onDone }) {
   const { t } = useLanguage();
   const isBuy = tx.type === "BUY";
+  const [settings, setSettings] = useState({});
 
+  useEffect(() => {
+    api.getSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  // Printing has never meant "saved" — the paper ticket is built from this
+  // component's local `tx` object the instant Save is clicked, before any
+  // network write is even attempted (see offlineQueue.js's
+  // createTransactionOffline/finalizeTicketOffline). That's necessary for
+  // offline stations to keep working, but it means a receipt can be handed
+  // to a farmer/buyer while the actual database write is still sitting
+  // queued on this one device. This checks that directly and warns on
+  // screen (never on the printed paper itself — this sits outside
+  // #receipt-root, which print CSS already hides) so staff don't walk away
+  // from a device holding the only copy of a just-printed transaction.
   const [pendingSync, setPendingSync] = useState(() => isTransactionPendingSync(tx.id));
   useEffect(() => {
     const unsub = onSyncStatusChange(() => setPendingSync(isTransactionPendingSync(tx.id)));
     return unsub;
   }, [tx.id]);
 
-  const stationAddress = tx.stationAddress || "";
-  const stationPhone = tx.stationPhone || "";
+  // Falls back to Baitang's real registered Khmer name/address/phone (as
+  // printed on the actual coupon) if these settings were never filled in,
+  // rather than a generic placeholder — so the ticket is correct out of the
+  // box for this business, and only needs settings if it's ever reused for
+  // a different company.
+  const companyNameKh = settings.company_name_kh || "ប៉ៃតង កម្ពុជា";
+  const companyAddressKh = settings.company_address || "ភូមិព្រៃទទឹង ឃុំរាំងកេសី ស្រុកសង្កែ ខេត្តបាត់ដំបង";
+  const companyPhoneLine = settings.company_phone ? `Tel: ${settings.company_phone}` : "Tel: 012 37 36 396 / 088 96 666 52";
+
+  // The Owner's customized wording/style (Receipt Template page), parsed
+  // from JSON and merged onto the built-in defaults — falls back to plain
+  // defaults if nothing was ever saved, or if the saved JSON is corrupt.
+  let savedTpl = null;
+  if (settings.receipt_template) {
+    try { savedTpl = JSON.parse(settings.receipt_template); } catch { savedTpl = null; }
+  }
+  const tpl = mergeReceiptTemplate(savedTpl);
+
+  // Only tickets that went through Weighing Tickets (Weigh In -> Finish
+  // Ticket) carry separate gross/tare weighings — a manually-entered Buy/
+  // Sell still just has one net weight, so the IN/OUT rows fall back to a
+  // single blank dash rather than showing wrong numbers.
+  const hasWeighInOut = tx.gross_kg != null;
+  const inStamp = splitCambodiaTimestamp(tx.gross_at);
+  const outStamp = splitCambodiaTimestamp(tx.tare_at);
+  // A freshly-finalized ticket hands this component a snake_case
+  // `product_name`; a transaction reopened later (fetched via
+  // getTransactions, which joins/maps it as camelCase `productName`)
+  // doesn't — accept either so the receipt reads the same either way.
+  const productName = tx.product_name || tx.productName || "—";
 
   return (
     <div id="receipt-page" className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -177,7 +367,20 @@ export default function Receipt({ tx, onDone }) {
       )}
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
-        <ExactWeightTicket tx={tx} isBuy={isBuy} stationAddress={stationAddress} stationPhone={stationPhone} />
+        <div id="receipt-root" className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-6 text-sm shadow-sm">
+          <ExactWeightTicket
+            tx={tx}
+            isBuy={isBuy}
+            tpl={tpl}
+            companyNameKh={companyNameKh}
+            companyAddressKh={companyAddressKh}
+            companyPhoneLine={companyPhoneLine}
+            productName={productName}
+            hasWeighInOut={hasWeighInOut}
+            inStamp={inStamp}
+            outStamp={outStamp}
+          />
+        </div>
       </main>
     </div>
   );
