@@ -1209,16 +1209,24 @@ export default function WeighingTickets() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
-              <div key={t.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              // Left border + badge color follow the same BUY=green /
+              // SELL=blue convention already used on the Transactions page
+              // (tx.type === "BUY" ? brand green : sky blue) — this board
+              // never had that applied, so BUY and SELL cards looked
+              // identical apart from the small text label.
+              <div key={t.id} className={`rounded-xl border border-l-4 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-slate-200 border-l-brand-500" : "border-slate-200 border-l-sky-400"}`}>
                 <div className="mb-2 flex items-start justify-between">
                   <div>
-                    <p className="flex items-center gap-1.5 font-semibold text-slate-800">
+                    <p className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-800">
+                      <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${t.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-sky-100 text-sky-700"}`}>
+                        {t.type === "BUY" ? "▲ BUY" : "▼ SELL"}
+                      </span>
                       {t.code}
                       {pendingCountForTicket(t.id) > 0 && (
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-400">{t.stationName} · {t.type}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                    <p className="text-xs text-slate-400">{t.stationName}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
                   </div>
                   <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
                 </div>
