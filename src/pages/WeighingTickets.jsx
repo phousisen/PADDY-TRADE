@@ -450,9 +450,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       if (productIsCustom) addCustomPaddyType(productName);
       // Same for a newly-typed "Buyer"/"Seller" name.
       if (recordedByIsCustom) addRecordedByName(locationId, recordedByName);
-      const locationName = locations.find((l) => l.id === locationId)?.name;
+      const selectedLocation = locations.find((l) => l.id === locationId);
+      const locationName = selectedLocation?.name;
       const ticket = createTicketOffline({
-        type, locationId, locationName, partyId, partyName: partyName.trim(), phone,
+        type, locationId, locationName,
+        locationAddress: selectedLocation?.address, locationPhone: selectedLocation?.phone,
+        partyId, partyName: partyName.trim(), phone,
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
         recordedByName: recordedByName.trim(),
@@ -963,23 +966,52 @@ function DeclineModal({ ticket, onClose, onDeclined }) {
 
 // ---- Interim slip (printed at weigh-in, mirrors the paper queue ticket) ------
 
+// Final approved design [2026-08-25]: bordered/lines-only monochrome layout
+// (no fills — safe for the dot-matrix printer), logo + per-location
+// address/phone header, doc-type badge with ticket/truck number, dotted
+// field grid, bordered weight table, Quality + Price&Payment cards side by
+// side (QR built into the payment card), bold bordered Total Amount band,
+// and generous signature space. Verified against a real print-height
+// render at 131mm of the 140mm physical form — 9mm safety margin.
+// Print sizing/positioning lives in index.css under #ticket-slip-root.
+// Shares the exact layout approved for Receipt.jsx (see Receipt.jsx) so a
+// Weigh-In Slip and the final Receipt read as the same document family.
 function TicketSlip({ ticket, onClose }) {
   const [settings, setSettings] = useState({});
   useEffect(() => {
     api.getSettings().then(setSettings).catch(() => {});
   }, []);
 
+  const isBuy = ticket.type === "BUY";
+
   // Buy: In minus Out. Sell: Out minus In (see NewTicketModal/
   // FinishTicketModal above for why the two are reversed).
   const netKg = ticket.gross_kg != null && ticket.tare_kg != null
-    ? Math.max(0, ticket.type === "BUY" ? ticket.gross_kg - ticket.tare_kg : ticket.tare_kg - ticket.gross_kg)
+    ? Math.max(0, isBuy ? ticket.gross_kg - ticket.tare_kg : ticket.tare_kg - ticket.gross_kg)
     : null;
   const inStamp = splitCambodiaTimestamp(ticket.gross_at);
   const outStamp = splitCambodiaTimestamp(ticket.tare_at);
-  const isPriced = !!ticket.priced_at;
-  const cellCls = "px-2 py-1.5 border border-slate-300";
-  const labelCellCls = `${cellCls} bg-slate-50 font-medium text-slate-600 whitespace-nowrap`;
-  const rowCls = "flex justify-between border-b border-slate-100 px-3 py-2 last:border-0";
+
+  // Same Buy/Sell role convention approved for the printed documents:
+  // Buy (Import) — the party is the Seller (farmer), staff is the Buyer.
+  // Sell (Export) — the party is the Buyer (customer), staff is the Seller.
+  const partyLabelKh = isBuy ? "អ្នកលក់" : "អ្នកទិញ";
+  const partyLabelEn = isBuy ? "Seller" : "Buyer";
+  const staffLabelKh = isBuy ? "អ្នកទិញ" : "អ្នកលក់";
+  const staffLabelEn = isBuy ? "Buyer (staff)" : "Seller (staff)";
+
+  const payableKg = netKg != null ? Math.max(0, netKg - (ticket.deduction_kg || 0)) : null;
+  const totalAmount = payableKg != null && ticket.price_per_kg != null
+    ? Math.max(0, payableKg * ticket.price_per_kg - (isBuy ? (ticket.staff_fee || 0) : 0))
+    : null;
+
+  // DD-MM-YYYY, Cambodia calendar date — matches the approved numeric-only
+  // date format (no month names) used throughout the printed documents.
+  function ddmmyyyy(dateStr) {
+    if (!dateStr) return "—";
+    const [y, m, d] = dateStr.split("-");
+    return `${d}-${m}-${y}`;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -991,81 +1023,97 @@ function TicketSlip({ ticket, onClose }) {
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
           </div>
         </div>
-        <div id="ticket-slip-root" className="rounded-lg border border-slate-300 p-6 text-sm">
-          {/* Header — same company info style as the final receipt */}
-          <div className="mb-3 text-center">
-            <p className="text-lg font-bold text-slate-800">{settings.company_name || "PaddyTrade"}</p>
-            {settings.company_name_kh && <p className="text-sm text-slate-500">{settings.company_name_kh}</p>}
-            <p className="text-xs text-slate-400">{settings.company_address || "Battambang, Cambodia"}</p>
-            {settings.company_phone && <p className="text-xs text-slate-400">{settings.company_phone}</p>}
-          </div>
-          <p className="text-center text-lg font-bold text-slate-800">Ticket {ticket.code}</p>
-          <p className="text-center text-xs text-slate-500">{ticket.stationName} · {ticket.type === "BUY" ? "Buy (from farmer)" : "Sell (to buyer)"}</p>
-          {ticket.paper_ticket_no && <p className="text-center text-xs text-slate-400">Quality Ticket No. {ticket.paper_ticket_no}</p>}
 
-          {/* Weight table — same LIST/TRUCK ID/DATE/TIME/WEIGHT layout as
-              the final receipt, so this reads consistently once printed. */}
-          <table className="my-4 w-full border-collapse text-xs">
+        <div id="ticket-slip-root">
+          <div className="head">
+            <img className="head-logo" src="/logo-paitong.png" alt="Company logo" />
+            <div className="head-mid">
+              <div className="co-address">{ticket.stationAddress || settings.company_address || "—"}</div>
+              <div className="co-phone">Tel: {ticket.stationPhone || settings.company_phone || "—"}</div>
+            </div>
+            <div className="head-right">
+              <span className="doc-type">Weight Ticket — {isBuy ? "Import" : "Export"}</span>
+              <div className="doc-no">No. {ticket.code}</div>
+              <div className="doc-sub">Truck No. {ticket.car_plate || "—"}</div>
+            </div>
+          </div>
+
+          <div className="fields">
+            <div className="field"><span className="lbl"><span className="kh">ទំនិញ</span><span className="en">Product</span></span><span className="val">{ticket.product_name || "—"}</span></div>
+            <div className="field"><span className="lbl"><span className="kh">ថ្ងៃ</span><span className="en">Date</span></span><span className="val">{ddmmyyyy(ticket.gross_at ? ticket.gross_at.slice(0, 10) : null)}</span></div>
+            <div className="field"><span className="lbl"><span className="kh">{partyLabelKh}</span><span className="en">{partyLabelEn}</span></span><span className="val">{ticket.party_name}{ticket.phone ? ` · ${ticket.phone}` : ""}</span></div>
+            <div className="field"><span className="lbl"><span className="kh">អ្នកបើកបរ</span><span className="en">Driver</span></span><span className="val">{ticket.driver_name || "—"}</span></div>
+            <div className="field"><span className="lbl"><span className="kh">លេខសំបុត្រ</span><span className="en">Ticket No.</span></span><span className="val">{ticket.paper_ticket_no || "—"}</span></div>
+            <div className="field"><span className="lbl"><span className="kh">{staffLabelKh}</span><span className="en">{staffLabelEn}</span></span><span className="val">{ticket.recorded_by_name || "—"}</span></div>
+          </div>
+
+          <table className="weights">
             <thead>
-              <tr className="bg-slate-100 text-slate-500">
-                <th className={`${cellCls} text-left font-medium`}>List</th>
-                <th className={`${cellCls} text-left font-medium`}>Truck ID</th>
-                <th className={`${cellCls} text-left font-medium`}>Date</th>
-                <th className={`${cellCls} text-left font-medium`}>Time</th>
-                <th className={`${cellCls} text-right font-medium`}>Weight</th>
+              <tr>
+                <th><span className="kh">ចូល/ចេញ</span><span className="en">Item</span></th>
+                <th><span className="kh">ថ្ងៃ</span><span className="en">Date</span></th>
+                <th><span className="kh">ពេលវេលា</span><span className="en">Time</span></th>
+                <th className="num"><span className="kh">ទម្ងន់</span><span className="en">Weight</span></th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td className={`${cellCls} font-medium text-slate-600`}>IN</td>
-                <td className={`${cellCls} text-slate-600`}>{ticket.car_plate || "—"}</td>
-                <td className={`${cellCls} text-slate-600`}>{inStamp.date}</td>
-                <td className={`${cellCls} text-slate-600`}>{inStamp.time}</td>
-                <td className={`${cellCls} text-right font-medium text-slate-700`}>{ticket.gross_kg != null ? `${fmt2(ticket.gross_kg)} KG` : "—"}</td>
+                <td>ចូល IN</td>
+                <td>{ddmmyyyy(ticket.gross_at ? ticket.gross_at.slice(0, 10) : null)}</td>
+                <td>{inStamp.time}</td>
+                <td className="num">{ticket.gross_kg != null ? `${fmt2(ticket.gross_kg)} kg` : "—"}</td>
               </tr>
               {ticket.tare_kg != null && (
                 <tr>
-                  <td className={`${cellCls} font-medium text-slate-600`}>OUT</td>
-                  <td className={`${cellCls} text-slate-600`}>{ticket.car_plate || "—"}</td>
-                  <td className={`${cellCls} text-slate-600`}>{outStamp.date}</td>
-                  <td className={`${cellCls} text-slate-600`}>{outStamp.time}</td>
-                  <td className={`${cellCls} text-right font-medium text-slate-700`}>{fmt2(ticket.tare_kg)} KG</td>
+                  <td>ចេញ OUT</td>
+                  <td>{ddmmyyyy(ticket.tare_at ? ticket.tare_at.slice(0, 10) : null)}</td>
+                  <td>{outStamp.time}</td>
+                  <td className="num">{fmt2(ticket.tare_kg)} kg</td>
                 </tr>
               )}
               {netKg != null && (
-                <tr>
-                  <td colSpan={4} className={labelCellCls}>Net Weight</td>
-                  <td className={`${cellCls} text-right font-semibold text-slate-800`}>{fmt2(netKg)} KG</td>
+                <tr className="net">
+                  <td colSpan={3}>ទម្ងន់សុទ្ធ Net Weight</td>
+                  <td className="num">{fmt2(netKg)} kg</td>
                 </tr>
               )}
             </tbody>
           </table>
 
-          {/* Truck / party details */}
-          <div className="mb-3 overflow-hidden rounded-lg border border-slate-200">
-            <div className={rowCls}><span className="text-slate-500">{ticket.type === "BUY" ? "Seller (Farmer)" : "Buyer"}</span><span className="font-medium text-slate-700">{ticket.party_name}</span></div>
-            {ticket.phone && <div className={rowCls}><span className="text-slate-500">Phone</span><span className="font-medium text-slate-700">{ticket.phone}</span></div>}
-            <div className={rowCls}><span className="text-slate-500">Product</span><span className="font-medium text-slate-700">{ticket.product_name}</span></div>
-            <div className={rowCls}><span className="text-slate-500">Driver</span><span className="font-medium text-slate-700">{ticket.driver_name || "—"}</span></div>
+          <div className="cards">
+            <div className="card quality">
+              <div className="card-h">គុណភាព · Quality</div>
+              <div className="row"><span className="k">Grade</span><span className="v">{ticket.quality_grade || "—"}</span></div>
+              <div className="row"><span className="k">Moisture</span><span className="v">{fmt2(ticket.moisture_pct)}%</span></div>
+              <div className="row"><span className="k">Mixture / Outthrow</span><span className="v">{fmt2(ticket.mixture_pct)}% / {fmt2(ticket.outthrow_pct)}%</span></div>
+              <div className="row"><span className="k">Deduction</span><span className="v">{fmt2(ticket.deduction_kg)} kg</span></div>
+            </div>
+            <div className="card payment">
+              <div className="payment-fields">
+                <div className="card-h">តម្លៃ និង ការទូទាត់ · Price &amp; Payment</div>
+                <div className="row price"><span className="k">Price / kg</span><span className="v">{ticket.price_per_kg != null ? fmtRiel(ticket.price_per_kg) : "—"}</span></div>
+                <div className="row"><span className="k">Bank</span><span className="v">{ticket.bank_name || "—"}</span></div>
+                {isBuy && <div className="row"><span className="k">Staff Fee</span><span className="v">{ticket.staff_fee ? fmtRiel(ticket.staff_fee) : "—"}</span></div>}
+                <div className="row"><span className="k">Account</span><span className="v">{ticket.bank_account || "—"}</span></div>
+              </div>
+              <div className="payment-qr">
+                {ticket.bank_qr_url
+                  ? <img src={ticket.bank_qr_url} alt="Payment QR" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  : "QR"}
+              </div>
+            </div>
           </div>
 
-          {/* Once quality/price has been set, show it here too — useful if
-              this slip gets reprinted after Finish Ticket. */}
-          {isPriced && (
-            <div className="mb-3 overflow-hidden rounded-lg border border-slate-200">
-              {ticket.quality_grade && <div className={rowCls}><span className="text-slate-500">Quality Grade</span><span className="font-medium text-slate-700">{ticket.quality_grade}</span></div>}
-              <div className={rowCls}><span className="text-slate-500">Moisture / Outthrow</span><span className="font-medium text-slate-700">{fmt2(ticket.moisture_pct)}% / {fmt2(ticket.outthrow_pct)}%</span></div>
-              {ticket.price_per_kg != null && <div className={rowCls}><span className="text-slate-500">Price / Kg</span><span className="font-medium text-slate-700">{fmtRiel(ticket.price_per_kg)}</span></div>}
-              {ticket.bank_name && <div className={rowCls}><span className="text-slate-500">Bank</span><span className="font-medium text-slate-700">{ticket.bank_name}{ticket.bank_name !== "Cash" && ticket.bank_account ? ` — ${ticket.bank_account}` : ""}</span></div>}
+          {totalAmount != null && (
+            <div className="total-band">
+              <span className="lab">តម្លៃសរុប · Total Amount</span>
+              <span className="amt">{fmtRiel(totalAmount)}</span>
             </div>
           )}
 
-          {/* Signature lines — larger and more spaced out for an actual pen */}
-          <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-8 text-xs text-slate-500">
-            <div>Statistics Officer / Price Set By: ..........................</div>
-            <div>{ticket.type === "BUY" ? "Seller" : "Buyer"}: ..........................</div>
-            <div>Weigher: ..........................</div>
-            <div>Note: ..........................</div>
+          <div className="sig-row">
+            <div className="sig-box"><div className="sig-line"></div><span className="kh">អ្នកថ្លឹង</span> <span className="en">Operator</span></div>
+            <div className="sig-box"><div className="sig-line"></div><span className="kh">អ្នកបើកបរ</span> <span className="en">Driver</span></div>
           </div>
         </div>
       </div>
