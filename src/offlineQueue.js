@@ -650,6 +650,8 @@ function normalizeSyncedTicket(op, result) {
     ...cached,
     ...result,
     stationName: cached.stationName || result.stationName,
+    stationAddress: cached.stationAddress || result.stationAddress,
+    stationPhone: cached.stationPhone || result.stationPhone,
     grossByName: result.grossByName ?? cached.grossByName ?? null,
     pricedByName: result.pricedByName ?? cached.pricedByName ?? null,
     tareByName: result.tareByName ?? cached.tareByName ?? null,
@@ -775,13 +777,16 @@ export async function resolveProductIdOffline(typedName) {
 }
 
 // Opens a brand new ticket the instant a truck arrives — no network
-// required. `locationName` is only used for the on-screen/print label.
-export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+// required. `locationName`/`locationAddress`/`locationPhone` are only used
+// for the on-screen/print label — resolved locally from the already-loaded
+// `locations` list (see add_location_address_phone.sql), no network call.
+export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
   const id = newId();
   const code = genLocalTicketCode();
   const ticket = {
     id, code, type,
     location_id: locationId, stationName: locationName || "—",
+    stationAddress: locationAddress || "", stationPhone: locationPhone || "",
     party_id: partyId || null, party_name: partyName,
     phone: phone || null, bank_name: bankName || null, bank_account: bankAccount || null,
     car_plate: carPlate || null, driver_name: driverName || null,
@@ -899,6 +904,8 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     bank_account: ticket.bank_account,
     product_name: ticket.product_name,
     stationName: ticket.stationName,
+    stationAddress: ticket.stationAddress,
+    stationPhone: ticket.stationPhone,
     gross_kg: ticket.gross_kg,
     gross_at: ticket.gross_at,
     tare_kg: ticket.tare_kg,
