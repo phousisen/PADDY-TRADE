@@ -112,23 +112,31 @@ input[type="number"] {
 #receipt-root .sig-box .kh, #ticket-slip-root .sig-box .kh { font-size: 9.5px; font-weight: 700; }
 #receipt-root .sig-box .en, #ticket-slip-root .sig-box .en { font-size: 8px; color: #475569; }
 
-/* Standard A4 page (210mm x 297mm) — the only paper size this printer's
-   dialog offers, confirmed by the user. Both printed documents below only
-   occupy the top portion of that A4 sheet, matching the real 210mm x
-   140mm continuous-feed paper this actually prints onto.
+/* Page size [updated 2026-08-25]: 210mm x 140mm — the actual physical
+   continuous-feed form size, not A4. This used to say `size: A4` because
+   that was the only option the printer's OS dialog showed at the time —
+   but a webpage can only SUGGEST a page size via this @page rule; it can't
+   add a new paper size to the printer/OS by itself (browsers block that,
+   for good reason — it's a security boundary, not something fixable in
+   this file alone). So this suggestion only actually takes effect once a
+   matching "210mm x 140mm" custom paper size has been added on the
+   printer itself (macOS/Chrome: print dialog → Paper Size → Manage Custom
+   Sizes… → add Width 210mm / Height 140mm / margins 0 → select it when
+   printing). Once that's done, this @page rule lines up exactly with it —
+   zero extra margin, so nothing should be left for the printer to feed
+   past the real content.
 
-   NOTE (dot-matrix / continuous-feed printers): a sheet-fed printer just
-   crops/wastes the unused space below 140mm on its one physical sheet, so
-   this A4 default was invisible there. A continuous-feed printer instead
-   physically rolls paper forward by the FULL page height on every print
-   job, no matter how little of it has real content — so any print target
-   that isn't explicitly constrained to ~140mm burns through roughly two
-   physical forms per ticket on that class of printer. Both #receipt-root
-   and #ticket-slip-root below are written to stay inside that 140mm
-   budget for exactly this reason, verified against a real print-height
-   render (Playwright), not just eyeballed. */
+   NOTE (dot-matrix / continuous-feed printers): with the old `size: A4`
+   (297mm tall), a continuous-feed printer would physically roll paper
+   forward by the FULL page height on every print job, no matter how
+   little of it has real content — burning through roughly two physical
+   forms per ticket. Both #receipt-root and #ticket-slip-root below are
+   still written to stay inside a 136mm budget (2mm safety margin under
+   this 140mm page) for exactly that reason, verified against a real
+   print-height render (Playwright), not just eyeballed — see the 1-page
+   confirmation note further down too. */
 @page {
-  size: A4;
+  size: 210mm 140mm;
   margin: 0;
 }
 @media print {
@@ -140,7 +148,23 @@ input[type="number"] {
      sidebar was printing right along with it. Fix: hide EVERYTHING for
      print, then make only the relevant print root visible again and pin
      it to the top of the page — this is the standard "print only this
-     element" trick, and it doesn't care where in the page it actually sits. */
+     element" trick, and it doesn't care where in the page it actually sits.
+
+     Checked [2026-08-25] whether the hidden app behind the receipt/slip
+     could push the print job onto a second, blank page (visibility:hidden
+     keeps hidden elements in the layout, it doesn't remove their height) —
+     tested against a real render of the actual page structure (Sidebar +
+     WeighingTickets board full of ticket cards, or the TicketSlip modal
+     overlay). It's fine: every real page here is built as h-screen +
+     overflow-hidden with its own internal overflow-y-auto scroll region
+     (Sidebar's nav, WeighingTickets' <main>, etc.), so no matter how much
+     content or how many ticket cards are on screen, the whole hidden tree
+     never grows past one viewport/page height — confirmed via an actual
+     print-height render (Playwright), 1 page in, 1 page out. (A version of
+     this fix that also zeroed out hidden elements' height/overflow was
+     tried and reverted — it broke the print root entirely whenever it sat
+     inside a `position: fixed` ancestor, like the TicketSlip modal, by
+     clipping it against that now-zero-height ancestor's overflow:hidden.) */
   body * {
     visibility: hidden !important;
   }
