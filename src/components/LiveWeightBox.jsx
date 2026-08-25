@@ -50,7 +50,11 @@ export function useLiveWeight(locationId) {
     }
 
     poll();
-    const interval = setInterval(poll, 1500);
+    // Checking the local bridge is a same-machine request (no internet
+    // involved), so it's essentially free — polling it often doesn't add
+    // real load. 400ms makes the on-screen number track the physical scale
+    // closely enough to feel live, instead of visibly stepping every 1.5s.
+    const interval = setInterval(poll, 400);
     return () => { cancelled = true; clearInterval(interval); };
   }, [locationId]);
 
