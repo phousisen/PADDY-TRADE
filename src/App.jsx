@@ -106,7 +106,20 @@ export default function App() {
     if (page === "users") return isAdmin ? <UsersPage /> : <PermissionDenied />;
     if (page === "roles") return isAdmin ? <RolesPage /> : <PermissionDenied />;
     if (page === "settings") return isAdmin ? <SettingsPage /> : <PermissionDenied />;
-    if (page === "receipt-template") return profile?.isOwner ? <ReceiptTemplateEditor /> : <PermissionDenied />;
+    // Receipt Template Editor retired [2026-08-25]: Receipt.jsx now uses a
+    // fixed, verified print design (logo + per-location address/phone,
+    // matches the Weigh-In Slip) and no longer reads DEFAULT_RECEIPT_TEMPLATE
+    // / mergeReceiptTemplate / ExactWeightTicket from it — those named
+    // exports are gone, so <ReceiptTemplateEditor /> is never rendered here
+    // (it would crash trying to read style off an undefined template). The
+    // page/file itself is left in place, just disconnected, rather than
+    // deleted outright.
+    if (page === "receipt-template") return profile?.isOwner ? (
+      <div className="p-8 text-center text-sm text-slate-500">
+        <p className="mb-1 text-base font-semibold text-slate-700">Receipt Template — no longer used</p>
+        <p>Printed receipts and weigh-in slips now use a fixed design (with the company logo and each location's own address/phone). Changing anything on this old page would no longer affect what gets printed.</p>
+      </div>
+    ) : <PermissionDenied />;
     if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} />;
     if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} />;
     if (page === "party-detail") return <PartyDetail partyId={openParty?.id} kind={openParty?.kind} setPage={setPage} onBuyFor={startBuyFor} onSellFor={startSellFor} />;
