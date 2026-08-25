@@ -474,7 +474,10 @@ export const api = {
   async getTransactions({ type, locationId } = {}) {
     let query = supabase
       .from("transactions")
-      .select("*, locations(name), parties(name, id_number), products(name)")
+      // address/phone: per-location fields (see add_location_address_phone.sql)
+      // used on the printed receipt header — falls back to "—" below if a
+      // location hasn't had them filled in yet.
+      .select("*, locations(name, address, phone), parties(name, id_number), products(name)")
       .order("created_at", { ascending: false });
     if (type) query = query.eq("type", type);
     if (locationId) query = query.eq("location_id", locationId);
@@ -483,13 +486,15 @@ export const api = {
     return data.map((t) => ({
       ...t,
       stationName: t.locations?.name || "—",
+      stationAddress: t.locations?.address || "",
+      stationPhone: t.locations?.phone || "",
       partyName: t.parties?.name || "—",
       partyIdNumber: t.parties?.id_number || "",
       productName: t.products?.name || "—",
     }));
   },
 
-  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
+  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -523,7 +528,6 @@ export const api = {
       note: note || null,
       car_plate: carPlate || null,
       driver_name: driverName || null,
-      driver_phone: driverPhone || null,
       receipt_photo_url: receiptPhotoUrl || null,
       // Weigh In / Weigh Out numbers — carried over from the weighing
       // ticket (undefined for a manually-entered Buy/Sell, which only
@@ -556,7 +560,9 @@ export const api = {
   async getTickets({ locationId, stages, limit } = {}) {
     let query = supabase
       .from("weighing_tickets")
-      .select("*, locations(name), gross_profile:gross_by(full_name), priced_profile:priced_by(full_name), tare_profile:tare_by(full_name), created_profile:created_by(full_name)")
+      // address/phone: per-location fields (see add_location_address_phone.sql)
+      // used on the printed Weigh-In Slip header.
+      .select("*, locations(name, address, phone), gross_profile:gross_by(full_name), priced_profile:priced_by(full_name), tare_profile:tare_by(full_name), created_profile:created_by(full_name)")
       .order("created_at", { ascending: false });
     if (locationId) query = query.eq("location_id", locationId);
     if (stages && stages.length) query = query.in("stage", stages);
@@ -566,6 +572,8 @@ export const api = {
     return data.map((t) => ({
       ...t,
       stationName: t.locations?.name || "—",
+      stationAddress: t.locations?.address || "",
+      stationPhone: t.locations?.phone || "",
       grossByName: t.gross_profile?.full_name,
       pricedByName: t.priced_profile?.full_name,
       tareByName: t.tare_profile?.full_name,
@@ -576,7 +584,7 @@ export const api = {
   // `id` is optional — passed by the offline queue when a ticket was
   // already opened locally (client-generated UUID) while offline, so a
   // retried sync reuses that same id instead of opening a second ticket.
-  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
     const row = {
       ...(id ? { id } : {}),
       code: code || genTicketCode(),
@@ -589,7 +597,6 @@ export const api = {
       bank_account: bankAccount || null,
       car_plate: carPlate || null,
       driver_name: driverName || null,
-      driver_phone: driverPhone || null,
       product_id: productId || null,
       product_name: productName,
       stage: "arrived",
@@ -726,7 +733,6 @@ export const api = {
       note: ticket.note,
       carPlate: ticket.car_plate,
       driverName: ticket.driver_name,
-      driverPhone: ticket.driver_phone,
       txDate,
       staffFee: ticket.staff_fee,
       paperTicketNo: ticket.paper_ticket_no,
@@ -750,7 +756,7 @@ export const api = {
     const { data, error } = await supabase
       .from("change_requests")
       .select(
-        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, driver_phone, amount, party_id, staff_fee, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
+        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
       )
       .order("created_at", { ascending: false });
     if (error) throw error;
@@ -790,7 +796,7 @@ export const api = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, driverPhone, partyId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     const { data, error } = await supabase
@@ -806,7 +812,6 @@ export const api = {
         ...(note !== undefined ? { note: note || null } : {}),
         ...(carPlate !== undefined ? { car_plate: carPlate || null } : {}),
         ...(driverName !== undefined ? { driver_name: driverName || null } : {}),
-        ...(driverPhone !== undefined ? { driver_phone: driverPhone || null } : {}),
         ...(recordedByName !== undefined ? { recorded_by_name: recordedByName || null } : {}),
         ...(partyId !== undefined && partyId ? { party_id: partyId } : {}),
         ...(txDate !== undefined && txDate ? { tx_date: txDate } : {}),
