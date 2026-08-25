@@ -20,7 +20,7 @@ const TESTING_ALLOW_STAFF_MANUAL_ENTRY = false;
 // Admin/Owner logins always get a small, opt-in "Enter manually" link
 // underneath — an emergency-only override for the rare case the scale
 // itself is down and a truck still needs to be processed.
-export default function WeightField({ locationId, label, scaleLabel, value, onChange, isAdmin }) {
+export default function WeightField({ locationId, label, labelKm, scaleLabel, scaleLabelKm, value, onChange, isAdmin }) {
   const { connected, weightKg } = useLiveWeight(locationId);
   const [manualMode, setManualMode] = useState(false);
 
@@ -34,7 +34,10 @@ export default function WeightField({ locationId, label, scaleLabel, value, onCh
         <div className="flex items-center gap-2.5">
           <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
           <div>
-            <p className={`text-xs font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>{connected ? (scaleLabel || "Live Scale Weight") : "Scale not connected"}</p>
+            <p className={`text-xs font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>
+              {connected ? (scaleLabel || "Live Scale Weight") : "Scale not connected"}
+              <span className="font-khmer block font-normal">{connected ? (scaleLabelKm || "ទម្ងន់ជញ្ជីងផ្ទាល់") : "ជញ្ជីងមិនទាន់ភ្ជាប់"}</span>
+            </p>
             <p className={`text-lg font-bold ${connected ? "text-emerald-800" : "text-slate-300"}`}>{connected ? `${fmt2(weightKg)} kg` : "— kg"}</p>
           </div>
         </div>
@@ -42,11 +45,15 @@ export default function WeightField({ locationId, label, scaleLabel, value, onCh
           <button type="button" onClick={() => onChange(String(weightKg))}
             className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
             Capture This Weight
+            <span className="font-khmer block font-normal">ចាប់យកទម្ងន់នេះ</span>
           </button>
         )}
       </div>
 
-      <label className="mb-1 block text-xs text-slate-500">{label}</label>
+      <label className="mb-1 block text-xs text-slate-500">
+        {label}
+        {labelKm && <span className="font-khmer block text-brand-600">{labelKm}</span>}
+      </label>
 
       {showManualInput ? (
         <input
@@ -56,7 +63,9 @@ export default function WeightField({ locationId, label, scaleLabel, value, onCh
         />
       ) : (
         <div className={`flex min-h-[38px] w-full items-center rounded-lg border px-3 py-2 text-sm ${hasValue ? "border-slate-200 bg-white font-medium text-slate-700" : "border-dashed border-slate-300 bg-slate-50 text-slate-400"}`}>
-          {hasValue ? `${fmt2(parseFloat(value))} kg` : "Not captured yet — press “Capture This Weight” above"}
+          {hasValue ? `${fmt2(parseFloat(value))} kg` : (
+            <span>Not captured yet — press "Capture This Weight" above<span className="font-khmer block">មិនទាន់ចាប់យកនៅឡើយ — សូមចុច "ចាប់យកទម្ងន់នេះ" ខាងលើ</span></span>
+          )}
         </div>
       )}
 
