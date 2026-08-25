@@ -138,31 +138,51 @@ function writeJSON(key, value) {
   }
 }
 
-// Re-reads the queue immediately after every write and retries the whole
-// read-modify-write if what's actually stored doesn't match what we just
-// wrote — this closes a real data-loss window: two tabs/windows of
-// PaddyTrade open on the same computer at once (e.g. someone checking
-// Transactions in one tab while another person is mid-entry on New Buy in
-// a second tab) both read and write this same localStorage key with no
-// locking otherwise, and whichever tab's write lands last silently erases
-// whatever the other tab had just added — including a brand-new,
-// already-printed transaction that exists nowhere else yet. localStorage
-// has no real cross-tab lock, so this isn't a perfect guarantee, but it
-// narrows the unsafe window from "the entire life of the tab" down to the
-// handful of milliseconds between our own write and our own verify-read.
+// Compare-and-swap style write: snapshots the raw stored string, computes
+// the mutation, then re-reads that raw string again immediately before
+// writing — if it changed in between, another tab wrote in the meantime and
+// this redoes the whole mutation against their latest state instead of
+// blindly overwriting it. This closes a real data-loss window: two
+// tabs/windows of PaddyTrade open on the same computer at once (e.g.
+// someone checking Transactions in one tab while another person is
+// mid-entry on New Buy in a second tab) both read and write this same
+// localStorage key with no locking otherwise, and whichever tab's write
+// lands last silently erases whatever the other tab had just added —
+// including a brand-new, already-printed transaction that exists nowhere
+// else yet.
+//
+// An earlier version of this function checked AFTER writing (re-reading and
+// comparing to what it had just written) instead of BEFORE — that only
+// catches a collision that happens in the few instructions between the
+// write and that verify-read. A collision landing between the initial READ
+// and the write itself (an equally likely window, same size) sailed through
+// undetected, because the write simply overwrote it and the after-the-fact
+// check trivially matched what had just been written. A small test harness
+// exercising this exact scenario (built while investigating a lost
+// transaction) caught it — see offline_test/ in the delivered files. The
+// version below checks the precondition (has anything changed since I
+// read?) rather than the postcondition (does storage match what I just
+// wrote?), which is what an actual compare-and-swap needs to do.
+//
+// localStorage still has no real cross-tab lock, so this narrows the unsafe
+// window down to the handful of instructions between the pre-write
+// recheck and the write itself, rather than fully eliminating it — but that
+// window is now about as small as plain synchronous JS can make it.
 function mutateQueue(mutator) {
   for (let attempt = 0; attempt < 25; attempt++) {
-    const current = getQueue();
+    let rawBefore;
+    try { rawBefore = localStorage.getItem(QUEUE_KEY); } catch { rawBefore = null; }
+    let current;
+    try { current = rawBefore ? JSON.parse(rawBefore) : []; } catch { current = []; }
     const next = mutator(current.slice());
+
+    let rawNow;
+    try { rawNow = localStorage.getItem(QUEUE_KEY); } catch { rawNow = null; }
+    if (rawNow !== rawBefore) continue; // someone else wrote in between — redo against their latest state
+
     writeJSON(QUEUE_KEY, next);
-    const verify = getQueue();
-    if (JSON.stringify(verify) === JSON.stringify(next)) {
-      notifyStatus();
-      return next;
-    }
-    // Another tab wrote in between our write and this read-back — redo the
-    // mutation against whatever's actually there now instead of silently
-    // discarding it.
+    notifyStatus();
+    return next;
   }
   // 25 collisions in a row would mean something is pathologically wrong
   // (not just two tabs racing occasionally) — fall back to whatever is
@@ -546,20 +566,47 @@ export function trySync() {
   }
 
   syncPromise = (async () => {
+    // This await must stay first, before anything else in this function.
+    // Reason: `syncPromise = (async () => { ... })();` runs the function
+    // body SYNCHRONOUSLY (JS starts executing an async function's body the
+    // instant it's called) right up until the first genuine await — and
+    // only THEN does the call expression return the (still-pending) promise
+    // back to this assignment. If the whole body were able to finish
+    // without ever hitting a real await — which happens on the offline
+    // branch below, since it returns immediately with no network call in
+    // between — its `finally` block (which resets `syncPromise = null`)
+    // would run to completion BEFORE the outer `syncPromise = (async () =>
+    // {...})()` assignment itself finishes, and that assignment would then
+    // immediately overwrite the fresh `null` right back to this (already-
+    // resolved) promise. From that point on `syncPromise` is permanently
+    // stuck non-null, so `if (syncPromise) return syncPromise;` short-
+    // circuits every later call — including the 15s heartbeat and the
+    // "online" event listener — forever, with no error and nothing in the
+    // console: sync silently stops for good until the page is reloaded.
+    // A tiny test harness built to verify "runs safely without WiFi"
+    // reproduced this exact scenario (go offline once, then come back
+    // online) and caught it — see offline_test/ in the delivered files.
+    // Forcing a real await here guarantees this assignment always
+    // completes first, so the `finally` below can never race it.
+    await Promise.resolve();
     syncing = true;
     notifyStatus();
     try {
-      // NOTE: this offline check must stay INSIDE the try/finally below.
-      // It used to be a bare early-return before syncing=true/try even
-      // started, which skipped the `finally` block entirely — meaning
-      // syncPromise never got reset back to null while offline. Every
-      // later call to trySync() (including the periodic 15s heartbeat)
-      // then saw a stale non-null syncPromise and returned it immediately
-      // without ever retrying, so sync could permanently stop until the
-      // page was reloaded. Keeping the check in here lets `finally` always
-      // run and reset syncPromise, so sync resumes on its own once WiFi
-      // comes back.
-      if (!navigator.onLine) return;
+      // This offline check must stay INSIDE the try/finally below (not
+      // before it) so `finally` always runs and resets syncPromise, even
+      // when we bail out immediately because there's no connection.
+      if (!navigator.onLine) {
+        // Also found by the test harness: a "stuck" flag set while online
+        // (real repeated failures) used to linger forever once the
+        // connection actually dropped, because this early return skips the
+        // per-op loop below entirely — the only place that was clearing it.
+        // Offline is its own, correctly-labeled state (the amber banner);
+        // it shouldn't still be showing the earlier red "stuck" alert on
+        // top of it. Once back online, a genuinely broken save re-flags
+        // itself as stuck again within a few attempts anyway.
+        clearStuckTracking();
+        return;
+      }
       while (true) {
         const q = getQueue();
         if (q.length === 0) break;
@@ -729,7 +776,7 @@ export async function resolveProductIdOffline(typedName) {
 
 // Opens a brand new ticket the instant a truck arrives — no network
 // required. `locationName` is only used for the on-screen/print label.
-export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+export function createTicketOffline({ type, locationId, locationName, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
   const id = newId();
   const code = genLocalTicketCode();
   const ticket = {
@@ -737,7 +784,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     location_id: locationId, stationName: locationName || "—",
     party_id: partyId || null, party_name: partyName,
     phone: phone || null, bank_name: bankName || null, bank_account: bankAccount || null,
-    car_plate: carPlate || null, driver_name: driverName || null, driver_phone: driverPhone || null,
+    car_plate: carPlate || null, driver_name: driverName || null,
     product_id: productId || null, product_name: productName,
     paper_ticket_no: paperTicketNo || null,
     bank_qr_url: bankQrUrl || null,
@@ -757,7 +804,7 @@ export function createTicketOffline({ type, locationId, locationName, partyId, p
     created_by: userId, createdByName: null, created_at: new Date().toISOString(),
   };
   upsertCachedTicket(ticket);
-  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, driverPhone, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
+  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
@@ -866,7 +913,6 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     price_per_kg: ticket.price_per_kg,
     car_plate: ticket.car_plate,
     driver_name: ticket.driver_name,
-    driver_phone: ticket.driver_phone,
     paper_ticket_no: ticket.paper_ticket_no,
     bank_qr_url: ticket.bank_qr_url,
     receipt_photo_url: receiptPhotoUrl || null,
@@ -893,7 +939,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
 // drops" — nothing here waits on a network call to succeed.
 // ---------------------------------------------------------------------
 
-export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate }) {
+export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate }) {
   const id = newId();
   const code = genLocalTxCode(type);
   const payableKg = Math.max(0, (quantityKg || 0) - (deductionKg || 0));
@@ -907,7 +953,7 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     payload: {
       id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId,
       qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg,
-      staffFee: staffFeeAmt, note, carPlate, driverName, driverPhone, receiptPhotoUrl, paymentProofUrl, txDate,
+      staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
     },
   });
   trySync();
@@ -931,7 +977,6 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     note: note || null,
     car_plate: carPlate || null,
     driver_name: driverName || null,
-    driver_phone: driverPhone || null,
     receipt_photo_url: receiptPhotoUrl || null,
     payment_proof_url: paymentProofUrl || null,
     staff_fee: staffFeeAmt,
