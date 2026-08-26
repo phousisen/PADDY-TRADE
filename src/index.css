@@ -141,6 +141,30 @@ input[type="number"] {
 }
 @media print {
   body { background: white !important; }
+  /* [2026-08-26] Kill every CSS animation/transition during print — added
+     while investigating Chrome's print dialog getting stuck forever on
+     "Loading preview…" on some station PCs. Removing `transform` from the
+     receipt positioning (tried earlier) didn't fix it, which points at
+     something else still moving on the page. The whole underlying app
+     (Sidebar, ticket board, etc.) stays mounted and hidden — not
+     removed — behind the receipt/slip overlay (see the visibility trick
+     below), and several bits of it use infinitely-looping CSS animations
+     (the green "connected" pulse on the live scale indicator, sync-status
+     spinners in the Topbar and elsewhere) that keep animating even while
+     invisible, since `visibility: hidden` does not pause CSS animations.
+     Chrome's print-preview renderer is documented to sometimes wait for
+     the page to reach a fully idle/settled state before it can finish
+     generating a preview — an animation that, by definition, never
+     stops is a plausible way to make that wait never end. This is a
+     best-effort fix, not a confirmed root cause (no way to reproduce
+     Chrome's exact hang from here to verify it directly) — but killing
+     all animation during print is safe and standard practice regardless
+     (paper doesn't animate), so this is worth keeping even if it turns
+     out not to be the actual cause. */
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
   /* The receipt/slip is shown as an overlay ON TOP of the rest of the app
      (sidebar, Weighing Tickets board, etc.) — that underlying app is
      still there in the page, just visually covered on screen. Printing
