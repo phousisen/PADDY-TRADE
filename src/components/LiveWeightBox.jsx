@@ -40,8 +40,20 @@ export function useLiveWeight(locationId) {
   useEffect(() => {
     if (!locationId) { setReading(null); return; }
     let cancelled = false;
+    // [2026-08-26] Pause this 400ms poll (and the re-renders it causes)
+    // while a print is in progress. This component can still be mounted
+    // (just hidden underneath the receipt/slip overlay — see index.css)
+    // when someone prints, and Chrome's print-preview renderer has been
+    // hanging on "Loading preview…" on some station PCs. A component
+    // re-rendering 2.5x/second the whole time a print dialog is open is a
+    // plausible way to stop the page from ever reaching the idle state
+    // Chrome needs to finish generating a preview — pausing it is a safe,
+    // free bit of extra insurance on top of the animation fix in
+    // index.css, whether or not it turns out to be the actual cause.
+    let printing = typeof window !== "undefined" && window.matchMedia?.("print").matches;
 
     async function poll() {
+      if (printing) return;
       const local = await pollLocalBridge();
       if (cancelled) return;
       if (local) { setReading(local); return; }
@@ -49,13 +61,23 @@ export function useLiveWeight(locationId) {
       if (!cancelled) setReading(cloud ? { ...cloud, source: "cloud" } : null);
     }
 
+    const handleBeforePrint = () => { printing = true; };
+    const handleAfterPrint = () => { printing = false; poll(); };
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+
     poll();
     // Checking the local bridge is a same-machine request (no internet
     // involved), so it's essentially free — polling it often doesn't add
     // real load. 400ms makes the on-screen number track the physical scale
     // closely enough to feel live, instead of visibly stepping every 1.5s.
     const interval = setInterval(poll, 400);
-    return () => { cancelled = true; clearInterval(interval); };
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
   }, [locationId]);
 
   const ageMs = reading?.updated_at ? Date.now() - new Date(reading.updated_at).getTime() : Infinity;
