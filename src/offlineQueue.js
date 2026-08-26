@@ -507,6 +507,11 @@ async function runOp(op) {
       if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
       return result;
     }
+    case "editTicket": {
+      const result = await api.updateTicketInfo(op.ticketId, op.payload);
+      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      return result;
+    }
     case "setTicketPrice": {
       const result = await api.setTicketPrice(op.ticketId, op.payload);
       if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
@@ -542,7 +547,7 @@ async function runOp(op) {
 // createPayment/logAudit, queued from TransactionForm.jsx) has no
 // ticketId and isn't a ticket at all, so it must never be folded into the
 // ticket cache below.
-const TICKET_OP_TYPES = new Set(["createTicket", "setTicketGross", "setTicketPrice", "setTicketTare", "finalizeTicket"]);
+const TICKET_OP_TYPES = new Set(["createTicket", "setTicketGross", "editTicket", "setTicketPrice", "setTicketTare", "finalizeTicket"]);
 
 // Processes the queue strictly in order (FIFO), stopping at the first
 // failure — a later op might depend on an earlier one having landed (e.g.
@@ -826,6 +831,40 @@ function patchCachedTicket(id, patch) {
 export function setTicketGrossOffline(id, { grossKg, userId }) {
   const updated = patchCachedTicket(id, { gross_kg: grossKg, gross_at: new Date().toISOString(), gross_by: userId, stage: "weighed_in" });
   enqueue({ type: "setTicketGross", ticketId: id, payload: { grossKg, userId } });
+  trySync();
+  return updated;
+}
+
+// Fixes up the basic weigh-in details on a ticket that's still open —
+// used by the "Edit" button on the ticket board (available up until
+// Finish Ticket / Decline, same as everything else on that board). Same
+// offline-first pattern as the rest of this file: the local cache updates
+// immediately so the board reflects the fix right away, and the real save
+// is queued for whenever the connection allows it. Only the fields that
+// were actually passed in get patched — a caller that only changed the
+// plate number, say, doesn't need to also resend everything else.
+export function editTicketOffline(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId }) {
+  const patch = {};
+  if (partyId !== undefined) patch.party_id = partyId || null;
+  if (partyName !== undefined) patch.party_name = partyName;
+  if (phone !== undefined) patch.phone = phone || null;
+  if (carPlate !== undefined) patch.car_plate = carPlate || null;
+  if (driverName !== undefined) patch.driver_name = driverName || null;
+  if (productId !== undefined) patch.product_id = productId || null;
+  if (productName !== undefined) patch.product_name = productName;
+  if (paperTicketNo !== undefined) patch.paper_ticket_no = paperTicketNo || null;
+  if (grossKg !== undefined) {
+    patch.gross_kg = grossKg;
+    patch.gross_at = new Date().toISOString();
+    patch.gross_by = userId;
+  }
+  const updated = patchCachedTicket(id, patch);
+  enqueue({
+    type: "editTicket",
+    ticketId: id,
+    payload: { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId },
+  });
+  if (paperTicketNo !== undefined) recordPaperTicketNo(updated.location_id, paperTicketNo);
   trySync();
   return updated;
 }

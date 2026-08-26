@@ -627,6 +627,43 @@ export const api = {
     return data;
   },
 
+  // Corrects the basic weigh-in details on a ticket that's still open
+  // (waiting for Finish Ticket) — a mistyped plate number, the wrong
+  // paddy type picked, a phone number fixed after the fact, or even the
+  // gross weight itself if it was captured wrong. Deliberately does NOT
+  // touch `stage` — editing a ticket's info doesn't move it through the
+  // board, only Finish Ticket / Decline do that. Only the fields actually
+  // passed in get updated, so a partial edit never blanks out the rest.
+  async updateTicketInfo(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId }) {
+    const patch = {};
+    if (partyId !== undefined) patch.party_id = partyId || null;
+    if (partyName !== undefined) patch.party_name = partyName;
+    if (phone !== undefined) patch.phone = phone || null;
+    if (carPlate !== undefined) patch.car_plate = carPlate || null;
+    if (driverName !== undefined) patch.driver_name = driverName || null;
+    if (productId !== undefined) patch.product_id = productId || null;
+    if (productName !== undefined) patch.product_name = productName;
+    if (paperTicketNo !== undefined) patch.paper_ticket_no = paperTicketNo || null;
+    if (grossKg !== undefined) {
+      patch.gross_kg = grossKg;
+      patch.gross_at = new Date().toISOString();
+      patch.gross_by = userId;
+    }
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) {
+      // Same reasoning as setTicketGross above: the ticket is gone, not a
+      // real failure — nothing to retry.
+      if (error.code === "PGRST116") return null;
+      throw error;
+    }
+    return data;
+  },
+
   async setTicketPrice(id, { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline, bankName, bankAccount, bankQrUrl }) {
     const patch = {
       quality_grade: qualityGrade || null,
