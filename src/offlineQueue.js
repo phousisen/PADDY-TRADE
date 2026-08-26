@@ -390,6 +390,29 @@ function removeOp(opId) {
   mutateQueue((q) => q.filter((o) => o._id !== opId));
   clearOpFailure(opId);
 }
+// Every op the sync loop touches needs a real `_id` before it can be
+// safely removed by id (see removeOp above) — but ops already sitting in
+// the queue on a real device RIGHT NOW, saved under yesterday's code,
+// were written before enqueue() started stamping one on. Without this,
+// the very first time one of those already-queued tickets syncs
+// successfully under the new code, removeOp would silently do nothing
+// (no id to match), so it would never actually leave the queue — it would
+// get "successfully" resaved again on every single pass, forever, in a
+// tight loop with no delay between attempts, hammering the database with
+// the same insert over and over while the ticket stayed stuck showing
+// "not synced" even though it had already saved. Backfilling missing ids
+// once, up front, before anything else runs, closes that off entirely.
+function ensureOpIds() {
+  mutateQueue((q) => {
+    let changed = false;
+    const next = q.map((op) => {
+      if (op._id) return op;
+      changed = true;
+      return { ...op, _id: newId() };
+    });
+    return changed ? next : q;
+  });
+}
 
 export function pendingCountForTicket(ticketId) {
   return getQueue().filter((op) => op.ticketId === ticketId).length;
@@ -563,6 +586,33 @@ async function runOp(op) {
   }
 }
 
+// A save that hangs (a request that neither succeeds nor fails, just never
+// comes back — the exact failure mode a flaky rural connection produces,
+// as opposed to a clean "offline" or a clean error) used to freeze syncing
+// entirely: the loop below awaits each op one at a time, so one stuck
+// request meant EVERY ticket behind it sat showing "not synced" for as
+// long as the browser's own network stack was willing to keep waiting —
+// which can be minutes, and the "Connected — syncing…" banner never even
+// changes to say anything is wrong, because nothing has actually failed
+// yet from the browser's point of view. Bounding every op to a fixed
+// amount of time turns that silent, open-ended hang into an ordinary,
+// visible failure — it gets retried and reported exactly like a real
+// error would, and — this is the important part — it stops blocking
+// every OTHER op from getting its own chance to go through in the
+// meantime.
+const SYNC_OP_TIMEOUT_MS = 20000;
+function runOpWithTimeout(op) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("Timed out waiting for a response — the connection may be too unstable to complete this save right now."));
+    }, SYNC_OP_TIMEOUT_MS);
+    runOp(op).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 // Only these op types touch the ticket board's local cache once they land
 // on the server — a manually-entered Buy/Sell (createTransaction/
 // createPayment/logAudit, queued from TransactionForm.jsx) has no
@@ -570,10 +620,10 @@ async function runOp(op) {
 // ticket cache below.
 const TICKET_OP_TYPES = new Set(["createTicket", "setTicketGross", "editTicket", "setTicketPrice", "setTicketTare", "finalizeTicket"]);
 
-// Processes the queue strictly in order (FIFO), stopping at the first
-// failure — a later op might depend on an earlier one having landed (e.g.
-// a ticket has to exist on the server before we can set its price), so we
-// never want to skip ahead.
+// Processes whatever's queued, one op at a time (see runOpWithTimeout
+// above for why each one is time-bounded) and independently per ticket
+// (see the pass loop inside trySync below for why one stuck ticket no
+// longer blocks a different one).
 let syncPromise = null;
 export function trySync() {
   if (syncPromise) return syncPromise;
@@ -633,6 +683,10 @@ export function trySync() {
         clearStuckTracking();
         return;
       }
+      // Backfill ids on anything queued before this code existed (see
+      // ensureOpIds above) — must run before the loop below ever calls
+      // removeOp, or an already-queued op could silently never be removed.
+      ensureOpIds();
       // One pass over whatever's currently queued. A genuinely broken op
       // (bad data, an RLS/permissions problem, a server-side bug) no longer
       // blocks EVERY other change on the device behind it forever. Two
@@ -673,7 +727,7 @@ export function trySync() {
           if (op.ticketId && blockedTicketIds.has(op.ticketId)) continue;
 
           try {
-            const result = await runOp(op);
+            const result = await runOpWithTimeout(op);
             // A ticket-related op just landed on the server — fold the
             // server's returned row into the local cache so the UI reflects
             // confirmed data as soon as it's available.
