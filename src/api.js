@@ -1,12 +1,18 @@
 import { supabase } from "./supabaseClient.js";
 
+// Widened from a 4-digit (1000-9999, ~9,000 possible values) space to
+// 6-digit (~900,000) — the 4-digit space was small enough that, across two
+// stations' worth of tickets over time, random collisions had become a
+// real, recurring occurrence rather than a theoretical one (see
+// insertWithFreshCodeOnCollision above for how a collision is now also
+// recovered from automatically, rather than getting permanently stuck).
 function genCode(type) {
-  const n = Math.floor(1000 + Math.random() * 8999);
+  const n = Math.floor(100000 + Math.random() * 899999);
   return type === "BUY" ? `RCP-${n}-A` : `INV-${n}-B`;
 }
 
 function genTicketCode() {
-  const n = Math.floor(1000 + Math.random() * 8999);
+  const n = Math.floor(100000 + Math.random() * 899999);
   return `TKT-${n}`;
 }
 
@@ -34,6 +40,38 @@ async function insertOrFetchExisting(table, row) {
     if (!fetchErr && existing && existing.length) return existing[0];
   }
   throw error;
+}
+
+// weighing_tickets and transactions both give each row a short, friendly
+// on-screen code (TKT-####, RCP-####-A, INV-####-B) picked at random on
+// the device, with no way to check it against the rest of the database
+// before saving. With few enough rows on file that's fine — but with
+// enough tickets/transactions accumulated across both stations over time,
+// two of them landing on the exact same random code was only a matter of
+// when, not if (this is the actual cause of the "stuck, not syncing"
+// tickets seen Aug 2026 — the offline queue retries a failed save with
+// the EXACT SAME payload every time, so once a code collides, retrying
+// with that same colliding code can never succeed on its own). This
+// recognizes specifically that situation and tries again with a freshly
+// generated code instead of giving up — a handful of attempts is enough
+// that colliding twice in a row is astronomically unlikely.
+async function insertWithFreshCodeOnCollision(table, row, regenerateCode) {
+  try {
+    return await insertOrFetchExisting(table, row);
+  } catch (error) {
+    if (error?.code !== "23505" || !/code/i.test(String(error?.message || ""))) throw error;
+    let lastError = error;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await insertOrFetchExisting(table, { ...row, code: regenerateCode() });
+      } catch (retryError) {
+        lastError = retryError;
+        if (retryError?.code === "23505" && /code/i.test(String(retryError?.message || ""))) continue;
+        throw retryError;
+      }
+    }
+    throw lastError;
+  }
 }
 
 // The database server's clock defaults to UTC, not Cambodia time — so we
@@ -552,7 +590,7 @@ export const api = {
     // `id` is optional — passed by finalizeTicket when a weighing ticket
     // is finalized offline, so a retried sync reuses the same id instead
     // of creating a second transaction.
-    return insertOrFetchExisting("transactions", row);
+    return insertWithFreshCodeOnCollision("transactions", row, () => genCode(type));
   },
 
   // Weighing Tickets — the digital version of the paper ticket that
@@ -611,7 +649,7 @@ export const api = {
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
     };
-    return insertOrFetchExisting("weighing_tickets", row);
+    return insertWithFreshCodeOnCollision("weighing_tickets", row, genTicketCode);
   },
 
   async setTicketGross(id, { grossKg, userId }) {

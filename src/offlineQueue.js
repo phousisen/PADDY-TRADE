@@ -759,11 +759,19 @@ export function startAutoSync() {
 // connection allows it.
 // ---------------------------------------------------------------------
 
+// Widened from a 4-digit (~9,000 possible values) space to 6-digit
+// (~900,000) to match api.js's genTicketCode/genCode — the 4-digit space
+// was small enough that, across two stations' tickets over time, random
+// collisions had become a real, recurring cause of tickets getting stuck
+// "not synced" forever (the server now also self-heals a collision by
+// picking a fresh code and retrying — see insertWithFreshCodeOnCollision
+// in api.js — but starting from a much bigger space means that almost
+// never needs to happen in the first place).
 function genLocalTicketCode() {
-  return `TKT-${Math.floor(1000 + Math.random() * 8999)}`;
+  return `TKT-${Math.floor(100000 + Math.random() * 899999)}`;
 }
 function genLocalTxCode(type) {
-  const n = Math.floor(1000 + Math.random() * 8999);
+  const n = Math.floor(100000 + Math.random() * 899999);
   return type === "BUY" ? `RCP-${n}-A` : `INV-${n}-B`;
 }
 
