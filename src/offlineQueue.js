@@ -635,36 +635,43 @@ export function trySync() {
       }
       // One pass over whatever's currently queued. A genuinely broken op
       // (bad data, an RLS/permissions problem, a server-side bug) no longer
-      // blocks EVERY other change on the device behind it forever — only
-      // the other ops for that SAME ticket, which really do have to apply
-      // in order. A different ticket's ops — and a different station's,
-      // since each device only ever queues its own station's work anyway —
-      // still get their chance to reach the server this pass. This is what
-      // "one bad ticket edit stalls the whole board" (Pong Ro, Aug 2026)
-      // turned out to be: a single stuck op quietly blocking dozens of
-      // completely unrelated tickets' saves behind it with no visibility
-      // into why. Nothing is ever skipped out of order for the SAME ticket,
-      // and nothing is ever dropped — a stuck op just stays in the queue
-      // and gets retried every pass until it either succeeds or someone
-      // (an admin, or me) looks at the error text now shown in the banner
-      // and fixes the actual cause.
-      //
-      // The one case still treated as fully blocking, exactly as before, is
-      // a party/product-creation op (createParty/createProduct/updateParty
-      // — none of which carry a ticketId): later queued ops can reference
-      // the very id such an op is trying to create, so nothing after one of
-      // those is provably safe to attempt out of order.
+      // blocks EVERY other change on the device behind it forever. Two
+      // rules decide what's genuinely allowed to wait behind it:
+      //   1. Other ops for the SAME ticket always wait their turn — a
+      //      ticket's own changes have to apply in order.
+      //   2. Any op (ticket or not) that references a party/product id
+      //      which itself is still an unsynced LOCAL id — because the
+      //      createParty/createProduct op that was going to create it just
+      //      failed — waits too, since it would fail anyway (that id
+      //      doesn't exist on the server yet).
+      // Everything else — a different ticket, a different party, a bank
+      // detail update that nothing else depends on — gets its own chance
+      // to reach the server this pass, completely independent of whatever
+      // else is stuck. This is what "one bad ticket stalls the whole
+      // board" (Pong Ro + Reang Kesey, Aug 2026) turned out to be: a single
+      // stuck op quietly blocking dozens of completely unrelated tickets'
+      // saves behind it, with no visibility into why. Nothing is ever
+      // skipped out of order for something that actually depends on it,
+      // and nothing is ever dropped — a stuck op just stays queued and
+      // gets retried every pass until it succeeds or someone (an admin, or
+      // me) reads the error text now shown in the banner and fixes the
+      // actual cause.
       while (true) {
         const q = getQueue();
         if (q.length === 0) break;
 
         const blockedTicketIds = new Set();
+        const blockedLocalIds = new Set(); // party/product local ids that failed to create this pass
         let progressed = false;
-        let stopEntirely = false;
 
         for (const op of q) {
-          if (stopEntirely) break;
+          const refId = op.payload?.partyId || op.payload?.productId || op.partyId || null;
+          if (refId && blockedLocalIds.has(refId)) {
+            if (op.ticketId) blockedTicketIds.add(op.ticketId);
+            continue;
+          }
           if (op.ticketId && blockedTicketIds.has(op.ticketId)) continue;
+
           try {
             const result = await runOp(op);
             // A ticket-related op just landed on the server — fold the
@@ -682,7 +689,9 @@ export function trySync() {
             console.warn("[offlineQueue] sync paused for one op:", err?.message || err);
             noteOpFailure(op, err);
             if (op.ticketId) blockedTicketIds.add(op.ticketId);
-            else stopEntirely = true;
+            if ((op.type === "createParty" || op.type === "createProduct") && op.payload?.id) {
+              blockedLocalIds.add(op.payload.id);
+            }
           }
         }
         // Nothing at all went through this pass (everything queued is

@@ -382,12 +382,18 @@ export const api = {
   // the New Buy/Sell search box, since phone numbers are unique but many
   // farmers share the same name), and `phone` does an exact phone match
   // (used for one-shot lookups like the Weighing Ticket phone field).
-  async getParties({ type, q, qPhone, phone } = {}) {
+  // `locationId` is optional and left out entirely for callers that
+  // intentionally want the whole table (e.g. building the offline cache,
+  // or an HQ Admin view spanning every station) — pass it whenever the
+  // lookup is meant to stay scoped to one station, so a same-named
+  // buyer/seller at a different location doesn't get matched instead.
+  async getParties({ type, q, qPhone, phone, locationId } = {}) {
     let query = supabase.from("parties").select("*").order("name");
     if (type) query = query.eq("type", type);
     if (q) query = query.ilike("name", `%${q}%`);
     if (qPhone) query = query.ilike("phone", `%${qPhone}%`);
     if (phone) query = query.eq("phone", phone);
+    if (locationId) query = query.eq("location_id", locationId);
     const { data, error } = await query;
     if (error) throw error;
     return data;
