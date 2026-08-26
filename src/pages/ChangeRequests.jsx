@@ -95,53 +95,52 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Eye size={16} className="text-brand-600" /> Review Change Request<span className="font-khmer block text-xs font-normal text-slate-500">ពិនិត្យសំណើផ្លាស់ប្តូរ</span></h3>
-        <p className="mb-3 text-xs text-slate-400">{req.transactionCode} · Requested by<span className="font-khmer"> ស្នើដោយ</span> {req.requestedByName} · {fmtCambodiaDateTime(req.created_at)}</p>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Eye size={16} className="text-brand-600" /> Review Change Request</h3>
+        <p className="mb-3 text-xs text-slate-400">{req.transactionCode} · Requested by {req.requestedByName} · {fmtCambodiaDateTime(req.created_at)}</p>
 
         <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          <span className="font-medium text-slate-500">Reason: <span className="font-khmer">មូលហេតុ:</span> </span>{req.reason}
+          <span className="font-medium text-slate-500">Reason: </span>{req.reason}
         </div>
 
         {!p ? (
           <p className="rounded-lg border border-slate-200 p-3 text-sm text-slate-500">
             This is an older-style request with no structured proposal attached — just the reason above. Approving it here only marks it approved; make any correction yourself via Edit Transaction.
-            <span className="font-khmer block">នេះជាសំណើប្រភេទចាស់ដែលមិនមានសំណើរចនាសម្ព័ន្ធភ្ជាប់មកជាមួយទេ — មានតែមូលហេតុខាងលើប៉ុណ្ណោះ។ ការអនុម័តនៅទីនេះគ្រាន់តែសម្គាល់ថាបានអនុម័តប៉ុណ្ណោះ សូមកែតម្រូវដោយខ្លួនឯងតាមរយៈកែសម្រួលប្រតិបត្តិការ។</span>
           </p>
         ) : (
           <div className="overflow-hidden rounded-lg border border-slate-200">
             <div className="grid grid-cols-3 gap-2 border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500">
-              <span>Field<span className="font-khmer block text-[10px] font-normal">វាល</span></span><span>Current<span className="font-khmer block text-[10px] font-normal">បច្ចុប្បន្ន</span></span><span>Requested<span className="font-khmer block text-[10px] font-normal">បានស្នើ</span></span>
+              <span>Field</span><span>Current</span><span>Requested</span>
             </div>
-            <DiffRow label={isBuy ? (<>Seller<span className="font-khmer block text-[10px]">អ្នកលក់</span></>) : (<>Buyer<span className="font-khmer block text-[10px]">អ្នកទិញ</span></>)} current={req.currentPartyName} proposed={p.partyName} />
-            <DiffRow label={<>Weight (kg)<span className="font-khmer block text-[10px]">ទម្ងន់ (គីឡូក្រាម)</span></>} current={fmt2(tx.quantity_kg)} proposed={fmt2(p.quantityKg)} />
-            <DiffRow label={<>Price per kg<span className="font-khmer block text-[10px]">តម្លៃក្នុងមួយគីឡូក្រាម</span></>} current={fmtRiel(tx.price_per_kg)} proposed={fmtRiel(p.pricePerKg)} />
-            {isBuy && <DiffRow label={<>Quality Grade<span className="font-khmer block text-[10px]">ថ្នាក់គុណភាព</span></>} current={tx.quality_grade || "—"} proposed={p.qualityGrade || "—"} />}
-            <DiffRow label={<>Payment Status<span className="font-khmer block text-[10px]">ស្ថានភាពទូទាត់</span></>} current={tx.payment_status} proposed={p.paymentStatus} />
-            <DiffRow label={<>VAT<span className="font-khmer block text-[10px]">អាករ</span></>} current={tx.tax_applicable ? `${tx.tax_rate}%` : "No"} proposed={p.taxApplicable ? `${p.taxRate}%` : "No"} />
-            <DiffRow label={<>Deduction (kg)<span className="font-khmer block text-[10px]">ការកាត់ (គីឡូក្រាម)</span></>} current={fmt2(tx.deduction_kg)} proposed={fmt2(p.deductionKg)} />
-            {isBuy && <DiffRow label={<>Staff / Carrying Fee<span className="font-khmer block text-[10px]">កម្រៃបុគ្គលិក / ដឹកជញ្ជូន</span></>} current={fmtRiel(tx.staff_fee || 0)} proposed={fmtRiel(p.staffFee || 0)} />}
-            <DiffRow label={<>Moisture / Mixture / Outthrow %<span className="font-khmer block text-[10px]">សំណើម / ល្បាយ / សំណល់ %</span></>} current={`${tx.moisture_pct || 0} / ${tx.mixture_pct || 0} / ${tx.outthrow_pct || 0}`} proposed={`${p.moisturePct || 0} / ${p.mixturePct || 0} / ${p.outthrowPct || 0}`} />
-            <DiffRow label={<>Car Plate<span className="font-khmer block text-[10px]">លេខផ្លាកយានយន្ត</span></>} current={tx.car_plate || "—"} proposed={p.carPlate || "—"} />
-            <DiffRow label={<>Truck / Driver Name<span className="font-khmer block text-[10px]">ឈ្មោះឡាន / អ្នកបើកបរ</span></>} current={tx.driver_name || "—"} proposed={p.driverName || "—"} />
-            <DiffRow label={<>Note<span className="font-khmer block text-[10px]">កំណត់ចំណាំ</span></>} current={tx.note || "—"} proposed={p.note || "—"} />
-            <DiffRow label={<>Total Amount<span className="font-khmer block text-[10px]">ចំនួនទឹកប្រាក់សរុប</span></>} current={fmtRiel(currentAmount)} proposed={fmtRiel(proposedAmount)} />
+            <DiffRow label={isBuy ? "Seller" : "Buyer"} current={req.currentPartyName} proposed={p.partyName} />
+            <DiffRow label="Weight (kg)" current={fmt2(tx.quantity_kg)} proposed={fmt2(p.quantityKg)} />
+            <DiffRow label="Price per kg" current={fmtRiel(tx.price_per_kg)} proposed={fmtRiel(p.pricePerKg)} />
+            {isBuy && <DiffRow label="Quality Grade" current={tx.quality_grade || "—"} proposed={p.qualityGrade || "—"} />}
+            <DiffRow label="Payment Status" current={tx.payment_status} proposed={p.paymentStatus} />
+            <DiffRow label="VAT" current={tx.tax_applicable ? `${tx.tax_rate}%` : "No"} proposed={p.taxApplicable ? `${p.taxRate}%` : "No"} />
+            <DiffRow label="Deduction (kg)" current={fmt2(tx.deduction_kg)} proposed={fmt2(p.deductionKg)} />
+            {isBuy && <DiffRow label="Staff / Carrying Fee" current={fmtRiel(tx.staff_fee || 0)} proposed={fmtRiel(p.staffFee || 0)} />}
+            <DiffRow label="Moisture / Mixture / Outthrow %" current={`${tx.moisture_pct || 0} / ${tx.mixture_pct || 0} / ${tx.outthrow_pct || 0}`} proposed={`${p.moisturePct || 0} / ${p.mixturePct || 0} / ${p.outthrowPct || 0}`} />
+            <DiffRow label="Car Plate" current={tx.car_plate || "—"} proposed={p.carPlate || "—"} />
+            <DiffRow label="Truck / Driver Name" current={tx.driver_name || "—"} proposed={p.driverName || "—"} />
+            <DiffRow label="Note" current={tx.note || "—"} proposed={p.note || "—"} />
+            <DiffRow label="Total Amount" current={fmtRiel(currentAmount)} proposed={fmtRiel(proposedAmount)} />
           </div>
         )}
 
         {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
 
         <div className="mt-4 flex justify-end gap-2">
-          <button onClick={handleReject} disabled={saving || rejecting} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40"><X size={14} /> {rejecting ? (<>Rejecting…<span className="font-khmer block text-[10px] font-normal">កំពុងបដិសេធ…</span></>) : t("reject")}</button>
+          <button onClick={handleReject} disabled={saving || rejecting} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40"><X size={14} /> {rejecting ? "Rejecting…" : t("reject")}</button>
           <button onClick={onClose} disabled={saving || rejecting} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
         </div>
 
         {p && (
           <div className="mt-4 border-t border-slate-200 pt-4">
-            <label className="mb-1 block text-xs text-slate-500">Enter your own login password to approve &amp; apply these changes to the transaction<span className="font-khmer block">បញ្ចូលពាក្យសម្ងាត់ចូលប្រើផ្ទាល់ខ្លួនរបស់អ្នក ដើម្បីអនុម័ត និងអនុវត្តការផ្លាស់ប្តូរទាំងនេះទៅលើប្រតិបត្តិការ</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Enter your own login password to approve &amp; apply these changes to the transaction</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" name="approve-own-password-not-autofillable"
               className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             <button disabled={saving || rejecting || !password} onClick={approve} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-              <Check size={16} /> {saving ? (<>Applying...<span className="font-khmer block text-xs font-normal">កំពុងអនុវត្ត...</span></>) : (<>Approve & Apply to Transaction<span className="font-khmer block text-xs font-normal">អនុម័ត និងអនុវត្តទៅលើប្រតិបត្តិការ</span></>)}
+              <Check size={16} /> {saving ? "Applying..." : "Approve & Apply to Transaction"}
             </button>
           </div>
         )}
@@ -253,7 +252,7 @@ export default function ChangeRequests() {
                 <th className="px-3 py-3 font-medium">{t("requested_by")}</th>
                 <th className="px-3 py-3 font-medium">{t("requested_on")}</th>
                 <th className="px-3 py-3 font-medium">{t("reason")}</th>
-                <th className="px-3 py-3 font-medium">Redo?<span className="font-khmer block text-[10px]">ធ្វើឡើងវិញ?</span></th>
+                <th className="px-3 py-3 font-medium">Redo?</th>
                 <th className="px-3 py-3 font-medium">{t("col_status")}</th>
                 <th className="px-3 py-3 font-medium">{t("col_action")}</th>
               </tr>
@@ -265,13 +264,13 @@ export default function ChangeRequests() {
                   <td className="px-3 py-3 text-slate-600">{r.requestedByName}</td>
                   <td className="px-3 py-3 text-slate-500">{fmtCambodiaDate(r.created_at)}</td>
                   <td className="px-3 py-3 max-w-xs text-slate-600">{r.reason}</td>
-                  <td className="px-3 py-3 text-xs text-slate-400">{r.proposed_data ? (<>Yes<span className="font-khmer block">បាទ/ចាស</span></>) : (<>Reason only<span className="font-khmer block">តែមូលហេតុប៉ុណ្ណោះ</span></>)}</td>
+                  <td className="px-3 py-3 text-xs text-slate-400">{r.proposed_data ? "Yes" : "Reason only"}</td>
                   <td className="px-3 py-3">
                     <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${r.status === "pending" ? "bg-amber-50 text-amber-600" : r.status === "approved" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t(`status_${r.status}`)}</span>
                   </td>
                   <td className="px-3 py-3">
                     {r.status === "pending" ? (
-                      <button onClick={() => setReviewReq(r)} className="flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700"><Eye size={12} /> Review<span className="font-khmer block text-[10px]">ពិនិត្យ</span></button>
+                      <button onClick={() => setReviewReq(r)} className="flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700"><Eye size={12} /> Review</button>
                     ) : <span className="text-xs text-slate-300">—</span>}
                   </td>
                 </tr>

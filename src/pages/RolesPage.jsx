@@ -6,7 +6,6 @@ import { useAuth } from "../AuthContext.jsx";
 import { PERMISSION_GROUPS } from "../permissions.js";
 
 const SCOPE_LABELS = { all: "All Locations", own_location: "Own Location Only" };
-const SCOPE_LABELS_KM = { all: "គ្រប់ទីតាំងទាំងអស់", own_location: "តែទីតាំងផ្ទាល់ខ្លួន" };
 const SCOPE_STYLES = { all: "bg-brand-100 text-brand-700", own_location: "bg-slate-100 text-slate-600" };
 
 function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSaved, onDeleted, onMembersChanged }) {
@@ -76,27 +75,27 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
   return (
     <div>
       <button onClick={onBack} className="mb-4 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-        <ArrowLeft size={15} /> Back to roles<span className="font-khmer block text-xs">ត្រឡប់ទៅតារាងតួនាទី</span>
+        <ArrowLeft size={15} /> Back to roles
       </button>
 
       <div className="grid max-w-4xl grid-cols-3 gap-5">
         <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="mb-5 grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Role name<span className="font-khmer block text-brand-600">ឈ្មោះតួនាទី</span></label>
+              <label className="mb-1 block text-xs text-slate-500">Role name</label>
               <input value={name} onChange={(e) => setName(e.target.value)} disabled={role.is_system}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-400" />
             </div>
             <div>
               <label className="mb-1 flex items-center gap-1 text-xs text-slate-500">
-                <span>Location access<span className="font-khmer block text-[10px] font-normal">សិទ្ធិចូលប្រើទីតាំង</span></span> {scopeLocked && <Lock size={11} />}
+                Location access {scopeLocked && <Lock size={11} />}
               </label>
               <select value={scope} onChange={(e) => setScope(e.target.value)} disabled={scopeLocked || !canPickAllScope}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-400">
                 <option value="own_location">Own Location Only</option>
                 {canPickAllScope && <option value="all">All Locations</option>}
               </select>
-              {!canPickAllScope && !scopeLocked && <p className="mt-1 text-[11px] text-slate-400">Only Owner can grant all-location access.<span className="font-khmer block">មានតែម្ចាស់ទេ ដែលអាចផ្តល់សិទ្ធិចូលប្រើគ្រប់ទីតាំង។</span></p>}
+              {!canPickAllScope && !scopeLocked && <p className="mt-1 text-[11px] text-slate-400">Only Owner can grant all-location access.</p>}
             </div>
           </div>
 
@@ -113,7 +112,7 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
                         <input type="checkbox" checked={permissions.includes(p.key)} disabled={disabled} onChange={() => toggle(p.key)}
                           className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
                         <span className="text-slate-700">{p.label}</span>
-                        {isOwnerOnlyPerm && <span className="ml-auto text-[10px] text-slate-400">Owner only<span className="font-khmer block">សម្រាប់តែម្ចាស់</span></span>}
+                        {isOwnerOnlyPerm && <span className="ml-auto text-[10px] text-slate-400">Owner only</span>}
                       </label>
                     );
                   })}
@@ -127,13 +126,13 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
           <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
             {!isNew && !role.is_system ? (
               <button onClick={del} disabled={saving} className="flex items-center gap-1.5 text-sm text-rose-500 hover:text-rose-700">
-                <Trash2 size={14} /> Delete role<span className="font-khmer block text-xs">លុបតួនាទី</span>
+                <Trash2 size={14} /> Delete role
               </button>
             ) : <span />}
             <div className="flex gap-2">
-              <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
+              <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
               <button onClick={save} disabled={saving} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-                {saving ? "Saving..." : (<>Save Role<span className="font-khmer block text-xs font-normal">រក្សាទុកតួនាទី</span></>)}
+                {saving ? "Saving..." : "Save Role"}
               </button>
             </div>
           </div>
@@ -141,8 +140,8 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
 
         {!isNew && (
           <div className="col-span-1 h-fit rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="mb-3 text-sm font-semibold text-slate-700">Accounts with this role ({members.length})<span className="font-khmer block text-xs font-normal">គណនីដែលមានតួនាទីនេះ ({members.length})</span></p>
-            {members.length === 0 && <p className="text-xs text-slate-400">Nobody has this role right now.<span className="font-khmer block">មិនមាននរណាមានតួនាទីនេះនៅពេលនេះទេ។</span></p>}
+            <p className="mb-3 text-sm font-semibold text-slate-700">Accounts with this role ({members.length})</p>
+            {members.length === 0 && <p className="text-xs text-slate-400">Nobody has this role right now.</p>}
             <div className="space-y-2">
               {members.map((m) => (
                 <div key={m.id} className="rounded-lg border border-slate-100 p-2.5">
@@ -153,7 +152,7 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
                       {reassignOptions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                   ) : (
-                    <p className="mt-0.5 text-xs text-slate-400">Only Owner can move this person to a different role.<span className="font-khmer block">មានតែម្ចាស់ទេ ដែលអាចផ្លាស់ប្តូរតួនាទីរបស់អ្នកនេះ។</span></p>
+                    <p className="mt-0.5 text-xs text-slate-400">Only Owner can move this person to a different role.</p>
                   )}
                 </div>
               ))}
@@ -209,7 +208,7 @@ export default function RolesPage() {
   if (editing) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <Topbar title={<>Edit Role<span className="font-khmer block text-sm font-normal text-slate-500">កែសម្រួលតួនាទី</span></>} />
+        <Topbar title="Edit Role" />
         <main className="flex-1 overflow-y-auto p-6">
           <RoleEditor
             role={editing} isOwner={isOwner} allRoles={roles} allProfiles={profiles} myId={profile.id}
@@ -223,26 +222,26 @@ export default function RolesPage() {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title={<>Roles<span className="font-khmer block text-sm font-normal text-slate-500">តួនាទី</span></>} subtitle={<>Custom access rights for everyone in PaddyTrade<span className="font-khmer block">សិទ្ធិចូលប្រើផ្ទាល់ខ្លួនសម្រាប់អ្នកប្រើប្រាស់ទាំងអស់នៅ PaddyTrade</span></>} />
+      <Topbar title="Roles" subtitle="Custom access rights for everyone in PaddyTrade" />
       <main className="flex-1 overflow-y-auto p-6">
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[10px]">ព្យាយាមម្តងទៀត</span></button>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
           </div>
         )}
         {rolesMissing ? (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div>
-              <p className="font-medium">The roles table isn't set up yet.<span className="font-khmer block text-xs font-normal">តារាងតួនាទីមិនទាន់រៀបចំនៅឡើយទេ។</span></p>
-              <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase's SQL Editor, then refresh this page.<span className="font-khmer block">ដំណើរការ migration "paddytrade-schema-roles-owner.sql" នៅក្នុង Supabase's SQL Editor រួចផ្ទុកទំព័រនេះឡើងវិញ។</span></p>
+              <p className="font-medium">The roles table isn't set up yet.</p>
+              <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase's SQL Editor, then refresh this page.</p>
             </div>
           </div>
         ) : (
           <button onClick={() => setEditing({ name: "", scope: "own_location", permissions: [], is_system: false })}
             className="mb-4 flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-            <Plus size={15} /> Add Role<span className="font-khmer block text-xs">បន្ថែមតួនាទី</span>
+            <Plus size={15} /> Add Role
           </button>
         )}
 
@@ -250,10 +249,10 @@ export default function RolesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Role<span className="font-khmer block text-[10px]">តួនាទី</span></th>
-                <th className="px-3 py-3 font-medium">Access<span className="font-khmer block text-[10px]">សិទ្ធិចូលប្រើ</span></th>
-                <th className="px-3 py-3 font-medium">Permissions<span className="font-khmer block text-[10px]">សិទ្ធិអនុញ្ញាត</span></th>
-                <th className="px-3 py-3 font-medium">Employees<span className="font-khmer block text-[10px]">បុគ្គលិក</span></th>
+                <th className="px-5 py-3 font-medium">Role</th>
+                <th className="px-3 py-3 font-medium">Access</th>
+                <th className="px-3 py-3 font-medium">Permissions</th>
+                <th className="px-3 py-3 font-medium">Employees</th>
               </tr>
             </thead>
             <tbody>
@@ -265,21 +264,20 @@ export default function RolesPage() {
                       {r.is_system && <Lock size={12} className="text-slate-300" />}
                     </div>
                   </td>
-                  <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[r.scope]}`}>{SCOPE_LABELS[r.scope]}<span className="font-khmer block text-[10px] font-normal">{SCOPE_LABELS_KM[r.scope]}</span></span></td>
-                  <td className="px-3 py-3 text-slate-500">{(r.permissions || []).length} permission(s)<span className="font-khmer block text-[11px]">{(r.permissions || []).length} សិទ្ធិអនុញ្ញាត</span></td>
+                  <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[r.scope]}`}>{SCOPE_LABELS[r.scope]}</span></td>
+                  <td className="px-3 py-3 text-slate-500">{(r.permissions || []).length} permission(s)</td>
                   <td className="px-3 py-3 text-slate-600">{employeeCount(r.id)}</td>
                 </tr>
               ))}
-              {loading && roles.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block text-xs">កំពុងផ្ទុក...</span></td></tr>}
-              {roles.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No roles yet.<span className="font-khmer block text-xs">មិនទាន់មានតួនាទីនៅឡើយទេ។</span></td></tr>}
+              {loading && roles.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {roles.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No roles yet.</td></tr>}
             </tbody>
           </table>
         </div>
 
         {!rolesMissing && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-            <p>Location access controls what data a role can actually reach in the database (all locations vs their own). Permissions control what's shown inside that boundary. {!isOwner && "Only Owner can create a role with all-location access, or edit the \"Owner\"/\"HQ Admin\" roles."}</p>
-            <p className="font-khmer mt-1">សិទ្ធិចូលប្រើទីតាំង កំណត់ថាទិន្នន័យអ្វីខ្លះដែលតួនាទីមួយអាចចូលប្រើបាននៅក្នុងមូលដ្ឋានទិន្នន័យ (គ្រប់ទីតាំង ឬ តែទីតាំងខ្លួនឯង)។ សិទ្ធិអនុញ្ញាត កំណត់ថាអ្វីខ្លះនឹងបង្ហាញនៅក្នុងព្រំដែននោះ។{!isOwner && " មានតែម្ចាស់ទេ ដែលអាចបង្កើតតួនាទីមានសិទ្ធិចូលប្រើគ្រប់ទីតាំង ឬកែសម្រួលតួនាទី \"Owner\"/\"HQ Admin\"។"}</p>
+            Location access controls what data a role can actually reach in the database (all locations vs their own). Permissions control what's shown inside that boundary. {!isOwner && "Only Owner can create a role with all-location access, or edit the \"Owner\"/\"HQ Admin\" roles."}
           </div>
         )}
       </main>

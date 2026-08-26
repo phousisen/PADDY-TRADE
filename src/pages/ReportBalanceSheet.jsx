@@ -6,13 +6,10 @@ import { computeFinancials } from "./ReportOverview.jsx";
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmtRiel(n) { return `${fmt(n)} ៛`; }
 
-function Line({ label, labelKm, value, bold, indent }) {
+function Line({ label, value, bold, indent }) {
   return (
     <div className={`flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""}`}>
-      <span className={bold ? "font-semibold text-slate-800" : "text-slate-500"}>
-        {label}
-        {labelKm && <span className="font-khmer block text-[10px] font-normal">{labelKm}</span>}
-      </span>
+      <span className={bold ? "font-semibold text-slate-800" : "text-slate-500"}>{label}</span>
       <span className={bold ? "font-semibold text-slate-800" : "text-slate-700"}>{fmtRiel(value)}</span>
     </div>
   );
@@ -59,42 +56,36 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800"><Scale size={18} className="text-brand-600" /> Balance Sheet<span className="font-khmer block text-xs font-normal text-slate-400">តារាងតុល្យការ</span></h2>
-          <p className="text-xs text-slate-400">
-            {rangeLabel}
-            {!startDate && !endDate && <span className="font-khmer block">គ្រប់ពេលវេលា</span>}
-          </p>
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800"><Scale size={18} className="text-brand-600" /> Balance Sheet</h2>
+          <p className="text-xs text-slate-400">{rangeLabel}</p>
         </div>
         <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
-          <Printer size={14} className="text-slate-400" /> Print<span className="font-khmer block text-[10px]">បោះពុម្ព</span>
+          <Printer size={14} className="text-slate-400" /> Print
         </button>
       </div>
 
       <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Assets<span className="font-khmer block normal-case tracking-normal">ទ្រព្យសកម្ម</span></p>
-        <Line label="Inventory on hand" labelKm="ស្តុកទំនិញនៅសល់" value={calc.inventoryValue} indent />
-        <Line label="Accounts Receivable" labelKm="គណនីត្រូវទទួល" value={calc.accountsReceivable} indent />
-        <Line label="Cash (estimate)" labelKm="សាច់ប្រាក់ (ប៉ាន់ស្មាន)" value={Math.max(0, calc.cashEstimate)} indent />
-        <Line label="Total Assets" labelKm="ទ្រព្យសកម្មសរុប" value={calc.totalAssets} bold />
+        <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Assets</p>
+        <Line label="Inventory on hand" value={calc.inventoryValue} indent />
+        <Line label="Accounts Receivable" value={calc.accountsReceivable} indent />
+        <Line label="Cash (estimate)" value={Math.max(0, calc.cashEstimate)} indent />
+        <Line label="Total Assets" value={calc.totalAssets} bold />
 
-        <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Liabilities<span className="font-khmer block normal-case tracking-normal">បំណុល</span></p>
-        <Line label="Accounts Payable (suppliers)" labelKm="គណនីត្រូវបង់ (ក្រុមហ៊ុនផ្គត់ផ្គង់)" value={calc.accountsPayable} indent />
-        <Line label="Bank Loans Outstanding" labelKm="ប្រាក់កម្ចីធនាគារនៅសល់" value={calc.bankLoansOutstanding} indent />
-        <Line label="Total Liabilities" labelKm="បំណុលសរុប" value={calc.totalLiabilities} bold />
+        <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Liabilities</p>
+        <Line label="Accounts Payable (suppliers)" value={calc.accountsPayable} indent />
+        <Line label="Bank Loans Outstanding" value={calc.bankLoansOutstanding} indent />
+        <Line label="Total Liabilities" value={calc.totalLiabilities} bold />
 
-        <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Equity<span className="font-khmer block normal-case tracking-normal">ដើមទុន</span></p>
-        <Line label="Partner Capital (contributed)" labelKm="ដើមទុនដៃគូ (បានវិភាគទាន)" value={calc.partnerCapital} indent />
-        <Line label="Retained Earnings" labelKm="ប្រាក់ចំណេញរក្សាទុក" value={calc.retainedEarnings} indent />
-        <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5"><Line label="Total Equity" labelKm="ដើមទុនសរុប" value={calc.equity} bold /></div>
+        <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Equity</p>
+        <Line label="Partner Capital (contributed)" value={calc.partnerCapital} indent />
+        <Line label="Retained Earnings" value={calc.retainedEarnings} indent />
+        <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5"><Line label="Total Equity" value={calc.equity} bold /></div>
 
         <div className="mt-5 border-t border-slate-100 pt-3">
-          <Line label="Total Liabilities + Equity" labelKm="បំណុលសរុប + ដើមទុន" value={calc.totalLiabilities + calc.equity} bold />
+          <Line label="Total Liabilities + Equity" value={calc.totalLiabilities + calc.equity} bold />
         </div>
         {!balances && (
-          <p className="mt-2 text-xs text-amber-600">
-            Note: this doesn't balance exactly against Total Assets — check for data still loading.
-            <span className="font-khmer block">សម្គាល់៖ តួលេខនេះមិនស្មើនឹងទ្រព្យសកម្មសរុបទេ — សូមពិនិត្យមើលថាតើទិន្នន័យកំពុងផ្ទុកឬអត់។</span>
-          </p>
+          <p className="mt-2 text-xs text-amber-600">Note: this doesn't balance exactly against Total Assets — check for data still loading.</p>
         )}
       </div>
 
@@ -102,17 +93,17 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
         <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
             <MapPin size={16} className="text-brand-600" />
-            <h3 className="font-semibold text-slate-700">By Location<span className="font-khmer block text-xs font-normal">តាមទីតាំង</span></h3>
+            <h3 className="font-semibold text-slate-700">By Location</h3>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-2 font-medium">Location<span className="font-khmer block font-normal">ទីតាំង</span></th>
-                <th className="px-5 py-2 font-medium">Total Assets<span className="font-khmer block font-normal">ទ្រព្យសកម្មសរុប</span></th>
-                <th className="px-5 py-2 font-medium">Accounts Payable<span className="font-khmer block font-normal">គណនីត្រូវបង់</span></th>
-                <th className="px-5 py-2 font-medium">Bank Loans<span className="font-khmer block font-normal">ប្រាក់កម្ចីធនាគារ</span></th>
-                <th className="px-5 py-2 font-medium">Partner Capital<span className="font-khmer block font-normal">ដើមទុនដៃគូ</span></th>
-                <th className="px-5 py-2 font-medium">Equity<span className="font-khmer block font-normal">ដើមទុន</span></th>
+                <th className="px-5 py-2 font-medium">Location</th>
+                <th className="px-5 py-2 font-medium">Total Assets</th>
+                <th className="px-5 py-2 font-medium">Accounts Payable</th>
+                <th className="px-5 py-2 font-medium">Bank Loans</th>
+                <th className="px-5 py-2 font-medium">Partner Capital</th>
+                <th className="px-5 py-2 font-medium">Equity</th>
               </tr>
             </thead>
             <tbody>
@@ -133,7 +124,6 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
 
       <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         Simplified model: inventory is valued at average purchase cost, cost of goods sold is approximated from total purchases, and Retained Earnings is whatever's left of Equity after subtracting real Partner Capital — it isn't a full double-entry set of books.
-        <span className="font-khmer block">គំរូសាមញ្ញ៖ ស្តុកទំនិញត្រូវបានវាយតម្លៃតាមថ្លៃទិញជាមធ្យម ថ្លៃដើមទំនិញលក់ត្រូវបានប៉ាន់ស្មានពីការទិញសរុប ហើយប្រាក់ចំណេញរក្សាទុកគឺជាចំនួនដែលនៅសល់ពីដើមទុនក្រោយកាត់ដើមទុនដៃគូពិតប្រាកដ — វាមិនមែនជាបញ្ជីគណនេយ្យពីរជ្រុងពេញលេញទេ។</span>
       </div>
     </div>
   );

@@ -131,18 +131,17 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-amber-500" /> Redo This {isBuy ? "Buy" : "Sell"} Entry<span className="font-khmer block text-sm font-normal text-slate-500">កែសម្រួល{isBuy ? "ការទិញ" : "ការលក់"}នេះឡើងវិញ</span></h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-amber-500" /> Redo This {isBuy ? "Buy" : "Sell"} Entry</h3>
         <p className="mb-3 text-xs text-slate-400">
           {tx.code} · Current: {fmt2(tx.quantity_kg)} kg × {fmtRiel(tx.price_per_kg)}/kg = {fmtRiel(tx.amount)}
         </p>
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
           This does not change the saved transaction. It sends these corrected values to HQ as a pending request — nothing updates until an HQ Admin or Owner approves it.
-          <span className="font-khmer block mt-1">នេះមិនផ្លាស់ប្តូរប្រតិបត្តិការដែលបានរក្សាទុកទេ។ វានឹងផ្ញើតម្លៃដែលបានកែតម្រូវទាំងនេះទៅកាន់ HQ ជាសំណើរង់ចាំ — គ្មានអ្វីផ្លាស់ប្តូរទេ រហូតដល់ HQ Admin ឬម្ចាស់អនុម័ត។</span>
         </p>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="relative col-span-2">
-            <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}<span className="font-khmer block">{isBuy ? "អ្នកលក់ (កសិករ)" : "អ្នកទិញ"}</span></label>
+            <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}</label>
             <input
               value={partyQuery}
               onChange={(e) => setPartyQuery(e.target.value)}
@@ -152,32 +151,31 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
             {partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "").trim() && (
               <p className="mt-1 text-[11px] text-slate-400">
                 {isBuy ? "Farmer" : "Buyer"} will be matched to an existing one with this name, or added as new, once approved. You can browse existing names on the {isBuy ? "Farmers" : "Buyers"} page.
-                <span className="font-khmer block">{isBuy ? "កសិករ" : "អ្នកទិញ"}នេះនឹងត្រូវផ្គូផ្គងជាមួយអ្នកដែលមានស្រាប់ក្នុងឈ្មោះនេះ ឬបន្ថែមថ្មី នៅពេលដែលបានអនុម័ត។ អ្នកអាចមើលឈ្មោះដែលមានស្រាប់នៅទំព័រ{isBuy ? "កសិករ" : "អ្នកទិញ"}។</span>
               </p>
             )}
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Weight (kg)<span className="font-khmer block">ទម្ងន់ (គីឡូក្រាម)</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Weight (kg)</label>
             <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)<span className="font-khmer block">តម្លៃក្នុងមួយ KG</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
             <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
 
           {isBuy && (
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Quality Grade<span className="font-khmer block">ថ្នាក់គុណភាព</span></label>
+              <label className="mb-1 block text-xs text-slate-500">Quality Grade</label>
               <input list="rc-grade-options" value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               <datalist id="rc-grade-options"><option value="A" /><option value="B" /><option value="C" /></datalist>
             </div>
           )}
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Payment Status<span className="font-khmer block">ស្ថានភាពទូទាត់</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
             <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
               {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
@@ -185,40 +183,40 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Car Plate Number<span className="font-khmer block">លេខផ្លាកយានយន្ត</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Car Plate Number</label>
             <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name<span className="font-khmer block">ឈ្មោះឡាន/អ្នកបើកបរ</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
             <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
         </div>
 
         <div className="mt-3 rounded-lg border border-slate-200 p-3">
-          <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)<span className="font-khmer block">ការកាត់ថ្នាក់គុណភាព (ស្រេចចិត្ត)</span></p>
+          <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
           <div className="grid grid-cols-4 gap-2">
-            <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %<span className="font-khmer block">សំណើម %</span></label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-            <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %<span className="font-khmer block">សំណម %</span></label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-            <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %<span className="font-khmer block">សំណល់ %</span></label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-            <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)<span className="font-khmer block">ការកាត់ (គីឡូក្រាម)</span></label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
           </div>
         </div>
 
         {isBuy && (
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)<span className="font-khmer block">ថ្លៃបុគ្គលិក/ថ្លៃដឹកជញ្ជូន (ស្រេចចិត្ត)</span></p>
+            <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
             <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
               className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-            <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.<span className="font-khmer block">តែក្នុងករណីដែលបុគ្គលិករបស់យើងត្រូវដឹកជញ្ជូនស្រូវជូនអ្នកលក់នេះ ដោយសារពួកគេគ្មានកម្លាំងពលកម្មផ្ទាល់ខ្លួន — ចំនួននេះនឹងកាត់ចេញពីប្រាក់ដែលពួកគេទទួលបាន។</span></p>
+            <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.</p>
           </div>
         )}
 
         <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-            Apply VAT<span className="font-khmer block text-xs font-normal text-slate-500">អនុវត្តអាករ VAT</span>
+            Apply VAT
           </label>
           {taxApplicable && (
             <div className="flex items-center gap-1.5">
@@ -229,12 +227,12 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
         </div>
 
         <div className="mt-3">
-          <label className="mb-1 block text-xs text-slate-500">Note (optional)<span className="font-khmer block">កំណត់ចំណាំ (ស្រេចចិត្ត)</span></label>
+          <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
           <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
 
         <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">New total amount<span className="font-khmer block">ចំនួនទឹកប្រាក់សរុបថ្មី</span></span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
         </div>
 
         <div className="mt-3">
@@ -247,7 +245,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
 
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
-          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? <>Submitting…<span className="font-khmer block text-xs">កំពុងបញ្ជូន...</span></> : t("submit_request")}</button>
+          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Submitting…" : t("submit_request")}</button>
         </div>
       </div>
     </div>
@@ -285,25 +283,24 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
           <Wallet size={16} className="text-brand-600" /> {isBuy ? "Pay Supplier" : "Receive Payment"}
-          <span className="font-khmer block text-sm font-normal text-slate-500">{isBuy ? "បង់ប្រាក់ទៅអ្នកផ្គត់ផ្គង់" : "ទទួលការទូទាត់"}</span>
         </h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
-        <label className="mb-1 block text-xs text-slate-500">Amount (៛)<span className="font-khmer block">ទឹកប្រាក់ (Riel)</span></label>
+        <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
         <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         <div className="mb-3 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">Currently owed<span className="font-khmer block text-xs">ជំពាក់បច្ចុប្បន្ន</span></span><span className="font-medium text-slate-700">{fmtRiel(remaining)}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Paying now<span className="font-khmer block text-xs">កំពុងបង់ឥឡូវ</span></span><span className="font-medium text-slate-700">− {fmtRiel(paying)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">Currently owed</span><span className="font-medium text-slate-700">{fmtRiel(remaining)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">Paying now</span><span className="font-medium text-slate-700">− {fmtRiel(paying)}</span></div>
           <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5">
-            <span className="font-medium text-slate-600">New remaining balance<span className="font-khmer block text-xs font-normal">សមតុល្យនៅសល់ថ្មី</span></span>
+            <span className="font-medium text-slate-600">New remaining balance</span>
             <span className={`font-bold ${newRemaining === 0 ? "text-emerald-600" : "text-slate-800"}`}>{fmtRiel(newRemaining)}</span>
           </div>
         </div>
-        {overpaying && <p className="mb-3 text-xs text-amber-600">This is more than what is owed — the balance will just be marked fully settled.<span className="font-khmer block">នេះច្រើនជាងអ្វីដែលជំពាក់ — សមតុល្យនឹងត្រូវសម្គាល់ថាបានទូទាត់ពេញលេញ។</span></p>}
+        {overpaying && <p className="mb-3 text-xs text-amber-600">This is more than what is owed — the balance will just be marked fully settled.</p>}
 
-        <label className="mb-1 block text-xs text-slate-500">Method<span className="font-khmer block">វិធីទូទាត់</span></label>
+        <label className="mb-1 block text-xs text-slate-500">Method</label>
         <select value={method} onChange={(e) => setMethod(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
           <option value="cash">Cash</option>
@@ -311,11 +308,11 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
           <option value="bank">Bank Transfer</option>
         </select>
 
-        <label className="mb-1 block text-xs text-slate-500">Payment Date<span className="font-khmer block">កាលបរិច្ឆេទទូទាត់</span></label>
+        <label className="mb-1 block text-xs text-slate-500">Payment Date</label>
         <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} max={cambodiaDateStr()}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-        <label className="mb-1 block text-xs text-slate-500">Note (optional)<span className="font-khmer block">កំណត់ចំណាំ (ស្រេចចិត្ត)</span></label>
+        <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
         <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. partial payment"
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
@@ -328,7 +325,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
             onClick={submit}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           >
-            {saving ? <>Saving...<span className="font-khmer block text-xs">កំពុងរក្សាទុក...</span></> : <>Record Payment<span className="font-khmer block text-xs">កត់ត្រាការទូទាត់</span></>}
+            {saving ? "Saving..." : "Record Payment"}
           </button>
         </div>
       </div>
@@ -426,58 +423,57 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Edit Transaction<span className="font-khmer block text-sm font-normal text-slate-500">កែសម្រួលប្រតិបត្តិការ</span></h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Edit Transaction</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
         <form onSubmit={submit}>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}<span className="font-khmer block">{isBuy ? "អ្នកលក់ (កសិករ)" : "អ្នកទិញ"}</span></label>
+              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}</label>
               <input value={partyQuery} onChange={(e) => setPartyQuery(e.target.value)}
                 placeholder={isBuy ? "Farmer name" : "Buyer name"}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               {partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "").trim() && (
                 <p className="mt-1 text-[11px] text-slate-400">
                   Will be matched to an existing {isBuy ? "farmer" : "buyer"} with this name, or added as new, when saved.
-                  <span className="font-khmer block">នឹងត្រូវផ្គូផ្គងជាមួយ{isBuy ? "កសិករ" : "អ្នកទិញ"}ដែលមានស្រាប់ក្នុងឈ្មោះនេះ ឬបន្ថែមថ្មី នៅពេលរក្សាទុក។</span>
                 </p>
               )}
             </div>
 
             {locations.length > 0 && (
               <div className="col-span-2">
-                <label className="mb-1 block text-xs text-slate-500">Location<span className="font-khmer block">ទីតាំង</span></label>
+                <label className="mb-1 block text-xs text-slate-500">Location</label>
                 <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
                 {locationId !== tx.location_id && (
-                  <p className="mt-1 text-[11px] text-amber-600">Moving this to a different location — its stock will move too.<span className="font-khmer block">កំពុងផ្លាស់ទីនេះទៅទីតាំងផ្សេង — ស្តុករបស់វានឹងផ្លាស់ទីតាមផងដែរ។</span></p>
+                  <p className="mt-1 text-[11px] text-amber-600">Moving this to a different location — its stock will move too.</p>
                 )}
               </div>
             )}
 
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Quantity (kg)<span className="font-khmer block">បរិមាណ (KG)</span></label>
+              <label className="mb-1 block text-xs text-slate-500">Quantity (kg)</label>
               <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)<span className="font-khmer block">តម្លៃក្នុងមួយ KG</span></label>
+              <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
               <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
 
             {isBuy && (
               <div>
-                <label className="mb-1 block text-xs text-slate-500">Quality Grade<span className="font-khmer block">ថ្នាក់គុណភាព</span></label>
+                <label className="mb-1 block text-xs text-slate-500">Quality Grade</label>
                 <input list="et-grade-options" value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                 <datalist id="et-grade-options"><option value="A" /><option value="B" /><option value="C" /></datalist>
               </div>
             )}
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Payment Status<span className="font-khmer block">ស្ថានភាពទូទាត់</span></label>
+              <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
               <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
                 {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
@@ -485,59 +481,59 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Car Plate Number<span className="font-khmer block">លេខផ្លាកយានយន្ត</span></label>
+              <label className="mb-1 block text-xs text-slate-500">Car Plate Number</label>
               <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name<span className="font-khmer block">ឈ្មោះឡាន/អ្នកបើកបរ</span></label>
+              <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
               <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div className="col-span-2">
-              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Buyer" : "Seller"} <span className="text-slate-400">(staff who recorded this)</span><span className="font-khmer block">{isBuy ? "អ្នកទិញ" : "អ្នកលក់"} <span className="text-slate-400">(បុគ្គលិកដែលបានកត់ត្រា)</span></span></label>
+              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Buyer" : "Seller"} <span className="text-slate-400">(staff who recorded this)</span></label>
               <input value={recordedByName} onChange={(e) => setRecordedByName(e.target.value)} placeholder="Staff name"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-              <p className="mt-1 text-[11px] text-slate-400">This is the name printed on the receipt's own "{isBuy ? "Buyer" : "Seller"}" line — not the {isBuy ? "farmer" : "buyer"} above.<span className="font-khmer block">នេះជាឈ្មោះដែលបោះពុម្ពនៅលើបន្ទាត់ "{isBuy ? "អ្នកទិញ" : "អ្នកលក់"}" របស់បង្កាន់ដៃ — មិនមែន{isBuy ? "កសិករ" : "អ្នកទិញ"}ខាងលើទេ។</span></p>
+              <p className="mt-1 text-[11px] text-slate-400">This is the name printed on the receipt's own "{isBuy ? "Buyer" : "Seller"}" line — not the {isBuy ? "farmer" : "buyer"} above.</p>
             </div>
           </div>
 
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)<span className="font-khmer block">ការកាត់ថ្នាក់គុណភាព (ស្រេចចិត្ត)</span></p>
+            <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
             <div className="grid grid-cols-4 gap-2">
-              <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %<span className="font-khmer block">សំណើម %</span></label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-              <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %<span className="font-khmer block">សំណម %</span></label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-              <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %<span className="font-khmer block">សំណល់ %</span></label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-              <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)<span className="font-khmer block">ការកាត់ (គីឡូក្រាម)</span></label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
             </div>
           </div>
 
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-medium text-slate-500">Weigh In / Weigh Out (optional — for the printed receipt)<span className="font-khmer block font-normal">ថ្លឹងចូល / ថ្លឹងចេញ (ស្រេចចិត្ត — សម្រាប់បង្កាន់ដៃបោះពុម្ព)</span></p>
-            <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is.<span className="font-khmer block">បំពេញនេះសម្រាប់ប្រតិបត្តិការដែលបានវាយបញ្ចូលដោយដៃ ដើម្បីឱ្យបង្កាន់ដៃបង្ហាញកាលបរិច្ឆេទ ម៉ោង និងទម្ងន់ពិតប្រាកដជំនួសឱ្យ "—"។ ទុកទទេដើម្បីទុកបង្កាន់ដៃដដែល។</span></p>
+            <p className="mb-2 text-xs font-medium text-slate-500">Weigh In / Weigh Out (optional — for the printed receipt)</p>
+            <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is.</p>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Weigh-In (kg)<span className="font-khmer block">ថ្លឹងចូល (គីឡូក្រាម)</span></label>
+                <label className="mb-1 block text-[11px] text-slate-400">Weigh-In (kg)</label>
                 <input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">In Date<span className="font-khmer block">ថ្ងៃចូល</span></label>
+                <label className="mb-1 block text-[11px] text-slate-400">In Date</label>
                 <input type="date" value={grossInDate} onChange={(e) => setGrossInDate(e.target.value)} max={cambodiaDateStr()} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">In Time<span className="font-khmer block">ម៉ោងចូល</span></label>
+                <label className="mb-1 block text-[11px] text-slate-400">In Time</label>
                 <input type="time" value={grossInTime} onChange={(e) => setGrossInTime(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Weigh-Out (kg)<span className="font-khmer block">ថ្លឹងចេញ (គីឡូក្រាម)</span></label>
+                <label className="mb-1 block text-[11px] text-slate-400">Weigh-Out (kg)</label>
                 <input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Out Date<span className="font-khmer block">ថ្ងៃចេញ</span></label>
+                <label className="mb-1 block text-[11px] text-slate-400">Out Date</label>
                 <input type="date" value={tareOutDate} onChange={(e) => setTareOutDate(e.target.value)} max={cambodiaDateStr()} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Out Time<span className="font-khmer block">ម៉ោងចេញ</span></label>
+                <label className="mb-1 block text-[11px] text-slate-400">Out Time</label>
                 <input type="time" value={tareOutTime} onChange={(e) => setTareOutTime(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
             </div>
@@ -545,17 +541,17 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
 
           {isBuy && (
             <div className="mt-3 rounded-lg border border-slate-200 p-3">
-              <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)<span className="font-khmer block">ថ្លៃបុគ្គលិក/ថ្លៃដឹកជញ្ជូន (ស្រេចចិត្ត)</span></p>
+              <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
               <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
                 className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-              <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.<span className="font-khmer block">តែក្នុងករណីដែលបុគ្គលិករបស់យើងត្រូវដឹកជញ្ជូនស្រូវជូនអ្នកលក់នេះ ដោយសារពួកគេគ្មានកម្លាំងពលកម្មផ្ទាល់ខ្លួន — ចំនួននេះនឹងកាត់ចេញពីប្រាក់ដែលពួកគេទទួលបាន។</span></p>
+              <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.</p>
             </div>
           )}
 
           <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-              Apply VAT<span className="font-khmer block text-xs font-normal text-slate-500">អនុវត្តអាករ VAT</span>
+              Apply VAT
             </label>
             {taxApplicable && (
               <div className="flex items-center gap-1.5">
@@ -566,21 +562,21 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-xs text-slate-500">Note (optional)<span className="font-khmer block">កំណត់ចំណាំ (ស្រេចចិត្ត)</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
             <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-xs text-slate-500">Transaction Date<span className="font-khmer block">កាលបរិច្ឆេទប្រតិបត្តិការ</span></label>
+            <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
             <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
 
           <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
-            <div className="flex justify-between"><span className="text-slate-500">New total amount<span className="font-khmer block">ចំនួនទឹកប្រាក់សរុបថ្មី</span></span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
           </div>
 
-          <label className="mb-1 mt-3 block text-xs text-slate-500">Enter your password to confirm this change<span className="font-khmer block">បញ្ចូលពាក្យសម្ងាត់របស់អ្នកដើម្បីបញ្ជាក់ការផ្លាស់ប្តូរនេះ</span></label>
+          <label className="mb-1 mt-3 block text-xs text-slate-500">Enter your password to confirm this change</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             autoComplete="off" name="confirm-own-password-not-autofillable"
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
@@ -589,7 +585,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           <div className="flex justify-end gap-2">
             <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
             <button type="submit" disabled={!canSubmit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-              {saving ? <>Saving...<span className="font-khmer block text-xs">កំពុងរក្សាទុក...</span></> : <>Save Changes<span className="font-khmer block text-xs">រក្សាទុកការផ្លាស់ប្តូរ</span></>}
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
         </form>
@@ -626,21 +622,21 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 font-semibold text-slate-700">Payment History<span className="font-khmer block text-sm font-normal text-slate-500">ប្រវត្តិទូទាត់</span></h3>
+        <h3 className="mb-1 font-semibold text-slate-700">Payment History</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
         <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200">
           {loading ? (
-            <p className="p-4 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></p>
+            <p className="p-4 text-center text-sm text-slate-400">Loading…</p>
           ) : payments.length === 0 ? (
-            <p className="p-4 text-center text-sm text-slate-400">No payments recorded yet.<span className="font-khmer block">មិនទាន់មានការទូទាត់ត្រូវបានកត់ត្រាទេ។</span></p>
+            <p className="p-4 text-center text-sm text-slate-400">No payments recorded yet.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-400">
-                  <th className="px-3 py-2 font-medium">Date<span className="font-khmer block font-normal">កាលបរិច្ឆេទ</span></th>
-                  <th className="px-3 py-2 font-medium">Amount<span className="font-khmer block font-normal">ទឹកប្រាក់</span></th>
-                  <th className="px-3 py-2 font-medium">By<span className="font-khmer block font-normal">ដោយ</span></th>
+                  <th className="px-3 py-2 font-medium">Date</th>
+                  <th className="px-3 py-2 font-medium">Amount</th>
+                  <th className="px-3 py-2 font-medium">By</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
@@ -668,7 +664,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
         </div>
 
         <div className="mt-4 flex justify-end">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close<span className="font-khmer block text-xs">បិទ</span></button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close</button>
         </div>
       </div>
 
@@ -679,25 +675,19 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
   );
 }
 
-const PHOTO_PANE_LABELS_KM = {
-  "Physical Receipt": "បង្កាន់ដៃរូបវន្ត",
-  "Bank QR / Payment Proof": "QR ធនាគារ / ភស្តុតាងទូទាត់",
-  "Seller's Bank QR Code (to pay)": "QR ធនាគាររបស់អ្នកលក់ (សម្រាប់បង់ប្រាក់)",
-};
-
 function PhotoPane({ label, url }) {
   return (
     <div>
-      <p className="mb-1 text-xs font-medium text-slate-500">{label}{PHOTO_PANE_LABELS_KM[label] && <span className="font-khmer block">{PHOTO_PANE_LABELS_KM[label]}</span>}</p>
+      <p className="mb-1 text-xs font-medium text-slate-500">{label}</p>
       {url ? (
         <a href={url} target="_blank" rel="noreferrer" className="block">
           <img src={url} alt={label} className="h-48 w-full rounded-lg border border-slate-200 object-contain bg-slate-50 hover:opacity-90" />
-          <p className="mt-1 text-center text-[11px] text-brand-600">Click to open full size<span className="font-khmer block">ចុចដើម្បីមើលឡើងពេញ</span></p>
+          <p className="mt-1 text-center text-[11px] text-brand-600">Click to open full size</p>
         </a>
       ) : (
         <div className="flex h-48 w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-300">
           <ImageOff size={20} />
-          <p className="text-xs">Not uploaded<span className="font-khmer block">មិនទាន់បានផ្ទុកឡើង</span></p>
+          <p className="text-xs">Not uploaded</p>
         </div>
       )}
     </div>
@@ -708,7 +698,7 @@ function PhotosModal({ tx, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Camera size={16} className="text-brand-600" /> Photos<span className="font-khmer block text-sm font-normal text-slate-500">រូបថត</span></h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Camera size={16} className="text-brand-600" /> Photos</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
         <div className="grid grid-cols-2 gap-4">
           <PhotoPane label="Physical Receipt" url={tx.receipt_photo_url} />
@@ -716,7 +706,7 @@ function PhotosModal({ tx, onClose }) {
           <PhotoPane label="Seller's Bank QR Code (to pay)" url={tx.bank_qr_url} />
         </div>
         <div className="mt-4 flex justify-end">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close<span className="font-khmer block text-xs">បិទ</span></button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close</button>
         </div>
       </div>
     </div>
@@ -755,15 +745,15 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Correct Payment Amount<span className="font-khmer block text-sm font-normal text-slate-500">កែតម្រូវទឹកប្រាក់ទូទាត់</span></h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Correct Payment Amount</h3>
         <p className="mb-3 text-xs text-slate-400">Was: {fmtRiel(payment.amount)} on {payment.pay_date}</p>
 
         <form onSubmit={submit}>
-          <label className="mb-1 block text-xs text-slate-500">Correct amount (៛)<span className="font-khmer block">ទឹកប្រាក់ត្រឹមត្រូវ (Riel)</span></label>
+          <label className="mb-1 block text-xs text-slate-500">Correct amount (៛)</label>
           <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus
             className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm<span className="font-khmer block">បញ្ចូលពាក្យសម្ងាត់របស់អ្នកដើម្បីបញ្ជាក់</span></label>
+          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
@@ -771,7 +761,7 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
           <div className="mt-2 flex justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
             <button type="submit" disabled={saving || !password || !amount} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-              {saving ? <>Saving...<span className="font-khmer block text-xs">កំពុងរក្សាទុក...</span></> : <>Confirm Correction<span className="font-khmer block text-xs">បញ្ជាក់ការកែតម្រូវ</span></>}
+              {saving ? "Saving..." : "Confirm Correction"}
             </button>
           </div>
         </form>
@@ -801,18 +791,17 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><AlertTriangle size={16} className="text-rose-500" /> Confirm Cancellation<span className="font-khmer block text-sm font-normal text-slate-500">បញ្ជាក់ការលុបចោល</span></h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><AlertTriangle size={16} className="text-rose-500" /> Confirm Cancellation</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName} · {fmtRiel(tx.amount)}</p>
 
         {alreadyPaid > 0.01 && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
             {fmtRiel(alreadyPaid)} has already been recorded as paid against this transaction. Cancelling will NOT remove that from Cash Flow — it stays on record as real cash that moved. You may want to record a matching refund entry separately.
-            <span className="font-khmer block mt-1">{fmtRiel(alreadyPaid)} ត្រូវបានកត់ត្រាថាបានទូទាត់រួចហើយចំពោះប្រតិបត្តិការនេះ។ ការលុបចោលនឹង​មិន​លុប​វា​ចេញ​ពី​លំហូរសាច់ប្រាក់ទេ — វានៅតែជាកំណត់ត្រាថាមានប្រាក់ពិតប្រាកដបានផ្លាស់ទី។ អ្នកប្រហែលជាចង់កត់ត្រាការសងប្រាក់វិញដាច់ដោយឡែក។</span>
           </div>
         )}
 
         <form onSubmit={submit}>
-          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm<span className="font-khmer block">បញ្ចូលពាក្យសម្ងាត់របស់អ្នកដើម្បីបញ្ជាក់</span></label>
+          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
           {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
@@ -820,7 +809,7 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
           <div className="mt-3 flex justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
             <button type="submit" disabled={checking || !password} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
-              {checking ? <>Checking...<span className="font-khmer block text-xs">កំពុងពិនិត្យ...</span></> : <>Confirm Cancellation<span className="font-khmer block text-xs">បញ្ជាក់ការលុបចោល</span></>}
+              {checking ? "Checking..." : "Confirm Cancellation"}
             </button>
           </div>
         </form>
@@ -1139,7 +1128,7 @@ export default function Transactions({ setPage }) {
             ? t("all_locations")
             : selectedLocationIds.length === 1
             ? locations.find((l) => l.id === selectedLocationIds[0])?.name || t("all_locations")
-            : <>{selectedLocationIds.length} locations selected<span className="font-khmer block">បានជ្រើសរើស {selectedLocationIds.length} ទីតាំង</span></>
+            : `${selectedLocationIds.length} locations selected`
         }
       />
       {/* The global "unsynced changes" banner in Topbar.jsx now covers the
@@ -1150,7 +1139,6 @@ export default function Transactions({ setPage }) {
       {loadError && syncStatus.online && (
         <div className="flex items-center gap-2 bg-rose-50 px-6 py-2 text-xs font-medium text-rose-700">
           <WifiOff size={13} /> Couldn't reach the server just now — showing the last data loaded. Retrying automatically.
-          <span className="font-khmer block">មិនអាចភ្ជាប់ទៅម៉ាស៊ីនមេបានទេពេលនេះ — កំពុងបង្ហាញទិន្នន័យចុងក្រោយដែលបានផ្ទុក។ កំពុងព្យាយាមម្តងទៀតដោយស្វ័យប្រវត្តិ។</span>
         </div>
       )}
       <main className="flex-1 overflow-y-auto p-6">
@@ -1164,8 +1152,8 @@ export default function Transactions({ setPage }) {
             {[{ v: "", l: t("all") }, { v: "BUY", l: t("buy") }, { v: "SELL", l: t("sell") }].map((opt) => (
               <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${type === opt.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{opt.l}</button>
             ))}
-            <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)<span className="font-khmer block text-xs">មិនទាន់បង់ (ការទិញ)</span></button>
-            <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)<span className="font-khmer block text-xs">មិនទាន់ទទួល (ការលក់)</span></button>
+            <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
+            <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
             <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
             {isAdmin && locations.length > 1 && (
               <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
@@ -1183,17 +1171,17 @@ export default function Transactions({ setPage }) {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
                 <th className="px-5 py-3 font-semibold">#</th>
-                <th className="px-3 py-3 font-semibold">Type<span className="font-khmer block normal-case tracking-normal">ប្រភេទ</span></th>
+                <th className="px-3 py-3 font-semibold">Type</th>
                 <th className="px-3 py-3 font-semibold">{t("col_id")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_date")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_station")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_party")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_qty")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_amount")}</th>
-                <th className="px-3 py-3 font-semibold">Paid<span className="font-khmer block normal-case tracking-normal">បានបង់</span></th>
-                <th className="px-3 py-3 font-semibold">Remaining<span className="font-khmer block normal-case tracking-normal">នៅសល់</span></th>
+                <th className="px-3 py-3 font-semibold">Paid</th>
+                <th className="px-3 py-3 font-semibold">Remaining</th>
                 <th className="px-3 py-3 font-semibold">{t("col_status")}</th>
-                <th className="px-3 py-3 font-semibold">Photos<span className="font-khmer block normal-case tracking-normal">រូបថត</span></th>
+                <th className="px-3 py-3 font-semibold">Photos</th>
                 <th className="px-3 py-3 font-semibold">{t("hq_confirmation")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_action")}</th>
               </tr>
@@ -1208,17 +1196,17 @@ export default function Transactions({ setPage }) {
                     <td className="px-5 py-3.5 text-slate-400">{i + 1}</td>
                     <td className="px-3 py-3.5">
                       <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
-                        {tx.type === "BUY" ? <>▲ BUY<span className="font-khmer">&nbsp;ការទិញ</span></> : <>▼ SELL<span className="font-khmer">&nbsp;ការលក់</span></>}
+                        {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </span>
                     </td>
                     <td className="px-3 py-3.5"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"}`}>{tx.code}</span></td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
-                    <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? <>Buyer<span className="font-khmer">អ្នកទិញ</span></> : <>Seller<span className="font-khmer">អ្នកលក់</span></>}: {tx.recorded_by_name}</p>}</td>
+                    <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? "Buyer" : "Seller"}: {tx.recorded_by_name}</p>}</td>
                     <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
                     <td className="px-3 py-3 font-medium text-slate-800">
                       {fmtRiel(tx.total_with_tax ?? tx.amount)}
-                      {tx.tax_applicable && <p className="text-[10px] font-normal text-slate-400">incl. {tx.tax_rate}% VAT<span className="font-khmer block">រួមបញ្ចូល VAT {tx.tax_rate}%</span></p>}
+                      {tx.tax_applicable && <p className="text-[10px] font-normal text-slate-400">incl. {tx.tax_rate}% VAT</p>}
                     </td>
                     <td className="px-3 py-3.5">
                       <button onClick={() => setViewPaymentsTx(tx)} className="font-medium text-brand-600 underline decoration-dotted hover:text-brand-700">
@@ -1227,7 +1215,7 @@ export default function Transactions({ setPage }) {
                     </td>
                     <td className="px-3 py-3.5">
                       {isCancelled ? (
-                        <span className="text-xs text-slate-400">Excluded from reports<span className="font-khmer block">មិនរាប់បញ្ចូលក្នុងរបាយការណ៍</span></span>
+                        <span className="text-xs text-slate-400">Excluded from reports</span>
                       ) : remaining > 0.01 ? (
                         isAdmin ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
@@ -1239,7 +1227,7 @@ export default function Transactions({ setPage }) {
                           </span>
                         )
                       ) : (
-                        <span className="text-xs font-medium text-brand-600">Settled<span className="font-khmer block">បានទូទាត់រួច</span></span>
+                        <span className="text-xs font-medium text-brand-600">Settled</span>
                       )}
                     </td>
                     <td className="px-3 py-3">{tx.status === "confirmed" ? <CheckCircle2 size={16} className="text-emerald-500" /> : <AlertTriangle size={16} className="text-amber-500" />}</td>
@@ -1268,11 +1256,11 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
                         <button onClick={() => setReceiptTx(tx)} title="View / print receipt" className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                          <Printer size={12} /> Receipt<span className="font-khmer">&nbsp;បង្កាន់ដៃ</span>
+                          <Printer size={12} /> Receipt
                         </button>
                         {isAdmin ? (
                           <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                            <Pencil size={12} /> Edit<span className="font-khmer">&nbsp;កែសម្រួល</span>
+                            <Pencil size={12} /> Edit
                           </button>
                         ) : (
                           <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
@@ -1284,7 +1272,7 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
-              {visibleRows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? <>Nothing matches — everything here is settled.<span className="font-khmer block">មិនមានអ្វីត្រូវនឹងលក្ខខណ្ឌទេ — អ្វីៗទាំងអស់នៅទីនេះបានទូទាត់រួច។</span></> : t("no_transactions")}</td></tr>}
+              {visibleRows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>

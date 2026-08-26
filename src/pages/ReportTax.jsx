@@ -44,23 +44,20 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[11px]">ព្យាយាមម្តងទៀត</span></button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
       <div className="mb-4 grid grid-cols-3 gap-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Output Tax (collected on sales)<span className="font-khmer block">ពន្ធលើលក់ (ប្រមូលពីការលក់)</span></p>
+          <p className="text-xs text-slate-400">Output Tax (collected on sales)</p>
           <p className="text-2xl font-bold text-emerald-600">{fmtRiel(outputTax)}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Input Tax (paid on purchases)<span className="font-khmer block">ពន្ធលើទិញ (បង់ពេលទិញ)</span></p>
+          <p className="text-xs text-slate-400">Input Tax (paid on purchases)</p>
           <p className="text-2xl font-bold text-slate-700">{fmtRiel(inputTax)}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">
-            {netPayable >= 0 ? "Net Tax Payable" : "Net Tax Refundable"}
-            <span className="font-khmer block">{netPayable >= 0 ? "ពន្ធសុទ្ធត្រូវបង់" : "ពន្ធសុទ្ធត្រូវបានសង"}</span>
-          </p>
+          <p className="text-xs text-slate-400">{netPayable >= 0 ? "Net Tax Payable" : "Net Tax Refundable"}</p>
           <p className={`text-2xl font-bold ${netPayable >= 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmtRiel(Math.abs(netPayable))}</p>
         </div>
       </div>
@@ -68,19 +65,19 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
         <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
           <ReceiptText size={16} className="text-brand-600" />
-          <h3 className="font-semibold text-slate-700">Taxable Transactions<span className="font-khmer block text-xs font-normal text-slate-500">ប្រតិបត្តិការជាប់ពន្ធ</span></h3>
+          <h3 className="font-semibold text-slate-700">Taxable Transactions</h3>
         </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-              <th className="px-5 py-3 font-medium">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></th>
-              <th className="px-3 py-3 font-medium">Receipt<span className="font-khmer block">បង្កាន់ដៃ</span></th>
-              <th className="px-3 py-3 font-medium">Type<span className="font-khmer block">ប្រភេទ</span></th>
-              <th className="px-3 py-3 font-medium">Party<span className="font-khmer block">ភាគី</span></th>
-              <th className="px-3 py-3 font-medium">Subtotal<span className="font-khmer block">សរុបរង</span></th>
-              <th className="px-3 py-3 font-medium">Rate<span className="font-khmer block">អត្រា</span></th>
-              <th className="px-3 py-3 font-medium">Tax<span className="font-khmer block">ពន្ធ</span></th>
-              <th className="px-3 py-3 font-medium">Total<span className="font-khmer block">សរុប</span></th>
+              <th className="px-5 py-3 font-medium">Date</th>
+              <th className="px-3 py-3 font-medium">Receipt</th>
+              <th className="px-3 py-3 font-medium">Type</th>
+              <th className="px-3 py-3 font-medium">Party</th>
+              <th className="px-3 py-3 font-medium">Subtotal</th>
+              <th className="px-3 py-3 font-medium">Rate</th>
+              <th className="px-3 py-3 font-medium">Tax</th>
+              <th className="px-3 py-3 font-medium">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -88,7 +85,7 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
               <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
                 <td className="px-5 py-3 text-slate-500">{t.tx_date}</td>
                 <td className="px-3 py-3 font-medium text-slate-700">{t.code}</td>
-                <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t.type}<span className="font-khmer ml-1">{t.type === "BUY" ? "ទិញ" : "លក់"}</span></span></td>
+                <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t.type}</span></td>
                 <td className="px-3 py-3 text-slate-700">{t.partyName}</td>
                 <td className="px-3 py-3 text-slate-600">{fmtRiel(t.amount)}</td>
                 <td className="px-3 py-3 text-slate-600">{t.tax_rate}%</td>
@@ -96,17 +93,14 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
                 <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(t.total_with_tax)}</td>
               </tr>
             ))}
-            {loading && sorted.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
-            {sorted.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No taxable transactions recorded yet.<span className="font-khmer block">មិនទាន់មានប្រតិបត្តិការជាប់ពន្ធត្រូវបានកត់ត្រានៅឡើយទេ។</span></td></tr>}
+            {loading && sorted.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+            {sorted.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No taxable transactions recorded yet.</td></tr>}
           </tbody>
         </table>
       </div>
 
       <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         Only transactions with "Apply VAT" checked at entry show up here. Tax rates are fully editable per transaction — nothing is assumed automatically.
-        <span className="font-khmer block mt-1">
-          មានតែប្រតិបត្តិការដែលបានធីក "អនុវត្តអាករ" ពេលបញ្ចូលប៉ុណ្ណោះ ដែលបង្ហាញនៅទីនេះ។ អត្រាពន្ធអាចកែប្រែបានពេញលេញសម្រាប់ប្រតិបត្តិការនីមួយៗ — គ្មានអ្វីត្រូវបានសន្មតដោយស្វ័យប្រវត្តិទេ។
-        </span>
       </div>
     </div>
   );

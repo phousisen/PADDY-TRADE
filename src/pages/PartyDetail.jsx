@@ -88,8 +88,8 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
   if (loading) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <Topbar title={<>{isSupplier ? "Farmer" : "Buyer"}<span className="font-khmer block text-sm font-normal text-slate-500">{isSupplier ? "កសិករ" : "អ្នកទិញ"}</span></>} />
-        <main className="flex flex-1 items-center justify-center text-sm text-slate-400"><>Loading…<span className="font-khmer block">កំពុងផ្ទុក…</span></></main>
+        <Topbar title={isSupplier ? "Farmer" : "Buyer"} />
+        <main className="flex flex-1 items-center justify-center text-sm text-slate-400">Loading…</main>
       </div>
     );
   }
@@ -97,12 +97,12 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
   if (!party) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <Topbar title={<>{isSupplier ? "Farmer" : "Buyer"}<span className="font-khmer block text-sm font-normal text-slate-500">{isSupplier ? "កសិករ" : "អ្នកទិញ"}</span></>} />
+        <Topbar title={isSupplier ? "Farmer" : "Buyer"} />
         <main className="flex-1 overflow-y-auto p-6">
           <button onClick={() => setPage(kind)} className="mb-4 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-            <ArrowLeft size={15} /> Back to {isSupplier ? "Farmers" : "Buyers"}<span className="font-khmer">&nbsp;{isSupplier ? "ត្រឡប់ទៅកសិករ" : "ត្រឡប់ទៅអ្នកទិញ"}</span>
+            <ArrowLeft size={15} /> Back to {isSupplier ? "Farmers" : "Buyers"}
           </button>
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">Couldn't find this {isSupplier ? "farmer" : "buyer"} — they may have been removed.<span className="font-khmer block">រកមិនឃើញ{isSupplier ? "កសិករ" : "អ្នកទិញ"}នេះទេ — ប្រហែលជាត្រូវបានលុប។</span></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">Couldn't find this {isSupplier ? "farmer" : "buyer"} — they may have been removed.</div>
         </main>
       </div>
     );
@@ -132,18 +132,18 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title={party.name} subtitle={<>{isSupplier ? "Farmer Profile" : "Buyer Profile"}<span className="font-khmer block">{isSupplier ? "ប្រវត្តិរូបកសិករ" : "ប្រវត្តិរូបអ្នកទិញ"}</span></>} />
+      <Topbar title={party.name} subtitle={isSupplier ? "Farmer Profile" : "Buyer Profile"} />
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mb-4 flex items-center justify-between">
           <button onClick={() => setPage(kind)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-            <ArrowLeft size={15} /> Back to {isSupplier ? "Farmers" : "Buyers"}<span className="font-khmer">&nbsp;{isSupplier ? "ត្រឡប់ទៅកសិករ" : "ត្រឡប់ទៅអ្នកទិញ"}</span>
+            <ArrowLeft size={15} /> Back to {isSupplier ? "Farmers" : "Buyers"}
           </button>
           {(isSupplier ? onBuyFor : onSellFor) && (
             <button
               onClick={() => (isSupplier ? onBuyFor(party) : onSellFor(party))}
               className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
             >
-              <PlusCircle size={14} /> {isSupplier ? "New Buy" : "New Sell"}<span className="font-khmer text-xs">&nbsp;{isSupplier ? "ទិញថ្មី" : "លក់ថ្មី"}</span> for {party.name}
+              <PlusCircle size={14} /> {isSupplier ? "New Buy" : "New Sell"} for {party.name}
             </button>
           )}
         </div>
@@ -151,24 +151,24 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
         {/* Contact & bank info */}
         <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Phone size={13} /> Phone<span className="font-khmer">&nbsp;លេខទូរស័ព្ទ</span></div>
+            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Phone size={13} /> Phone</div>
             <p className="text-sm font-medium text-slate-800">{party.phone || "—"}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><IdCard size={13} /> ID Number<span className="font-khmer">&nbsp;លេខសម្គាល់</span></div>
+            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><IdCard size={13} /> ID Number</div>
             <p className="text-sm font-medium text-slate-800">{party.id_number || "—"}</p>
           </div>
           {isSupplier ? (
             <>
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Landmark size={13} /> Bank<span className="font-khmer">&nbsp;ធនាគារ</span></div>
+                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Landmark size={13} /> Bank</div>
                 <p className="text-sm font-medium text-slate-800">{party.bank_name || "—"}</p>
                 <p className="text-xs text-slate-400">{party.bank_account || "—"}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><QrCode size={13} /> QR Code<span className="font-khmer">&nbsp;កូដ QR</span></div>
+                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><QrCode size={13} /> QR Code</div>
                 {party.bank_qr_url ? (
-                  <a href={party.bank_qr_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-600 underline decoration-dotted hover:text-brand-700">View QR<span className="font-khmer text-xs">&nbsp;មើល QR</span></a>
+                  <a href={party.bank_qr_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-600 underline decoration-dotted hover:text-brand-700">View QR</a>
                 ) : (
                   <p className="text-sm text-slate-400">—</p>
                 )}
@@ -176,7 +176,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
             </>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
-              <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Building2 size={13} /> Company<span className="font-khmer">&nbsp;ក្រុមហ៊ុន</span></div>
+              <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Building2 size={13} /> Company</div>
               <p className="text-sm font-medium text-slate-800">{party.company || "—"}</p>
             </div>
           )}
@@ -185,21 +185,21 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
         {/* Running totals */}
         <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">Transactions<span className="font-khmer block">ប្រតិបត្តិការ</span></p>
+            <p className="text-xs text-slate-400">Transactions</p>
             <p className="text-xl font-bold text-slate-800">{stats.count}</p>
-            <p className="mt-1 text-xs text-slate-400">{stats.completedCount} complete · {stats.partialCount} partial · {stats.unpaidCount} unpaid<span className="font-khmer block">{stats.completedCount} បញ្ចប់ · {stats.partialCount} ដោយផ្នែក · {stats.unpaidCount} មិនទាន់បង់</span></p>
+            <p className="mt-1 text-xs text-slate-400">{stats.completedCount} complete · {stats.partialCount} partial · {stats.unpaidCount} unpaid</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">{isSupplier ? "Total Bought" : "Total Sold"}<span className="font-khmer block">{isSupplier ? "ទិញសរុប" : "លក់សរុប"}</span></p>
+            <p className="text-xs text-slate-400">{isSupplier ? "Total Bought" : "Total Sold"}</p>
             <p className="text-xl font-bold text-slate-800">{fmt2(stats.qty)} kg</p>
             <p className="mt-1 text-xs text-slate-400">{fmtRiel(stats.amount)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">{isSupplier ? "Amount Paid" : "Amount Received"}<span className="font-khmer block">{isSupplier ? "ចំនួនបានបង់" : "ចំនួនបានទទួល"}</span></p>
+            <p className="text-xs text-slate-400">{isSupplier ? "Amount Paid" : "Amount Received"}</p>
             <p className="text-xl font-bold text-emerald-600">{fmtRiel(stats.paid)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">{isSupplier ? "Amount Unpaid" : "Amount Not Received"}<span className="font-khmer block">{isSupplier ? "ចំនួនមិនទាន់បង់" : "ចំនួនមិនទាន់ទទួល"}</span></p>
+            <p className="text-xs text-slate-400">{isSupplier ? "Amount Unpaid" : "Amount Not Received"}</p>
             <p className={`text-xl font-bold ${stats.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(stats.remaining)}</p>
           </div>
         </div>
@@ -207,19 +207,19 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
         {/* Transaction history */}
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <div className="border-b border-slate-100 px-5 py-4">
-            <h3 className="font-semibold text-slate-700">Transaction History<span className="font-khmer block text-xs font-normal">ប្រវត្តិប្រតិបត្តិការ</span></h3>
+            <h3 className="font-semibold text-slate-700">Transaction History</h3>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Date<span className="font-khmer block text-[10px]">កាលបរិច្ឆេទ</span></th>
-                <th className="px-5 py-3 font-medium">Bill #<span className="font-khmer block text-[10px]">លេខវិក័យប័ត្រ</span></th>
-                <th className="px-5 py-3 font-medium">Location<span className="font-khmer block text-[10px]">ទីតាំង</span></th>
-                <th className="px-5 py-3 font-medium">Paddy Type<span className="font-khmer block text-[10px]">ប្រភេទស្រូវ</span></th>
-                <th className="px-5 py-3 font-medium">Truck/Driver<span className="font-khmer block text-[10px]">រថយន្ត/អ្នកបើកបរ</span></th>
-                <th className="px-5 py-3 font-medium">Qty (kg)<span className="font-khmer block text-[10px]">បរិមាណ (គីឡូក្រាម)</span></th>
-                <th className="px-5 py-3 font-medium">Amount<span className="font-khmer block text-[10px]">ចំនួនទឹកប្រាក់</span></th>
-                <th className="px-5 py-3 font-medium">Status<span className="font-khmer block text-[10px]">ស្ថានភាព</span></th>
+                <th className="px-5 py-3 font-medium">Date</th>
+                <th className="px-5 py-3 font-medium">Bill #</th>
+                <th className="px-5 py-3 font-medium">Location</th>
+                <th className="px-5 py-3 font-medium">Paddy Type</th>
+                <th className="px-5 py-3 font-medium">Truck/Driver</th>
+                <th className="px-5 py-3 font-medium">Qty (kg)</th>
+                <th className="px-5 py-3 font-medium">Amount</th>
+                <th className="px-5 py-3 font-medium">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -234,16 +234,13 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>
                   <td className={`px-5 py-3 font-medium ${r.payStatus === "cancelled" ? "text-slate-400 line-through" : r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
                     {r.payStatus === "cancelled" ? "Cancelled" : r.payStatus === "paid" ? (isSupplier ? "Paid" : "Received") : r.payStatus === "partial" ? "Partial" : (isSupplier ? "Unpaid" : "Not Received")}
-                    <span className="font-khmer block text-[10px] font-normal no-underline">
-                      {r.payStatus === "cancelled" ? "បានលុបចោល" : r.payStatus === "paid" ? (isSupplier ? "បានបង់ប្រាក់" : "បានទទួល") : r.payStatus === "partial" ? "ដោយផ្នែក" : (isSupplier ? "មិនទាន់បង់" : "មិនទាន់ទទួល")}
-                    </span>
-                    {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">Not counted above<span className="font-khmer block text-[10px]">មិនរាប់បញ្ចូលខាងលើ</span></div>}
-                    {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} of {fmtRiel(r.amount)}<span className="font-khmer block text-[10px]">{fmtRiel(r.paidSoFar)} នៃ {fmtRiel(r.amount)}</span></div>}
+                    {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">Not counted above</div>}
+                    {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} of {fmtRiel(r.amount)}</div>}
                     {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
                   </td>
                 </tr>
               ))}
-              {history.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No transactions with {party.name} yet.<span className="font-khmer block">មិនទាន់មានប្រតិបត្តិការជាមួយ {party.name} ទេ។</span></td></tr>}
+              {history.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No transactions with {party.name} yet.</td></tr>}
             </tbody>
           </table>
         </div>

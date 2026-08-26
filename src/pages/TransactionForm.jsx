@@ -357,11 +357,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     ))}
                   </div>
                 )}
-                <p className="mt-1 text-[11px] text-slate-400">Type a phone number to search — lots of people share the same name, so phone is more reliable.<span className="font-khmer block">វាយបញ្ចូលលេខទូរស័ព្ទដើម្បីស្វែងរក — មនុស្សជាច្រើនមានឈ្មោះដូចគ្នា ដូច្នេះលេខទូរស័ព្ទមានភាពជឿទុកចិត្តជាង។</span></p>
+                <p className="mt-1 text-[11px] text-slate-400">Type a phone number to search — lots of people share the same name, so phone is more reliable.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
-                <div><label className="mb-1 block text-xs text-slate-500">{isBuy ? t("section1_seller") : t("section1_buyer")} Name<span className="font-khmer block">ឈ្មោះ{isBuy ? "អ្នកលក់" : "អ្នកទិញ"}</span></label><input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder="Type name, or select a match above" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+                <div><label className="mb-1 block text-xs text-slate-500">{isBuy ? t("section1_seller") : t("section1_buyer")} Name</label><input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder="Type name, or select a match above" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
 
                 {isBuy ? (
                   <>
@@ -417,10 +417,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 )}
 
                 <div>
-                  <label className="mb-1 block text-xs text-slate-500">Transaction Date<span className="font-khmer block">កាលបរិច្ឆេទប្រតិបត្តិការ</span></label>
+                  <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
                   <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  <p className="mt-1 text-[11px] text-slate-400">Defaults to today — change it if this load was actually weighed on a different day.<span className="font-khmer block">លំនាំដើមគឺថ្ងៃនេះ — ប្តូរវាប្រសិនបើផ្ទុកនេះត្រូវបានថ្លឹងនៅថ្ងៃផ្សេង។</span></p>
+                  <p className="mt-1 text-[11px] text-slate-400">Defaults to today — change it if this load was actually weighed on a different day.</p>
                 </div>
               </div>
 
@@ -477,7 +477,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
                 <p className="text-4xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-lg font-medium text-brand-600">KG</span></p>
                 {parseFloat(deductionKg) > 0 && (
-                  <p className="mt-1 text-xs text-brand-700/70">Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)<span className="font-khmer block">ត្រូវទូទាត់៖ {fmt2(payableKg)} គីឡូក្រាម (បន្ទាប់ពីកាត់ {fmt2(parseFloat(deductionKg))} គីឡូក្រាម)</span></p>
+                  <p className="mt-1 text-xs text-brand-700/70">Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)</p>
                 )}
               </div>
               <div className="mt-4">
@@ -493,7 +493,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">3</span>
-                Quality &amp; Pricing<span className="font-khmer block text-sm font-normal text-slate-500">គុណភាព និងតម្លៃ</span>
+                Quality &amp; Pricing
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -514,7 +514,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       <option value="B">{t("grade_b")}</option>
                       <option value="C">{t("grade_c")}</option>
                     </datalist>
-                    <p className="mt-1 text-[11px] text-slate-400">A/B/C auto-fills the price — type anything else to set your own.<span className="font-khmer block">A/B/C បំពេញតម្លៃដោយស្វ័យប្រវត្តិ — វាយអ្វីផ្សេងទៀតដើម្បីកំណត់តម្លៃដោយខ្លួនឯង។</span></p>
+                    <p className="mt-1 text-[11px] text-slate-400">A/B/C auto-fills the price — type anything else to set your own.</p>
                   </div>
                 )}
                 <div>
@@ -522,7 +522,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   <input type="number" min="0" step="0.01" value={pricePerKg}
                     onChange={(e) => { setPricePerKg(e.target.value); setPriceOverridden(true); }}
                     placeholder="0.00" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  {isBuy && <p className="mt-1 text-[11px] text-slate-400">Auto-filled from grade — edit to override<span className="font-khmer block">បំពេញស្វ័យប្រវត្តិពីថ្នាក់គុណភាព — កែសម្រួលដើម្បីជាន់លើ</span></p>}
+                  {isBuy && <p className="mt-1 text-[11px] text-slate-400">Auto-filled from grade — edit to override</p>}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("payment_status")}</label>
@@ -534,10 +534,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       </>
                     ) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
                   </select>
-                  {isBankTransfer && <p className="mt-1 text-[11px] text-slate-400">Bank transfer — stays Pending until HQ sends the money and records it (Transactions → Pay Supplier).<span className="font-khmer block">ផ្ទេរប្រាក់តាមធនាគារ — នៅតែជា "កំពុងរង់ចាំ" រហូតដល់ HQ ផ្ញើប្រាក់ និងកត់ត្រាវា (ប្រតិបត្តិការ → បង់ប្រាក់ទៅអ្នកផ្គត់ផ្គង់)។</span></p>}
+                  {isBankTransfer && <p className="mt-1 text-[11px] text-slate-400">Bank transfer — stays Pending until HQ sends the money and records it (Transactions → Pay Supplier).</p>}
                 </div>
               </div>
-              <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.<span className="font-khmer block">ជម្រើសស្ថានភាពទូទាត់ត្រូវបានកំណត់ស្រាប់ — វាបញ្ចូលទៅរបាយការណ៍ហិរញ្ញវត្ថុរបស់អ្នកដោយផ្ទាល់។</span></p>
+              <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.</p>
 
               {showPaymentProofUpload && (
                 <div className="mt-3">
@@ -550,43 +550,43 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               )}
 
               <div className="mt-3 rounded-lg border border-slate-200 p-3">
-                <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)<span className="font-khmer block">ការកាត់ថ្នាក់គុណភាព (ស្រេចចិត្ត)</span></p>
+                <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
                 <div className="grid grid-cols-4 gap-2">
                   <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Moisture %<span className="font-khmer block">សំណើម %</span></label>
+                    <label className="mb-1 block text-[11px] text-slate-400">Moisture %</label>
                     <input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} placeholder="0"
                       className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Mixture %<span className="font-khmer block">សំណម %</span></label>
+                    <label className="mb-1 block text-[11px] text-slate-400">Mixture %</label>
                     <input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} placeholder="0"
                       className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Outthrow %<span className="font-khmer block">សំណល់ %</span></label>
+                    <label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label>
                     <input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} placeholder="0"
                       className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   </div>
                   <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)<span className="font-khmer block">ការកាត់ (គីឡូក្រាម)</span></label>
+                    <label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label>
                     <input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} placeholder="0"
                       className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   </div>
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.<span className="font-khmer block">សំណើម/សំណម/សំណល់ គឺសម្រាប់កំណត់ត្រារបស់អ្នក — មានតែការកាត់ (គីឡូក្រាម) ប៉ុណ្ណោះដែលកាត់បន្ថយទម្ងន់ត្រូវទូទាត់ដែលប្រើសម្រាប់កំណត់តម្លៃ។ ស្តុកនៅតែឆ្លុះបញ្ចាំងទម្ងន់ពិតប្រាកដដែលទទួលបានពេញលេញ។</span></p>
+                <p className="mt-1.5 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.</p>
               </div>
 
               {isBuy && (
                 <div className="mt-3 rounded-lg border border-slate-200 p-3">
-                  <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)<span className="font-khmer block">ថ្លៃបុគ្គលិក/ថ្លៃដឹកជញ្ជូន (ស្រេចចិត្ត)</span></p>
+                  <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
                   <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
                     className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — this amount is charged to them and comes off what they're paid.<span className="font-khmer block">តែក្នុងករណីដែលបុគ្គលិករបស់យើងត្រូវដឹកជញ្ជូនស្រូវជូនអ្នកលក់នេះ ដោយសារពួកគេគ្មានកម្លាំងពលកម្មផ្ទាល់ខ្លួន — ចំនួននេះនឹងគិតលើពួកគេ ហើយកាត់ចេញពីប្រាក់ដែលពួកគេទទួលបាន។</span></p>
+                  <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — this amount is charged to them and comes off what they're paid.</p>
                 </div>
               )}
 
               <div className="mt-3">
-                <label className="mb-1 block text-xs text-slate-500">Note (optional)<span className="font-khmer block">កំណត់ចំណាំ (ស្រេចចិត្ត)</span></label>
+                <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. from Weighbridge Ticket WT0134"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
@@ -594,7 +594,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-                  Apply VAT<span className="font-khmer block text-xs font-normal text-slate-500">អនុវត្តអាករ VAT</span>
+                  Apply VAT
                 </label>
                 {taxApplicable && (
                   <div className="flex items-center gap-1.5">
@@ -612,14 +612,14 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
             <div className="sticky top-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-4 font-semibold text-slate-700">{t("summary")}</h3>
               <div className="mb-4 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-4 text-white">
-                <p className="text-xs text-brand-100/80">{hasBreakdown ? <>Goods Amount<span className="font-khmer block">ទឹកប្រាក់ទំនិញ</span></> : t("total_amount")}</p>
+                <p className="text-xs text-brand-100/80">{hasBreakdown ? "Goods Amount" : t("total_amount")}</p>
                 <p className="mt-1 text-3xl font-bold">{fmtRiel(total)}</p>
                 <p className="mt-2 text-xs text-brand-100/70">{fmt2(payableKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
                 {hasBreakdown && (
                   <div className="mt-3 space-y-1 border-t border-white/20 pt-3">
                     {staffFeeAmt > 0 && (
                       <div className="flex justify-between text-xs text-brand-100/80">
-                        <span>Staff / Carrying Fee<span className="font-khmer block">ថ្លៃបុគ្គលិក/ថ្លៃដឹកជញ្ជូន</span></span>
+                        <span>Staff / Carrying Fee</span>
                         <span>-{fmtRiel(staffFeeAmt)}</span>
                       </div>
                     )}

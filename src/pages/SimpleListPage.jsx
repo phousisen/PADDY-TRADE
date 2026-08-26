@@ -68,32 +68,32 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
   const columns =
     kind === "stations"
       ? [
-          { key: "name", label: "Name", labelKm: "ឈ្មោះ" },
-          { key: "name_kh", label: "Khmer", labelKm: "ភាសាខ្មែរ" },
-          { key: "current_stock_kg", label: "Stock (kg)", labelKm: "ស្តុក (គីឡូក្រាម)" },
-          { key: "capacity_kg", label: "Capacity (kg)", labelKm: "សមត្ថភាព (គីឡូក្រាម)" },
+          { key: "name", label: "Name" },
+          { key: "name_kh", label: "Khmer" },
+          { key: "current_stock_kg", label: "Stock (kg)" },
+          { key: "capacity_kg", label: "Capacity (kg)" },
         ]
       : kind === "suppliers"
       ? [
-          { key: "name", label: "Name", labelKm: "ឈ្មោះ" },
-          { key: "phone", label: "Phone", labelKm: "ទូរស័ព្ទ" },
-          { key: "id_number", label: "ID", labelKm: "អត្តសញ្ញាណប័ណ្ណ" },
-          { key: "bank_name", label: "Bank", labelKm: "ធនាគារ" },
-          { key: "bank_account", label: "Account No.", labelKm: "លេខគណនី" },
-          { key: "bank_qr_url", label: "QR Code", labelKm: "កូដ QR", render: (v) => v ? <a href={v} target="_blank" rel="noreferrer" className="text-brand-600 underline decoration-dotted hover:text-brand-700">View<span className="font-khmer ml-1">មើល</span></a> : "—" },
-          { key: "count", label: "Transactions", labelKm: "ប្រតិបត្តិការ" },
-          { key: "qty", label: "Total Bought (kg)", labelKm: "សរុបទិញ (គីឡូក្រាម)", render: (v) => fmt2(v) },
-          { key: "paid", label: "Amount Paid", labelKm: "ចំនួនបានបង់", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
-          { key: "remaining", label: "Amount Unpaid", labelKm: "ចំនួនមិនទាន់បង់", render: (v) => (v > 0.01 ? <span className="font-medium text-rose-500">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
+          { key: "name", label: "Name" },
+          { key: "phone", label: "Phone" },
+          { key: "id_number", label: "ID" },
+          { key: "bank_name", label: "Bank" },
+          { key: "bank_account", label: "Account No." },
+          { key: "bank_qr_url", label: "QR Code", render: (v) => v ? <a href={v} target="_blank" rel="noreferrer" className="text-brand-600 underline decoration-dotted hover:text-brand-700">View</a> : "—" },
+          { key: "count", label: "Transactions" },
+          { key: "qty", label: "Total Bought (kg)", render: (v) => fmt2(v) },
+          { key: "paid", label: "Amount Paid", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
+          { key: "remaining", label: "Amount Unpaid", render: (v) => (v > 0.01 ? <span className="font-medium text-rose-500">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
         ]
       : [
-          { key: "name", label: "Name", labelKm: "ឈ្មោះ" },
-          { key: "phone", label: "Phone", labelKm: "ទូរស័ព្ទ" },
-          { key: "company", label: "Company", labelKm: "ក្រុមហ៊ុន" },
-          { key: "count", label: "Transactions", labelKm: "ប្រតិបត្តិការ" },
-          { key: "qty", label: "Total Sold (kg)", labelKm: "សរុបលក់ (គីឡូក្រាម)", render: (v) => fmt2(v) },
-          { key: "paid", label: "Amount Received", labelKm: "ចំនួនបានទទួល", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
-          { key: "remaining", label: "Amount Not Received", labelKm: "ចំនួនមិនទាន់ទទួល", render: (v) => (v > 0.01 ? <span className="font-medium text-amber-600">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
+          { key: "name", label: "Name" },
+          { key: "phone", label: "Phone" },
+          { key: "company", label: "Company" },
+          { key: "count", label: "Transactions" },
+          { key: "qty", label: "Total Sold (kg)", render: (v) => fmt2(v) },
+          { key: "paid", label: "Amount Received", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
+          { key: "remaining", label: "Amount Not Received", render: (v) => (v > 0.01 ? <span className="font-medium text-amber-600">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
         ];
 
   return (
@@ -116,8 +116,8 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                {columns.map((c) => <th key={c.key} className="px-5 py-3 font-medium whitespace-nowrap">{c.label}<span className="font-khmer block text-[10px] font-normal">{c.labelKm}</span></th>)}
-                {(onBuyFor || onSellFor) && <th className="px-5 py-3 font-medium whitespace-nowrap">Action<span className="font-khmer block text-[10px] font-normal">សកម្មភាព</span></th>}
+                {columns.map((c) => <th key={c.key} className="px-5 py-3 font-medium whitespace-nowrap">{c.label}</th>)}
+                {(onBuyFor || onSellFor) && <th className="px-5 py-3 font-medium whitespace-nowrap">Action</th>}
               </tr>
             </thead>
             <tbody>
@@ -142,7 +142,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
                         onClick={() => (onBuyFor ? onBuyFor(r) : onSellFor(r))}
                         className="flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
                       >
-                        <PlusCircle size={13} /> {onBuyFor ? (<>New Buy<span className="font-khmer block text-[10px] font-normal">ទិញថ្មី</span></>) : (<>New Sell<span className="font-khmer block text-[10px] font-normal">លក់ថ្មី</span></>)}
+                        <PlusCircle size={13} /> {onBuyFor ? "New Buy" : "New Sell"}
                       </button>
                     </td>
                   )}
@@ -151,7 +151,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
               {filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={columns.length + ((onBuyFor || onSellFor) ? 1 : 0)} className="px-5 py-10 text-center text-sm text-slate-400">
-                    {rows.length === 0 ? (<>No records visible to your account.<span className="font-khmer block">មិនមានកំណត់ត្រាដែលមើលឃើញសម្រាប់គណនីរបស់អ្នកទេ។</span></>) : (<>No matches for your search.<span className="font-khmer block">មិនមានលទ្ធផលដូចនឹងការស្វែងរករបស់អ្នកទេ។</span></>)}
+                    {rows.length === 0 ? "No records visible to your account." : "No matches for your search."}
                   </td>
                 </tr>
               )}

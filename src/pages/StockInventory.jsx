@@ -112,7 +112,7 @@ export default function StockInventory() {
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[10px]">ព្យាយាមម្តងទៀត</span></button>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
           </div>
         )}
         <div className="mb-4 flex items-start justify-between">
@@ -146,7 +146,7 @@ export default function StockInventory() {
         <div className="mb-6 rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <h3 className="font-semibold text-slate-700">{t("stock_by_station")}</h3>
-            <p className="text-xs text-slate-400">Click a location to see its paddy type breakdown<span className="font-khmer block">ចុចលើទីតាំងដើម្បីមើលការបំបែកតាមប្រភេទស្រូវ</span></p>
+            <p className="text-xs text-slate-400">Click a location to see its paddy type breakdown</p>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -178,12 +178,12 @@ export default function StockInventory() {
                       <tr className="border-b border-slate-50 bg-slate-50/60 last:border-0">
                         <td colSpan={5} className="px-5 py-3">
                           {rows.length === 0 ? (
-                            <p className="py-2 text-center text-xs text-slate-400">No paddy type breakdown yet for this location.<span className="font-khmer block">មិនទាន់មានការបំបែកតាមប្រភេទស្រូវសម្រាប់ទីតាំងនេះទេ។</span></p>
+                            <p className="py-2 text-center text-xs text-slate-400">No paddy type breakdown yet for this location.</p>
                           ) : (
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-left text-xs text-slate-400">
-                                  <th className="py-1.5 pl-2 font-medium">Paddy Type<span className="font-khmer block text-[10px]">ប្រភេទស្រូវ</span></th>
+                                  <th className="py-1.5 pl-2 font-medium">Paddy Type</th>
                                   <th className="py-1.5 font-medium">{t("quantity_kg")}</th>
                                   <th className="py-1.5 font-medium">{t("stock_value_col")}</th>
                                 </tr>
@@ -206,10 +206,10 @@ export default function StockInventory() {
                 );
               })}
               {loading && stations.length === 0 && (
-                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក…</span></td></tr>
+                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
               )}
               {stations.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.<span className="font-khmer block">មិនមានទីតាំងដែលអាចមើលឃើញសម្រាប់គណនីរបស់អ្នកទេ។</span></td></tr>
+                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>
               )}
             </tbody>
           </table>
@@ -217,12 +217,12 @@ export default function StockInventory() {
 
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Layers size={16} className="text-brand-600" /> Stock by Paddy Type — All Locations Combined<span className="font-khmer block text-xs font-normal">ស្តុកតាមប្រភេទស្រូវ — ទីតាំងទាំងអស់រួមគ្នា</span></h3>
+            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Layers size={16} className="text-brand-600" /> Stock by Paddy Type — All Locations Combined</h3>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-2 font-medium">Paddy Type<span className="font-khmer block text-[10px]">ប្រភេទស្រូវ</span></th>
+                <th className="px-5 py-2 font-medium">Paddy Type</th>
                 <th className="px-5 py-2 font-medium">{t("quantity_kg")}</th>
                 <th className="px-5 py-2 font-medium">{t("stock_value_col")}</th>
               </tr>
@@ -236,7 +236,7 @@ export default function StockInventory() {
                 </tr>
               ))}
               {combinedRows.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">No stock recorded yet.<span className="font-khmer block">មិនទាន់មានកំណត់ត្រាស្តុកទេ។</span></td></tr>
+                <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">No stock recorded yet.</td></tr>
               )}
             </tbody>
           </table>

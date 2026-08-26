@@ -91,7 +91,7 @@ export default function RegisterFarmer({ locationId }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-sm">
-        <h1 className="mb-1 text-lg font-bold text-slate-800">Farmer Registration<span className="font-khmer block text-sm font-normal text-slate-500">ការចុះឈ្មោះកសិករ</span></h1>
+        <h1 className="mb-1 text-lg font-bold text-slate-800">Farmer Registration</h1>
         <p className="mb-5 text-sm text-slate-400">ចុះឈ្មោះកសិករ — fill this in once, we'll remember it next time.</p>
 
         <div className="mb-4">
