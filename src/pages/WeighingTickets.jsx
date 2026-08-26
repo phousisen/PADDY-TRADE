@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Printer, X, ArrowRight, Ban, Check, Search } from "lucide-react";
+import { Plus, Printer, X, ArrowRight, Ban, Check, Search, Pencil } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
@@ -8,7 +8,7 @@ import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import {
   startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
-  resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline,
+  resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
   setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
   suggestNextPaperTicketNo, withTimeout, logAuditOffline,
@@ -658,6 +658,166 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   );
 }
 
+// ---- Edit Ticket (fix a mistake on an already-created, still-open ticket — plate typo, wrong product, a re-weigh, etc.) ----
+// Deliberately does NOT touch `stage` — this only corrects the ticket's
+// own details, it never moves the ticket forward through the board (that's
+// still only Finish Ticket / Decline). Available to any station staff, same
+// as creating the ticket in the first place — not gated to Admin, except
+// for the weight field's own existing anti-fraud rule (see WeightField.jsx:
+// only Admin/Owner can type a weight in by hand; everyone else can only
+// re-capture it live off the scale, exactly like at weigh-in).
+function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
+  const isBuy = ticket.type === "BUY";
+  const [partyName, setPartyName] = useState(ticket.party_name || "");
+  const [phone, setPhone] = useState(ticket.phone || "");
+  const [carPlate, setCarPlate] = useState(ticket.car_plate || "");
+  const [driverName, setDriverName] = useState(ticket.driver_name || "");
+  const [productName, setProductName] = useState(ticket.product_name || "");
+  const [paperTicketNo, setPaperTicketNo] = useState(ticket.paper_ticket_no || "");
+  const [grossWeight, setGrossWeight] = useState(ticket.gross_kg != null ? String(ticket.gross_kg) : "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const { session } = useAuth();
+
+  // Same seed-list + "whatever's been typed on this device before" approach
+  // as NewTicketModal, plus the ticket's own current product tacked on if
+  // it isn't already one of those — otherwise the dropdown would open with
+  // nothing selected even though the ticket clearly has a product on it.
+  const [productOptions] = useState(() => {
+    const seen = new Set(PADDY_TYPE_SEED.map((n) => n.toLowerCase()));
+    const extras = getCustomPaddyTypes().filter((name) => {
+      const key = (name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const all = [...PADDY_TYPE_SEED, ...extras];
+    const current = (ticket.product_name || "").trim();
+    if (current && !all.some((n) => n.toLowerCase() === current.toLowerCase())) all.push(current);
+    return all;
+  });
+  const [productIsCustom, setProductIsCustom] = useState(() => !productOptions.includes((ticket.product_name || "").trim()));
+
+  const partyOptions = useMemo(() => {
+    const matchType = isBuy ? "supplier" : "buyer";
+    const names = getCachedParties()
+      .filter((p) => p.type === matchType && (!ticket.location_id || p.location_id === ticket.location_id) && (p.name || "").trim())
+      .map((p) => p.name.trim());
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function submit() {
+    if (!partyName.trim() || !productName.trim() || !carPlate.trim()) {
+      setError("Please fill in party name, product, and plate number.");
+      return;
+    }
+    if (isBuy && !paperTicketNo.trim()) {
+      setError("Please enter the number printed on the paper quality ticket.");
+      return;
+    }
+    const kg = grossWeight === "" ? null : parseFloat(grossWeight);
+    if (grossWeight !== "" && (!kg || kg <= 0)) {
+      setError("Gross weight must be a positive number.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const partyId = await resolvePartyIdOffline(partyName, isBuy ? "supplier" : "buyer", ticket.location_id, { phone });
+      const productId = await resolveProductIdOffline(productName);
+      if (productIsCustom) addCustomPaddyType(productName);
+      const updated = editTicketOffline(ticket.id, {
+        partyId, partyName: partyName.trim(), phone,
+        carPlate, driverName, productId, productName: productName.trim(),
+        paperTicketNo: paperTicketNo.trim(),
+        grossKg: kg,
+        userId: session.user.id,
+      });
+      onSaved(updated);
+    } catch (err) {
+      setError(err.message || "Something went wrong.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={<>Edit Ticket {ticket.code}<span className="font-khmer block text-sm font-normal text-slate-500">កែសម្រួលសំបុត្រ {ticket.code}</span></>}
+      subtitle={<>Fix a mistake before Finish Ticket — this doesn't move the ticket forward<span className="font-khmer block">កែកំហុសមុននឹងបញ្ចប់សំបុត្រ — វាមិនផ្លាស់ប្តូរដំណាក់កាលសំបុត្រទេ</span></>}
+      onClose={onClose} wide
+    >
+      <div className="grid grid-cols-2 gap-3">
+        {isBuy && (
+          <div>
+            <label className={labelCls}>Quality Ticket No.<span className="font-khmer block text-brand-600">លេខសំបុត្រគុណភាព</span></label>
+            <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
+          </div>
+        )}
+        <div className={isBuy ? "" : "col-span-2"}><label className={labelCls}>Vehicle Plate Number<span className="font-khmer block text-brand-600">លេខផ្លាកយានយន្ត</span></label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
+        <div className="col-span-2">
+          <label className={labelCls}>Phone<span className="font-khmer block text-brand-600">លេខទូរស័ព្ទ</span></label>
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
+        </div>
+        <div className="col-span-2">
+          <label className={labelCls}>
+            {isBuy ? "Seller (Farmer) Name" : "Buyer Name"}
+            <span className="font-khmer block text-brand-600">{isBuy ? "ឈ្មោះអ្នកលក់ (កសិករ)" : "ឈ្មោះអ្នកទិញ"}</span>
+          </label>
+          <input list="edit-ticket-party-options" value={partyName} onChange={(e) => setPartyName(e.target.value)} className={inputCls} />
+          <datalist id="edit-ticket-party-options">
+            {partyOptions.map((name) => <option key={name} value={name} />)}
+          </datalist>
+        </div>
+        <div>
+          <label className={labelCls}>Product (paddy type)<span className="font-khmer block text-brand-600">ផលិតផល (ប្រភេទស្រូវ)</span></label>
+          {productIsCustom ? (
+            <div>
+              <input autoFocus value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="Type the paddy type" />
+              <button type="button" onClick={() => setProductIsCustom(false)} className="mt-1 text-xs font-medium text-brand-600 hover:underline">← Back to list</button>
+            </div>
+          ) : (
+            <select
+              value={productOptions.includes(productName) ? productName : ""}
+              onChange={(e) => {
+                if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
+                else setProductName(e.target.value);
+              }}
+              className={inputCls}
+            >
+              <option value="" disabled>Select paddy type…</option>
+              {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
+              <option value="__other__">+ Add new type…</option>
+            </select>
+          )}
+        </div>
+        <div><label className={labelCls}>Driver Name<span className="font-khmer block text-brand-600">ឈ្មោះអ្នកបើកបរ</span></label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
+      </div>
+
+      <div className="mt-4">
+        <WeightField
+          locationId={ticket.location_id}
+          label={isBuy ? "Gross Weight — loaded truck (kg)" : "Weight — empty truck (kg)"}
+          labelKm={isBuy ? "ទម្ងន់សរុប — រថយន្តដឹកទំនិញ (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)"}
+          value={grossWeight}
+          onChange={setGrossWeight}
+          isAdmin={isAdmin}
+        />
+        <p className="mt-1 text-[11px] text-slate-400">To fix a wrong weight, put the truck back on the scale and press "Capture This Weight" again.</p>
+      </div>
+
+      {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
+      <div className="mt-4 flex justify-end gap-2">
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
+        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+          {saving ? "Saving…" : (<>Save Changes<span className="font-khmer block text-xs font-normal text-emerald-100">រក្សាទុកការផ្លាស់ប្តូរ</span></>)}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ---- Finish Ticket (combined — price + quality, weigh out, and finalize into a receipt, all in one screen) ----
 
 function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }) {
@@ -1134,6 +1294,7 @@ export default function WeighingTickets() {
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [finishTicket, setFinishTicket] = useState(null);
+  const [editTicket, setEditTicket] = useState(null);
   const [declineTicketRow, setDeclineTicketRow] = useState(null);
   const [slipTicket, setSlipTicket] = useState(null);
   const [finalReceipt, setFinalReceipt] = useState(null);
@@ -1276,7 +1437,12 @@ export default function WeighingTickets() {
                     </p>
                     <p className="text-xs text-slate-400">{t.stationName}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
                   </div>
-                  <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
+                  <div className="flex items-center gap-2">
+                    {tab === "waiting" && (
+                      <button onClick={() => setEditTicket(t)} className="text-slate-400 hover:text-brand-600" title="Edit ticket info"><Pencil size={15} /></button>
+                    )}
+                    <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
+                  </div>
                 </div>
                 <div className="mb-3 space-y-0.5 text-sm">
                   <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
@@ -1331,6 +1497,14 @@ export default function WeighingTickets() {
           ticket={declineTicketRow}
           onClose={() => setDeclineTicketRow(null)}
           onDeclined={() => { setDeclineTicketRow(null); load(); }}
+        />
+      )}
+      {editTicket && (
+        <EditTicketModal
+          ticket={editTicket}
+          isAdmin={isAdmin}
+          onClose={() => setEditTicket(null)}
+          onSaved={() => { setEditTicket(null); load(); }}
         />
       )}
       {slipTicket && <TicketSlip ticket={slipTicket} onClose={() => setSlipTicket(null)} />}
