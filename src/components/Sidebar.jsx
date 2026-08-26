@@ -14,7 +14,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
 
   const mainNav = [
     { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
-    { id: "tickets", label: "Weighing Tickets", icon: Scale },
+    { id: "tickets", label: <>Weighing Tickets<span className="font-khmer block text-[10px] font-normal">សំបុត្រថ្លឹង</span></>, icon: Scale },
     { id: "transactions", label: t("nav_transactions"), icon: Receipt },
     ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
     { id: "suppliers", label: t("nav_suppliers"), icon: Users },
@@ -26,8 +26,8 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
   const systemNav = isAdmin
     ? [
         { id: "stations", label: t("nav_stations"), icon: MapPin },
-        { id: "users", label: "Users", icon: UserCog },
-        { id: "roles", label: "Roles", icon: ShieldCheck },
+        { id: "users", label: <>Users<span className="font-khmer block text-[10px] font-normal">អ្នកប្រើប្រាស់</span></>, icon: UserCog },
+        { id: "roles", label: <>Roles<span className="font-khmer block text-[10px] font-normal">តួនាទី</span></>, icon: ShieldCheck },
         { id: "settings", label: t("nav_settings"), icon: Settings },
         // "Receipt Template" nav entry removed [2026-08-25] — that page no
         // longer affects the printed receipt/slip design (see App.jsx), so
@@ -86,7 +86,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
 
         {systemNav.length > 0 && (
           <>
-            <p className="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-wider text-brand-400">System Management</p>
+            <p className="mb-1 mt-4 px-3 text-[10px] font-semibold uppercase tracking-wider text-brand-400">System Management<span className="font-khmer block normal-case tracking-normal">ការគ្រប់គ្រងប្រព័ន្ធ</span></p>
             {systemNav.map((item) => <NavButton key={item.id} item={item} />)}
           </>
         )}

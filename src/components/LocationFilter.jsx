@@ -19,10 +19,10 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
 
   const label =
     selectedIds.length === 0
-      ? "All Locations"
+      ? (<>All Locations<span className="font-khmer ml-1 text-xs">គ្រប់ទីតាំង</span></>)
       : selectedIds.length === 1
-      ? locations.find((l) => l.id === selectedIds[0])?.name || "1 Location"
-      : `${selectedIds.length} Locations Selected`;
+      ? (locations.find((l) => l.id === selectedIds[0])?.name || (<>1 Location<span className="font-khmer ml-1 text-xs">១ ទីតាំង</span></>))
+      : (<>{selectedIds.length} Locations Selected<span className="font-khmer ml-1 text-xs">ទីតាំងបានជ្រើសរើស</span></>);
 
   return (
     <div className="relative" ref={ref}>
@@ -41,7 +41,7 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
             onClick={() => setSelectedIds([])}
             className="mb-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-slate-50"
           >
-            <span className={selectedIds.length === 0 ? "font-medium text-brand-700" : "text-slate-700"}>All Locations (combined)</span>
+            <span className={selectedIds.length === 0 ? "font-medium text-brand-700" : "text-slate-700"}>All Locations (combined)<span className="font-khmer block text-xs font-normal">គ្រប់ទីតាំង (រួមបញ្ចូលគ្នា)</span></span>
             {selectedIds.length === 0 && <Check size={14} className="text-brand-600" />}
           </button>
           <div className="my-1 border-t border-slate-100" />
@@ -59,7 +59,7 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
             <>
               <div className="my-1 border-t border-slate-100" />
               <button onClick={() => setSelectedIds([])} className="w-full rounded-md px-2 py-1.5 text-left text-xs text-slate-400 hover:bg-slate-50">
-                Clear selection
+                Clear selection<span className="font-khmer block">ជម្រះការជ្រើសរើស</span>
               </button>
             </>
           )}

@@ -44,7 +44,7 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-700">Add User</h3>
+          <h3 className="font-semibold text-slate-700">Add User<span className="font-khmer block text-xs font-normal">បន្ថែមអ្នកប្រើប្រាស់</span></h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
 
@@ -52,19 +52,19 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
           <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700">{notice}</p>
         ) : (
           <form onSubmit={submit}>
-            <label className="mb-1 block text-xs text-slate-500">Full name</label>
+            <label className="mb-1 block text-xs text-slate-500">Full name<span className="font-khmer block">ឈ្មោះពេញ</span></label>
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} autoFocus
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-            <label className="mb-1 block text-xs text-slate-500">Email</label>
+            <label className="mb-1 block text-xs text-slate-500">Email<span className="font-khmer block">អ៊ីមែល</span></label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-            <label className="mb-1 block text-xs text-slate-500">Password</label>
+            <label className="mb-1 block text-xs text-slate-500">Password<span className="font-khmer block">ពាក្យសម្ងាត់</span></label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters"
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-            <label className="mb-1 block text-xs text-slate-500">Role</label>
+            <label className="mb-1 block text-xs text-slate-500">Role<span className="font-khmer block">តួនាទី</span></label>
             <select value={roleId} onChange={(e) => setRoleId(e.target.value)}
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
               {pickableRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -72,7 +72,7 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
 
             {selectedRole?.scope !== "all" && (
               <>
-                <label className="mb-1 block text-xs text-slate-500">Location</label>
+                <label className="mb-1 block text-xs text-slate-500">Location<span className="font-khmer block">ទីតាំង</span></label>
                 <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
                   className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
                   <option value="">— none —</option>
@@ -84,9 +84,9 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
             {error && <p className="mb-3 text-sm text-rose-500">{error}</p>}
 
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+              <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
               <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-                {saving ? "Creating..." : "Add User"}
+                {saving ? "Creating..." : (<>Add User<span className="font-khmer block text-xs font-normal">បន្ថែមអ្នកប្រើប្រាស់</span></>)}
               </button>
             </div>
           </form>

@@ -21,21 +21,19 @@ function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); retu
 function startOfWeek(d) { const r = new Date(d); const day = (r.getDay() + 6) % 7; return addDays(r, -day); } // Monday start
 function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
-function startOfYear(d) { return new Date(d.getFullYear(), 0, 1); }
 
 function presets() {
   const t = today();
   return [
-    { label: "Today", start: toIso(t), end: toIso(t) },
-    { label: "Yesterday", start: toIso(addDays(t, -1)), end: toIso(addDays(t, -1)) },
-    { label: "This Week", start: toIso(startOfWeek(t)), end: toIso(t) },
-    { label: "Last Week", start: toIso(addDays(startOfWeek(t), -7)), end: toIso(addDays(startOfWeek(t), -1)) },
-    { label: "This Month", start: toIso(startOfMonth(t)), end: toIso(t) },
-    { label: "Last Month", start: toIso(startOfMonth(addDays(startOfMonth(t), -1))), end: toIso(endOfMonth(addDays(startOfMonth(t), -1))) },
-    { label: "This Year", start: toIso(startOfYear(t)), end: toIso(t) },
-    { label: "Last 7 Days", start: toIso(addDays(t, -6)), end: toIso(t) },
-    { label: "Last 30 Days", start: toIso(addDays(t, -29)), end: toIso(t) },
-    { label: "All Time", start: null, end: null },
+    { label: "Today", labelKm: "ថ្ងៃនេះ", start: toIso(t), end: toIso(t) },
+    { label: "Yesterday", labelKm: "ម្សិលមិញ", start: toIso(addDays(t, -1)), end: toIso(addDays(t, -1)) },
+    { label: "This Week", labelKm: "សប្តាហ៍នេះ", start: toIso(startOfWeek(t)), end: toIso(t) },
+    { label: "Last Week", labelKm: "សប្តាហ៍មុន", start: toIso(addDays(startOfWeek(t), -7)), end: toIso(addDays(startOfWeek(t), -1)) },
+    { label: "This Month", labelKm: "ខែនេះ", start: toIso(startOfMonth(t)), end: toIso(t) },
+    { label: "Last Month", labelKm: "ខែមុន", start: toIso(startOfMonth(addDays(startOfMonth(t), -1))), end: toIso(endOfMonth(addDays(startOfMonth(t), -1))) },
+    { label: "Last 7 Days", labelKm: "៧ ថ្ងៃចុងក្រោយ", start: toIso(addDays(t, -6)), end: toIso(t) },
+    { label: "Last 30 Days", labelKm: "៣០ ថ្ងៃចុងក្រោយ", start: toIso(addDays(t, -29)), end: toIso(t) },
+    { label: "All Time", labelKm: "គ្រប់ពេលវេលា", start: null, end: null },
   ];
 }
 
@@ -45,7 +43,7 @@ function fmtDisplay(iso) {
   return `${d}/${m}/${y}`;
 }
 
-export default function DateRangeFilter({ startDate, endDate, onChange, compact = false }) {
+export default function DateRangeFilter({ startDate, endDate, onChange }) {
   const [open, setOpen] = useState(false);
   const [tempStart, setTempStart] = useState(startDate);
   const [tempEnd, setTempEnd] = useState(endDate);
@@ -81,17 +79,13 @@ export default function DateRangeFilter({ startDate, endDate, onChange, compact 
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        onClick={openPopover}
-        className={
-          compact
-            ? "flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
-            : "flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50"
-        }
-      >
-        {!compact && <Calendar size={14} className="text-slate-400" />}
-        {matchingPreset ? matchingPreset.label : label}
-        <ChevronDown size={compact ? 11 : 14} className="text-slate-400" />
+      <button onClick={openPopover} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
+        <Calendar size={14} className="text-slate-400" />
+        <span>
+          {matchingPreset ? matchingPreset.label : label}
+          {matchingPreset && <span className="font-khmer block text-[11px] font-normal text-slate-400">{matchingPreset.labelKm}</span>}
+        </span>
+        <ChevronDown size={14} className="text-slate-400" />
       </button>
 
       {open && (
@@ -101,19 +95,20 @@ export default function DateRangeFilter({ startDate, endDate, onChange, compact 
               <button key={p.label} onClick={() => applyPreset(p)}
                 className={`block w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${tempStart === p.start && tempEnd === p.end ? "bg-brand-50 font-medium text-brand-700" : "text-slate-600"}`}>
                 {p.label}
+                <span className="font-khmer block text-[11px] font-normal">{p.labelKm}</span>
               </button>
             ))}
           </div>
           <div className="flex flex-1 flex-col p-3">
-            <label className="mb-1 text-xs text-slate-500">Start date</label>
+            <label className="mb-1 text-xs text-slate-500">Start date<span className="font-khmer">&nbsp;(ចាប់ពី)</span></label>
             <input type="date" value={tempStart || ""} onChange={(e) => setTempStart(e.target.value || null)}
               className="mb-3 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-            <label className="mb-1 text-xs text-slate-500">End date</label>
+            <label className="mb-1 text-xs text-slate-500">End date<span className="font-khmer">&nbsp;(ដល់)</span></label>
             <input type="date" value={tempEnd || ""} onChange={(e) => setTempEnd(e.target.value || null)}
               className="mb-4 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             <div className="mt-auto flex justify-end gap-2">
-              <button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50">Cancel</button>
-              <button onClick={done} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Done</button>
+              <button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-[11px]">បោះបង់</span></button>
+              <button onClick={done} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Done<span className="font-khmer block text-[11px] font-normal">រួចរាល់</span></button>
             </div>
           </div>
         </div>
