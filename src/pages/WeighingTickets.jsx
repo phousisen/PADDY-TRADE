@@ -63,10 +63,14 @@ function addCustomPaddyType(name) {
 }
 
 // Same idea, for the "Buyer"/"Seller" (whoever is actually filling in the
-// ticket) field below — starts with this one known name, and grows as more
-// get typed in on this device via "+ Add new name…", numbered the same way
-// so staff can jump to a name by pressing its number.
-const RECORDED_BY_NAME_SEED = ["Malis Bopha"];
+// ticket) field below — starts empty and grows as names get typed in on
+// this device via "+ Add new name…", numbered the same way so staff can
+// jump to a name by pressing its number. Deliberately NOT pre-seeded with
+// any real person's name here — this array is shared by every station, so
+// anything hardcoded in it would show up at every location regardless of
+// who actually works there (this is exactly what happened with "Malis
+// Bopha", a Pong Ro staff name, showing up at Reang Kesey too).
+const RECORDED_BY_NAME_SEED = [];
 
 // Kept as a SEPARATE list per location (not one shared list device-wide),
 // since the staff working the scale — and so the names worth remembering —
@@ -1449,7 +1453,12 @@ export default function WeighingTickets() {
                   <p className="text-slate-500">{t.product_name}</p>
                   {t.gross_kg != null && <p className="text-slate-500">Gross: {fmt2(t.gross_kg)} kg {t.grossByName && <span className="text-slate-400">by {t.grossByName}</span>}</p>}
                   {t.paper_ticket_no && <p className="text-xs text-slate-400">Quality Ticket No. {t.paper_ticket_no}</p>}
-                  {t.recorded_by_name && <p className="text-xs text-slate-400">{t.type === "BUY" ? "Buyer" : "Seller"}: {t.recorded_by_name}</p>}
+                  {/* This is the PaddyTrade staff member who filled the ticket in, NOT the
+                      actual farmer/buyer being traded with (that's t.party_name, shown
+                      above via partyLabelEn/partyLabelKh on the slip) — "(staff)" here
+                      matches the wording already used on the printed slip so this can't
+                      be mistaken for trading-partner data again, the way it was before. */}
+                  {t.recorded_by_name && <p className="text-xs text-slate-400">{t.type === "BUY" ? "Buyer (staff)" : "Seller (staff)"}: {t.recorded_by_name}</p>}
                 </div>
                 {tab === "waiting" && (
                   <div className="flex gap-2">
