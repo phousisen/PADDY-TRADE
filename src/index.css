@@ -190,8 +190,16 @@ input[type="number"] {
   #ticket-slip-root {
     position: absolute !important;
     top: 2mm !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
+    /* [2026-08-26] left:7mm instead of left:50%+transform:translateX(-50%) —
+       same result (196mm content centered on a 210mm page: (210-196)/2 =
+       7mm each side) computed directly instead of via `transform`, as a
+       best-effort attempt at a known Chrome bug where "Loading preview…"
+       can hang indefinitely in the print dialog on some machines/CSS
+       combos involving `transform`. Not guaranteed to be the actual cause
+       — if the print button still hangs after this, Ctrl+Shift+P (which
+       skips Chrome's preview renderer entirely) remains the reliable
+       fallback. */
+    left: 7mm !important;
     width: 196mm !important;
     max-width: 196mm !important;
     height: auto !important;
@@ -284,8 +292,9 @@ input[type="number"] {
   #receipt-root {
     position: absolute !important;
     top: 2mm !important;
-    left: 50% !important;
-    transform: translateX(-50%) !important;
+    /* [2026-08-26] Same left:7mm change as #ticket-slip-root above — see
+       that comment for why. */
+    left: 7mm !important;
     width: 196mm !important;
     max-width: 196mm !important;
     height: auto !important;
