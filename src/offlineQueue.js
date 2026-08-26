@@ -315,16 +315,23 @@ function remapProductId(oldId, newId) {
 // price, weigh-out, or finalize) targets a weighing ticket that no
 // longer exists — most likely a database reset ran (e.g. clearing test
 // data) after this device queued the change while it was offline.
-// Clears it off the local board and drops every OTHER still-queued
-// change for that same ticket too, since none of them can succeed
-// either — otherwise the very next one just blocks the queue again the
-// same way, one at a time. Leaves the op currently being processed
-// (always at the front of the queue) for the normal dequeue step right
-// after this runs, rather than removing it here too.
+// Clears it off the local board and drops every still-queued change for
+// that same ticket too, since none of them can succeed either — otherwise
+// the very next one just blocks that ticket's lane again the same way, one
+// at a time. (The op that triggered this — the one currently being
+// processed — gets removed the normal way, by its own id, right after this
+// runs in trySync; it doesn't need special handling here.)
 function dropOtherOpsForGoneTicket(ticketId) {
   if (!ticketId) return;
   removeCachedTicket(ticketId);
-  mutateQueue((q) => (q.length === 0 ? q : [q[0], ...q.slice(1).filter((op) => op.ticketId !== ticketId)]));
+  mutateQueue((q) => q.filter((op) => op.ticketId !== ticketId));
+  // Also clear any "stuck" tracking for that ticket's now-dropped ops —
+  // otherwise a ticket that just got cleared could keep reporting as
+  // stuck in the sync banner forever, even though nothing for it is left
+  // in the queue to retry.
+  for (const [opId, entry] of stuckOps) {
+    if (entry.ticketId === ticketId) stuckOps.delete(opId);
+  }
 }
 
 export function getCachedProducts() {
@@ -367,11 +374,21 @@ export function getQueue() {
   return readJSON(QUEUE_KEY, []);
 }
 export function enqueue(op) {
-  mutateQueue((q) => { q.push(op); return q; });
+  // Every op gets a stable id of its own (separate from ticketId/partyId,
+  // which name what the op acts ON, not the op itself) so a specific op
+  // can be pulled out of the middle of the queue once it succeeds — not
+  // just "whatever's currently at the front" — which matters once ops for
+  // different tickets are allowed to be attempted out of relative order
+  // (see trySync below).
+  mutateQueue((q) => { q.push({ ...op, _id: newId() }); return q; });
 }
-function dequeueFirst() {
-  mutateQueue((q) => { q.shift(); return q; });
-  clearStuckTracking();
+// Removes one specific op by id, wherever it currently sits in the queue —
+// used instead of a plain shift() so a later, unrelated op that finished
+// first (see trySync) is removed correctly even though it isn't at index 0.
+function removeOp(opId) {
+  if (!opId) return;
+  mutateQueue((q) => q.filter((o) => o._id !== opId));
+  clearOpFailure(opId);
 }
 
 export function pendingCountForTicket(ticketId) {
@@ -409,57 +426,61 @@ export function onSyncStatusChange(fn) {
   return () => listeners.delete(fn);
 }
 
-// Tracks whether the item at the FRONT of the queue is genuinely stuck —
-// meaning we're online and it has failed to save several times in a row for
-// a real reason (bad data, a permissions/RLS problem, a server-side bug) —
-// as opposed to plain "offline, waiting for WiFi", which isn't a problem at
-// all and shouldn't look like one. These are very different situations for
-// staff: one resolves itself the moment the connection returns, the other
-// won't resolve on its own no matter how long you wait, and everything
-// behind it in the queue is blocked too. Surfacing them the same way (as
-// this code used to) makes a genuinely broken sync look identical to a
-// normal, harmless delay.
-let stuckOpSignature = null;
-let stuckSince = null;
-let stuckAttempts = 0;
-let lastStuckError = null;
+// Tracks which queued ops are genuinely stuck — meaning we're online and
+// they've failed to save several times in a row for a real reason (bad
+// data, a permissions/RLS problem, a server-side bug) — as opposed to plain
+// "offline, waiting for WiFi", which isn't a problem at all and shouldn't
+// look like one. These are very different situations for staff: one
+// resolves itself the moment the connection returns, the other won't
+// resolve on its own no matter how long you wait.
+//
+// Keyed by the op's own `_id` (not by ticket) because trySync below lets
+// ops for DIFFERENT tickets keep syncing even while one ticket's op is
+// stuck — so more than one op can be independently stuck at the same time,
+// and each needs its own attempt count rather than one shared counter that
+// only ever meant "the thing at the front of the queue".
+const stuckOps = new Map(); // opId -> { since, attempts, error, opType, ticketId }
 const STUCK_THRESHOLD = 3; // consecutive failed attempts, while online, before we call it "stuck"
 
 function noteOpFailure(op, err) {
   if (!navigator.onLine) {
     // Not actually stuck — just offline, which is expected and resolves on
-    // its own. Don't let a failure recorded here linger and misreport as
-    // "stuck" once the connection comes back and this same op succeeds on
-    // its very first real attempt.
+    // its own. Don't let failures recorded here linger and misreport as
+    // "stuck" once the connection comes back and these same ops succeed on
+    // their very first real attempt.
     clearStuckTracking();
     return;
   }
-  const sig = JSON.stringify({ type: op.type, ticketId: op.ticketId, payload: op.payload });
-  if (sig === stuckOpSignature) {
-    stuckAttempts += 1;
-  } else {
-    stuckOpSignature = sig;
-    stuckSince = new Date().toISOString();
-    stuckAttempts = 1;
-  }
-  lastStuckError = (err && err.message) || String(err);
+  const existing = stuckOps.get(op._id);
+  stuckOps.set(op._id, {
+    since: existing ? existing.since : new Date().toISOString(),
+    attempts: (existing?.attempts || 0) + 1,
+    error: (err && err.message) || String(err),
+    opType: op.type,
+    ticketId: op.ticketId || null,
+  });
+}
+function clearOpFailure(opId) {
+  stuckOps.delete(opId);
 }
 function clearStuckTracking() {
-  stuckOpSignature = null;
-  stuckSince = null;
-  stuckAttempts = 0;
-  lastStuckError = null;
+  stuckOps.clear();
 }
 
 function getStatus() {
+  const stuck = [...stuckOps.values()].filter((e) => e.attempts >= STUCK_THRESHOLD);
   return {
     online: navigator.onLine,
     syncing,
     pending: totalPending(),
-    stuck: stuckAttempts >= STUCK_THRESHOLD,
-    stuckSince,
-    stuckAttempts,
-    lastStuckError,
+    stuck: stuck.length > 0,
+    stuckCount: stuck.length,
+    stuckSince: stuck.length ? new Date(Math.min(...stuck.map((e) => new Date(e.since).getTime()))).toISOString() : null,
+    // The most recent error text from whichever stuck op failed last this
+    // pass — shown verbatim in the banner so staff/an admin can actually
+    // see WHY (e.g. a permissions error vs. a duplicate value) instead of
+    // just "something is broken, good luck".
+    lastStuckError: stuck.length ? stuck[stuck.length - 1].error : null,
   };
 }
 function notifyStatus() {
@@ -612,26 +633,62 @@ export function trySync() {
         clearStuckTracking();
         return;
       }
+      // One pass over whatever's currently queued. A genuinely broken op
+      // (bad data, an RLS/permissions problem, a server-side bug) no longer
+      // blocks EVERY other change on the device behind it forever — only
+      // the other ops for that SAME ticket, which really do have to apply
+      // in order. A different ticket's ops — and a different station's,
+      // since each device only ever queues its own station's work anyway —
+      // still get their chance to reach the server this pass. This is what
+      // "one bad ticket edit stalls the whole board" (Pong Ro, Aug 2026)
+      // turned out to be: a single stuck op quietly blocking dozens of
+      // completely unrelated tickets' saves behind it with no visibility
+      // into why. Nothing is ever skipped out of order for the SAME ticket,
+      // and nothing is ever dropped — a stuck op just stays in the queue
+      // and gets retried every pass until it either succeeds or someone
+      // (an admin, or me) looks at the error text now shown in the banner
+      // and fixes the actual cause.
+      //
+      // The one case still treated as fully blocking, exactly as before, is
+      // a party/product-creation op (createParty/createProduct/updateParty
+      // — none of which carry a ticketId): later queued ops can reference
+      // the very id such an op is trying to create, so nothing after one of
+      // those is provably safe to attempt out of order.
       while (true) {
         const q = getQueue();
         if (q.length === 0) break;
-        const op = q[0];
-        try {
-          const result = await runOp(op);
-          // A ticket-related op just landed on the server — fold the
-          // server's returned row into the local cache so the UI reflects
-          // confirmed data as soon as it's available.
-          if (result && TICKET_OP_TYPES.has(op.type)) {
-            upsertCachedTicket(normalizeSyncedTicket(op, result));
+
+        const blockedTicketIds = new Set();
+        let progressed = false;
+        let stopEntirely = false;
+
+        for (const op of q) {
+          if (stopEntirely) break;
+          if (op.ticketId && blockedTicketIds.has(op.ticketId)) continue;
+          try {
+            const result = await runOp(op);
+            // A ticket-related op just landed on the server — fold the
+            // server's returned row into the local cache so the UI reflects
+            // confirmed data as soon as it's available.
+            if (result && TICKET_OP_TYPES.has(op.type)) {
+              upsertCachedTicket(normalizeSyncedTicket(op, result));
+            }
+            removeOp(op._id);
+            progressed = true;
+          } catch (err) {
+            // Network still down, or a real error — either way, this
+            // specific op stays queued and gets retried later rather than
+            // being skipped or dropped.
+            console.warn("[offlineQueue] sync paused for one op:", err?.message || err);
+            noteOpFailure(op, err);
+            if (op.ticketId) blockedTicketIds.add(op.ticketId);
+            else stopEntirely = true;
           }
-          dequeueFirst();
-        } catch (err) {
-          // Network still down, or a real error — either way, stop here
-          // and try again later rather than skipping ahead out of order.
-          console.warn("[offlineQueue] sync paused:", err?.message || err);
-          noteOpFailure(op, err);
-          break;
         }
+        // Nothing at all went through this pass (everything queued is
+        // blocked, or offline) — stop here instead of looping forever;
+        // the 15s heartbeat / "online" listener will try again.
+        if (!progressed) break;
       }
       if (getQueue().length === 0) await refreshLookupCaches();
     } finally {
@@ -708,11 +765,17 @@ export async function resolvePartyIdOffline(typedName, type, locationId, extra =
   const trimmed = (typedName || "").trim();
   if (!trimmed) return null;
 
-  const cachedMatch = getCachedParties().find((p) => p.type === type && (p.name || "").trim().toLowerCase() === trimmed.toLowerCase());
+  // Scoped to THIS station (when we know it) — otherwise a same-named
+  // buyer/seller already on file at a different location would silently
+  // get reused here, quietly attaching this station's ticket to another
+  // station's party record (and its bank details, phone, history, etc).
+  const cachedMatch = getCachedParties().find(
+    (p) => p.type === type && (!locationId || p.location_id === locationId) && (p.name || "").trim().toLowerCase() === trimmed.toLowerCase()
+  );
   if (cachedMatch) return cachedMatch.id;
 
   if (navigator.onLine) {
-    const matches = await withTimeout(api.getParties({ type, q: trimmed }).catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null);
+    const matches = await withTimeout(api.getParties({ type, q: trimmed, locationId }).catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null);
     const exact = matches && matches.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
     if (exact) {
       addCachedParty(exact);
