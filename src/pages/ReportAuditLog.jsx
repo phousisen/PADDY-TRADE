@@ -30,6 +30,25 @@ const ACTION_META = {
   add_loan_entry: { label: "Recorded a bank loan entry", category: "capital" },
 };
 
+// Khmer companions for ACTION_META's labels above, keyed the same way —
+// kept as a separate lookup rather than touching ACTION_META itself, since
+// that object's "label" strings are also used as fallback plain text for
+// action codes it doesn't recognize.
+const ACTION_LABELS_KM = {
+  create_transaction: "បានបង្កើតប្រតិបត្តិការ",
+  edit_transaction: "បានកែសម្រួលប្រតិបត្តិការ",
+  cancel_transaction: "បានលុបចោលប្រតិបត្តិការ",
+  submit_change_request: "បានដាក់ស្នើសំណើផ្លាស់ប្តូរ",
+  approve_change_request: "បានអនុម័តសំណើផ្លាស់ប្តូរ",
+  reject_change_request: "បានបដិសេធសំណើផ្លាស់ប្តូរ",
+  record_payment: "បានកត់ត្រាការទូទាត់",
+  edit_payment: "បានកែតម្រូវចំនួនទូទាត់",
+  change_role: "បានផ្លាស់ប្តូរតួនាទីអ្នកប្រើប្រាស់",
+  add_partner: "បានបន្ថែមដៃគូ",
+  add_capital_entry: "បានកត់ត្រាធាតុដើមទុន",
+  add_loan_entry: "បានកត់ត្រាធាតុកម្ចីធនាគារ",
+};
+
 const CATEGORY_LABELS = {
   all: "All activity",
   payment: "Payments",
@@ -37,6 +56,15 @@ const CATEGORY_LABELS = {
   request: "Change Requests",
   user: "Users",
   capital: "Capital & Loans",
+};
+
+const CATEGORY_LABELS_KM = {
+  all: "សកម្មភាពទាំងអស់",
+  payment: "ការទូទាត់",
+  transaction: "ប្រតិបត្តិការ",
+  request: "សំណើផ្លាស់ប្តូរ",
+  user: "អ្នកប្រើប្រាស់",
+  capital: "ដើមទុន និង កម្ចី",
 };
 
 function actionMeta(action) {
@@ -174,12 +202,13 @@ export default function ReportAuditLog() {
     <div>
       <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         Every action taken in the system — new transactions, payments recorded, edits, approvals, and cancellations — is logged here with who did it and when, so you can trace back any mistake, especially around payments.
+        <span className="font-khmer block">រាល់សកម្មភាពទាំងអស់ក្នុងប្រព័ន្ធ — ប្រតិបត្តិការថ្មី ការទូទាត់ដែលបានកត់ត្រា ការកែសម្រួល ការអនុម័ត និងការលុបចោល — ត្រូវបានកត់ត្រាទុកនៅទីនេះ ជាមួយអ្នកធ្វើ និងពេលវេលា ដើម្បីឲ្យអ្នកអាចតាមដានកំហុសឆ្គងណាមួយ ជាពិសេសទាក់ទងនឹងការទូទាត់។</span>
       </div>
 
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[10px] font-normal">ព្យាយាមម្តងទៀត</span></button>
         </div>
       )}
 
@@ -195,6 +224,7 @@ export default function ReportAuditLog() {
             }`}
           >
             {CATEGORY_LABELS[c]}
+            <span className="font-khmer block text-[10px] font-normal">{CATEGORY_LABELS_KM[c]}</span>
           </button>
         ))}
       </div>
@@ -203,10 +233,10 @@ export default function ReportAuditLog() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-              <th className="px-5 py-3 font-medium">When</th>
-              <th className="px-3 py-3 font-medium">Who</th>
-              <th className="px-3 py-3 font-medium">Action</th>
-              <th className="px-3 py-3 font-medium">Details</th>
+              <th className="px-5 py-3 font-medium">When<span className="font-khmer block font-normal">ពេលវេលា</span></th>
+              <th className="px-3 py-3 font-medium">Who<span className="font-khmer block font-normal">អ្នកធ្វើ</span></th>
+              <th className="px-3 py-3 font-medium">Action<span className="font-khmer block font-normal">សកម្មភាព</span></th>
+              <th className="px-3 py-3 font-medium">Details<span className="font-khmer block font-normal">លម្អិត</span></th>
             </tr>
           </thead>
           <tbody>
@@ -223,6 +253,9 @@ export default function ReportAuditLog() {
                       }`}
                     >
                       {meta.label}
+                      {ACTION_LABELS_KM[l.action] && (
+                        <span className="font-khmer block text-[10px] font-normal">{ACTION_LABELS_KM[l.action]}</span>
+                      )}
                     </span>
                   </td>
                   <td className="px-3 py-3 text-slate-700">{describeChange(l)}</td>
@@ -230,12 +263,15 @@ export default function ReportAuditLog() {
               );
             })}
             {loading && filteredLogs.length === 0 && (
-              <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+              <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400"><>Loading…<span className="font-khmer block text-xs">កំពុងផ្ទុក...</span></></td></tr>
             )}
             {filteredLogs.length === 0 && !loading && !loadError && (
               <tr>
                 <td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">
                   No activity recorded yet{category !== "all" ? ` for ${CATEGORY_LABELS[category].toLowerCase()}` : ""}.
+                  <span className="font-khmer block text-xs">
+                    មិនទាន់មានកំណត់ត្រាសកម្មភាពនៅឡើយទេ{category !== "all" ? ` សម្រាប់${CATEGORY_LABELS_KM[category]}` : ""}។
+                  </span>
                 </td>
               </tr>
             )}

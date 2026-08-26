@@ -51,12 +51,12 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[11px]">ព្យាយាមម្តងទៀត</span></button>
         </div>
       )}
       <div className="mb-4 flex justify-end gap-2">
-        {[{ v: "summary", l: "Summary" }, { v: "detail", l: "Movement Detail" }].map((o) => (
-          <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+        {[{ v: "summary", l: "Summary", lkm: "សេចក្តីសង្ខេប" }, { v: "detail", l: "Movement Detail", lkm: "ព័ត៌មានលម្អិតចលនា" }].map((o) => (
+          <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}<span className="font-khmer block text-[10px] font-normal">{o.lkm}</span></button>
         ))}
       </div>
 
@@ -65,10 +65,10 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Current Stock (kg)</th>
-                <th className="px-5 py-3 font-medium">Capacity (kg)</th>
-                <th className="px-5 py-3 font-medium">% Full</th>
+                <th className="px-5 py-3 font-medium">Location<span className="font-khmer block">ទីតាំង</span></th>
+                <th className="px-5 py-3 font-medium">Current Stock (kg)<span className="font-khmer block">ស្តុកបច្ចុប្បន្ន (គីឡូក្រាម)</span></th>
+                <th className="px-5 py-3 font-medium">Capacity (kg)<span className="font-khmer block">សមត្ថភាព (គីឡូក្រាម)</span></th>
+                <th className="px-5 py-3 font-medium">% Full<span className="font-khmer block">% ពេញ</span></th>
               </tr>
             </thead>
             <tbody>
@@ -83,20 +83,20 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
                   </tr>
                 );
               })}
-              {loading && stations.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {stations.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>}
+              {loading && stations.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+              {stations.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.<span className="font-khmer block">មិនមានទីតាំងណាដែលមើលឃើញសម្រាប់គណនីរបស់អ្នកទេ។</span></td></tr>}
             </tbody>
           </table>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Receipt</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Type</th>
-                <th className="px-5 py-3 font-medium">Change (kg)</th>
-                <th className="px-5 py-3 font-medium">Running Balance</th>
+                <th className="px-5 py-3 font-medium">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></th>
+                <th className="px-5 py-3 font-medium">Receipt<span className="font-khmer block">បង្កាន់ដៃ</span></th>
+                <th className="px-5 py-3 font-medium">Location<span className="font-khmer block">ទីតាំង</span></th>
+                <th className="px-5 py-3 font-medium">Type<span className="font-khmer block">ប្រភេទ</span></th>
+                <th className="px-5 py-3 font-medium">Change (kg)<span className="font-khmer block">ការផ្លាស់ប្តូរ (គីឡូក្រាម)</span></th>
+                <th className="px-5 py-3 font-medium">Running Balance<span className="font-khmer block">សមតុល្យបន្តបន្ទាប់</span></th>
               </tr>
             </thead>
             <tbody>
@@ -105,13 +105,13 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
                   <td className="px-5 py-3 text-slate-500">{m.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{m.code}</td>
                   <td className="px-5 py-3 text-slate-600">{m.stationName}</td>
-                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${m.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{m.type}</span></td>
+                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${m.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{m.type}<span className="font-khmer ml-1">{m.type === "BUY" ? "ទិញ" : "លក់"}</span></span></td>
                   <td className={`px-5 py-3 font-medium ${m.delta >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{m.delta >= 0 ? "+" : ""}{fmt2(m.delta)}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(m.runningBalance)}</td>
                 </tr>
               ))}
-              {loading && movements.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {movements.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">No stock movements yet.</td></tr>}
+              {loading && movements.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+              {movements.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">No stock movements yet.<span className="font-khmer block">មិនទាន់មានចលនាស្តុកនៅឡើយទេ។</span></td></tr>}
             </tbody>
           </table>
         )}

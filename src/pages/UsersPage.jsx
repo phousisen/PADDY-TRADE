@@ -67,19 +67,19 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><KeyRound size={16} className="text-brand-600" /> Set New Password</h3>
-        <p className="mb-4 text-xs text-slate-400">For {user.full_name}. They won't be notified — let them know their new password directly.</p>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><KeyRound size={16} className="text-brand-600" /> Set New Password<span className="font-khmer block text-xs font-normal text-slate-500">កំណត់ពាក្យសម្ងាត់ថ្មី</span></h3>
+        <p className="mb-4 text-xs text-slate-400">For {user.full_name}. They won't be notified — let them know their new password directly.<span className="font-khmer block">សម្រាប់ {user.full_name}។ ពួកគេនឹងមិនត្រូវបានជូនដំណឹងទេ — សូមប្រាប់ពាក្យសម្ងាត់ថ្មីរបស់ពួកគេដោយផ្ទាល់។</span></p>
 
-        <label className="mb-1 block text-xs text-slate-500">New password</label>
+        <label className="mb-1 block text-xs text-slate-500">New password<span className="font-khmer block text-brand-600">ពាក្យសម្ងាត់ថ្មី</span></label>
         <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-        <label className="mb-1 block text-xs text-slate-500">Confirm new password</label>
+        <label className="mb-1 block text-xs text-slate-500">Confirm new password<span className="font-khmer block text-brand-600">បញ្ជាក់ពាក្យសម្ងាត់ថ្មី</span></label>
         <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         <div className="mb-3 border-t border-slate-100 pt-3">
-          <label className="mb-1 block text-xs text-slate-500">Your own login password (not the new one above) — to confirm it's really you</label>
+          <label className="mb-1 block text-xs text-slate-500">Your own login password (not the new one above) — to confirm it's really you<span className="font-khmer block">ពាក្យសម្ងាត់ចូលប្រើផ្ទាល់ខ្លួនរបស់អ្នក (មិនមែនពាក្យសម្ងាត់ថ្មីខាងលើទេ) — ដើម្បីបញ្ជាក់ថាជាអ្នកពិតប្រាកដ</span></label>
           {/* autoComplete deliberately off: every account signs into this
               same web address, so Chrome/Safari can have several different
               saved logins for this one site and may offer to autofill the
@@ -92,10 +92,10 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
         {error && <p className="mb-3 text-xs text-rose-500">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
           <button disabled={!canSubmit || saving} onClick={submit}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-            {saving ? "Saving..." : "Set Password"}
+            {saving ? "Saving..." : (<>Set Password<span className="font-khmer block text-xs font-normal">កំណត់ពាក្យសម្ងាត់</span></>)}
           </button>
         </div>
       </div>
@@ -254,33 +254,33 @@ export default function UsersPage() {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Users" subtitle="Everyone with access to PaddyTrade" />
+      <Topbar title={<>Users<span className="font-khmer block text-sm font-normal text-slate-500">អ្នកប្រើប្រាស់</span></>} subtitle={<>Everyone with access to PaddyTrade<span className="font-khmer block">អ្នកទាំងអស់ដែលមានសិទ្ធិចូលប្រើ PaddyTrade</span></>} />
       <main className="flex-1 overflow-y-auto p-6">
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[10px]">ព្យាយាមម្តងទៀត</span></button>
           </div>
         )}
         {actionMessage && (
           <div className={`mb-4 flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${actionMessage.type === "error" ? "border-rose-200 bg-rose-50 text-rose-600" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
             <span>{actionMessage.text}</span>
-            <button onClick={() => setActionMessage(null)} className="shrink-0 text-xs underline decoration-dotted opacity-70 hover:opacity-100">Dismiss</button>
+            <button onClick={() => setActionMessage(null)} className="shrink-0 text-xs underline decoration-dotted opacity-70 hover:opacity-100">Dismiss<span className="font-khmer ml-1">បិទ</span></button>
           </div>
         )}
         {rolesMissing ? (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div>
-              <p className="font-medium">Roles aren't set up yet.</p>
-              <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase first — until then, roles can't be assigned here.</p>
+              <p className="font-medium">Roles aren't set up yet.<span className="font-khmer block text-xs font-normal">តួនាទីមិនទាន់រៀបចំនៅឡើយទេ។</span></p>
+              <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase first — until then, roles can't be assigned here.<span className="font-khmer block">ដំណើរការ migration "paddytrade-schema-roles-owner.sql" នៅក្នុង Supabase សិន — មុនពេលនោះ តួនាទីមិនអាចផ្តល់នៅទីនេះបានទេ។</span></p>
             </div>
           </div>
         ) : (
           <div className="mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-            <span>{!isOwner && "As HQ Admin, you can manage Manager/Staff-tier accounts; only Owner can change Owner or HQ Admin-level accounts."}</span>
+            <span>{!isOwner && (<>As HQ Admin, you can manage Manager/Staff-tier accounts; only Owner can change Owner or HQ Admin-level accounts.<span className="font-khmer block">ក្នុងនាមជា HQ Admin អ្នកអាចគ្រប់គ្រងគណនីកម្រិតអ្នកគ្រប់គ្រង/បុគ្គលិកបាន។ មានតែម្ចាស់ទេ ដែលអាចផ្លាស់ប្តូរគណនីកម្រិត Owner ឬ HQ Admin។</span></>)}</span>
             <button onClick={() => setAdding(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
-              <Plus size={13} /> Add User
+              <Plus size={13} /> Add User<span className="font-khmer block text-[10px]">បន្ថែមអ្នកប្រើប្រាស់</span>
             </button>
           </div>
         )}
@@ -289,12 +289,12 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Name</th>
-                {isOwner && <th className="px-3 py-3 font-medium">Email</th>}
-                <th className="px-3 py-3 font-medium">Role</th>
-                <th className="px-3 py-3 font-medium">Location</th>
-                <th className="px-3 py-3 font-medium">Access</th>
-                <th className="px-3 py-3 font-medium">Activity</th>
+                <th className="px-5 py-3 font-medium">Name<span className="font-khmer block text-[10px]">ឈ្មោះ</span></th>
+                {isOwner && <th className="px-3 py-3 font-medium">Email<span className="font-khmer block text-[10px]">អ៊ីមែល</span></th>}
+                <th className="px-3 py-3 font-medium">Role<span className="font-khmer block text-[10px]">តួនាទី</span></th>
+                <th className="px-3 py-3 font-medium">Location<span className="font-khmer block text-[10px]">ទីតាំង</span></th>
+                <th className="px-3 py-3 font-medium">Access<span className="font-khmer block text-[10px]">សិទ្ធិចូលប្រើ</span></th>
+                <th className="px-3 py-3 font-medium">Activity<span className="font-khmer block text-[10px]">សកម្មភាព</span></th>
                 <th className="px-3 py-3"></th>
               </tr>
             </thead>
@@ -358,17 +358,17 @@ export default function UsersPage() {
                           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </select>
                       ) : (
-                        <span className="text-slate-600">{scope === "all" ? "All Locations" : u.locationName}</span>
+                        <span className="text-slate-600">{scope === "all" ? (<>All Locations<span className="font-khmer block text-[10px]">គ្រប់ទីតាំងទាំងអស់</span></>) : u.locationName}</span>
                       )}
                     </td>
-                    <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[scope]}`}>{scope === "all" ? "All Locations" : "Own Location"}</span></td>
+                    <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[scope]}`}>{scope === "all" ? (<>All Locations<span className="font-khmer block text-[10px] font-normal">គ្រប់ទីតាំងទាំងអស់</span></>) : (<>Own Location<span className="font-khmer block text-[10px] font-normal">តែទីតាំងខ្លួនឯង</span></>)}</span></td>
                     <td className="px-3 py-3">
                       <span className={`flex items-center gap-1.5 text-xs ${online ? "text-emerald-600" : "text-slate-400"}`}>
                         <Circle size={8} className={online ? "fill-emerald-500 text-emerald-500" : "fill-slate-300 text-slate-300"} />
-                        {online ? "Active now" : `Last seen ${relativeTime(u.last_seen_at)}`}
+                        {online ? (<>Active now<span className="font-khmer ml-1">សកម្មឥឡូវនេះ</span></>) : `Last seen ${relativeTime(u.last_seen_at)}`}
                       </span>
                       <p className="mt-0.5 text-[11px] text-slate-400">
-                        Login: {u.last_login_at ? relativeTime(u.last_login_at) : "Never"}
+                        Login:<span className="font-khmer">ចូលចុងក្រោយ:</span> {u.last_login_at ? relativeTime(u.last_login_at) : "Never"}
                         {u.last_login_device ? ` · ${u.last_login_device}` : ""}
                       </p>
                       {(u.last_login_ip || u.last_login_location) && (
@@ -381,24 +381,24 @@ export default function UsersPage() {
                       <div className="flex items-center justify-end gap-3">
                         {editable && u.id !== me.id && (
                           <button onClick={() => logOut(u)} className={`flex items-center gap-1 text-xs hover:text-slate-700 ${online ? "text-slate-500" : "text-slate-400"}`}>
-                            <LogOut size={12} /> Log Out
+                            <LogOut size={12} /> Log Out<span className="font-khmer block text-[10px]">ចាកចេញ</span>
                           </button>
                         )}
                         {isOwner && u.id !== me.id && (
                           <button onClick={() => setPasswordUser(u)} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
-                            <KeyRound size={12} /> Set Password
+                            <KeyRound size={12} /> Set Password<span className="font-khmer block text-[10px]">កំណត់ពាក្យសម្ងាត់</span>
                           </button>
                         )}
                         {editable && u.roleObj?.name !== "Suspended" && u.id !== me.id && (
-                          <button onClick={() => suspend(u)} className="text-xs text-rose-500 hover:text-rose-700">Suspend</button>
+                          <button onClick={() => suspend(u)} className="text-xs text-rose-500 hover:text-rose-700">Suspend<span className="font-khmer block text-[10px]">ផ្អាក</span></button>
                         )}
                       </div>
                     </td>
                   </tr>
                 );
               })}
-              {loading && users.length === 0 && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {users.length === 0 && !loading && !loadError && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">No users found.</td></tr>}
+              {loading && users.length === 0 && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block text-xs">កំពុងផ្ទុក...</span></td></tr>}
+              {users.length === 0 && !loading && !loadError && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">No users found.<span className="font-khmer block text-xs">រកមិនឃើញអ្នកប្រើប្រាស់ទេ។</span></td></tr>}
             </tbody>
           </table>
         </div>
@@ -406,6 +406,7 @@ export default function UsersPage() {
         {isOwner && (
           <p className="mt-3 text-xs text-slate-400">
             Emails and password resets require the "admin-users" Edge Function to be deployed in Supabase — if the email column shows "—" for everyone, that step likely hasn't been done yet.
+            <span className="font-khmer block">អ៊ីមែល និងការកំណត់ពាក្យសម្ងាត់ឡើងវិញ ត្រូវការ "admin-users" Edge Function ដែលបានដាក់ឱ្យប្រើប្រាស់នៅក្នុង Supabase — ប្រសិនបើជួរឈរអ៊ីមែលបង្ហាញ "—" សម្រាប់មនុស្សគ្រប់គ្នា ជំហាននោះទំនងជាមិនទាន់ត្រូវបានធ្វើនៅឡើយទេ។</span>
           </p>
         )}
       </main>

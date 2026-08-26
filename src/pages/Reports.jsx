@@ -57,17 +57,17 @@ export default function Reports({ initialTab = "overview" }) {
   }
 
   const tabs = [
-    { id: "overview", label: "Overview", icon: LayoutGrid },
-    { id: "balancesheet", label: "Balance Sheet", icon: Scale },
-    { id: "purchases", label: "Purchases", icon: ShoppingBag },
-    { id: "sales", label: "Sales", icon: TrendingUp },
-    { id: "payables", label: "Accounts Payable", icon: HandCoins },
-    { id: "receivables", label: "Accounts Receivable", icon: Wallet },
-    { id: "stock", label: "Stock", icon: Boxes },
-    { id: "cashflow", label: "Cash Flow", icon: Landmark },
-    { id: "capital", label: "Capital & Loans", icon: PiggyBank },
-    { id: "tax", label: "Tax", icon: ReceiptText },
-    ...(isAdmin ? [{ id: "auditlog", label: "Activity Log", icon: History }] : []),
+    { id: "overview", label: "Overview", labelKm: "ទិដ្ឋភាពទូទៅ", icon: LayoutGrid },
+    { id: "balancesheet", label: "Balance Sheet", labelKm: "តារាងតុល្យការ", icon: Scale },
+    { id: "purchases", label: "Purchases", labelKm: "ការទិញ", icon: ShoppingBag },
+    { id: "sales", label: "Sales", labelKm: "ការលក់", icon: TrendingUp },
+    { id: "payables", label: "Accounts Payable", labelKm: "គណនីត្រូវបង់", icon: HandCoins },
+    { id: "receivables", label: "Accounts Receivable", labelKm: "គណនីត្រូវទទួល", icon: Wallet },
+    { id: "stock", label: "Stock", labelKm: "ស្តុកទំនិញ", icon: Boxes },
+    { id: "cashflow", label: "Cash Flow", labelKm: "លំហូរសាច់ប្រាក់", icon: Landmark },
+    { id: "capital", label: "Capital & Loans", labelKm: "ដើមទុន និង កម្ចី", icon: PiggyBank },
+    { id: "tax", label: "Tax", labelKm: "ពន្ធ", icon: ReceiptText },
+    ...(isAdmin ? [{ id: "auditlog", label: "Activity Log", labelKm: "កំណត់ត្រាសកម្មភាព", icon: History }] : []),
   ];
 
   return (
@@ -84,7 +84,11 @@ export default function Reports({ initialTab = "overview" }) {
                   tab === tb.id ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700"
                 }`}
               >
-                <tb.icon size={15} /> {tb.label}
+                <tb.icon size={15} />
+                <span>
+                  {tb.label}
+                  <span className="font-khmer block text-[10px] font-normal leading-tight">{tb.labelKm}</span>
+                </span>
               </button>
             ))}
           </div>
@@ -99,7 +103,10 @@ export default function Reports({ initialTab = "overview" }) {
               className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
               {exporting ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <Download size={14} className="text-slate-400" />}
-              {exporting ? "Exporting..." : "Export to Excel"}
+              <span>
+                {exporting ? "Exporting..." : "Export to Excel"}
+                <span className="font-khmer block text-[10px] font-normal leading-tight">{exporting ? "កំពុងនាំចេញ..." : "នាំចេញទៅ Excel"}</span>
+              </span>
             </button>
           </div>
         </div>
@@ -107,7 +114,7 @@ export default function Reports({ initialTab = "overview" }) {
       {exportError && (
         <div className="flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs font-medium text-rose-600">
           <span>{exportError}</span>
-          <button onClick={exportExcel} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={exportExcel} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[10px] font-normal">ព្យាយាមម្តងទៀត</span></button>
         </div>
       )}
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">

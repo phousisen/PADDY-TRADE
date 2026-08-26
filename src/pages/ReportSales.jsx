@@ -93,25 +93,25 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className={`flex gap-2 ${view === "byitem" ? "opacity-40 pointer-events-none" : ""}`}>
-          <span className="text-xs font-medium text-slate-400 self-center">Group by:</span>
-          {[{ v: "party", l: "Customer" }, { v: "product", l: "Paddy Type" }, { v: "location", l: "Location" }].map((o) => (
-            <button key={o.v} onClick={() => setGroupBy(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${groupBy === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+          <span className="text-xs font-medium text-slate-400 self-center">Group by:<span className="font-khmer">តាមក្រុម៖</span></span>
+          {[{ v: "party", l: "Customer", lkm: "អតិថិជន" }, { v: "product", l: "Paddy Type", lkm: "ប្រភេទស្រូវ" }, { v: "location", l: "Location", lkm: "ទីតាំង" }].map((o) => (
+            <button key={o.v} onClick={() => setGroupBy(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${groupBy === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}<span className="font-khmer block text-[10px] font-normal">{o.lkm}</span></button>
           ))}
         </div>
         <div className="flex gap-2">
-          {[{ v: "summary", l: "Summary" }, { v: "detail", l: "Detail" }, { v: "byitem", l: "By Item" }].map((o) => (
-            <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+          {[{ v: "summary", l: "Summary", lkm: "សេចក្តីសង្ខេប" }, { v: "detail", l: "Detail", lkm: "ព័ត៌មានលម្អិត" }, { v: "byitem", l: "By Item", lkm: "តាមប្រភេទទំនិញ" }].map((o) => (
+            <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}<span className="font-khmer block text-[10px] font-normal">{o.lkm}</span></button>
           ))}
         </div>
       </div>
 
       <div className="mb-4 flex gap-4">
         <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Total Sold</p>
+          <p className="text-xs text-slate-400">Total Sold<span className="font-khmer block">លក់សរុប</span></p>
           <p className="text-2xl font-bold text-slate-800">{fmt2(totalQty)} kg</p>
         </div>
         <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Total Revenue</p>
+          <p className="text-xs text-slate-400">Total Revenue<span className="font-khmer block">ចំណូលសរុប</span></p>
           <p className="text-2xl font-bold text-slate-800">{fmtRiel(totalAmount)}</p>
         </div>
       </div>
@@ -127,15 +127,15 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                    <th className="px-5 py-2 font-medium">Date</th>
-                    <th className="px-5 py-2 font-medium">Bill #</th>
-                    <th className="px-5 py-2 font-medium">Note</th>
-                    <th className="px-5 py-2 font-medium">Buyer / Truck</th>
-                    <th className="px-5 py-2 font-medium">Received</th>
-                    <th className="px-5 py-2 font-medium">Qty (kg)</th>
-                    <th className="px-5 py-2 font-medium">Sale Price</th>
-                    <th className="px-5 py-2 font-medium">Amount</th>
-                    <th className="px-5 py-2 font-medium">Balance</th>
+                    <th className="px-5 py-2 font-medium">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></th>
+                    <th className="px-5 py-2 font-medium">Bill #<span className="font-khmer block">លេខវិក្កយបត្រ</span></th>
+                    <th className="px-5 py-2 font-medium">Note<span className="font-khmer block">កំណត់ចំណាំ</span></th>
+                    <th className="px-5 py-2 font-medium">Buyer / Truck<span className="font-khmer block">អ្នកទិញ / ឡាន</span></th>
+                    <th className="px-5 py-2 font-medium">Received<span className="font-khmer block">បានទទួល</span></th>
+                    <th className="px-5 py-2 font-medium">Qty (kg)<span className="font-khmer block">បរិមាណ (គីឡូក្រាម)</span></th>
+                    <th className="px-5 py-2 font-medium">Sale Price<span className="font-khmer block">តម្លៃលក់</span></th>
+                    <th className="px-5 py-2 font-medium">Amount<span className="font-khmer block">ទឹកប្រាក់</span></th>
+                    <th className="px-5 py-2 font-medium">Balance<span className="font-khmer block">សមតុល្យ</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -146,8 +146,8 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
                       <td className="px-5 py-2.5 text-slate-500">{r.note || "—"}</td>
                       <td className="px-5 py-2.5 text-slate-600">{r.partyName}{r.driver_name ? ` · ${r.driver_name}` : ""}</td>
                       <td className={`px-5 py-2.5 font-medium ${r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
-                        {r.payStatus === "paid" ? "Received" : r.payStatus === "partial" ? "Partial" : "Not Received"}
-                        {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} received</div>}
+                        {r.payStatus === "paid" ? (<>Received<span className="font-khmer block text-xs font-normal">បានទទួល</span></>) : r.payStatus === "partial" ? (<>Partial<span className="font-khmer block text-xs font-normal">ដោយផ្នែក</span></>) : (<>Not Received<span className="font-khmer block text-xs font-normal">មិនទាន់ទទួល</span></>)}
+                        {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} received<span className="font-khmer">បានទទួល</span></div>}
                         {r.payStatus !== "unpaid" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
                       </td>
                       <td className="px-5 py-2.5 text-slate-700">{fmt2(r.quantity_kg)}</td>
@@ -157,14 +157,14 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
                     </tr>
                   ))}
                   {g.rows.length === 0 && (
-                    <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">No sales for this type yet.</td></tr>
+                    <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">No sales for this type yet.<span className="font-khmer block">មិនទាន់មានការលក់សម្រាប់ប្រភេទនេះនៅឡើយទេ។</span></td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           ))}
           {byItemGroups.length === 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">No sales yet.</div>
+            <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">No sales yet.<span className="font-khmer block">មិនទាន់មានការលក់នៅឡើយទេ។</span></div>
           )}
         </div>
       ) : (
@@ -173,10 +173,10 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                  <th className="px-5 py-3 font-medium">{groupBy === "party" ? "Customer" : groupBy === "product" ? "Paddy Type" : "Location"}</th>
-                  <th className="px-5 py-3 font-medium">Transactions</th>
-                  <th className="px-5 py-3 font-medium">Qty (kg)</th>
-                  <th className="px-5 py-3 font-medium">Amount</th>
+                  <th className="px-5 py-3 font-medium">{groupBy === "party" ? (<>Customer<span className="font-khmer block">អតិថិជន</span></>) : groupBy === "product" ? (<>Paddy Type<span className="font-khmer block">ប្រភេទស្រូវ</span></>) : (<>Location<span className="font-khmer block">ទីតាំង</span></>)}</th>
+                  <th className="px-5 py-3 font-medium">Transactions<span className="font-khmer block">ប្រតិបត្តិការ</span></th>
+                  <th className="px-5 py-3 font-medium">Qty (kg)<span className="font-khmer block">បរិមាណ (គីឡូក្រាម)</span></th>
+                  <th className="px-5 py-3 font-medium">Amount<span className="font-khmer block">ទឹកប្រាក់</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -188,20 +188,20 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
                     <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(g.amount)}</td>
                   </tr>
                 ))}
-                {grouped.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No sales yet.</td></tr>}
+                {grouped.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No sales yet.<span className="font-khmer block">មិនទាន់មានការលក់នៅឡើយទេ។</span></td></tr>}
               </tbody>
             </table>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                  <th className="px-5 py-3 font-medium">Date</th>
-                  <th className="px-5 py-3 font-medium">Receipt</th>
-                  <th className="px-5 py-3 font-medium">Customer</th>
-                  <th className="px-5 py-3 font-medium">Paddy Type</th>
-                  <th className="px-5 py-3 font-medium">Location</th>
-                  <th className="px-5 py-3 font-medium">Qty (kg)</th>
-                  <th className="px-5 py-3 font-medium">Amount</th>
+                  <th className="px-5 py-3 font-medium">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></th>
+                  <th className="px-5 py-3 font-medium">Receipt<span className="font-khmer block">បង្កាន់ដៃ</span></th>
+                  <th className="px-5 py-3 font-medium">Customer<span className="font-khmer block">អតិថិជន</span></th>
+                  <th className="px-5 py-3 font-medium">Paddy Type<span className="font-khmer block">ប្រភេទស្រូវ</span></th>
+                  <th className="px-5 py-3 font-medium">Location<span className="font-khmer block">ទីតាំង</span></th>
+                  <th className="px-5 py-3 font-medium">Qty (kg)<span className="font-khmer block">បរិមាណ (គីឡូក្រាម)</span></th>
+                  <th className="px-5 py-3 font-medium">Amount<span className="font-khmer block">ទឹកប្រាក់</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -216,7 +216,7 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
                     <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No sales yet.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No sales yet.<span className="font-khmer block">មិនទាន់មានការលក់នៅឡើយទេ។</span></td></tr>}
               </tbody>
             </table>
           )}

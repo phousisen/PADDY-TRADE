@@ -176,13 +176,13 @@ export default function Receipt({ tx, onDone }) {
   return (
     <div id="receipt-page" className="flex h-screen flex-1 flex-col overflow-hidden">
       <div className="no-print flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
-        <h1 className="text-lg font-semibold text-slate-800">Receipt</h1>
+        <h1 className="text-lg font-semibold text-slate-800">Receipt<span className="font-khmer block text-xs font-normal text-slate-400">បង្កាន់ដៃ</span></h1>
         <div className="flex gap-2">
           <button onClick={onDone} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50">
             <ArrowLeft size={14} /> {t("back")}
           </button>
           <button onClick={() => window.print()} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-            <Printer size={14} /> Print
+            <Printer size={14} /> Print<span className="font-khmer">&nbsp;បោះពុម្ព</span>
           </button>
         </div>
       </div>

@@ -32,6 +32,18 @@ const TYPE_LABELS = {
   loan_out: "Bank loan repaid",
 };
 
+const TYPE_LABELS_KM = {
+  pay_supplier: "ទូទាត់ដល់អ្នកផ្គត់ផ្គង់",
+  receive_customer: "ទទួលពីអតិថិជន",
+  expense: "ការចំណាយ",
+  transfer: "ការផ្ទេរប្រាក់",
+  journal: "ធាតុទិនានុប្បវត្តិ",
+  capital_in: "ដើមទុនដៃគូចូល",
+  capital_out: "ដើមទុនដៃគូចេញ",
+  loan_in: "កម្ចីធនាគារដកយក",
+  loan_out: "សងកម្ចីធនាគារ",
+};
+
 const IS_INFLOW = {
   pay_supplier: false,
   receive_customer: true,
@@ -65,7 +77,7 @@ function AddEntryForm({ profile, onAdd }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-        <Plus size={14} /> Add Cash Entry
+        <Plus size={14} /> Add Cash Entry<span className="font-khmer block text-xs font-normal">បន្ថែមធាតុសាច់ប្រាក់</span>
       </button>
     );
   }
@@ -73,26 +85,26 @@ function AddEntryForm({ profile, onAdd }) {
   return (
     <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div>
-        <label className="mb-1 block text-xs text-slate-500">Type</label>
+        <label className="mb-1 block text-xs text-slate-500">Type<span className="font-khmer block">ប្រភេទ</span></label>
         <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-          <option value="expense">Expense (money out)</option>
-          <option value="transfer">Fund Transfer</option>
-          <option value="journal">Journal Adjustment</option>
+          <option value="expense">Expense (money out) — ការចំណាយ (ប្រាក់ចេញ)</option>
+          <option value="transfer">Fund Transfer — ការផ្ទេរប្រាក់</option>
+          <option value="journal">Journal Adjustment — ការកែតម្រូវទិនានុប្បវត្តិ</option>
         </select>
       </div>
       <div>
-        <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
+        <label className="mb-1 block text-xs text-slate-500">Amount (៛)<span className="font-khmer block">ទឹកប្រាក់ (៛)</span></label>
         <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
       </div>
       <div className="flex-1 min-w-[160px]">
-        <label className="mb-1 block text-xs text-slate-500">Note</label>
+        <label className="mb-1 block text-xs text-slate-500">Note<span className="font-khmer block">កំណត់ចំណាំ</span></label>
         <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. fuel, staff pay" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
       </div>
       <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-        {saving ? "Saving..." : "Save"}
+        {saving ? (<>Saving...<span className="font-khmer block text-xs font-normal">កំពុងរក្សាទុក...</span></>) : (<>Save<span className="font-khmer block text-xs font-normal">រក្សាទុក</span></>)}
       </button>
       <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
-        Cancel
+        Cancel<span className="font-khmer block text-xs">បោះបង់</span>
       </button>
     </form>
   );
@@ -197,21 +209,21 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[11px]">ព្យាយាមម្តងទៀត</span></button>
         </div>
       )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-4">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-xs text-slate-400">Total In</p>
+            <p className="text-xs text-slate-400">Total In<span className="font-khmer block">ចំណូលសរុប</span></p>
             <p className="text-xl font-bold text-emerald-600">{fmtRiel(totalIn)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-xs text-slate-400">Total Out</p>
+            <p className="text-xs text-slate-400">Total Out<span className="font-khmer block">ចំណាយសរុប</span></p>
             <p className="text-xl font-bold text-rose-600">{fmtRiel(totalOut)}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-xs text-slate-400">Net</p>
+            <p className="text-xs text-slate-400">Net<span className="font-khmer block">សុទ្ធ</span></p>
             <p className={`text-xl font-bold ${totalIn - totalOut >= 0 ? "text-slate-800" : "text-rose-600"}`}>{fmtRiel(totalIn - totalOut)}</p>
           </div>
         </div>
@@ -223,20 +235,27 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
         balance and there is no starting/opening balance set anywhere in the system. A big negative number usually just means outgoing payments
         were recorded in this period without matching money-in entries also being recorded here (for example, capital or loan funds that came in
         before this date range, or that were received but never logged as a payment). Click any row linked to a transaction to open its receipt.
+        <span className="font-khmer block mt-1">
+          "សរុបបន្តបន្ទាប់" គ្រាន់តែបូកសរុបធាតុដែលបានរាយខាងក្រោម (តាមចន្លោះកាលបរិច្ឆេទ/ទីតាំងដែលបានត្រង)
+          — វាមិនមែនជាសមតុល្យគណនីធនាគារពិតប្រាកដទេ ហើយគ្មានសមតុល្យចាប់ផ្តើមកំណត់នៅក្នុងប្រព័ន្ធនោះទេ។
+          លេខអវិជ្ជមានច្រើនតែមានន័យថា ការទូទាត់ចេញត្រូវបានកត់ត្រាក្នុងអំឡុងពេលនេះ ដោយគ្មានធាតុប្រាក់ចូលដែលត្រូវគ្នាត្រូវបានកត់ត្រានៅទីនេះដែរ
+          (ឧទាហរណ៍ ដើមទុន ឬថវិកាកម្ចីដែលចូលមុនចន្លោះកាលបរិច្ឆេទនេះ ឬដែលបានទទួលប៉ុន្តែមិនដែលបានកត់ត្រាជាការទូទាត់)។
+          ចុចលើជួរណាមួយដែលភ្ជាប់ជាមួយប្រតិបត្តិការ ដើម្បីបើកបង្កាន់ដៃរបស់វា។
+        </span>
       </p>
 
       <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-              <th className="px-5 py-3 font-medium">Date</th>
-              <th className="px-5 py-3 font-medium">Time</th>
-              <th className="px-5 py-3 font-medium">Type</th>
-              <th className="px-5 py-3 font-medium">Paid to / Received from</th>
-              <th className="px-5 py-3 font-medium">Note</th>
-              <th className="px-5 py-3 font-medium">Recorded by</th>
-              <th className="px-5 py-3 font-medium">Amount</th>
-              <th className="px-5 py-3 font-medium">Running Total</th>
+              <th className="px-5 py-3 font-medium">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></th>
+              <th className="px-5 py-3 font-medium">Time<span className="font-khmer block">ពេលវេលា</span></th>
+              <th className="px-5 py-3 font-medium">Type<span className="font-khmer block">ប្រភេទ</span></th>
+              <th className="px-5 py-3 font-medium">Paid to / Received from<span className="font-khmer block">ទូទាត់ទៅ / ទទួលពី</span></th>
+              <th className="px-5 py-3 font-medium">Note<span className="font-khmer block">កំណត់ចំណាំ</span></th>
+              <th className="px-5 py-3 font-medium">Recorded by<span className="font-khmer block">កត់ត្រាដោយ</span></th>
+              <th className="px-5 py-3 font-medium">Amount<span className="font-khmer block">ទឹកប្រាក់</span></th>
+              <th className="px-5 py-3 font-medium">Running Total<span className="font-khmer block">សរុបបន្តបន្ទាប់</span></th>
             </tr>
           </thead>
           <tbody>
@@ -249,7 +268,7 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
               >
                 <td className="px-5 py-3 text-slate-500">{p.pay_date}</td>
                 <td className="px-5 py-3 text-slate-500">{cambodiaTime(p.created_at)}</td>
-                <td className="px-5 py-3 text-slate-700">{TYPE_LABELS[p.type] || p.type}</td>
+                <td className="px-5 py-3 text-slate-700">{TYPE_LABELS[p.type] || p.type}{TYPE_LABELS_KM[p.type] && <span className="font-khmer block text-[11px] text-slate-400">{TYPE_LABELS_KM[p.type]}</span>}</td>
                 <td className="px-5 py-3 text-slate-700">{p.partyName || "—"}{p.txCode ? <span className="ml-1 text-xs text-slate-400">({p.txCode})</span> : null}</td>
                 <td className="px-5 py-3 text-slate-600">{p.memo || "—"}</td>
                 <td className="px-5 py-3 text-slate-500">{p.createdByName}</td>
@@ -257,8 +276,8 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
                 <td className="px-5 py-3 text-slate-700">{fmtRiel(p.balance)}</td>
               </tr>
             ))}
-            {loading && ledger.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-            {ledger.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No cash movements recorded yet.</td></tr>}
+            {loading && ledger.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+            {ledger.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No cash movements recorded yet.<span className="font-khmer block">មិនទាន់មានចលនាសាច់ប្រាក់ត្រូវបានកត់ត្រានៅឡើយទេ។</span></td></tr>}
           </tbody>
         </table>
       </div>

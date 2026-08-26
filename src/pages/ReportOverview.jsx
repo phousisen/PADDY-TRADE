@@ -117,7 +117,7 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     });
   }, [activeTxs, filteredStations, capitalEntries, loanEntries, payments]);
 
-  const Row = ({ label, value, bold, indent, onClick }) => (
+  const Row = ({ label, labelKm, value, bold, indent, onClick }) => (
     <div
       onClick={onClick}
       role={onClick ? "button" : undefined}
@@ -126,7 +126,10 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
       title={onClick ? "Click to view details" : undefined}
       className={`group flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""} ${onClick ? "cursor-pointer rounded-md px-1.5 -mx-1.5 hover:bg-brand-50" : ""}`}
     >
-      <span className={`${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${onClick ? "group-hover:text-brand-700 group-hover:underline" : ""}`}>{label}</span>
+      <span className={`${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${onClick ? "group-hover:text-brand-700 group-hover:underline" : ""}`}>
+        {label}
+        {labelKm && <span className="font-khmer block text-[10px] font-normal">{labelKm}</span>}
+      </span>
       <span className={bold ? "font-semibold text-slate-800" : "text-slate-700"}>{fmt(value)} ៛</span>
     </div>
   );
@@ -135,31 +138,31 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     <div>
       <div className="grid grid-cols-2 gap-5">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-700"><TrendingUp size={16} className="text-brand-600" /> Profit &amp; Loss</h3>
-          <Row label="Total Sales (Revenue)" value={calc.totalSell} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
-          <Row label="Total Purchases (COGS)" value={-calc.totalBuy} onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
-          <Row label="Gross Profit" value={calc.grossProfit} bold />
+          <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-700"><TrendingUp size={16} className="text-brand-600" /> Profit &amp; Loss<span className="font-khmer block text-xs font-normal text-slate-400">ចំណេញ-ខាត</span></h3>
+          <Row label="Total Sales (Revenue)" labelKm="ចំណូលលក់សរុប" value={calc.totalSell} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
+          <Row label="Total Purchases (COGS)" labelKm="ថ្លៃដើមទំនិញលក់ (ការទិញសរុប)" value={-calc.totalBuy} onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
+          <Row label="Gross Profit" labelKm="ចំណេញដុល" value={calc.grossProfit} bold />
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Balance Sheet</h3>
+            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Balance Sheet<span className="font-khmer block text-xs font-normal text-slate-400">តារាងតុល្យការ</span></h3>
             {onNavigate && (
-              <button onClick={() => onNavigate("balancesheet")} className="text-xs font-medium text-brand-600 hover:underline">Full statement →</button>
+              <button onClick={() => onNavigate("balancesheet")} className="text-xs font-medium text-brand-600 hover:underline">Full statement →<span className="font-khmer block text-[10px]">មើលរបាយការណ៍ពេញលេញ →</span></button>
             )}
           </div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Assets</p>
-          <Row label="Inventory on hand" value={calc.inventoryValue} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
-          <Row label="Accounts Receivable" value={calc.accountsReceivable} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
-          <Row label="Cash (estimate)" value={Math.max(0, calc.cashEstimate)} indent onClick={onNavigate ? () => onNavigate("cashflow") : undefined} />
-          <Row label="Total Assets" value={calc.totalAssets} bold />
-          <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Liabilities</p>
-          <Row label="Accounts Payable" value={calc.accountsPayable} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
-          <Row label="Bank Loans" value={calc.bankLoansOutstanding} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
-          <Row label="Total Liabilities" value={calc.totalLiabilities} bold />
-          <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Equity</p>
-          <Row label="Partner Capital" value={calc.partnerCapital} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
-          <Row label="Retained Earnings" value={calc.retainedEarnings} indent />
-          <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5"><Row label="Equity (net worth)" value={calc.equity} bold /></div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Assets<span className="font-khmer block normal-case tracking-normal">ទ្រព្យសកម្ម</span></p>
+          <Row label="Inventory on hand" labelKm="ស្តុកទំនិញនៅសល់" value={calc.inventoryValue} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
+          <Row label="Accounts Receivable" labelKm="គណនីត្រូវទទួល" value={calc.accountsReceivable} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
+          <Row label="Cash (estimate)" labelKm="សាច់ប្រាក់ (ប៉ាន់ស្មាន)" value={Math.max(0, calc.cashEstimate)} indent onClick={onNavigate ? () => onNavigate("cashflow") : undefined} />
+          <Row label="Total Assets" labelKm="ទ្រព្យសកម្មសរុប" value={calc.totalAssets} bold />
+          <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Liabilities<span className="font-khmer block normal-case tracking-normal">បំណុល</span></p>
+          <Row label="Accounts Payable" labelKm="គណនីត្រូវបង់" value={calc.accountsPayable} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
+          <Row label="Bank Loans" labelKm="ប្រាក់កម្ចីធនាគារ" value={calc.bankLoansOutstanding} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
+          <Row label="Total Liabilities" labelKm="បំណុលសរុប" value={calc.totalLiabilities} bold />
+          <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Equity<span className="font-khmer block normal-case tracking-normal">ដើមទុន</span></p>
+          <Row label="Partner Capital" labelKm="ដើមទុនដៃគូ" value={calc.partnerCapital} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
+          <Row label="Retained Earnings" labelKm="ប្រាក់ចំណេញរក្សាទុក" value={calc.retainedEarnings} indent />
+          <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5"><Row label="Equity (net worth)" labelKm="ដើមទុន (តម្លៃសុទ្ធ)" value={calc.equity} bold /></div>
         </div>
       </div>
 
@@ -167,17 +170,17 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
         <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
             <MapPin size={16} className="text-brand-600" />
-            <h3 className="font-semibold text-slate-700">By Location</h3>
+            <h3 className="font-semibold text-slate-700">By Location<span className="font-khmer block text-xs font-normal">តាមទីតាំង</span></h3>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-2 font-medium">Location</th>
-                <th className="px-5 py-2 font-medium">Sales</th>
-                <th className="px-5 py-2 font-medium">Purchases</th>
-                <th className="px-5 py-2 font-medium">Profit</th>
-                <th className="px-5 py-2 font-medium">Inventory</th>
-                <th className="px-5 py-2 font-medium">Payable</th>
+                <th className="px-5 py-2 font-medium">Location<span className="font-khmer block font-normal">ទីតាំង</span></th>
+                <th className="px-5 py-2 font-medium">Sales<span className="font-khmer block font-normal">ការលក់</span></th>
+                <th className="px-5 py-2 font-medium">Purchases<span className="font-khmer block font-normal">ការទិញ</span></th>
+                <th className="px-5 py-2 font-medium">Profit<span className="font-khmer block font-normal">ចំណេញ</span></th>
+                <th className="px-5 py-2 font-medium">Inventory<span className="font-khmer block font-normal">ស្តុកទំនិញ</span></th>
+                <th className="px-5 py-2 font-medium">Payable<span className="font-khmer block font-normal">ត្រូវបង់</span></th>
               </tr>
             </thead>
             <tbody>
@@ -198,8 +201,16 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
 
       <div className="mt-5 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         <Wallet size={14} className="mt-0.5 shrink-0" />
-        Simplified model: inventory is valued at average purchase cost, and cost of goods sold is approximated from total purchases rather than matched item-by-item.
-        {onNavigate && <span className="ml-1">Tip: click any Sales, Purchases, or Balance Sheet line above to jump straight to its detail report.</span>}
+        <span>
+          Simplified model: inventory is valued at average purchase cost, and cost of goods sold is approximated from total purchases rather than matched item-by-item.
+          <span className="font-khmer block">គំរូសាមញ្ញ៖ ស្តុកទំនិញត្រូវបានវាយតម្លៃតាមថ្លៃទិញជាមធ្យម ហើយថ្លៃដើមទំនិញលក់ត្រូវបានប៉ាន់ស្មានពីការទិញសរុប មិនមែនផ្គូផ្គងម្តងមួយៗទេ។</span>
+          {onNavigate && (
+            <span className="ml-1">
+              Tip: click any Sales, Purchases, or Balance Sheet line above to jump straight to its detail report.
+              <span className="font-khmer block">ជំនួយ៖ ចុចលើបន្ទាត់ណាមួយក្នុងផ្នែកការលក់ ការទិញ ឬតារាងតុល្យការខាងលើ ដើម្បីមើលរបាយការណ៍លម្អិតភ្លាមៗ។</span>
+            </span>
+          )}
+        </span>
       </div>
     </div>
   );

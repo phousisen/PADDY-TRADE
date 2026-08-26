@@ -484,7 +484,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       </div>
       {isAdmin && (
         <div className="mb-3">
-          <label className={labelCls}>Location</label>
+          <label className={labelCls}>Location<span className="font-khmer block text-brand-600">ទីតាំង</span></label>
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={inputCls}>
             <option value="">Select location…</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -500,7 +500,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           <div>
             <label className={labelCls}>Quality Ticket No.<span className="font-khmer block text-brand-600">លេខសំបុត្រគុណភាព</span></label>
             <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
-            <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong</p>
+            <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong<span className="font-khmer block">បានស្នើដោយស្វ័យប្រវត្តិពីលេខចុងក្រោយ — សូមកែប្រែប្រសិនបើខុស</span></p>
           </div>
         )}
         <div className={type === "BUY" ? "" : "col-span-2"}><label className={labelCls}>Vehicle Plate Number<span className="font-khmer block text-brand-600">លេខផ្លាកយានយន្ត</span></label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
@@ -514,7 +514,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 <img src={savedBank.bankQrUrl} alt="Saved bank QR code" className="h-12 w-12 flex-shrink-0 rounded border border-emerald-200 object-cover" />
               )}
               <div className="text-xs text-emerald-700">
-                <p className="font-semibold">Saved payment on file — filled in automatically</p>
+                <p className="font-semibold">Saved payment on file — filled in automatically<span className="font-khmer block font-normal">ព័ត៌មានទូទាត់ដែលបានរក្សាទុក — បំពេញដោយស្វ័យប្រវត្តិ</span></p>
                 <p>{savedBank.bankName || "—"}{savedBank.bankAccount ? ` · ${savedBank.bankAccount}` : ""}</p>
               </div>
             </div>
@@ -533,7 +533,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 className="mb-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
                 title={`Fill in name + phone for ${effectivePreviousParty.name}`}
               >
-                Use previous {type === "BUY" ? "seller" : "buyer"}: {effectivePreviousParty.name}
+                <span>Use previous {type === "BUY" ? "seller" : "buyer"}: {effectivePreviousParty.name}<span className="font-khmer block text-[10px] font-normal">{type === "BUY" ? "អ្នកលក់" : "អ្នកទិញ"}មុន៖ {effectivePreviousParty.name}</span></span>
               </button>
             )}
           </div>
@@ -564,7 +564,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 onClick={() => { setProductIsCustom(false); setProductName(""); }}
                 className="mt-1 text-xs font-medium text-brand-600 hover:underline"
               >
-                ← Back to list
+                ← Back to list<span className="font-khmer block">ត្រឡប់ទៅបញ្ជី</span>
               </button>
             </div>
           ) : (
@@ -581,7 +581,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
               <option value="__other__">+ Add new type…</option>
             </select>
           )}
-          {!productIsCustom && <p className="mt-1 text-[11px] text-slate-400">Tip: click the list, then press a number key to jump straight to it</p>}
+          {!productIsCustom && <p className="mt-1 text-[11px] text-slate-400">Tip: click the list, then press a number key to jump straight to it<span className="font-khmer block">គន្លឹះ៖ ចុចលើបញ្ជី រួចចុចលេខដើម្បីលោតទៅផលិតផលនោះភ្លាមៗ</span></p>}
         </div>
         <div><label className={labelCls}>Driver Name<span className="font-khmer block text-brand-600">ឈ្មោះអ្នកបើកបរ</span></label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
         <div className="col-span-2">
@@ -604,7 +604,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                   onClick={() => { setRecordedByIsCustom(false); setRecordedByName(""); }}
                   className="mt-1 text-xs font-medium text-brand-600 hover:underline"
                 >
-                  ← Back to list
+                  ← Back to list<span className="font-khmer block">ត្រឡប់ទៅបញ្ជី</span>
                 </button>
               )}
             </div>
@@ -623,9 +623,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             </select>
           )}
           <p className="mt-1 text-[11px] text-slate-400">
-            {type === "BUY"
-              ? "You're the one buying this paddy on PaddyTrade's behalf — put your name here, not the farmer's."
-              : "You're the one selling this paddy on PaddyTrade's behalf — put your name here, not the buyer's."}
+            {type === "BUY" ? (
+              <>You're the one buying this paddy on PaddyTrade's behalf — put your name here, not the farmer's.<span className="font-khmer block">អ្នកគឺជាអ្នកទិញស្រូវនេះក្នុងនាម PaddyTrade — សូមដាក់ឈ្មោះអ្នកនៅទីនេះ មិនមែនឈ្មោះកសិករទេ។</span></>
+            ) : (
+              <>You're the one selling this paddy on PaddyTrade's behalf — put your name here, not the buyer's.<span className="font-khmer block">អ្នកគឺជាអ្នកលក់ស្រូវនេះក្នុងនាម PaddyTrade — សូមដាក់ឈ្មោះអ្នកនៅទីនេះ មិនមែនឈ្មោះអ្នកទិញទេ។</span></>
+            )}
           </p>
         </div>
       </div>
@@ -651,7 +653,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       <div className="mt-4 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
         <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
-          {saving ? "Saving…" : (<>Save & Print Weigh-In Slip<span className="font-khmer block text-xs font-normal text-emerald-100">រក្សាទុក និង បោះពុម្ពសំបុត្រថ្លឹង</span></>)}
+          {saving ? (<>Saving…<span className="font-khmer block text-xs font-normal text-emerald-100">កំពុងរក្សាទុក...</span></>) : (<>Save & Print Weigh-In Slip<span className="font-khmer block text-xs font-normal text-emerald-100">រក្សាទុក និង បោះពុម្ពសំបុត្រថ្លឹង</span></>)}
         </button>
       </div>
     </Modal>
@@ -794,17 +796,19 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   }
 
   return (
-    <Modal title={`Finish Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate} · ${isBuy ? "Gross" : "Weighed in"}: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
+    <Modal title={<>Finish Ticket {ticket.code}<span className="font-khmer block text-sm font-normal text-slate-500">បញ្ចប់សំបុត្រ {ticket.code}</span></>} subtitle={`${ticket.party_name} · ${ticket.car_plate} · ${isBuy ? "Gross" : "Weighed in"}: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
       {/* 1. Weigh Out — the physical action happening right now. Buy: the
           truck is empty now, having dropped off its paddy. Sell: it's the
           opposite — the truck was empty at weigh-in and is now loaded up
           for delivery to the buyer. */}
       <div className="mb-5">
-        <SectionHeader num={1} title="Weigh Out" hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
+        <SectionHeader num={1} title={<>Weigh Out<span className="font-khmer block text-xs font-normal text-slate-500">ថ្លឹងចេញ</span></>} hint={isBuy ? <>The truck is empty and on the scale right now<span className="font-khmer block">រថយន្តទទេហើយកំពុងនៅលើជញ្ជីងឥឡូវនេះ</span></> : <>The truck is now loaded and on the scale right now<span className="font-khmer block">រថយន្តដឹកទំនិញរួចហើយ និងកំពុងនៅលើជញ្ជីងឥឡូវនេះ</span></>} />
         <WeightField
           locationId={ticket.location_id}
           label={isBuy ? "Tare Weight — empty truck (kg)" : "Weight — loaded truck (kg)"}
+          labelKm={isBuy ? "ទម្ងន់រថយន្ត — រថយន្តទទេ (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តដឹកទំនិញ (គីឡូក្រាម)"}
           scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
+          scaleLabelKm={isBuy ? "ទម្ងន់ជញ្ជីងផ្ទាល់ (រថយន្តទទេ)" : "ទម្ងន់ជញ្ជីងផ្ទាល់ (រថយន្តដឹកទំនិញ)"}
           value={tareWeight}
           onChange={setTareWeight}
           isAdmin={isAdmin}
@@ -813,22 +817,26 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
       {/* 2. Quality — transcribed from the paper ticket */}
       <div className="mb-5">
-        <SectionHeader num={2} title="Quality" hint="The grade and quality readings already agreed on the paper ticket" />
+        <SectionHeader num={2} title={<>Quality<span className="font-khmer block text-xs font-normal text-slate-500">គុណភាព</span></>} hint={<>The grade and quality readings already agreed on the paper ticket<span className="font-khmer block">ថ្នាក់ និងលទ្ធផលគុណភាពដែលបានព្រមព្រៀងរួចហើយនៅលើសំបុត្រក្រដាស</span></>} />
         <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 p-4">
-          <div><label className={labelCls}>Quality Grade</label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Moisture %</label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Mixture %</label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Outthrow %</label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Deduction (kg)</label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Quality Grade<span className="font-khmer block">ថ្នាក់គុណភាព</span></label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Moisture %<span className="font-khmer block">សំណើម %</span></label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Mixture %<span className="font-khmer block">សំណម %</span></label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Outthrow %<span className="font-khmer block">សំណល់ %</span></label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
+          <div><label className={labelCls}>Deduction (kg)<span className="font-khmer block">ការកាត់ (គីឡូក្រាម)</span></label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
         </div>
       </div>
 
       {/* 3. Price & Total — everything that feeds the amount owed, with the running total right below it */}
       <div className="mb-5">
-        <SectionHeader num={3} title="Price & Total" hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
+        <SectionHeader num={3} title={<>Price & Total<span className="font-khmer block text-xs font-normal text-slate-500">តម្លៃ និង សរុប</span></>} hint={isBuy ? <>What this truckload is worth<span className="font-khmer block">តម្លៃទំនិញរបស់រថយន្តនេះ</span></> : <>Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions<span className="font-khmer block">ទុកទទេប្រសិនបើតម្លៃមិនទាន់ព្រមព្រៀងជាមួយអ្នកទិញនៅឡើយ — អាចបន្ថែមពេលក្រោយពីទំព័រប្រតិបត្តិការ</span></>} />
         <div className="rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
           <label className="mb-1 block text-sm font-semibold text-brand-800">
-            {isBuy ? "Price per kg (Riel) — the price agreed on the paper ticket" : "Price per kg (Riel) — optional, if already agreed"}
+            {isBuy ? (
+              <>Price per kg (Riel) — the price agreed on the paper ticket<span className="font-khmer block font-normal text-brand-600">តម្លៃក្នុងមួយគីឡូក្រាម (រៀល) — តម្លៃដែលបានព្រមព្រៀងលើសំបុត្រក្រដាស</span></>
+            ) : (
+              <>Price per kg (Riel) — optional, if already agreed<span className="font-khmer block font-normal text-brand-600">តម្លៃក្នុងមួយគីឡូក្រាម (រៀល) — ស្រេចចិត្ត ប្រសិនបើបានព្រមព្រៀងរួច</span></>
+            )}
           </label>
           <input type="number" min="0" step="1" value={pricePerKg} disabled={!isBuy && priceNotGiven}
             onChange={(e) => setPricePerKg(e.target.value)} placeholder={isBuy ? "e.g. 1090" : "leave blank if not decided yet"}
@@ -837,26 +845,26 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
             <label className="mt-2 flex items-center gap-2 text-xs font-medium text-brand-700">
               <input type="checkbox" checked={priceNotGiven}
                 onChange={(e) => { setPriceNotGiven(e.target.checked); if (e.target.checked) setPricePerKg(""); }} />
-              Price not given yet — sending out to Baitang / another buyer for pricing
+              <span>Price not given yet — sending out to Baitang / another buyer for pricing<span className="font-khmer block font-normal">តម្លៃមិនទាន់កំណត់ — កំពុងបញ្ជូនទៅ Baitang ឬអ្នកទិញផ្សេងទៀតដើម្បីកំណត់តម្លៃ</span></span>
             </label>
           )}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {isBuy && (
-            <div><label className={labelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
+            <div><label className={labelCls}>Staff / Carrying Fee (optional)<span className="font-khmer block">ថ្លៃបុគ្គលិក/ថ្លៃដឹកជញ្ជូន (ស្រេចចិត្ត)</span></label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
           )}
           <div className="flex items-end gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> Tax applicable</label>
+            <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> <span>Tax applicable<span className="font-khmer block">អនុវត្តអាករ</span></span></label>
             {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
           </div>
         </div>
         <div className="mt-3 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
-          {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
+          <div className="flex justify-between"><span className="text-slate-500">Net Weight<span className="font-khmer block">ទម្ងន់សុទ្ធ</span></span><span className="font-medium">{fmt2(netKg)} kg</span></div>
+          {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight<span className="font-khmer block">ទម្ងន់ត្រូវបង់</span></span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
           <div className="flex justify-between border-t border-slate-200 pt-1.5">
-            <span className="font-semibold text-slate-700">Total</span>
+            <span className="font-semibold text-slate-700">Total<span className="font-khmer block font-normal">សរុប</span></span>
             {!isBuy && priceNotGiven ? (
-              <span className="font-bold text-amber-600">Price pending</span>
+              <span className="font-bold text-amber-600">Price pending<span className="font-khmer block text-xs font-normal">តម្លៃមិនទាន់កំណត់</span></span>
             ) : (
               <span className="font-bold text-brand-700">{fmtRiel(total)}</span>
             )}
@@ -866,11 +874,11 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
       {/* 4. Payment Method — decided after the total is known */}
       <div className="mb-5">
-        <SectionHeader num={4} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
+        <SectionHeader num={4} title={<>Payment Method<span className="font-khmer block text-xs font-normal text-slate-500">វិធីទូទាត់</span></>} hint={<>How {ticket.party_name || "this farmer"} will be paid<span className="font-khmer block">តើ {ticket.party_name || "កសិករនេះ"} នឹងទទួលការទូទាត់យ៉ាងណា</span></>} />
         <div className="rounded-lg border border-slate-200 p-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelCls}>Bank (or Cash)</label>
+              <label className={labelCls}>Bank (or Cash)<span className="font-khmer block">ធនាគារ (ឬសាច់ប្រាក់)</span></label>
               <select
                 value={bankIsOther ? "__other__" : bankName}
                 onChange={(e) => {
@@ -887,16 +895,16 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                 <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
               )}
             </div>
-            <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
+            <div><label className={labelCls}>Bank Account<span className="font-khmer block">លេខគណនីធនាគារ</span></label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
           </div>
           {isBuy && bankName && bankName !== "Cash" && (
             <div className="mt-3">
               <PhotoUpload
-                label="Bank QR Code (photo)"
+                label={<>Bank QR Code (photo)<span className="font-khmer block">រូបថតកូដ QR ធនាគារ</span></>}
                 kind="party-bank-qr"
                 url={bankQrUrl}
                 onUploaded={setBankQrUrl}
-                hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
+                hint={<>Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt<span className="font-khmer block">ថតរូបកូដ QR ធនាគាររបស់កសិករ ដើម្បីអាចទូទាត់ដោយផ្ទាល់ពីបង្កាន់ដៃ</span></>}
               />
             </div>
           )}
@@ -905,13 +913,13 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
       {/* 5. Note & Proof — wraps up the ticket; the required photo is the last thing before Save */}
       <div className="mb-1">
-        <SectionHeader num={5} title="Note & Proof" hint="Optional note, and the signed paper ticket for HQ to check against" />
+        <SectionHeader num={5} title={<>Note & Proof<span className="font-khmer block text-xs font-normal text-slate-500">ចំណាំ និង ភស្តុតាង</span></>} hint={<>Optional note, and the signed paper ticket for HQ to check against<span className="font-khmer block">ចំណាំតាមជម្រើស និងសំបុត្រក្រដាសដែលបានចុះហត្ថលេខាសម្រាប់ HQ ត្រួតពិនិត្យ</span></>} />
         <div className="rounded-lg border border-slate-200 p-4">
-          <div className="mb-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
+          <div className="mb-3"><label className={labelCls}>Note<span className="font-khmer block">ចំណាំ</span></label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
           <PhotoUpload
-            label="Photo of the finished, signed paper ticket" kind="receipt"
+            label={<>Photo of the finished, signed paper ticket<span className="font-khmer block">រូបថតសំបុត្រក្រដាសដែលបានបំពេញ និងចុះហត្ថលេខារួច</span></>} kind="receipt"
             url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-            hint="So HQ can check it against what's entered here (optional)"
+            hint={<>So HQ can check it against what's entered here (optional)<span className="font-khmer block">ដើម្បីឱ្យ HQ ត្រួតពិនិត្យផ្ទៀងផ្ទាត់ជាមួយអ្វីដែលបានបញ្ចូលនៅទីនេះ (ស្រេចចិត្ត)</span></>}
           />
         </div>
       </div>
@@ -919,12 +927,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-between gap-2">
         <button onClick={submitDecline} disabled={saving} className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40">
-          <Ban size={14} /> Not Buying
+          <Ban size={14} /> Not Buying<span className="font-khmer block text-[10px] font-normal">មិនទិញ</span>
         </button>
         <div className="flex gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
           <button disabled={saving} onClick={submitFinish} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40">
-            <Check size={14} /> {saving ? "Saving…" : "Save, Print & Finalize"}
+            <Check size={14} /> {saving ? (<>Saving…<span className="font-khmer block text-[10px] font-normal">កំពុងរក្សាទុក...</span></>) : (<>Save, Print & Finalize<span className="font-khmer block text-[10px] font-normal">រក្សាទុក បោះពុម្ព និងបញ្ចប់</span></>)}
           </button>
         </div>
       </div>
@@ -950,14 +958,14 @@ function DeclineModal({ ticket, onClose, onDeclined }) {
   }
 
   return (
-    <Modal title={`Decline Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
-      <p className="mb-3 text-xs text-slate-400">Same as not signing the paper quality ticket — no price, no weigh-out needed. This just keeps a short record of why.</p>
-      <label className={labelCls}>Reason (optional)</label>
+    <Modal title={<>Decline Ticket {ticket.code}<span className="font-khmer block text-sm font-normal text-slate-500">បដិសេធសំបុត្រ {ticket.code}</span></>} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
+      <p className="mb-3 text-xs text-slate-400">Same as not signing the paper quality ticket — no price, no weigh-out needed. This just keeps a short record of why.<span className="font-khmer block">ដូចនឹងការមិនចុះហត្ថលេខាលើសំបុត្រគុណភាពក្រដាស — មិនចាំបាច់មានតម្លៃ ឬថ្លឹងចេញទេ។ វានេះគ្រាន់តែរក្សាកំណត់ត្រាខ្លីៗអំពីមូលហេតុប៉ុណ្ណោះ។</span></p>
+      <label className={labelCls}>Reason (optional)<span className="font-khmer block text-brand-600">ហេតុផល (ស្រេចចិត្ត)</span></label>
       <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} placeholder="e.g. moisture too high" />
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
         <button disabled={saving} onClick={submit} className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40">
-          <Ban size={14} /> {saving ? "Saving…" : "Confirm Decline"}
+          <Ban size={14} /> {saving ? (<>Saving…<span className="font-khmer block text-[10px] font-normal">កំពុងរក្សាទុក...</span></>) : (<>Confirm Decline<span className="font-khmer block text-[10px] font-normal">បញ្ជាក់ការបដិសេធ</span></>)}
         </button>
       </div>
     </Modal>
@@ -1017,9 +1025,9 @@ function TicketSlip({ ticket, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
         <div className="no-print mb-4 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-700">Weigh-In Slip</h3>
+          <h3 className="font-semibold text-slate-700">Weigh-In Slip<span className="font-khmer block text-xs font-normal text-slate-400">សន្លឹកថ្លឹងចូល</span></h3>
           <div className="flex gap-2">
-            <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"><Printer size={13} /> Print</button>
+            <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"><Printer size={13} /> Print<span className="font-khmer">&nbsp;បោះពុម្ព</span></button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
           </div>
         </div>
@@ -1205,7 +1213,7 @@ export default function WeighingTickets() {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Weighing Tickets" subtitle="Weigh in once, finish the ticket once the truck's back and empty" />
+      <Topbar title={<>Weighing Tickets<span className="font-khmer block text-sm font-normal text-slate-500">សំបុត្រថ្លឹង</span></>} subtitle={<>Weigh in once, finish the ticket once the truck's back and empty<span className="font-khmer block">ថ្លឹងចូលម្តង រួចបញ្ចប់សំបុត្រនៅពេលរថយន្តត្រឡប់មកវិញនិងទទេ</span></>} />
 
       {/* The global "unsynced changes" banner in Topbar.jsx now covers this
           on every page — the syncStatus subscription below stays, since
@@ -1216,11 +1224,11 @@ export default function WeighingTickets() {
           <div className="flex gap-1 overflow-x-auto">
             <button onClick={() => setTab("waiting")}
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "waiting" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
-              Weighed In — Out for Quality Check <span className={`rounded-full px-1.5 text-xs ${tab === "waiting" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.waiting.length}</span>
+              <span>Weighed In — Out for Quality Check<span className="font-khmer block text-[10px] font-normal">ថ្លឹងចូលរួច — កំពុងរង់ចាំពិនិត្យគុណភាព</span></span> <span className={`rounded-full px-1.5 text-xs ${tab === "waiting" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.waiting.length}</span>
             </button>
             <button onClick={() => setTab("declined")}
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "declined" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
-              Declined <span className={`rounded-full px-1.5 text-xs ${tab === "declined" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.declined.length}</span>
+              <span>Declined<span className="font-khmer block text-[10px] font-normal">បដិសេធ</span></span> <span className={`rounded-full px-1.5 text-xs ${tab === "declined" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.declined.length}</span>
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -1240,38 +1248,42 @@ export default function WeighingTickets() {
               </select>
             )}
             <button onClick={() => setShowNew(true)} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-              <Plus size={15} /> New Ticket (Weigh In)
+              <Plus size={15} /> <span>New Ticket (Weigh In)<span className="font-khmer block text-[10px] font-normal text-brand-100">សំបុត្រថ្មី (ថ្លឹងចូល)</span></span>
             </button>
           </div>
         </div>
-        {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">A ticket shows up here once it's been weighed in — the queue slip and quality/price decision on paper happen before this, same as today.</p>}
+        {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">A ticket shows up here once it's been weighed in — the queue slip and quality/price decision on paper happen before this, same as today.<span className="font-khmer block">សំបុត្រនឹងបង្ហាញនៅទីនេះនៅពេលបានថ្លឹងចូលរួច — សំបុត្រជួរ និងការសម្រេចគុណភាព/តម្លៃលើក្រដាសកើតឡើងមុននេះ ដូចធម្មតា។</span></p>}
       </div>
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
         {loading ? (
-          <p className="text-center text-sm text-slate-400">Loading…</p>
+          <p className="text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></p>
         ) : grouped[tab]?.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
-            {search.trim() ? "No tickets match that search." : "No tickets here right now."}
+            {search.trim() ? (
+              <>No tickets match that search.<span className="font-khmer block">រកមិនឃើញសំបុត្រដែលត្រូវនឹងការស្វែងរកនេះទេ។</span></>
+            ) : (
+              <>No tickets here right now.<span className="font-khmer block">មិនមានសំបុត្រនៅទីនេះទេឥឡូវនេះ។</span></>
+            )}
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
-              // Left border + badge color follow the same BUY=green /
-              // SELL=blue convention already used on the Transactions page
-              // (tx.type === "BUY" ? brand green : sky blue) — this board
-              // never had that applied, so BUY and SELL cards looked
-              // identical apart from the small text label.
-              <div key={t.id} className={`rounded-xl border border-l-4 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-slate-200 border-l-brand-500" : "border-slate-200 border-l-sky-400"}`}>
+              // Left border + badge color: BUY=green / SELL=red (rose),
+              // matching the same convention used everywhere else this
+              // Buy/Sell distinction shows up (Transactions, Dashboard,
+              // Stock Report, Location Detail, Tax Report). [2026-08-26]
+              // SELL was blue (sky) before — changed to red per request.
+              <div key={t.id} className={`rounded-xl border border-l-4 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-slate-200 border-l-brand-500" : "border-slate-200 border-l-rose-400"}`}>
                 <div className="mb-2 flex items-start justify-between">
                   <div>
                     <p className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-800">
-                      <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${t.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-sky-100 text-sky-700"}`}>
-                        {t.type === "BUY" ? "▲ BUY" : "▼ SELL"}
+                      <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${t.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
+                        {t.type === "BUY" ? <>▲ BUY<span className="font-khmer">&nbsp;ការទិញ</span></> : <>▼ SELL<span className="font-khmer">&nbsp;ការលក់</span></>}
                       </span>
                       {t.code}
                       {pendingCountForTicket(t.id) > 0 && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced<span className="font-khmer">&nbsp;មិនទាន់ធ្វើសមកាលកម្ម</span></span>
                       )}
                     </p>
                     <p className="text-xs text-slate-400">{t.stationName}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
@@ -1281,21 +1293,21 @@ export default function WeighingTickets() {
                 <div className="mb-3 space-y-0.5 text-sm">
                   <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
                   <p className="text-slate-500">{t.product_name}</p>
-                  {t.gross_kg != null && <p className="text-slate-500">Gross: {fmt2(t.gross_kg)} kg {t.grossByName && <span className="text-slate-400">by {t.grossByName}</span>}</p>}
-                  {t.paper_ticket_no && <p className="text-xs text-slate-400">Quality Ticket No. {t.paper_ticket_no}</p>}
-                  {t.recorded_by_name && <p className="text-xs text-slate-400">{t.type === "BUY" ? "Buyer" : "Seller"}: {t.recorded_by_name}</p>}
+                  {t.gross_kg != null && <p className="text-slate-500">Gross: {fmt2(t.gross_kg)} kg {t.grossByName && <span className="text-slate-400">by {t.grossByName}</span>}<span className="font-khmer block">ទម្ងន់សរុប៖ {fmt2(t.gross_kg)} គីឡូក្រាម</span></p>}
+                  {t.paper_ticket_no && <p className="text-xs text-slate-400">Quality Ticket No. {t.paper_ticket_no}<span className="font-khmer block">លេខសំបុត្រគុណភាព {t.paper_ticket_no}</span></p>}
+                  {t.recorded_by_name && <p className="text-xs text-slate-400">{t.type === "BUY" ? "Buyer" : "Seller"}: {t.recorded_by_name}<span className="font-khmer block">{t.type === "BUY" ? "អ្នកទិញ" : "អ្នកលក់"}៖ {t.recorded_by_name}</span></p>}
                 </div>
                 {tab === "waiting" && (
                   <div className="flex gap-2">
                     <button onClick={() => setFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
-                      Finish Ticket <ArrowRight size={14} />
+                      <span>Finish Ticket<span className="font-khmer block text-[10px] font-normal">បញ្ចប់សំបុត្រ</span></span> <ArrowRight size={14} />
                     </button>
                     <button onClick={() => setDeclineTicketRow(t)} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
-                      Decline
+                      Decline<span className="font-khmer block text-[10px]">បដិសេធ</span>
                     </button>
                   </div>
                 )}
-                {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">Declined — {t.price_note || "no reason given"}</p>}
+                {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">Declined — {t.price_note || "no reason given"}<span className="font-khmer block">បដិសេធ — {t.price_note || "មិនបានផ្តល់ហេតុផល"}</span></p>}
               </div>
             ))}
           </div>

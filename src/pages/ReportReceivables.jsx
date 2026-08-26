@@ -97,17 +97,17 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[11px]">ព្យាយាមម្តងទៀត</span></button>
         </div>
       )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs text-slate-400">Total Outstanding</p>
+          <p className="text-xs text-slate-400">Total Outstanding<span className="font-khmer block">ទឹកប្រាក់ជំពាក់សរុប</span></p>
           <p className="text-2xl font-bold text-rose-600">{fmtRiel(totalOutstanding)}</p>
         </div>
         <div className="flex gap-2">
-          {[{ v: "aging", l: "Aging Summary" }, { v: "party", l: `By ${PARTY_LABEL}` }, { v: "location", l: "By Location" }, { v: "detail", l: "Detail" }].map((o) => (
-            <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+          {[{ v: "aging", l: "Aging Summary", lkm: "សេចក្តីសង្ខេបអាយុកាល" }, { v: "party", l: `By ${PARTY_LABEL}`, lkm: "តាមអតិថិជន" }, { v: "location", l: "By Location", lkm: "តាមទីតាំង" }, { v: "detail", l: "Detail", lkm: "ព័ត៌មានលម្អិត" }].map((o) => (
+            <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}<span className="font-khmer block text-[10px] font-normal">{o.lkm}</span></button>
           ))}
         </div>
       </div>
@@ -117,9 +117,9 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Age</th>
-                <th className="px-5 py-3 font-medium">Transactions</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
+                <th className="px-5 py-3 font-medium">Age<span className="font-khmer block">អាយុកាល</span></th>
+                <th className="px-5 py-3 font-medium">Transactions<span className="font-khmer block">ប្រតិបត្តិការ</span></th>
+                <th className="px-5 py-3 font-medium">Amount Owed<span className="font-khmer block">ទឹកប្រាក់ជំពាក់</span></th>
               </tr>
             </thead>
             <tbody>
@@ -137,9 +137,9 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">{PARTY_LABEL}</th>
-                <th className="px-5 py-3 font-medium">Transactions</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
+                <th className="px-5 py-3 font-medium">{PARTY_LABEL}<span className="font-khmer block">អតិថិជន</span></th>
+                <th className="px-5 py-3 font-medium">Transactions<span className="font-khmer block">ប្រតិបត្តិការ</span></th>
+                <th className="px-5 py-3 font-medium">Amount Owed<span className="font-khmer block">ទឹកប្រាក់ជំពាក់</span></th>
               </tr>
             </thead>
             <tbody>
@@ -150,8 +150,8 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
                 </tr>
               ))}
-              {loading && byParty.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {byParty.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && byParty.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+              {byParty.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.<span className="font-khmer block">មិនមានជំពាក់ទេ។</span></td></tr>}
             </tbody>
           </table>
         )}
@@ -159,9 +159,9 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Transactions</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
+                <th className="px-5 py-3 font-medium">Location<span className="font-khmer block">ទីតាំង</span></th>
+                <th className="px-5 py-3 font-medium">Transactions<span className="font-khmer block">ប្រតិបត្តិការ</span></th>
+                <th className="px-5 py-3 font-medium">Amount Owed<span className="font-khmer block">ទឹកប្រាក់ជំពាក់</span></th>
               </tr>
             </thead>
             <tbody>
@@ -172,8 +172,8 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
                 </tr>
               ))}
-              {loading && byLocation.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {byLocation.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && byLocation.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+              {byLocation.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.<span className="font-khmer block">មិនមានជំពាក់ទេ។</span></td></tr>}
             </tbody>
           </table>
         )}
@@ -181,12 +181,12 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Receipt</th>
-                <th className="px-5 py-3 font-medium">{PARTY_LABEL}</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Age</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
+                <th className="px-5 py-3 font-medium">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></th>
+                <th className="px-5 py-3 font-medium">Receipt<span className="font-khmer block">បង្កាន់ដៃ</span></th>
+                <th className="px-5 py-3 font-medium">{PARTY_LABEL}<span className="font-khmer block">អតិថិជន</span></th>
+                <th className="px-5 py-3 font-medium">Location<span className="font-khmer block">ទីតាំង</span></th>
+                <th className="px-5 py-3 font-medium">Age<span className="font-khmer block">អាយុកាល</span></th>
+                <th className="px-5 py-3 font-medium">Amount Owed<span className="font-khmer block">ទឹកប្រាក់ជំពាក់</span></th>
               </tr>
             </thead>
             <tbody>
@@ -200,8 +200,8 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.remaining)}</td>
                 </tr>
               ))}
-              {loading && outstanding.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {outstanding.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && outstanding.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+              {outstanding.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.<span className="font-khmer block">មិនមានជំពាក់ទេ។</span></td></tr>}
             </tbody>
           </table>
         )}

@@ -50,7 +50,7 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-        <Plus size={14} /> Add Capital Entry
+        <Plus size={14} /> Add Capital Entry<span className="font-khmer block text-xs">បន្ថែមធាតុមូលធន</span>
       </button>
     );
   }
@@ -59,14 +59,14 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
     <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Location</label>
+          <label className="mb-1 block text-xs text-slate-500">Location<span className="font-khmer block">ទីតាំង</span></label>
           <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setPartnerId(""); }}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Partner</label>
+          <label className="mb-1 block text-xs text-slate-500">Partner<span className="font-khmer block">ដៃគូ</span></label>
           <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
             <option value="">— new partner below —</option>
@@ -75,13 +75,13 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
         </div>
         {!partnerId && (
           <div>
-            <label className="mb-1 block text-xs text-slate-500">New partner name</label>
+            <label className="mb-1 block text-xs text-slate-500">New partner name<span className="font-khmer block">ឈ្មោះដៃគូថ្មី</span></label>
             <input value={newPartnerName} onChange={(e) => setNewPartnerName(e.target.value)} placeholder="e.g. Mr. Sopheak"
               className="w-40 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
         )}
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Type</label>
+          <label className="mb-1 block text-xs text-slate-500">Type<span className="font-khmer block">ប្រភេទ</span></label>
           <select value={type} onChange={(e) => setType(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
             <option value="contribution">Put capital in</option>
@@ -89,25 +89,25 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
+          <label className="mb-1 block text-xs text-slate-500">Amount (៛)<span className="font-khmer block">ទឹកប្រាក់ (៛)</span></label>
           <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
             className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Date</label>
+          <label className="mb-1 block text-xs text-slate-500">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></label>
           <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div className="flex-1 min-w-[140px]">
-          <label className="mb-1 block text-xs text-slate-500">Note</label>
+          <label className="mb-1 block text-xs text-slate-500">Note<span className="font-khmer block">កំណត់ចំណាំ</span></label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-          {saving ? "Saving..." : "Save"}
+          {saving ? <>Saving...<span className="font-khmer block text-xs font-normal">កំពុងរក្សាទុក...</span></> : <>Save<span className="font-khmer block text-xs font-normal">រក្សាទុក</span></>}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
-          Cancel
+          Cancel<span className="font-khmer block text-xs">បោះបង់</span>
         </button>
       </div>
     </form>
@@ -141,7 +141,7 @@ function AddLoanEntryForm({ locations, onAdd }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-        <Plus size={14} /> Add Loan Entry
+        <Plus size={14} /> Add Loan Entry<span className="font-khmer block text-xs">បន្ថែមធាតុកម្ចី</span>
       </button>
     );
   }
@@ -150,19 +150,19 @@ function AddLoanEntryForm({ locations, onAdd }) {
     <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Location</label>
+          <label className="mb-1 block text-xs text-slate-500">Location<span className="font-khmer block">ទីតាំង</span></label>
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Bank / Lender</label>
+          <label className="mb-1 block text-xs text-slate-500">Bank / Lender<span className="font-khmer block">ធនាគារ / ម្ចាស់បំណុល</span></label>
           <input value={lenderName} onChange={(e) => setLenderName(e.target.value)} placeholder="e.g. ABA Bank"
             className="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Type</label>
+          <label className="mb-1 block text-xs text-slate-500">Type<span className="font-khmer block">ប្រភេទ</span></label>
           <select value={type} onChange={(e) => setType(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
             <option value="borrow">Borrowed (money in)</option>
@@ -170,25 +170,25 @@ function AddLoanEntryForm({ locations, onAdd }) {
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
+          <label className="mb-1 block text-xs text-slate-500">Amount (៛)<span className="font-khmer block">ទឹកប្រាក់ (៛)</span></label>
           <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
             className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Date</label>
+          <label className="mb-1 block text-xs text-slate-500">Date<span className="font-khmer block">កាលបរិច្ឆេទ</span></label>
           <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div className="flex-1 min-w-[140px]">
-          <label className="mb-1 block text-xs text-slate-500">Note</label>
+          <label className="mb-1 block text-xs text-slate-500">Note<span className="font-khmer block">កំណត់ចំណាំ</span></label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-          {saving ? "Saving..." : "Save"}
+          {saving ? <>Saving...<span className="font-khmer block text-xs font-normal">កំពុងរក្សាទុក...</span></> : <>Save<span className="font-khmer block text-xs font-normal">រក្សាទុក</span></>}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
-          Cancel
+          Cancel<span className="font-khmer block text-xs">បោះបង់</span>
         </button>
       </div>
     </form>
@@ -294,14 +294,14 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry<span className="font-khmer block text-[11px]">ព្យាយាមម្តងទៀត</span></button>
         </div>
       )}
       <div className="mb-8">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <p className="flex items-center gap-1.5 text-xs text-slate-400"><Users size={12} /> Total Partner Capital</p>
+              <p className="flex items-center gap-1.5 text-xs text-slate-400"><Users size={12} /> Total Partner Capital<span className="font-khmer block">មូលធនដៃគូសរុប</span></p>
               <p className={`text-xl font-bold ${totalCapital >= 0 ? "text-slate-800" : "text-rose-600"}`}>{fmtRiel(totalCapital)}</p>
             </div>
           </div>
@@ -312,11 +312,11 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Partner</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Contributed</th>
-                <th className="px-5 py-3 font-medium">Withdrawn</th>
-                <th className="px-5 py-3 font-medium">Net Capital</th>
+                <th className="px-5 py-3 font-medium">Partner<span className="font-khmer block">ដៃគូ</span></th>
+                <th className="px-5 py-3 font-medium">Location<span className="font-khmer block">ទីតាំង</span></th>
+                <th className="px-5 py-3 font-medium">Contributed<span className="font-khmer block">បានវិភាគទាន</span></th>
+                <th className="px-5 py-3 font-medium">Withdrawn<span className="font-khmer block">បានដកចេញ</span></th>
+                <th className="px-5 py-3 font-medium">Net Capital<span className="font-khmer block">មូលធនសុទ្ធ</span></th>
               </tr>
             </thead>
             <tbody>
@@ -329,8 +329,8 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
                   <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.net)}</td>
                 </tr>
               ))}
-              {loading && capByPartner.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {capByPartner.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No partner capital recorded yet.</td></tr>}
+              {loading && capByPartner.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+              {capByPartner.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No partner capital recorded yet.<span className="font-khmer block">មិនទាន់មានកំណត់ត្រាមូលធនដៃគូនៅឡើយទេ។</span></td></tr>}
             </tbody>
           </table>
         </div>
@@ -339,7 +339,7 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
       <div>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="flex items-center gap-1.5 text-xs text-slate-400"><Landmark size={12} /> Total Bank Loans Outstanding</p>
+            <p className="flex items-center gap-1.5 text-xs text-slate-400"><Landmark size={12} /> Total Bank Loans Outstanding<span className="font-khmer block">ចំណុលធនាគារនៅសល់សរុប</span></p>
             <p className={`text-xl font-bold ${totalOutstandingLoans > 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtRiel(totalOutstandingLoans)}</p>
           </div>
           <AddLoanEntryForm locations={locations} onAdd={addLoanEntry} />
@@ -349,11 +349,11 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Bank / Lender</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Borrowed</th>
-                <th className="px-5 py-3 font-medium">Repaid</th>
-                <th className="px-5 py-3 font-medium">Outstanding</th>
+                <th className="px-5 py-3 font-medium">Bank / Lender<span className="font-khmer block">ធនាគារ / ម្ចាស់បំណុល</span></th>
+                <th className="px-5 py-3 font-medium">Location<span className="font-khmer block">ទីតាំង</span></th>
+                <th className="px-5 py-3 font-medium">Borrowed<span className="font-khmer block">បានខ្ចី</span></th>
+                <th className="px-5 py-3 font-medium">Repaid<span className="font-khmer block">បានសង</span></th>
+                <th className="px-5 py-3 font-medium">Outstanding<span className="font-khmer block">នៅសល់</span></th>
               </tr>
             </thead>
             <tbody>
@@ -366,8 +366,8 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
                   <td className={`px-5 py-3 font-medium ${r.outstanding > 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtRiel(r.outstanding)}</td>
                 </tr>
               ))}
-              {loading && loansByLender.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {loansByLender.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No bank loans recorded yet.</td></tr>}
+              {loading && loansByLender.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…<span className="font-khmer block">កំពុងផ្ទុក...</span></td></tr>}
+              {loansByLender.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No bank loans recorded yet.<span className="font-khmer block">មិនទាន់មានកំណត់ត្រាកម្ចីធនាគារនៅឡើយទេ។</span></td></tr>}
             </tbody>
           </table>
         </div>
@@ -375,6 +375,7 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
       <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
         These totals feed directly into the Balance Sheet's Equity (Partner Capital) and Liabilities (Bank Loans) lines.
+        <span className="font-khmer block">ទឹកប្រាក់សរុបទាំងនេះបញ្ចូលដោយផ្ទាល់ទៅក្នុងបន្ទាត់សមធម៌ (មូលធនដៃគូ) និងបំណុល (កម្ចីធនាគារ) នៃតារាងតុល្យការ។</span>
       </div>
     </div>
   );
