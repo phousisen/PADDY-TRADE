@@ -28,9 +28,16 @@ function SyncStatusBanner() {
   // we say so explicitly.
   if (status.stuck) {
     return (
-      <div className="flex items-center gap-2 bg-rose-600 px-6 py-2 text-xs font-semibold text-white">
-        <AlertTriangle size={13} />
-        {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
+      <div className="flex flex-col gap-0.5 bg-rose-600 px-6 py-2 text-xs font-semibold text-white">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={13} />
+          {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
+        </div>
+        {status.lastStuckError && (
+          <div className="pl-[21px] font-normal text-rose-100">
+            Reason shown by the server ({status.stuckCount === 1 ? "1 ticket affected" : `${status.stuckCount} tickets affected`}): "{status.lastStuckError}" — share this exact text with an admin.
+          </div>
+        )}
       </div>
     );
   }
