@@ -1,5 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import { withTimeout } from "../offlineQueue.js";
+
+// Bounds the Supabase cloud-fallback read below — this path only runs when
+// the local bridge (same-machine, effectively instant) didn't answer, e.g.
+// this station's bridge.js isn't running, or someone's checking a location's
+// live weight from a different computer entirely. A degraded-but-not-fully-
+// down connection could otherwise leave this fetch hanging indefinitely,
+// which — combined with poll() re-firing every POLL_INTERVAL_MS — could
+// stack up an unbounded number of pending requests, the same class of bug
+// fixed earlier
+// on the Weighing Tickets and Transactions pages (see BOARD_LOAD_TIMEOUT_MS /
+// LOAD_TIMEOUT_MS there).
+const CLOUD_FALLBACK_TIMEOUT_MS = 2500;
 
 // The small bridge program running at each location (see the
 // weighbridge-agent folder) now also runs its own tiny local web server on
@@ -9,6 +22,19 @@ import { api } from "../api.js";
 // 24/7 whenever the bridge program is running and the scale is plugged in,
 // completely independent of whether this computer's internet is working.
 const LOCAL_BRIDGE_URL = "http://127.0.0.1:8787/weight";
+
+// How often to check the local bridge for a fresh reading. This is a
+// same-machine request answered straight from bridge.js's in-memory state
+// (no disk, no network) — real-world measured cost is low single-digit
+// milliseconds, so polling faster does not meaningfully add load. [2026-08-27]
+// Lowered from 400ms after on-site feedback that the display looked
+// noticeably behind a fast-changing scale — the KELI D2008 sends a new frame
+// roughly every 150-200ms (confirmed from a real debug-mode console capture
+// at the Ping Pong station), so 400ms meant the screen could lag up to
+// ~400ms behind the true reading. 150ms tracks the scale's own frame rate
+// closely enough that further lowering it would not show anything sooner,
+// since bridge.js can't report a reading it hasn't received yet.
+const POLL_INTERVAL_MS = 150;
 
 async function pollLocalBridge() {
   try {
@@ -40,12 +66,12 @@ export function useLiveWeight(locationId) {
   useEffect(() => {
     if (!locationId) { setReading(null); return; }
     let cancelled = false;
-    // [2026-08-26] Pause this 400ms poll (and the re-renders it causes)
-    // while a print is in progress. This component can still be mounted
-    // (just hidden underneath the receipt/slip overlay — see index.css)
-    // when someone prints, and Chrome's print-preview renderer has been
-    // hanging on "Loading preview…" on some station PCs. A component
-    // re-rendering 2.5x/second the whole time a print dialog is open is a
+    // [2026-08-26] Pause this poll (and the re-renders it causes) while a
+    // print is in progress. This component can still be mounted (just
+    // hidden underneath the receipt/slip overlay — see index.css) when
+    // someone prints, and Chrome's print-preview renderer has been hanging
+    // on "Loading preview…" on some station PCs. A component re-rendering
+    // several times a second the whole time a print dialog is open is a
     // plausible way to stop the page from ever reaching the idle state
     // Chrome needs to finish generating a preview — pausing it is a safe,
     // free bit of extra insurance on top of the animation fix in
@@ -57,7 +83,7 @@ export function useLiveWeight(locationId) {
       const local = await pollLocalBridge();
       if (cancelled) return;
       if (local) { setReading(local); return; }
-      const cloud = await api.getLiveWeight(locationId).catch(() => null);
+      const cloud = await withTimeout(api.getLiveWeight(locationId).catch(() => null), CLOUD_FALLBACK_TIMEOUT_MS, null);
       if (!cancelled) setReading(cloud ? { ...cloud, source: "cloud" } : null);
     }
 
@@ -67,11 +93,7 @@ export function useLiveWeight(locationId) {
     window.addEventListener("afterprint", handleAfterPrint);
 
     poll();
-    // Checking the local bridge is a same-machine request (no internet
-    // involved), so it's essentially free — polling it often doesn't add
-    // real load. 400ms makes the on-screen number track the physical scale
-    // closely enough to feel live, instead of visibly stepping every 1.5s.
-    const interval = setInterval(poll, 400);
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);
