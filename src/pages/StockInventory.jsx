@@ -1,20 +1,115 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers } from "lucide-react";
+import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers, Scale } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
+import { useAuth } from "../AuthContext.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
+function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${fmt(n)} ៛`; }
+
+const ADJUSTMENT_REASONS = [
+  { value: "moisture", label: "Moisture loss (dried out)" },
+  { value: "spillage", label: "Spillage / handling loss" },
+  { value: "recount", label: "Recount correction" },
+  { value: "other", label: "Other" },
+];
+
+// Recording what's actually on the scale right now for a location, when
+// it no longer matches the running total the system has been keeping.
+// This is the one place in the app that intentionally SETS stock to an
+// exact number instead of nudging it by a transaction's own weight — see
+// api.recordStockAdjustment. Deliberately online-only (same as renaming a
+// location or editing a role) rather than offline-first like the
+// Weighing Tickets board: this is a periodic reconciliation step done at
+// a normal moment, not something that has to survive a truck arriving
+// mid-storm with no signal.
+function AdjustStockModal({ station, t, onClose, onSubmit }) {
+  const previous = Number(station.current_stock_kg) || 0;
+  const [newStockKg, setNewStockKg] = useState(String(previous));
+  const [reason, setReason] = useState("moisture");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const next = parseFloat(newStockKg);
+  const hasValidNext = newStockKg.trim() !== "" && Number.isFinite(next) && next >= 0;
+  const delta = hasValidNext ? next - previous : 0;
+  const canSubmit = !saving && hasValidNext;
+
+  async function submit() {
+    setError("");
+    setSaving(true);
+    try {
+      await onSubmit({ newStockKg: next, reason, note: note.trim() || null });
+    } catch (err) {
+      // Same reasoning as every other save-with-a-modal in this app: if it
+      // fails (dropped connection, permissions gap), say so instead of
+      // leaving the button stuck on "Saving..." with no explanation.
+      setError(err.message || "Couldn't save this adjustment — check your connection and try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Adjust Stock — {station.name}</h3>
+        <p className="mb-4 text-xs text-slate-400">Use this when what's actually on the scale doesn't match what the system shows — paddy naturally loses some weight over time from moisture drying out, spillage, or handling.</p>
+
+        <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+          <div className="flex justify-between"><span className="text-slate-500">System currently shows</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
+        </div>
+
+        <label className="mb-1 block text-xs text-slate-500">Actual weighed amount now (kg)</label>
+        <input type="number" min="0" step="0.01" value={newStockKg} onChange={(e) => setNewStockKg(e.target.value)} autoFocus
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+
+        {hasValidNext && (
+          <div className={`mb-3 rounded-lg px-3 py-2.5 text-sm ${delta < -0.005 ? "bg-rose-50 text-rose-700" : delta > 0.005 ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
+            {Math.abs(delta) < 0.005 ? "No change from what the system already shows." : `${delta < 0 ? "Loss" : "Gain"} of ${fmt2(Math.abs(delta))} kg will be recorded.`}
+          </div>
+        )}
+
+        <label className="mb-1 block text-xs text-slate-500">Reason</label>
+        <select value={reason} onChange={(e) => setReason(e.target.value)}
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+          {ADJUSTMENT_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+        </select>
+
+        <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Any extra detail worth recording"
+          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+
+        {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
+          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+            {saving ? "Saving…" : "Record Adjustment"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function StockInventory() {
   const { t } = useLanguage();
+  const { profile, session, hasPermission } = useAuth();
+  const isAdmin = profile?.role === "admin";
+  // Defaults to HQ Admin/Owner only until a custom role is explicitly
+  // granted "adjust_stock" from the Roles page — no code change needed to
+  // open this up to station staff later, just a checkbox there.
+  const canAdjustStock = isAdmin || hasPermission("adjust_stock");
   const [stations, setStations] = useState([]);
   const [products, setProducts] = useState([]);
   const [txs, setTxs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
+  const [adjustStation, setAdjustStation] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -34,6 +129,27 @@ export default function StockInventory() {
   }
 
   useEffect(() => { load(); }, []);
+
+  async function submitAdjustment({ newStockKg, reason, note }) {
+    const station = adjustStation;
+    const previousStockKg = Number(station.current_stock_kg) || 0;
+    await api.recordStockAdjustment({
+      locationId: station.id, previousStockKg, newStockKg, reason, note, userId: session.user.id,
+    });
+    // Logged the same way every other significant change in the app is —
+    // edits, cancellations, payments — so it shows up in the Activity Log
+    // alongside everything else, not just as a number that quietly changed.
+    await api.logAudit({
+      action: "adjust_stock",
+      tableName: "locations",
+      recordId: station.id,
+      oldData: { current_stock_kg: previousStockKg },
+      newData: { current_stock_kg: newStockKg, reason, note, stationName: station.name },
+      userId: session.user.id,
+    }).catch(() => {});
+    setAdjustStation(null);
+    load();
+  }
 
   const totalStockKg = stations.reduce((s, x) => s + Number(x.current_stock_kg), 0);
   const totalCapacityKg = stations.reduce((s, x) => s + Number(x.capacity_kg), 0);
@@ -155,6 +271,7 @@ export default function StockInventory() {
                 <th className="px-5 py-2 font-medium">{t("quantity_kg")}</th>
                 <th className="px-5 py-2 font-medium">{t("stock_value_col")}</th>
                 <th className="px-5 py-2 font-medium">{t("updated")}</th>
+                {canAdjustStock && <th className="px-5 py-2 font-medium">Adjust</th>}
                 <th className="px-5 py-2"></th>
               </tr>
             </thead>
@@ -170,13 +287,23 @@ export default function StockInventory() {
                       <td className="px-5 py-3 font-medium text-slate-700">{fmt(s.current_stock_kg)}</td>
                       <td className="px-5 py-3 font-medium text-slate-700">{fmtRiel(stationValue)}</td>
                       <td className="px-5 py-3 text-xs text-slate-400">{s.updated_ago}</td>
+                      {canAdjustStock && (
+                        <td className="px-5 py-3">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setAdjustStation(s); }}
+                            className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                          >
+                            <Scale size={12} /> Adjust
+                          </button>
+                        </td>
+                      )}
                       <td className="px-5 py-3 text-right">
                         {isOpen ? <ChevronDown size={16} className="ml-auto text-slate-400" /> : <ChevronRight size={16} className="ml-auto text-slate-300" />}
                       </td>
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-slate-50 bg-slate-50/60 last:border-0">
-                        <td colSpan={5} className="px-5 py-3">
+                        <td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-3">
                           {rows.length === 0 ? (
                             <p className="py-2 text-center text-xs text-slate-400">No paddy type breakdown yet for this location.</p>
                           ) : (
@@ -206,10 +333,10 @@ export default function StockInventory() {
                 );
               })}
               {loading && stations.length === 0 && (
-                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
               )}
               {stations.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>
+                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>
               )}
             </tbody>
           </table>
@@ -242,6 +369,15 @@ export default function StockInventory() {
           </table>
         </div>
       </main>
+
+      {adjustStation && (
+        <AdjustStockModal
+          station={adjustStation}
+          t={t}
+          onClose={() => setAdjustStation(null)}
+          onSubmit={submitAdjustment}
+        />
+      )}
     </div>
   );
 }

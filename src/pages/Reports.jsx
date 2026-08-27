@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank, TrendingDown } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -14,6 +14,7 @@ import ReportSales from "./ReportSales.jsx";
 import ReportPayables from "./ReportPayables.jsx";
 import ReportReceivables from "./ReportReceivables.jsx";
 import ReportStock from "./ReportStock.jsx";
+import ReportShrinkage from "./ReportShrinkage.jsx";
 import ReportCashFlow from "./ReportCashFlow.jsx";
 import ReportCapital from "./ReportCapital.jsx";
 import ReportTax from "./ReportTax.jsx";
@@ -64,6 +65,7 @@ export default function Reports({ initialTab = "overview" }) {
     { id: "payables", label: "Accounts Payable", icon: HandCoins },
     { id: "receivables", label: "Accounts Receivable", icon: Wallet },
     { id: "stock", label: "Stock", icon: Boxes },
+    { id: "shrinkage", label: "Stock Loss", icon: TrendingDown },
     { id: "cashflow", label: "Cash Flow", icon: Landmark },
     { id: "capital", label: "Capital & Loans", icon: PiggyBank },
     { id: "tax", label: "Tax", icon: ReceiptText },
@@ -118,6 +120,7 @@ export default function Reports({ initialTab = "overview" }) {
         {tab === "payables" && <ReportPayables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "stock" && <ReportStock selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "shrinkage" && <ReportShrinkage selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "capital" && <ReportCapital selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}

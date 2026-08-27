@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -7,7 +7,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase } from "../supabaseClient.js";
-import { onSyncStatusChange } from "../offlineQueue.js";
+import { onSyncStatusChange, getCachedTransactions, mergeServerTransactions, isTransactionPendingSync, getCachedPayments, mergeServerPayments } from "../offlineQueue.js";
 import Receipt from "./Receipt.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -870,10 +870,19 @@ export default function Transactions({ setPage }) {
     // list flash/reload in front of someone reading it.
     if (rows.length === 0) setLoading(true);
     // No connection at all — skip straight to "couldn't reach the server"
-    // instead of waiting out a request that can't succeed. The 15s retry
-    // effect below (and the online/sync-triggered effects) pick this back
-    // up automatically the moment there's a real connection again.
+    // instead of waiting out a request that can't succeed. But unlike
+    // before, this no longer leaves the list empty: fall back to what's
+    // cached on this device — both transactions from the last successful
+    // load, and any Buy/Sell finalized or entered on this device that
+    // hasn't synced yet (see createTransactionOffline/finalizeTicketOffline
+    // in offlineQueue.js). A weigh-in that's already been finalized and
+    // printed was never actually lost while offline — it just had nowhere
+    // to show up on THIS list until now. The 15s retry effect below (and
+    // the online/sync-triggered effects) pick a real reload back up
+    // automatically the moment there's a real connection again.
     if (!navigator.onLine) {
+      setRows(getCachedTransactions().filter((tx) => !type || tx.type === type));
+      setPayments(getCachedPayments());
       setLoadError(true);
       setLoading(false);
       return;
@@ -883,15 +892,25 @@ export default function Transactions({ setPage }) {
         api.getTransactions({ type: type || undefined }),
         api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
       ]);
-      setRows(txData);
-      setPayments(payData);
+      // Folds the server's confirmed rows together with anything still
+      // only-local on this device (see mergeServerTransactions) instead of
+      // just replacing the list outright, so a transaction that finished
+      // syncing a split second before this fetch ran doesn't briefly
+      // disappear, and one still mid-sync isn't overwritten by a stale
+      // server response that predates it. Same idea for payments, so the
+      // Paid/Remaining amounts stay right too.
+      setRows(mergeServerTransactions(txData));
+      setPayments(mergeServerPayments(payData));
       setLoadError(false);
     } catch (err) {
-      // Most likely this device has no real internet right now. Keep
-      // showing whatever was already loaded instead of clearing the list
-      // — load() automatically retries once the connection (or a queued
-      // ticket) actually syncs, see the effect below.
+      // Most likely this device has no real internet right now (or has
+      // WiFi but can't actually reach the server — same thing from here).
+      // Keep showing whatever was already on screen; if this is a fresh
+      // load with nothing there yet, fall back to the on-device cache
+      // rather than an empty list, same as the offline branch above.
       console.warn("[Transactions] load failed:", err?.message || err);
+      setRows((prev) => (prev.length > 0 ? prev : getCachedTransactions().filter((tx) => !type || tx.type === type)));
+      setPayments((prev) => (prev.length > 0 ? prev : getCachedPayments()));
       setLoadError(true);
     } finally {
       setLoading(false);
@@ -1199,7 +1218,14 @@ export default function Transactions({ setPage }) {
                         {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </span>
                     </td>
-                    <td className="px-3 py-3.5"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"}`}>{tx.code}</span></td>
+                    <td className="px-3 py-3.5">
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"}`}>{tx.code}</span>
+                      {isTransactionPendingSync(tx.id) && (
+                        <span title="Saved on this device, still waiting to sync to PaddyTrade's shared database" className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200">
+                          <RefreshCw size={9} /> Not synced
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? "Buyer" : "Seller"}: {tx.recorded_by_name}</p>}</td>

@@ -268,6 +268,14 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
         receiptPhotoUrl, paymentProofUrl,
+        // Display-only fields — see the comment on createTransactionOffline
+        // in offlineQueue.js for why these matter even offline: without
+        // them, this entry would show up blank on the Transactions list
+        // (no farmer/buyer name, no station) until the real sync fills it
+        // in for real.
+        partyName, partyIdNumber: partyPhone || partyIdNumber || "",
+        bankName: partyBankName, bankAccount: partyBankAccount,
+        productName: productQuery.trim(), stationName: myStation?.name,
       });
 
       // Log every new Buy/Sell to the Activity Log so it's traceable later —
