@@ -31,6 +31,7 @@ export const PERMISSION_GROUPS = [
     label: "Locations",
     permissions: [
       { key: "manage_locations", label: "Rename locations, view location details" },
+      { key: "adjust_stock", label: "Record a daily stock adjustment (moisture/spillage loss)" },
     ],
   },
   {

@@ -238,6 +238,58 @@ export const api = {
     return data;
   },
 
+  // Stock adjustments — paddy loses real weight over time (moisture
+  // drying out, spillage, handling loss), so the running total built
+  // purely from Buy/Sell transactions will drift from what's actually on
+  // the scale eventually. This is the one intentional exception to "stock
+  // only moves via a transaction": staff record what's physically there
+  // right now, and the location's stock is reset to match exactly, with
+  // the difference logged (why, how much, by whom, when) instead of just
+  // silently overwritten.
+  async getStockAdjustments({ locationId, startDate, endDate } = {}) {
+    let query = supabase
+      .from("stock_adjustments")
+      .select("*, locations(name), profiles(full_name)")
+      .order("created_at", { ascending: false });
+    if (locationId) query = query.eq("location_id", locationId);
+    // created_at is a full timestamp, not a plain date — bracket the whole
+    // day in Cambodia's own calendar (UTC+7, no DST) rather than UTC's, so
+    // "Today"/"This Week" from the shared Reports date filter lines up
+    // with what staff actually mean by "today" at the station.
+    if (startDate) query = query.gte("created_at", `${startDate}T00:00:00+07:00`);
+    if (endDate) query = query.lte("created_at", `${endDate}T23:59:59+07:00`);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data.map((a) => ({ ...a, stationName: a.locations?.name || "—", adjustedByName: a.profiles?.full_name || "—" }));
+  },
+
+  async recordStockAdjustment({ locationId, previousStockKg, newStockKg, reason, note, userId }) {
+    const adjustmentKg = Math.round((newStockKg - previousStockKg) * 100) / 100;
+    const { data, error } = await supabase
+      .from("stock_adjustments")
+      .insert({
+        location_id: locationId,
+        previous_stock_kg: previousStockKg,
+        new_stock_kg: newStockKg,
+        adjustment_kg: adjustmentKg,
+        reason,
+        note: note || null,
+        adjusted_by: userId,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    // The only place in the whole app that intentionally SETS a location's
+    // stock to an exact number rather than nudging it by one transaction's
+    // weight — this is what actually makes the adjustment take effect.
+    const { error: updateErr } = await supabase
+      .from("locations")
+      .update({ current_stock_kg: newStockKg, updated_ago: "just now" })
+      .eq("id", locationId);
+    if (updateErr) throw updateErr;
+    return data;
+  },
+
   async uploadTransactionPhoto(file, kind) {
     const ext = file.name.split(".").pop() || "jpg";
     const path = `${kind}/${crypto.randomUUID()}.${ext}`;

@@ -235,6 +235,105 @@ export function mergeServerTickets(serverTickets) {
 }
 
 // ---------------------------------------------------------------------
+// Transaction cache — a local mirror of Buy/Sell transactions (both ones
+// finalized from a Weighing Ticket and manual entries) so the
+// Transactions list still shows real, correct data with no network at
+// all. Before this existed, a transaction saved offline (or during a
+// connection blip) was safely queued and the printed receipt correctly
+// warned it wasn't synced yet — but the Transactions LIST page itself
+// had nothing to fall back on: it only ever asked the server directly,
+// so until the connection came back and a server fetch actually
+// succeeded, the sale looked like it had vanished, even though nothing
+// was ever lost.
+// ---------------------------------------------------------------------
+
+const TX_CACHE_KEY = "ptw_tx_cache_v1";
+
+export function getCachedTransactions() {
+  return readJSON(TX_CACHE_KEY, []);
+}
+
+export function upsertCachedTransaction(tx) {
+  const list = getCachedTransactions();
+  const i = list.findIndex((t) => t.id === tx.id);
+  if (i >= 0) list[i] = { ...list[i], ...tx };
+  else list.unshift(tx);
+  writeJSON(TX_CACHE_KEY, list);
+  return list;
+}
+
+// Every transaction id this device still has queued changes for — either
+// a manual entry not yet sent (createTransaction, keyed by payload.id)
+// or one created by finalizing a Weighing Ticket (finalizeTicket, keyed
+// by payload.transactionId rather than the op's own ticketId).
+function pendingTransactionIds() {
+  const ids = new Set();
+  for (const op of getQueue()) {
+    if (op.type === "createTransaction" && op.payload?.id) ids.add(op.payload.id);
+    if (op.type === "finalizeTicket" && op.payload?.transactionId) ids.add(op.payload.transactionId);
+  }
+  return ids;
+}
+
+// Same reasoning as mergeServerTickets above: server data wins for any
+// transaction with no local pending changes; one still queued on this
+// device keeps its local (already receipt-ready) version so it doesn't
+// flash away, and any transaction the server doesn't know about yet
+// (still offline, or synced a split second ago and not yet re-fetched)
+// stays visible too instead of disappearing.
+export function mergeServerTransactions(serverTxs) {
+  const pendingIds = pendingTransactionIds();
+  const local = getCachedTransactions();
+  const localById = new Map(local.map((t) => [t.id, t]));
+  const merged = serverTxs.map((t) => (pendingIds.has(t.id) && localById.has(t.id) ? localById.get(t.id) : t));
+  const serverIds = new Set(serverTxs.map((t) => t.id));
+  for (const t of local) {
+    if (!serverIds.has(t.id) && pendingIds.has(t.id)) merged.unshift(t);
+  }
+  writeJSON(TX_CACHE_KEY, merged);
+  return merged;
+}
+
+// ---------------------------------------------------------------------
+// Payment cache — same reasoning as the transaction cache just above,
+// for the "already Paid" cash payment recorded at the moment a manual
+// Buy/Sell is saved (createPaymentOffline). Without this, the amount
+// shown as "Paid" / "Remaining" on the Transactions list for a
+// just-saved offline entry would be wrong (looking like the full amount
+// is still owed) until the payment itself finished syncing.
+// ---------------------------------------------------------------------
+
+const PAYMENT_CACHE_KEY = "ptw_payment_cache_v1";
+
+export function getCachedPayments() {
+  return readJSON(PAYMENT_CACHE_KEY, []);
+}
+
+export function upsertCachedPayment(payment) {
+  const list = getCachedPayments();
+  const i = list.findIndex((p) => p.id === payment.id);
+  if (i >= 0) list[i] = { ...list[i], ...payment };
+  else list.unshift(payment);
+  writeJSON(PAYMENT_CACHE_KEY, list);
+  return list;
+}
+
+export function mergeServerPayments(serverPayments) {
+  const pendingIds = new Set(
+    getQueue().filter((op) => op.type === "createPayment" && op.payload?.id).map((op) => op.payload.id)
+  );
+  const local = getCachedPayments();
+  const localById = new Map(local.map((p) => [p.id, p]));
+  const merged = serverPayments.map((p) => (pendingIds.has(p.id) && localById.has(p.id) ? localById.get(p.id) : p));
+  const serverIds = new Set(serverPayments.map((p) => p.id));
+  for (const p of local) {
+    if (!serverIds.has(p.id) && pendingIds.has(p.id)) merged.unshift(p);
+  }
+  writeJSON(PAYMENT_CACHE_KEY, merged);
+  return merged;
+}
+
+// ---------------------------------------------------------------------
 // Party / product lookup caches — so typing a farmer's or buyer's name
 // (and matching it to an existing record, or deciding it's new) works
 // without a network round-trip.
@@ -618,7 +717,26 @@ function runOpWithTimeout(op) {
 // createPayment/logAudit, queued from TransactionForm.jsx) has no
 // ticketId and isn't a ticket at all, so it must never be folded into the
 // ticket cache below.
-const TICKET_OP_TYPES = new Set(["createTicket", "setTicketGross", "editTicket", "setTicketPrice", "setTicketTare", "finalizeTicket"]);
+//
+// finalizeTicket is deliberately NOT in this set even though it does
+// carry a ticketId: what it gets back from the server is the newly
+// created TRANSACTION row, not a ticket row — those two tables don't
+// share an id space. Folding a transaction row into the ticket cache
+// through the generic path below used to overwrite the merged object's
+// `id` with the transaction's id, so upsertCachedTicket couldn't find
+// the real ticket entry to update and quietly inserted a second, bogus
+// "ticket" (transaction fields wearing the finalized ticket's stage)
+// into the cache instead — harmless to what's on screen today only
+// because finalized tickets are already filtered off the board, but a
+// real latent bug (stray junk piling up in local storage, and a
+// candidate to leak into name/phone autocomplete). finalizeTicket is
+// handled on its own further down instead, updating the ticket and the
+// new transaction each in their own correct cache.
+const TICKET_OP_TYPES = new Set(["createTicket", "setTicketGross", "editTicket", "setTicketPrice", "setTicketTare"]);
+// Op types whose successful result is a transaction row and belongs in
+// the transaction cache (see the finalizeTicket note just above for why
+// finalizeTicket is here and not in TICKET_OP_TYPES).
+const TX_OP_TYPES = new Set(["createTransaction", "finalizeTicket"]);
 
 // Processes whatever's queued, one op at a time (see runOpWithTimeout
 // above for why each one is time-bounded) and independently per ticket
@@ -734,6 +852,29 @@ export function trySync() {
             if (result && TICKET_OP_TYPES.has(op.type)) {
               upsertCachedTicket(normalizeSyncedTicket(op, result));
             }
+            // Same idea for a transaction — either a manual Buy/Sell
+            // (createTransaction) or the one created by finishing a
+            // Weighing Ticket (finalizeTicket) — so the Transactions list
+            // has the confirmed, authoritative row the moment it's synced
+            // instead of only its own locally-built preview.
+            if (result && TX_OP_TYPES.has(op.type)) {
+              upsertCachedTransaction(normalizeSyncedTransaction(op, result));
+              if (op.type === "finalizeTicket") {
+                // The ticket side of this was already marked finalized the
+                // instant "Finish Ticket" was pressed (see
+                // finalizeTicketOffline) — this just confirms it stayed
+                // that way, using the ticket's OWN id, never the
+                // transaction's (see the TX_OP_TYPES note above).
+                patchCachedTicket(op.ticketId, { stage: "finalized", transaction_id: result.id });
+              }
+            }
+            // And the "already Paid" cash payment recorded alongside a
+            // manual entry — same reasoning, so the Paid/Remaining amount
+            // on the Transactions list is right immediately, not just
+            // after the next successful full reload.
+            if (result && op.type === "createPayment") {
+              upsertCachedPayment(result);
+            }
             removeOp(op._id);
             progressed = true;
           } catch (err) {
@@ -781,6 +922,29 @@ function normalizeSyncedTicket(op, result) {
     pricedByName: result.pricedByName ?? cached.pricedByName ?? null,
     tareByName: result.tareByName ?? cached.tareByName ?? null,
     createdByName: result.createdByName ?? cached.createdByName ?? null,
+  };
+}
+
+// Same idea as normalizeSyncedTicket above, for a transaction: the raw
+// row Supabase hands back from an insert has none of the joined display
+// names (party/station/product) our locally-built copy already has, so
+// keep those until the next full list refresh fills them in for real —
+// everything else (id, code, amounts, dates) comes from the server,
+// which is now the authoritative copy.
+function normalizeSyncedTransaction(op, result) {
+  const txId = op.payload?.transactionId || op.payload?.id || result.id;
+  const cached = getCachedTransactions().find((t) => t.id === txId) || {};
+  return {
+    ...cached,
+    ...result,
+    partyName: cached.partyName || result.partyName,
+    partyIdNumber: cached.partyIdNumber || result.partyIdNumber,
+    product_name: cached.product_name || result.product_name,
+    stationName: cached.stationName || result.stationName,
+    stationAddress: cached.stationAddress || result.stationAddress,
+    stationPhone: cached.stationPhone || result.stationPhone,
+    status: result.status ?? cached.status ?? "confirmed",
+    hq_status: result.hq_status ?? cached.hq_status ?? "processing",
   };
 }
 
@@ -1065,12 +1229,19 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
   trySync();
 
   const { date: nowDate, time: nowTime } = cambodiaNow();
-  return {
+  const tx = {
     id: transactionId,
     code: transactionCode,
     type: ticket.type,
     tx_date: txDate || nowDate,
     tx_time: nowTime,
+    // location_id/party_id/product_id: not needed for the receipt itself,
+    // but required for the Transactions list — its location filter and
+    // per-transaction payment lookups both key off these, same as every
+    // field the real server row would eventually have.
+    location_id: ticket.location_id,
+    party_id: ticket.party_id,
+    product_id: ticket.product_id,
     partyName: ticket.party_name,
     partyIdNumber: ticket.phone,
     bank_name: ticket.bank_name,
@@ -1104,7 +1275,16 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     tax_rate: ticket.tax_rate,
     tax_amount: taxAmount,
     total_with_tax: amount + taxAmount,
+    created_by: userId,
+    // status/hq_status: the server always fills these in itself on
+    // insert (see the weighing_tickets/transactions schema defaults), so
+    // matching that default here means this cached row looks and behaves
+    // exactly like the real one until it syncs and gets replaced by it.
+    status: "confirmed",
+    hq_status: "processing",
   };
+  upsertCachedTransaction(tx);
+  return tx;
 }
 
 // ---------------------------------------------------------------------
@@ -1119,7 +1299,14 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
 // drops" — nothing here waits on a network call to succeed.
 // ---------------------------------------------------------------------
 
-export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate }) {
+// partyName/partyIdNumber/bankName/bankAccount/productName/stationName are
+// display-only — the caller (TransactionForm.jsx) already has them on
+// screen and they're never sent to the server (the real party/product/
+// station names always come from their own tables via a join) — but
+// without them here, the record cached below for the Transactions list
+// would have nothing to show in its Party/Station columns until the real
+// sync completes, same gap this whole change exists to close.
+export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
   const id = newId();
   const code = genLocalTxCode(type);
   const payableKg = Math.max(0, (quantityKg || 0) - (deductionKg || 0));
@@ -1138,13 +1325,19 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
   });
   trySync();
 
-  return {
+  const tx = {
     id, code, type,
     tx_date: txDate || nowDate,
     tx_time: nowTime,
     location_id: locationId,
     party_id: partyId,
     product_id: productId,
+    partyName: partyName || "—",
+    partyIdNumber: partyIdNumber || "",
+    bank_name: bankName || null,
+    bank_account: bankAccount || null,
+    product_name: productName || null,
+    stationName: stationName || "—",
     quantity_kg: quantityKg,
     payable_kg: payableKg,
     price_per_kg: pricePerKg,
@@ -1166,7 +1359,11 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     tax_amount: taxAmount,
     total_with_tax: amount + taxAmount,
     created_by: userId,
+    status: "confirmed",
+    hq_status: "processing",
   };
+  upsertCachedTransaction(tx);
+  return tx;
 }
 
 // Records a cash payment made at the moment a manual transaction is
@@ -1176,7 +1373,9 @@ export function createPaymentOffline({ type, transactionId, locationId, amount, 
   const id = newId();
   enqueue({ type: "createPayment", payload: { id, type, transactionId, locationId, amount, method, payDate, memo, userId } });
   trySync();
-  return { id, type, transaction_id: transactionId, location_id: locationId, amount, method, pay_date: payDate, memo, created_by: userId };
+  const payment = { id, type, transaction_id: transactionId, location_id: locationId, amount, method, pay_date: payDate, memo, created_by: userId };
+  upsertCachedPayment(payment);
+  return payment;
 }
 
 // Queues an Activity Log entry without waiting on the network — used
