@@ -40,19 +40,18 @@ function fmtDateTime(iso) {
 // loss from anything else, since that's exactly the number staff already
 // measured by hand when they recorded each adjustment.
 export default function ReportShrinkage({ selectedLocationIds = [], startDate = null, endDate = null }) {
-  const [allLocations, setAllLocations] = useState([]);
   const [allAdjustments, setAllAdjustments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
+  // Station names come from api.getStockAdjustments()'s own join (each
+  // row already carries stationName) — no separate getLocations() call
+  // needed here.
   function load() {
     setLoading(true);
     setLoadError("");
-    Promise.all([api.getLocations(), api.getStockAdjustments()])
-      .then(([locs, adjustments]) => {
-        setAllLocations(locs);
-        setAllAdjustments(adjustments);
-      })
+    api.getStockAdjustments()
+      .then(setAllAdjustments)
       .catch((err) => {
         setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
       })
