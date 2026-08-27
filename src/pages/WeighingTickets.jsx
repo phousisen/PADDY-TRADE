@@ -19,6 +19,15 @@ import {
 // overwrite a farmer name staff already typed while waiting on it.
 const PHONE_LOOKUP_TIMEOUT_MS = 4000;
 
+// Bounds the main board's fetch (see load() below) — same reasoning as
+// PHONE_LOOKUP_TIMEOUT_MS just longer, since this is the primary data for
+// the whole page rather than a background nicety. Without this, a
+// connection navigator.onLine still calls "online" but that's actually
+// stalled (weak signal, captive portal, a slow query) left this screen
+// stuck on "Loading…" forever, because the request itself never resolved
+// or rejected for setLoading(false) to run.
+const BOARD_LOAD_TIMEOUT_MS = 12000;
+
 // The ONLY paddy types shown by default — deliberately just these 5, in
 // this order, not whatever else happens to already be sitting in the
 // products table from earlier testing/history. Each option is labeled
@@ -1333,7 +1342,11 @@ export default function WeighingTickets() {
     // right after this computer boots with no WiFi yet.
     if (navigator.onLine) {
       try {
-        serverRows = await api.getTickets({ locationId: effectiveLocationId || undefined, stages: ALL_STAGE_IDS });
+        serverRows = await withTimeout(
+          api.getTickets({ locationId: effectiveLocationId || undefined, stages: ALL_STAGE_IDS }),
+          BOARD_LOAD_TIMEOUT_MS,
+          null
+        );
       } catch {
         serverRows = null; // WiFi connected but not really working — fall back to the local cache below
       }

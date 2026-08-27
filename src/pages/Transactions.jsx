@@ -7,8 +7,19 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase } from "../supabaseClient.js";
-import { onSyncStatusChange, getCachedTransactions, mergeServerTransactions, isTransactionPendingSync, getCachedPayments, mergeServerPayments } from "../offlineQueue.js";
+import { onSyncStatusChange, getCachedTransactions, mergeServerTransactions, isTransactionPendingSync, getCachedPayments, mergeServerPayments, withTimeout } from "../offlineQueue.js";
 import Receipt from "./Receipt.jsx";
+
+// Bounds how long a fresh load waits on the server before giving up and
+// falling back to whatever's cached on this device (see load() below) —
+// without this, a connection that's technically "online" but stalled
+// (weak signal, captive portal, a slow query) left this list stuck with
+// nothing on screen and no explanation, since the request itself never
+// resolved OR rejected. 12s is long enough that a normal, even sluggish,
+// load still completes for real — same idea as withTimeout's other uses
+// in this app, just longer since this is the primary data for the page,
+// not a nice-to-have shortcut.
+const LOAD_TIMEOUT_MS = 12000;
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -888,10 +899,21 @@ export default function Transactions({ setPage }) {
       return;
     }
     try {
-      const [txData, payData] = await Promise.all([
-        api.getTransactions({ type: type || undefined }),
-        api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
-      ]);
+      // Wrapped in withTimeout (see LOAD_TIMEOUT_MS above) so a connection
+      // that's stalled rather than cleanly failed still gives up and falls
+      // back to cache instead of leaving this list blank indefinitely — a
+      // timeout resolves to null just like the catch block below handles a
+      // real error, so both paths land in the same fallback.
+      const result = await withTimeout(
+        Promise.all([
+          api.getTransactions({ type: type || undefined }),
+          api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
+        ]),
+        LOAD_TIMEOUT_MS,
+        null
+      );
+      if (!result) throw new Error("Timed out waiting for a response.");
+      const [txData, payData] = result;
       // Folds the server's confirmed rows together with anything still
       // only-local on this device (see mergeServerTransactions) instead of
       // just replacing the list outright, so a transaction that finished
@@ -1298,6 +1320,7 @@ export default function Transactions({ setPage }) {
                   </tr>
                 );
               })}
+              {visibleRows.length === 0 && loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
               {visibleRows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
