@@ -16,28 +16,108 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // over. That hang is what made the app *feel* slow instead of just offline.
 // This wraps every request the Supabase client makes with an 8s timeout.
 const FETCH_TIMEOUT_MS = 8000;
+
+// [2026-08-28] A station PC's own clock can simply be set wrong — wrong
+// date, wrong year, drifted, never had its time zone or internet time-sync
+// configured correctly. Every timestamp this app stamps (a ticket's weigh-
+// in time, a transaction's date, everything printed on a receipt) used to
+// come straight from that PC's own `new Date()`, converted into Cambodia's
+// time ZONE — but that conversion can only fix which time zone a moment is
+// shown in, not whether the PC agrees what moment "now" actually is. A
+// wrong PC clock produced a genuinely wrong recorded time no matter what
+// time zone math ran afterward — this is what happened at Thapedey.
+//
+// Fix: every response from Supabase already carries a standard HTTP `Date`
+// header — the real, correct time on Supabase's own server, completely
+// independent of this PC's clock. Every request already made through this
+// client (auth included) is used to quietly compare that against this PC's
+// own clock and remember the difference ("this PC is 1 day, 3 minutes
+// fast/slow"). getAccurateNow() below applies that correction to get the
+// real current moment, and every place in the app that stamps a ticket/
+// transaction time now calls getAccurateNow() instead of `new Date()` — see
+// api.js's and offlineQueue.js's cambodiaNow(), plus the gross_at/tare_at/
+// priced_at/created_at stamps.
+//
+// The correction is remembered across page loads (localStorage) so it's
+// available immediately even before this PC's first request of the day
+// completes, and it self-corrects continuously as normal requests happen —
+// no separate "check the time" network call needed. If this PC's clock
+// happens to already be correct, the difference is just ~0 and nothing
+// changes. If there's no correction yet at all (a brand new device, or
+// genuinely offline with nothing ever recorded), this safely falls back to
+// the PC's own clock exactly as before — never worse than the old
+// behavior, only better once at least one request has succeeded.
+const CLOCK_OFFSET_KEY = "paddytrade_clock_offset_ms";
+let clockOffsetMs = 0;
+try {
+  const storedOffset = localStorage.getItem(CLOCK_OFFSET_KEY);
+  if (storedOffset !== null) {
+    const parsed = Number(storedOffset);
+    if (Number.isFinite(parsed)) clockOffsetMs = parsed;
+  }
+} catch (_err) {
+  // Storage unavailable — fine, just starts uncorrected until the first
+  // successful request calibrates it for this page load.
+}
+
+function calibrateClockFromResponse(response) {
+  try {
+    const headerValue = response && response.headers && typeof response.headers.get === "function"
+      ? response.headers.get("date")
+      : null;
+    if (!headerValue) return;
+    const serverMs = Date.parse(headerValue);
+    if (!Number.isFinite(serverMs)) return;
+    clockOffsetMs = serverMs - Date.now();
+    try {
+      localStorage.setItem(CLOCK_OFFSET_KEY, String(clockOffsetMs));
+    } catch (_err) {
+      // Not fatal — just won't survive a page reload this time.
+    }
+  } catch (_err) {
+    // Never let a calibration hiccup affect the actual request/response.
+  }
+}
+
+// The real current moment, corrected for this PC's clock being wrong —
+// use this everywhere a ticket/transaction needs "now", instead of
+// `new Date()` directly.
+export function getAccurateNow() {
+  return new Date(Date.now() + clockOffsetMs);
+}
+
 function fetchWithTimeout(url, options = {}) {
   // Auth requests (session refresh, sign-in, sign-out) are deliberately
-  // left OUT of this timeout. Aborting a normal data request just means
-  // that one query fails and the app falls back to cached data — low
-  // stakes. But aborting a token-refresh request is a much bigger deal:
-  // Supabase's own auth library can treat that abort as a real failure
-  // and sign the whole app out, even though the connection was only
-  // being slow, not actually down. That was almost certainly the cause
-  // of staff getting randomly logged out on ordinary flaky station WiFi
-  // — the 8s cutoff has nothing to do with whether the request would
+  // left OUT of the abort-timeout below. Aborting a normal data request
+  // just means that one query fails and the app falls back to cached data
+  // — low stakes. But aborting a token-refresh request is a much bigger
+  // deal: Supabase's own auth library can treat that abort as a real
+  // failure and sign the whole app out, even though the connection was
+  // only being slow, not actually down. That was almost certainly the
+  // cause of staff getting randomly logged out on ordinary flaky station
+  // WiFi — the 8s cutoff has nothing to do with whether the request would
   // have succeeded, just whether it happened to be slow at that exact
   // moment. Auth requests instead get the browser's own default (much
   // longer) timeout, so a slow-but-real connection has time to actually
-  // finish instead of being mistaken for a dead session.
+  // finish instead of being mistaken for a dead session. Both paths still
+  // get their response clock-calibrated the same way — see above.
   const urlString = typeof url === "string" ? url : url?.url || "";
-  if (urlString.includes("/auth/v1/")) return fetch(url, options);
+  const isAuthCall = urlString.includes("/auth/v1/");
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  return fetch(url, { ...options, signal: options.signal || controller.signal }).finally(() =>
-    clearTimeout(timer)
-  );
+  const pending = isAuthCall
+    ? fetch(url, options)
+    : (() => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+        return fetch(url, { ...options, signal: options.signal || controller.signal }).finally(() =>
+          clearTimeout(timer)
+        );
+      })();
+
+  return pending.then((response) => {
+    calibrateClockFromResponse(response);
+    return response;
+  });
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

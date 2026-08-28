@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { supabase } from "./supabaseClient.js";
+import { supabase, getAccurateNow } from "./supabaseClient.js";
 
 const AuthContext = createContext(null);
 
@@ -116,7 +116,11 @@ export function AuthProvider({ children }) {
   // The moment this browser tab started up. A forced-logout flag only
   // matters if it was set AFTER this — otherwise a leftover flag from a
   // past logout would immediately kick the user again on their next login.
-  const openedAtRef = useRef(new Date());
+  // Uses getAccurateNow() (see supabaseClient.js), not this device's raw
+  // clock directly — a wrong PC clock here could make this comparison
+  // against the server's own logout_requested_at silently misbehave (a
+  // forced logout either never taking effect, or firing for no reason).
+  const openedAtRef = useRef(getAccurateNow());
 
   // Returns true if it actually managed to load a profile from the server
   // (and set it via setProfile), false otherwise. Callers use this to know

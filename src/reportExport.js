@@ -4,11 +4,12 @@
 // (Overview, Purchases, Sales, Accounts Payable/Receivable, Stock, Cash
 // Flow, Tax), using whatever Location/Date filters are currently active.
 import * as XLSX from "xlsx";
+import { getAccurateNow } from "./supabaseClient.js";
 import { computeFinancials, paidStatusMap } from "./pages/ReportOverview.jsx";
 
 // Cambodia's current date/time (independent of the viewing device's own
 // timezone/clock), used to stamp the exported filename.
-export function cambodiaTimestamp(d = new Date()) {
+export function cambodiaTimestamp(d = getAccurateNow()) {
   const parts = {};
   new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Phnom_Penh",
@@ -48,7 +49,7 @@ function groupSum(rows, keyFn) {
 }
 
 function outstandingFor(rows, payments) {
-  const today = new Date();
+  const today = getAccurateNow();
   return rows
     .map((tx) => {
       const paid = payments.filter((p) => p.transaction_id === tx.id).reduce((s, p) => s + Number(p.amount), 0);

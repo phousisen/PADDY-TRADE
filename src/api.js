@@ -1,4 +1,4 @@
-import { supabase } from "./supabaseClient.js";
+import { supabase, getAccurateNow } from "./supabaseClient.js";
 
 // Widened from a 4-digit (1000-9999, ~9,000 possible values) space to
 // 6-digit (~900,000) — the 4-digit space was small enough that, across two
@@ -77,7 +77,11 @@ async function insertWithFreshCodeOnCollision(table, row, regenerateCode) {
 // The database server's clock defaults to UTC, not Cambodia time — so we
 // stamp every transaction with Cambodia's actual wall-clock date/time here
 // instead of relying on a DB-side default, regardless of what timezone the
-// user's own device happens to be set to.
+// user's own device happens to be set to. Uses getAccurateNow() (see
+// supabaseClient.js), not the device's raw clock directly — a station PC's
+// own clock can simply be set wrong, which no amount of timezone math can
+// fix on its own; getAccurateNow() corrects for that using Supabase's own
+// server time.
 function cambodiaNow() {
   const parts = {};
   new Intl.DateTimeFormat("en-US", {
@@ -86,7 +90,7 @@ function cambodiaNow() {
     hour: "2-digit", minute: "2-digit", second: "2-digit",
     hour12: false,
   })
-    .formatToParts(new Date())
+    .formatToParts(getAccurateNow())
     .forEach((p) => { parts[p.type] = p.value; });
   const hour = parts.hour === "24" ? "00" : parts.hour; // midnight edge case in some Intl implementations
   return {
@@ -707,7 +711,7 @@ export const api = {
   async setTicketGross(id, { grossKg, userId }) {
     const { data, error } = await supabase
       .from("weighing_tickets")
-      .update({ gross_kg: grossKg, gross_at: new Date().toISOString(), gross_by: userId, stage: "weighed_in" })
+      .update({ gross_kg: grossKg, gross_at: getAccurateNow().toISOString(), gross_by: userId, stage: "weighed_in" })
       .eq("id", id)
       .select()
       .single();
@@ -742,7 +746,7 @@ export const api = {
     if (paperTicketNo !== undefined) patch.paper_ticket_no = paperTicketNo || null;
     if (grossKg !== undefined) {
       patch.gross_kg = grossKg;
-      patch.gross_at = new Date().toISOString();
+      patch.gross_at = getAccurateNow().toISOString();
       patch.gross_by = userId;
     }
     const { data, error } = await supabase
@@ -772,7 +776,7 @@ export const api = {
       tax_applicable: !!taxApplicable,
       tax_rate: taxApplicable ? (taxRate || 0) : 0,
       price_note: priceNote || null,
-      priced_at: new Date().toISOString(),
+      priced_at: getAccurateNow().toISOString(),
       priced_by: userId,
       stage: decline ? "declined" : "priced",
     };
@@ -800,7 +804,7 @@ export const api = {
   async setTicketTare(id, { tareKg, userId }) {
     const { data, error } = await supabase
       .from("weighing_tickets")
-      .update({ tare_kg: tareKg, tare_at: new Date().toISOString(), tare_by: userId, stage: "weighed_out" })
+      .update({ tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" })
       .eq("id", id)
       .select()
       .single();

@@ -26,7 +26,7 @@
 // This file has no UI in it — WeighingTickets.jsx calls into it.
 
 import { api } from "./api.js";
-import { ensureFreshSession } from "./supabaseClient.js";
+import { ensureFreshSession, getAccurateNow } from "./supabaseClient.js";
 
 const CACHE_KEY = "ptw_ticket_cache_v1";
 const QUEUE_KEY = "ptw_ticket_queue_v1";
@@ -36,7 +36,10 @@ const PAPER_TICKET_KEY = "ptw_last_paper_ticket_no_v1";
 
 // Same timezone stamping used in api.js — stamps with Cambodia's actual
 // wall-clock time regardless of the device's own timezone setting, since
-// this is what ends up on the printed slip/receipt.
+// this is what ends up on the printed slip/receipt. Uses getAccurateNow()
+// (see supabaseClient.js), not the device's raw clock — a station PC's own
+// clock can simply be set wrong, which no amount of timezone math can fix
+// on its own.
 function cambodiaNow() {
   const parts = {};
   new Intl.DateTimeFormat("en-US", {
@@ -45,7 +48,7 @@ function cambodiaNow() {
     hour: "2-digit", minute: "2-digit", second: "2-digit",
     hour12: false,
   })
-    .formatToParts(new Date())
+    .formatToParts(getAccurateNow())
     .forEach((p) => { parts[p.type] = p.value; });
   const hour = parts.hour === "24" ? "00" : parts.hour;
   return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${hour}:${parts.minute}:${parts.second}` };
@@ -576,7 +579,7 @@ function noteOpFailure(op, err) {
   }
   const existing = stuckOps.get(op._id);
   stuckOps.set(op._id, {
-    since: existing ? existing.since : new Date().toISOString(),
+    since: existing ? existing.since : getAccurateNow().toISOString(),
     // [2026-08-28] Separate from `since` on purpose. A Map keeps a key in
     // its ORIGINAL insertion position even after `.set()` updates its
     // value, so picking "the last entry" to show in the banner used to
@@ -586,7 +589,7 @@ function noteOpFailure(op, err) {
     // error from earlier, even after the real, current problem had
     // changed to something else entirely). getStatus() below now picks
     // by this timestamp instead.
-    lastFailedAt: new Date().toISOString(),
+    lastFailedAt: getAccurateNow().toISOString(),
     attempts: (existing?.attempts || 0) + 1,
     error: (err && err.message) || String(err),
     opType: op.type,
@@ -1158,7 +1161,7 @@ export function createTicketOffline({ type, locationId, locationName, locationAd
     price_note: null, priced_at: null, priced_by: null, pricedByName: null,
     tare_kg: null, tare_at: null, tare_by: null, tareByName: null,
     transaction_id: null, note: null,
-    created_by: userId, createdByName: null, created_at: new Date().toISOString(),
+    created_by: userId, createdByName: null, created_at: getAccurateNow().toISOString(),
   };
   upsertCachedTicket(ticket);
   enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
@@ -1176,7 +1179,7 @@ function patchCachedTicket(id, patch) {
 }
 
 export function setTicketGrossOffline(id, { grossKg, userId }) {
-  const updated = patchCachedTicket(id, { gross_kg: grossKg, gross_at: new Date().toISOString(), gross_by: userId, stage: "weighed_in" });
+  const updated = patchCachedTicket(id, { gross_kg: grossKg, gross_at: getAccurateNow().toISOString(), gross_by: userId, stage: "weighed_in" });
   enqueue({ type: "setTicketGross", ticketId: id, payload: { grossKg, userId } });
   trySync();
   return updated;
@@ -1202,7 +1205,7 @@ export function editTicketOffline(id, { partyId, partyName, phone, carPlate, dri
   if (paperTicketNo !== undefined) patch.paper_ticket_no = paperTicketNo || null;
   if (grossKg !== undefined) {
     patch.gross_kg = grossKg;
-    patch.gross_at = new Date().toISOString();
+    patch.gross_at = getAccurateNow().toISOString();
     patch.gross_by = userId;
   }
   const updated = patchCachedTicket(id, patch);
@@ -1229,7 +1232,7 @@ export function setTicketPriceOffline(id, opts) {
     tax_applicable: !!taxApplicable,
     tax_rate: taxApplicable ? (taxRate || 0) : 0,
     price_note: priceNote || null,
-    priced_at: new Date().toISOString(),
+    priced_at: getAccurateNow().toISOString(),
     priced_by: userId,
     stage: decline ? "declined" : "priced",
   };
@@ -1247,7 +1250,7 @@ export function setTicketPriceOffline(id, opts) {
 }
 
 export function setTicketTareOffline(id, { tareKg, userId }) {
-  const updated = patchCachedTicket(id, { tare_kg: tareKg, tare_at: new Date().toISOString(), tare_by: userId, stage: "weighed_out" });
+  const updated = patchCachedTicket(id, { tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" });
   enqueue({ type: "setTicketTare", ticketId: id, payload: { tareKg, userId } });
   trySync();
   return updated;
