@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Calendar, ChevronDown } from "lucide-react";
+import { getAccurateNow } from "../supabaseClient.js";
 
 // All date-range math below works with a Date object whose LOCAL
 // year/month/day fields represent Cambodia's calendar date — this keeps
@@ -11,10 +12,13 @@ function toIso(d) {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+// Uses getAccurateNow() (see supabaseClient.js), not the device's raw
+// clock — a station or admin PC's own clock can simply be set wrong, which
+// would otherwise make "Today"/"Yesterday" filter on the wrong day.
 function today() {
   const parts = {};
   new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
-    .formatToParts(new Date()).forEach((p) => { parts[p.type] = p.value; });
+    .formatToParts(getAccurateNow()).forEach((p) => { parts[p.type] = p.value; });
   return new Date(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
 }
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
