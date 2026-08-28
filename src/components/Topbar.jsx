@@ -58,7 +58,7 @@ function SyncStatusBanner({ onSignInAgain }) {
       <div className="flex flex-col gap-0.5 bg-rose-600 px-6 py-2 text-xs font-semibold text-white">
         <div className="flex items-center gap-2">
           <AlertTriangle size={13} />
-          {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
+          {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
         </div>
         {status.lastStuckError && (
           <div className="pl-[21px] font-normal text-rose-100">
