@@ -6,7 +6,7 @@ import DateRangeFilter from "../components/DateRangeFilter.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
-import { supabase } from "../supabaseClient.js";
+import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { onSyncStatusChange, getCachedTransactions, mergeServerTransactions, isTransactionPendingSync, getCachedPayments, mergeServerPayments, withTimeout } from "../offlineQueue.js";
 import Receipt from "./Receipt.jsx";
 
@@ -33,7 +33,7 @@ function fmtTime(t) {
 }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
 // viewing device's own timezone/clock setting.
-function cambodiaDateStr(d = new Date()) {
+function cambodiaDateStr(d = getAccurateNow()) {
   const parts = {};
   new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });

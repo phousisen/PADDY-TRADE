@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+import { getAccurateNow } from "../supabaseClient.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -47,7 +48,7 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
     .filter((r) => !endDate || r.tx_date <= endDate);
 
   const outstanding = useMemo(() => {
-    const today = new Date();
+    const today = getAccurateNow();
     return rows
       .map((tx) => {
         const paid = payments.filter((p) => p.transaction_id === tx.id).reduce((s, p) => s + Number(p.amount), 0);

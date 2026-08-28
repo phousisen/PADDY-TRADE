@@ -4,12 +4,13 @@ import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import AddLocationModal from "../components/AddLocationModal.jsx";
 import { api } from "../api.js";
+import { getAccurateNow } from "../supabaseClient.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
 function periodStart(period) {
-  const d = new Date();
+  const d = getAccurateNow();
   d.setHours(0, 0, 0, 0);
   if (period === "today") return d;
   if (period === "week") { d.setDate(d.getDate() - 6); return d; }

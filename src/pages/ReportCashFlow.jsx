@@ -3,11 +3,12 @@ import { Plus } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
+import { getAccurateNow } from "../supabaseClient.js";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
 // viewing device's own timezone/clock setting.
-function cambodiaDateStr(d = new Date()) {
+function cambodiaDateStr(d = getAccurateNow()) {
   const parts = {};
   new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
