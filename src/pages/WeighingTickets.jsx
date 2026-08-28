@@ -1452,7 +1452,7 @@ export default function WeighingTickets() {
                         <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
                       )}
                     </p>
-                    <p className="text-xs text-slate-400">{t.stationName}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                    <p className="text-xs text-slate-400">{t.stationName}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}` : ""}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {tab === "waiting" && (

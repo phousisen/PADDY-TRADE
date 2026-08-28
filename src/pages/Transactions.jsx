@@ -658,7 +658,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
                       {p.pay_date}
                       {p.created_at && (
                         <span className="ml-1 text-slate-400">
-                          {new Date(p.created_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                          {new Date(p.created_at).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}
                         </span>
                       )}
                     </td>
