@@ -26,6 +26,7 @@
 // This file has no UI in it — WeighingTickets.jsx calls into it.
 
 import { api } from "./api.js";
+import { ensureFreshSession } from "./supabaseClient.js";
 
 const CACHE_KEY = "ptw_ticket_cache_v1";
 const QUEUE_KEY = "ptw_ticket_queue_v1";
@@ -561,7 +562,7 @@ export function onSyncStatusChange(fn) {
 // stuck — so more than one op can be independently stuck at the same time,
 // and each needs its own attempt count rather than one shared counter that
 // only ever meant "the thing at the front of the queue".
-const stuckOps = new Map(); // opId -> { since, attempts, error, opType, ticketId }
+const stuckOps = new Map(); // opId -> { since, lastFailedAt, attempts, error, opType, ticketId }
 const STUCK_THRESHOLD = 3; // consecutive failed attempts, while online, before we call it "stuck"
 
 function noteOpFailure(op, err) {
@@ -576,6 +577,16 @@ function noteOpFailure(op, err) {
   const existing = stuckOps.get(op._id);
   stuckOps.set(op._id, {
     since: existing ? existing.since : new Date().toISOString(),
+    // [2026-08-28] Separate from `since` on purpose. A Map keeps a key in
+    // its ORIGINAL insertion position even after `.set()` updates its
+    // value, so picking "the last entry" to show in the banner used to
+    // mean "whichever op got stuck first", not "whichever op just failed
+    // most recently" — meaning the error text on screen could be stale
+    // and misleading (e.g. still showing an old permissions-sounding
+    // error from earlier, even after the real, current problem had
+    // changed to something else entirely). getStatus() below now picks
+    // by this timestamp instead.
+    lastFailedAt: new Date().toISOString(),
     attempts: (existing?.attempts || 0) + 1,
     error: (err && err.message) || String(err),
     opType: op.type,
@@ -589,20 +600,37 @@ function clearStuckTracking() {
   stuckOps.clear();
 }
 
+// [2026-08-28] Set when this browser's login itself has gone stale and
+// couldn't be refreshed automatically (see ensureFreshSession in
+// supabaseClient.js) — kept separate from the generic "stuck" state above
+// because the fix and the message shown to staff are completely
+// different. A genuinely stuck save (bad data, a real permissions gap)
+// needs an admin to look at the database. A dead login just needs someone
+// to sign back in — nothing else. Telling those apart clearly avoids
+// exactly what happened at Thapedey: a dead login produced a permissions-
+// looking error, which sent troubleshooting in the wrong direction for a
+// long time before the real cause (this browser's session had expired)
+// was found.
+let sessionExpired = false;
+
 function getStatus() {
   const stuck = [...stuckOps.values()].filter((e) => e.attempts >= STUCK_THRESHOLD);
+  const mostRecent = stuck.length
+    ? stuck.reduce((a, b) => (new Date(b.lastFailedAt || b.since) > new Date(a.lastFailedAt || a.since) ? b : a))
+    : null;
   return {
     online: navigator.onLine,
     syncing,
     pending: totalPending(),
+    sessionExpired,
     stuck: stuck.length > 0,
     stuckCount: stuck.length,
     stuckSince: stuck.length ? new Date(Math.min(...stuck.map((e) => new Date(e.since).getTime()))).toISOString() : null,
-    // The most recent error text from whichever stuck op failed last this
-    // pass — shown verbatim in the banner so staff/an admin can actually
-    // see WHY (e.g. a permissions error vs. a duplicate value) instead of
-    // just "something is broken, good luck".
-    lastStuckError: stuck.length ? stuck[stuck.length - 1].error : null,
+    // The error text from whichever stuck op failed MOST RECENTLY — shown
+    // verbatim in the banner so staff/an admin can actually see WHY (e.g.
+    // a permissions error vs. a duplicate value) instead of just
+    // "something is broken, good luck".
+    lastStuckError: mostRecent ? mostRecent.error : null,
   };
 }
 function notifyStatus() {
@@ -801,6 +829,27 @@ export function trySync() {
         clearStuckTracking();
         return;
       }
+
+      // [2026-08-28] Check the login itself is actually still valid BEFORE
+      // attempting any save — see ensureFreshSession in supabaseClient.js
+      // for the full story. If it can't be refreshed, don't even try the
+      // ops below: they'd just fail with a confusing permissions-looking
+      // error that has nothing to do with permissions, the same thing
+      // that made this so hard to diagnose at Thapedey. Show a plain
+      // "please sign in again" message instead, and leave every queued
+      // change exactly as it is — nothing here is dropped or touched, it
+      // all resumes automatically the moment someone signs back in.
+      const authOk = await ensureFreshSession();
+      if (!authOk) {
+        sessionExpired = true;
+        notifyStatus();
+        return;
+      }
+      if (sessionExpired) {
+        sessionExpired = false;
+        notifyStatus();
+      }
+
       // Backfill ids on anything queued before this code existed (see
       // ensureOpIds above) — must run before the loop below ever calls
       // removeOp, or an already-queued op could silently never be removed.
