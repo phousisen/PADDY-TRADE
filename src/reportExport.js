@@ -87,6 +87,34 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
     return { station: s, ...computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments) };
   });
+  // Buy/Sell counts, kg, and amounts per location for the summary table
+  // below. Uses the same activeTxs already filtered to the selected
+  // locations/date range — for a location-scoped account that's just their
+  // one station (enforced server-side), so filteredStations naturally has
+  // one row and the TOTAL row below matches it; for the admin/boss account
+  // it's every station plus a real grand total.
+  const buySellByLocation = filteredStations.map((s) => {
+    const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
+    const buys = stationTxs.filter((t) => t.type === "BUY");
+    const sells = stationTxs.filter((t) => t.type === "SELL");
+    return {
+      name: s.name,
+      buyCount: buys.length,
+      buyKg: buys.reduce((sum, t) => sum + Number(t.quantity_kg || 0), 0),
+      buyAmount: buys.reduce((sum, t) => sum + Number(t.amount || 0), 0),
+      sellCount: sells.length,
+      sellKg: sells.reduce((sum, t) => sum + Number(t.quantity_kg || 0), 0),
+      sellAmount: sells.reduce((sum, t) => sum + Number(t.amount || 0), 0),
+    };
+  });
+  const buySellTotal = buySellByLocation.reduce((t, r) => ({
+    buyCount: t.buyCount + r.buyCount,
+    buyKg: t.buyKg + r.buyKg,
+    buyAmount: t.buyAmount + r.buyAmount,
+    sellCount: t.sellCount + r.sellCount,
+    sellKg: t.sellKg + r.sellKg,
+    sellAmount: t.sellAmount + r.sellAmount,
+  }), { buyCount: 0, buyKg: 0, buyAmount: 0, sellCount: 0, sellKg: 0, sellAmount: 0 });
   XLSX.utils.book_append_sheet(wb, sheet([
     ["PaddyTrade — Financial Overview"],
     [rangeLabel],
@@ -115,6 +143,11 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     ["By Location"],
     ["Location", "Sales", "Purchases", "Profit", "Inventory", "Payable", "Bank Loans", "Partner Capital", "Equity"],
     ...byLocation.map((r) => [r.station.name, round2(r.totalSell), round2(r.totalBuy), round2(r.grossProfit), round2(r.inventoryValue), round2(r.accountsPayable), round2(r.bankLoansOutstanding), round2(r.partnerCapital), round2(r.equity)]),
+    [],
+    ["Buy & Sell Summary by Location"],
+    ["Location", "Buy Transactions", "Buy Qty In (kg)", "Total Buy Cost (៛)", "Sell Transactions", "Sell Qty Out (kg)", "Total Sales (៛)"],
+    ...buySellByLocation.map((r) => [r.name, r.buyCount, round2(r.buyKg), round2(r.buyAmount), r.sellCount, round2(r.sellKg), round2(r.sellAmount)]),
+    ["TOTAL — All Locations", buySellTotal.buyCount, round2(buySellTotal.buyKg), round2(buySellTotal.buyAmount), buySellTotal.sellCount, round2(buySellTotal.sellKg), round2(buySellTotal.sellAmount)],
   ]), "Overview");
 
   // ---------------- Purchases ----------------
