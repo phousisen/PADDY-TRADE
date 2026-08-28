@@ -13,11 +13,38 @@ import { onSyncStatusChange } from "../offlineQueue.js";
 // the moment staff navigated away from the one screen that happened to
 // mention it. This makes it impossible to be on any screen in the app
 // without seeing that something hasn't reached the shared database yet.
-function SyncStatusBanner() {
-  const [status, setStatus] = useState({ online: true, syncing: false, pending: 0, stuck: false });
+function SyncStatusBanner({ onSignInAgain }) {
+  const [status, setStatus] = useState({ online: true, syncing: false, pending: 0, stuck: false, sessionExpired: false });
   useEffect(() => onSyncStatusChange(setStatus), []);
 
-  if (status.pending === 0 && !status.stuck) return null;
+  if (status.pending === 0 && !status.stuck && !status.sessionExpired) return null;
+
+  // [2026-08-28] This browser's login itself expired and couldn't renew
+  // itself automatically (see ensureFreshSession in supabaseClient.js) —
+  // checked and shown BEFORE the generic "stuck" case below on purpose,
+  // since a dead login is what was actually behind a real incident at
+  // Thapedey that first showed up looking like a permissions problem
+  // ("row-level security policy for table products"), which sent
+  // troubleshooting the wrong way for a long time. The fix here is just
+  // signing in again — nothing queued on this device is touched or lost
+  // by doing that; it all resumes and saves normally right after.
+  if (status.sessionExpired) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-600 px-6 py-2 text-xs font-semibold text-white">
+        <div className="flex items-center gap-2">
+          <AlertTriangle size={13} />
+          Your login has expired.{status.pending > 0 ? ` ${status.pending} change${status.pending === 1 ? "" : "s"} on this device ${status.pending === 1 ? "is" : "are"} saved safely and waiting — nothing will be lost.` : ""} Sign in again to keep going.
+        </div>
+        <button
+          type="button"
+          onClick={onSignInAgain}
+          className="shrink-0 rounded-md bg-white/15 px-3 py-1 font-semibold hover:bg-white/25"
+        >
+          Sign In Again
+        </button>
+      </div>
+    );
+  }
 
   // Genuinely stuck: we ARE online, but the same change has failed to save
   // several times in a row for a real reason (bad data, a permissions
@@ -61,7 +88,7 @@ function SyncStatusBanner() {
 
 export default function Topbar({ title, subtitle }) {
   const { t } = useLanguage();
-  const { profile } = useAuth();
+  const { profile, logout } = useAuth();
   return (
     <>
       <header className="flex items-center justify-between border-b border-slate-200 bg-white px-7 py-4">
@@ -90,7 +117,7 @@ export default function Topbar({ title, subtitle }) {
           )}
         </div>
       </header>
-      <SyncStatusBanner />
+      <SyncStatusBanner onSignInAgain={logout} />
     </>
   );
 }
