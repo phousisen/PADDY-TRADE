@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2 } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -32,6 +32,16 @@ function fmtTime(t) {
   const period = h >= 12 ? "PM" : "AM";
   h = h % 12 || 12;
   return `${h}:${mm} ${period}`;
+}
+// Short date+time for the expandable row detail below (gross_at/tare_at
+// are full timestamps, unlike tx_date/tx_time above) — always read as
+// Cambodia wall-clock time regardless of the viewing device's own
+// timezone, same reasoning as every other date helper in this file.
+function fmtWeighTime(iso) {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit",
+  }).format(new Date(iso));
 }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
 // viewing device's own timezone/clock setting.
@@ -921,6 +931,18 @@ export default function Transactions({ setPage }) {
   // a spinner forever, or a blank list, with no explanation.
   const [loadError, setLoadError] = useState(false);
   const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
+  // Which rows have their detail panel open (Price/kg, Weigh In, Weigh
+  // Out, etc.) — a Set so more than one row can be expanded at once,
+  // independent of each other, without cluttering the already-wide table
+  // with extra columns. See visibleRows.map below.
+  const [expandedTxIds, setExpandedTxIds] = useState(() => new Set());
+  function toggleExpand(id) {
+    setExpandedTxIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   async function load() {
     // Only show the big "Loading…" state the very first time — once
@@ -1288,6 +1310,7 @@ export default function Transactions({ setPage }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
+                <th className="w-8 px-2 py-3"></th>
                 <th className="px-5 py-3 font-semibold">#</th>
                 <th className="px-3 py-3 font-semibold">Type</th>
                 <th className="px-3 py-3 font-semibold">{t("col_id")}</th>
@@ -1309,8 +1332,23 @@ export default function Transactions({ setPage }) {
                 const hqStatus = tx.hq_status || "processing";
                 const isCancelled = hqStatus === "cancelled";
                 const remaining = remainingByTx[tx.id] || 0;
+                const isBuy = tx.type === "BUY";
+                const isExpanded = expandedTxIds.has(tx.id);
+                // Buy weighs the truck in loaded, out empty; Sell weighs it
+                // in empty, out loaded (see ledgerExport.js's buildRow and
+                // api.js's finalizeTicket for the same reasoning) — label
+                // each weighing accordingly rather than always saying
+                // "in"/"out" with no context.
+                const payableKg = Math.max(0, (tx.quantity_kg || 0) - (tx.deduction_kg || 0));
                 return (
-                  <tr key={tx.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
+                  <Fragment key={tx.id}>
+                  <tr className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
+                    <td className="px-2 py-3.5">
+                      <button onClick={() => toggleExpand(tx.id)} title={isExpanded ? "Hide details" : "Show weigh-in, weigh-out & price details"}
+                        className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-600">
+                        <ChevronRight size={15} className={`transition-transform ${isExpanded ? "rotate-90 text-brand-600" : ""}`} />
+                      </button>
+                    </td>
                     <td className="px-5 py-3.5 text-slate-400">{i + 1}</td>
                     <td className="px-3 py-3.5">
                       <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
@@ -1395,10 +1433,74 @@ export default function Transactions({ setPage }) {
                       </div>
                     </td>
                   </tr>
+                  {isExpanded && (
+                    <tr className="border-b border-slate-50 bg-slate-50/70">
+                      <td></td>
+                      <td colSpan={14} className="px-5 py-4">
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+                          <div>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Price / kg</p>
+                            {tx.price_per_kg != null ? (
+                              <p className="text-sm font-semibold text-slate-800">{fmtRiel(tx.price_per_kg)}</p>
+                            ) : (
+                              <p className="text-sm font-medium text-slate-400">Not set yet</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Weigh In {isBuy ? "(loaded)" : "(empty)"}</p>
+                            {tx.gross_kg != null ? (
+                              <>
+                                <p className="text-sm font-semibold text-slate-800">{fmt2(tx.gross_kg)} kg</p>
+                                {tx.gross_at && <p className="text-xs text-slate-400">{fmtWeighTime(tx.gross_at)}</p>}
+                              </>
+                            ) : (
+                              <p className="text-sm font-medium text-slate-400">Not recorded (entered manually)</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Weigh Out {isBuy ? "(empty)" : "(loaded)"}</p>
+                            {tx.tare_kg != null ? (
+                              <>
+                                <p className="text-sm font-semibold text-slate-800">{fmt2(tx.tare_kg)} kg</p>
+                                {tx.tare_at && <p className="text-xs text-slate-400">{fmtWeighTime(tx.tare_at)}</p>}
+                              </>
+                            ) : (
+                              <p className="text-sm font-medium text-slate-400">Not recorded (entered manually)</p>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Net Weight</p>
+                            <p className="text-sm font-semibold text-slate-800">{fmt2(tx.quantity_kg)} kg</p>
+                          </div>
+                          {(tx.deduction_kg || 0) > 0 && (
+                            <>
+                              <div>
+                                <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Deduction</p>
+                                <p className="text-sm font-semibold text-slate-800">{fmt2(tx.deduction_kg)} kg</p>
+                              </div>
+                              <div>
+                                <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Payable Weight</p>
+                                <p className="text-sm font-semibold text-slate-800">{fmt2(payableKg)} kg</p>
+                              </div>
+                            </>
+                          )}
+                          <div>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Truck</p>
+                            <p className="text-sm font-semibold text-slate-800">{tx.car_plate || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Recorded By</p>
+                            <p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
-              {visibleRows.length === 0 && loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {visibleRows.length === 0 && !loading && <tr><td colSpan={14} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
+              {visibleRows.length === 0 && loading && <tr><td colSpan={15} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {visibleRows.length === 0 && !loading && <tr><td colSpan={15} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
