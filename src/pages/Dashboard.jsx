@@ -135,6 +135,12 @@ export default function Dashboard() {
   const totalBuyAmt = periodBuy.reduce((s, t) => s + Number(t.total_with_tax ?? t.amount), 0);
   const totalSellKg = periodSell.reduce((s, t) => s + Number(t.quantity_kg), 0);
   const totalSellAmt = periodSell.reduce((s, t) => s + Number(t.total_with_tax ?? t.amount), 0);
+  // Weighted average — total riel paid ÷ total kg bought, not an average of
+  // the per-transaction prices — so one large truckload properly outweighs
+  // a small one instead of being counted the same. null (not 0) when
+  // nothing was bought in this range, so the card can say so instead of
+  // showing a misleading "0 ៛/kg".
+  const avgBuyPrice = totalBuyKg > 0 ? totalBuyAmt / totalBuyKg : null;
   // This one is deliberately NOT period-filtered — it's the real running
   // total on hand right now, not "how much moved during the period".
   const netStockKg = locations.reduce((s, l) => s + Number(l.current_stock_kg), 0);
@@ -210,6 +216,11 @@ export default function Dashboard() {
             <p className="text-xs font-medium text-slate-500">Total Buy ({rangeLabel})</p>
             <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totalBuyKg)} kg</p>
             <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalBuyAmt)} paid out</p>
+            {avgBuyPrice != null && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">
+                ⚖ Avg {fmtRiel(avgBuyPrice)}/kg
+              </div>
+            )}
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-600"><TrendingDown size={16} /></div>
