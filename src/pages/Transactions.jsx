@@ -895,6 +895,86 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
   );
 }
 
+// Sell only — records the buyer's own weight/price once the truck has been
+// driven off-station and weighed/settled at the buyer's place. Deliberately
+// no password step here (unlike ConfirmCancelModal above): this doesn't
+// destroy or exclude anything, it's just entering a number that was agreed
+// somewhere else, so the friction of a password wasn't worth adding. Starts
+// pre-filled with the station's own numbers — if nothing changed, Admin can
+// just confirm as-is.
+function ConfirmBuyerSaleModal({ tx, t, onClose, onSubmit }) {
+  const [weight, setWeight] = useState(String(tx.station_quantity_kg ?? tx.quantity_kg ?? ""));
+  const [price, setPrice] = useState(String(tx.station_price_per_kg ?? tx.price_per_kg ?? ""));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const stationKg = Number(tx.station_quantity_kg ?? tx.quantity_kg ?? 0);
+  const stationPrice = Number(tx.station_price_per_kg ?? tx.price_per_kg ?? 0);
+  const buyerKg = parseFloat(weight) || 0;
+  const buyerPrice = parseFloat(price) || 0;
+  const deductionKg = tx.deduction_kg || 0;
+  const lossKg = stationKg - buyerKg;
+  const lossPct = stationKg > 0 ? (lossKg / stationKg) * 100 : 0;
+  const newTotal = Math.max(0, (buyerKg - deductionKg)) * buyerPrice;
+
+  async function submit() {
+    setError("");
+    setSaving(true);
+    try {
+      await onSubmit(buyerKg, buyerPrice);
+    } catch (err) {
+      setError(err.message || "Couldn't save this confirmation — check your connection and try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white shadow-xl overflow-hidden">
+        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-5 py-4 text-white">
+          <h3 className="font-semibold">Confirm Buyer's Final Numbers</h3>
+          <p className="text-xs text-rose-100">{tx.code} · {tx.partyName}</p>
+        </div>
+        <div className="p-5">
+          <div className="mb-4 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+            <div className="flex justify-between text-slate-400"><span>Recorded at the station</span><span></span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Weight</span><span className="font-medium text-slate-700">{fmt2(stationKg)} kg</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Price per kg</span><span className="font-medium text-slate-700">{fmtRiel(stationPrice)}</span></div>
+          </div>
+
+          <label className="mb-1 block text-xs text-slate-500">Buyer's Final Weight (kg)</label>
+          <input type="number" min="0" step="0.01" value={weight} onChange={(e) => setWeight(e.target.value)} autoFocus
+            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
+
+          <label className="mb-1 block text-xs text-slate-500">Buyer's Final Price per kg (Riel)</label>
+          <input type="number" min="0" step="1" value={price} onChange={(e) => setPrice(e.target.value)}
+            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
+
+          <div className={`space-y-1 rounded-lg border px-3 py-2.5 text-sm ${lossKg > 0 ? "border-rose-200 bg-rose-50 text-rose-700" : "border-brand-100 bg-brand-50 text-brand-700"}`}>
+            <div className="flex justify-between">
+              <span>{lossKg >= 0 ? "Weight lost in transit" : "Weight gained"}</span>
+              <span className="font-bold">{fmt2(Math.abs(lossKg))} kg{stationKg > 0 ? ` (${Math.abs(lossPct).toFixed(1)}%)` : ""}</span>
+            </div>
+            <div className="flex justify-between"><span>New Total</span><span className="font-bold">{fmtRiel(newTotal)}</span></div>
+          </div>
+
+          {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-5 pb-5">
+          <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
+          <button
+            disabled={saving || !weight || !price || buyerKg <= 0 || buyerPrice <= 0}
+            onClick={submit}
+            className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40"
+          >
+            {saving ? "Saving..." : "Confirm & Update Sale"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const HQ_STATUS_STYLES = {
   processing: "bg-amber-50 text-amber-600 border-amber-200",
   paid: "bg-emerald-50 text-emerald-600 border-emerald-200",
@@ -927,6 +1007,10 @@ export default function Transactions({ setPage }) {
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
   const [cancelConfirmTx, setCancelConfirmTx] = useState(null);
+  // Sell only — the transaction currently open in the "Confirm Buyer's
+  // Final Numbers" screen (null when closed). See ConfirmBuyerSaleModal
+  // above and submitConfirmBuyerSale below.
+  const [confirmSaleTx, setConfirmSaleTx] = useState(null);
   const [viewPaymentsTx, setViewPaymentsTx] = useState(null);
   const [photosTx, setPhotosTx] = useState(null);
   // Reprinting a receipt for a transaction that's already been saved —
@@ -1206,6 +1290,26 @@ export default function Transactions({ setPage }) {
     }
   }
 
+  async function submitConfirmBuyerSale(buyerKg, buyerPrice) {
+    const tx = confirmSaleTx;
+    const updated = await api.confirmBuyerSale(tx.id, {
+      quantityKg: buyerKg,
+      pricePerKg: buyerPrice,
+      deductionKg: tx.deduction_kg || 0,
+      userId: session.user.id,
+    });
+    await api.logAudit({
+      action: "confirm_buyer_sale",
+      tableName: "transactions",
+      recordId: tx.id,
+      oldData: { quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg, amount: tx.amount, code: tx.code, partyName: tx.partyName },
+      newData: { quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount, station_quantity_kg: tx.station_quantity_kg, station_price_per_kg: tx.station_price_per_kg },
+      userId: session.user.id,
+    });
+    setConfirmSaleTx(null);
+    load();
+  }
+
   async function submitEdit(fields) {
     const { oldData, ...updateFields } = fields;
     const updated = await api.updateTransaction(editTx.id, updateFields);
@@ -1388,6 +1492,17 @@ export default function Transactions({ setPage }) {
                           <RefreshCw size={9} /> Not synced
                         </span>
                       )}
+                      {tx.station_quantity_kg != null && (
+                        tx.buyer_confirmed_at ? (
+                          <span title="The buyer's final weight/price were confirmed and are what's used everywhere else" className="ml-1 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+                            ✓ Confirmed
+                          </span>
+                        ) : (
+                          <span title="Recorded at the station only — still waiting on the buyer's own weight/price" className="ml-1 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                            ⏳ Pending buyer confirmation
+                          </span>
+                        )
+                      )}
                     </td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
@@ -1443,6 +1558,11 @@ export default function Transactions({ setPage }) {
                         ) : (
                           <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
                             <Flag size={12} /> {t("request_change")}
+                          </button>
+                        )}
+                        {isAdmin && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
+                          <button onClick={() => setConfirmSaleTx(tx)} title="Record the buyer's own weight/price once the truck has been settled at the buyer's place" className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100">
+                            <CheckCircle2 size={12} /> Confirm Sale
                           </button>
                         )}
                         {isAdmin && (
@@ -1519,6 +1639,48 @@ export default function Transactions({ setPage }) {
                             <p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p>
                           </div>
                         </div>
+                        {tx.station_quantity_kg != null && (() => {
+                          const stationKg = Number(tx.station_quantity_kg);
+                          const buyerKg = Number(tx.quantity_kg);
+                          const lossKg = stationKg - buyerKg;
+                          const lossPct = stationKg > 0 ? (lossKg / stationKg) * 100 : 0;
+                          return (
+                            <div className="mt-4 border-t border-slate-200 pt-3">
+                              <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+                                {tx.buyer_confirmed_at ? "Station vs. Buyer — confirmed" : "Station vs. Buyer — awaiting buyer confirmation"}
+                              </p>
+                              <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-200 bg-white p-3">
+                                <div>
+                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Station Recorded</p>
+                                  <p className="text-sm font-bold text-slate-800">{fmt2(stationKg)} kg</p>
+                                  <p className="text-xs text-slate-500">{fmtRiel(tx.station_price_per_kg)}/kg</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Buyer Confirmed{tx.buyer_confirmed_at ? " (official)" : ""}</p>
+                                  {tx.buyer_confirmed_at ? (
+                                    <>
+                                      <p className="text-sm font-bold text-slate-800">{fmt2(buyerKg)} kg</p>
+                                      <p className="text-xs text-slate-500">{fmtRiel(tx.price_per_kg)}/kg</p>
+                                    </>
+                                  ) : (
+                                    <p className="text-sm font-medium text-slate-400">Not confirmed yet</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{lossKg >= 0 ? "Lost in Transit" : "Gained"}</p>
+                                  {tx.buyer_confirmed_at ? (
+                                    <>
+                                      <p className="text-sm font-bold text-rose-600">{fmt2(Math.abs(lossKg))} kg</p>
+                                      <p className="text-xs text-rose-500">{Math.abs(lossPct).toFixed(1)}%</p>
+                                    </>
+                                  ) : (
+                                    <p className="text-sm font-medium text-slate-400">—</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                     </tr>
                   )}
@@ -1549,6 +1711,14 @@ export default function Transactions({ setPage }) {
           t={t}
           onClose={() => setCancelConfirmTx(null)}
           onConfirm={confirmCancel}
+        />
+      )}
+      {confirmSaleTx && (
+        <ConfirmBuyerSaleModal
+          tx={confirmSaleTx}
+          t={t}
+          onClose={() => setConfirmSaleTx(null)}
+          onSubmit={submitConfirmBuyerSale}
         />
       )}
     </div>
