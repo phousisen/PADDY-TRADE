@@ -190,8 +190,8 @@ function SectionHeader({ num, title, hint }) {
 
 // ---- New Ticket & Weigh In (combined — one screen, like the scale software's single window) ----
 
-function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated }) {
-  const [type, setType] = useState("BUY");
+function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated, initialType }) {
+  const [type] = useState(initialType || "BUY");
   const [locationId, setLocationId] = useState(defaultLocationId || "");
   const [partyName, setPartyName] = useState("");
   const [phone, setPhone] = useState("");
@@ -487,13 +487,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
   return (
     <Modal
-      title={<>New Ticket — Weigh In (Loaded)<span className="font-khmer block text-sm font-normal text-slate-500">សំបុត្រថ្មី — ថ្លឹងចូល (ដឹកទំនិញ)</span></>}
+      title={<>New Ticket — {type === "BUY" ? "Buy (from farmer)" : "Sell (to buyer)"} — Weigh In (Loaded)<span className="font-khmer block text-sm font-normal text-slate-500">សំបុត្រថ្មី — {type === "BUY" ? "ទិញ (ពីកសិករ)" : "លក់ (ទៅអ្នកទិញ)"} — ថ្លឹងចូល (ដឹកទំនិញ)</span></>}
       subtitle={<>Farmer already has their guard-issued queue slip in hand<span className="font-khmer block">កសិករមានសំបុត្រជួរដែលអាណាព្យាបាលបានចេញរួចហើយ</span></>}
       onClose={onClose} wide
     >
-      <div className="mb-3 flex gap-2">
-        <button onClick={() => setType("BUY")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "BUY" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Buy (from farmer)<span className="font-khmer block text-xs font-normal">ទិញ (ពីកសិករ)</span></button>
-        <button onClick={() => setType("SELL")} className={`flex-1 rounded-lg border py-2 text-sm font-medium ${type === "SELL" ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500"}`}>Sell (to buyer)<span className="font-khmer block text-xs font-normal">លក់ (ទៅអ្នកទិញ)</span></button>
+      <div className={`mb-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
+        {type === "BUY" ? "▲ BUY" : "▼ SELL"}
       </div>
       {isAdmin && (
         <div className="mb-3">
@@ -1388,6 +1387,7 @@ export default function WeighingTickets() {
   const [tab, setTab] = useState("waiting");
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [newTicketType, setNewTicketType] = useState("BUY");
   const [confirmFinishTicket, setConfirmFinishTicket] = useState(null);
   const [finishTicket, setFinishTicket] = useState(null);
   const [editTicket, setEditTicket] = useState(null);
@@ -1507,28 +1507,28 @@ export default function WeighingTickets() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex gap-1 overflow-x-auto">
             <button onClick={() => setTab("waiting")}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "waiting" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
-              Weighed In — Out for Quality Check <span className={`rounded-full px-1.5 text-xs ${tab === "waiting" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.waiting.length}</span>
+              className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "waiting" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
+              Waiting <span className="text-xs opacity-75">{grouped.waiting.length}</span>
             </button>
             <button onClick={() => setTab("declined")}
-              className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "declined" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
-              Declined <span className={`rounded-full px-1.5 text-xs ${tab === "declined" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.declined.length}</span>
+              className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "declined" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
+              Declined <span className="text-xs opacity-75">{grouped.declined.length}</span>
             </button>
             {isAdmin && (
               <button onClick={() => setTab("finalized")}
-                className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "finalized" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+                className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "finalized" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
                 Finalized
               </button>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="flex items-center gap-1.5 border-b border-slate-200 py-1">
+              <Search size={13} className="text-slate-400" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search ticket # or plate…"
-                className="w-48 rounded-lg border border-slate-200 py-1.5 pl-8 pr-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 sm:w-56"
+                placeholder="Ticket # or plate…"
+                className="w-36 border-none bg-transparent text-sm outline-none placeholder:text-slate-400 sm:w-40"
               />
             </div>
             {isAdmin && locations.length > 1 && (
@@ -1537,9 +1537,14 @@ export default function WeighingTickets() {
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             )}
-            <button onClick={() => setShowNew(true)} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-              <Plus size={15} /> New Ticket (Weigh In)
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setNewTicketType("BUY"); setShowNew(true); }} className="flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                <Plus size={14} /> Buy
+              </button>
+              <button onClick={() => { setNewTicketType("SELL"); setShowNew(true); }} className="flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700">
+                <Plus size={14} /> Sell
+              </button>
+            </div>
           </div>
         </div>
         {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">A ticket shows up here once it's been weighed in — the queue slip and quality/price decision on paper happen before this, same as today.</p>}
@@ -1667,6 +1672,7 @@ export default function WeighingTickets() {
           locations={locations}
           defaultLocationId={effectiveLocationId}
           isAdmin={isAdmin}
+          initialType={newTicketType}
           onClose={() => setShowNew(false)}
           onCreated={(t) => { setShowNew(false); load(); setSlipTicket(t); }}
         />
