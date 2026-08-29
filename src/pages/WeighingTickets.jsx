@@ -1537,12 +1537,12 @@ export default function WeighingTickets() {
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             )}
-            <div className="flex items-center gap-2">
-              <button onClick={() => { setNewTicketType("BUY"); setShowNew(true); }} className="flex items-center gap-1 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700">
-                <Plus size={14} /> Buy
+            <div className="flex items-center gap-2.5">
+              <button onClick={() => { setNewTicketType("BUY"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-brand-700">
+                <Plus size={16} /> Buy
               </button>
-              <button onClick={() => { setNewTicketType("SELL"); setShowNew(true); }} className="flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700">
-                <Plus size={14} /> Sell
+              <button onClick={() => { setNewTicketType("SELL"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-rose-700">
+                <Plus size={16} /> Sell
               </button>
             </div>
           </div>
