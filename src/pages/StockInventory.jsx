@@ -280,21 +280,50 @@ export default function StockInventory() {
 
   const productsById = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
 
+  // A manual stock adjustment (Reset to 0, or any other correction) sets
+  // a location's own running total (current_stock_kg) directly — it has
+  // no per-paddy-type breakdown of its own, since stock was never tracked
+  // per type in the database to begin with (see the comment below). That
+  // means a reset only zeroes out the ONE aggregate number; the per-type
+  // breakdown below used to have no way to know a reset ever happened, so
+  // it kept replaying transactions from the beginning of time regardless
+  // — a station reset to 0kg could still show its old paddy composition
+  // here forever, contradicting the 0kg total shown right above it. Fixed
+  // the same way the net-stock diagnostic (see the project log) treats an
+  // adjustment: a hard reset point — nothing dated before a location's
+  // most recent adjustment counts toward its per-type breakdown anymore.
+  // One acknowledged limitation: a real adjustment only ever corrects the
+  // single aggregate number, never a specific paddy type, so a reset is
+  // treated here as zeroing every type at that location, not just one —
+  // there's no data to do better than that.
+  const lastAdjustmentAtByLocation = useMemo(() => {
+    const map = {};
+    for (const a of adjustments) {
+      if (!a.location_id || !a.created_at) continue;
+      if (!map[a.location_id] || a.created_at > map[a.location_id]) map[a.location_id] = a.created_at;
+    }
+    return map;
+  }, [adjustments]);
+
   // Stock isn't tracked per paddy type in the database — each location just
   // has one running total. To break it down by type, replay every
   // transaction's net weight (weight minus quality deduction), adding it for
-  // Buys and subtracting it for Sells, grouped by location and paddy type.
+  // Buys and subtracting it for Sells, grouped by location and paddy type —
+  // skipping anything dated at or before that location's last adjustment
+  // (see comment above).
   const stockByLocationProduct = useMemo(() => {
     const map = {};
     for (const tx of activeTxs) {
       if (!tx.location_id || !tx.product_id) continue;
+      const lastAdjAt = lastAdjustmentAtByLocation[tx.location_id];
+      if (lastAdjAt && tx.created_at && tx.created_at <= lastAdjAt) continue;
       const payable = Math.max(0, Number(tx.quantity_kg || 0) - Number(tx.deduction_kg || 0));
       const delta = tx.type === "BUY" ? payable : -payable;
       map[tx.location_id] = map[tx.location_id] || {};
       map[tx.location_id][tx.product_id] = (map[tx.location_id][tx.product_id] || 0) + delta;
     }
     return map;
-  }, [activeTxs]);
+  }, [activeTxs, lastAdjustmentAtByLocation]);
 
   const combinedByProduct = useMemo(() => {
     const map = {};
