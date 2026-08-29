@@ -173,7 +173,19 @@ export default function StockInventory() {
     setLoading(true);
     setLoadError("");
     try {
-      const [st, tx, pr, adj] = await Promise.all([api.getLocations(), api.getTransactions(), api.getProducts(), api.getStockAdjustments()]);
+      // getStockAdjustments() is caught on its own, separately from the
+      // other three — the Stock Loss Log is one section of this page, not
+      // the whole thing, so a problem with IT (a bad join, a network blip)
+      // should only leave that section empty, never take down stations,
+      // totals, and the paddy-type breakdown along with it. Promise.all
+      // without this would reject entirely the moment any one of the four
+      // calls fails, and the catch block below never gets to set anything.
+      const [st, tx, pr, adj] = await Promise.all([
+        api.getLocations(),
+        api.getTransactions(),
+        api.getProducts(),
+        api.getStockAdjustments().catch(() => []),
+      ]);
       setStations(st);
       setTxs(tx);
       setProducts(pr);
