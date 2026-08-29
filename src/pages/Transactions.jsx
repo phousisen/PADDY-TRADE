@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight, Ban, Undo2 } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -661,7 +661,16 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   );
 }
 
-function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
+// `onChanged`: tells the Transactions list to reload after a payment here
+// is edited — this modal keeps its own local payment history (`payments`
+// state below) for speed, but the parent list's Remaining/Paid/HQ
+// confirmation columns are computed from ITS OWN copy of the payments
+// table (see remainingByTx), which would otherwise sit stale — showing
+// "Paid" for a transaction that was just edited back to only partially
+// paid — until the next full page reload. This is exactly the "changed
+// the amount back and it should auto-update" case the HQ confirmation
+// column is meant to handle automatically.
+function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editPayment, setEditPayment] = useState(null);
@@ -684,6 +693,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose }) {
     });
     setEditPayment(null);
     load();
+    onChanged?.();
   }
 
   return (
@@ -1155,14 +1165,23 @@ export default function Transactions({ setPage }) {
     load();
   }
 
-  async function changeHqStatus(id, hqStatus, tx) {
-    if (hqStatus === "cancelled") {
-      setCancelConfirmTx(tx);
-      return;
-    }
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, hq_status: hqStatus } : r)));
+  // Restoring a cancelled transaction — the only other thing hq_status is
+  // ever used for besides "cancelled" itself (see HQ confirmation column
+  // below: Processing/Paid is now always derived live from the real
+  // remaining balance, never stored). Any non-"cancelled" value works here;
+  // "processing" is just a clear default to leave in the database.
+  async function restoreTransaction(tx) {
+    setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, hq_status: "processing" } : r)));
     try {
-      await api.updateHqStatus(id, hqStatus);
+      await api.updateHqStatus(tx.id, "processing");
+      await api.logAudit({
+        action: "restore_transaction",
+        tableName: "transactions",
+        recordId: tx.id,
+        oldData: { hq_status: "cancelled" },
+        newData: { hq_status: "processing", code: tx.code, partyName: tx.partyName },
+        userId: session.user.id,
+      });
     } catch (err) {
       load();
     }
@@ -1329,9 +1348,16 @@ export default function Transactions({ setPage }) {
             </thead>
             <tbody>
               {visibleRows.map((tx, i) => {
-                const hqStatus = tx.hq_status || "processing";
-                const isCancelled = hqStatus === "cancelled";
+                const isCancelled = (tx.hq_status || "processing") === "cancelled";
                 const remaining = remainingByTx[tx.id] || 0;
+                // Processing vs Paid is no longer something anyone picks —
+                // it's the real remaining balance talking. A payment
+                // recorded, edited, or removed changes `remaining` (via
+                // remainingByTx above, which reads straight from the
+                // payments table), so this is always correct the moment
+                // the page reloads, with no separate flag that can drift
+                // out of sync with what was actually paid.
+                const hqStatus = isCancelled ? "cancelled" : remaining <= 0.01 ? "paid" : "processing";
                 const isBuy = tx.type === "BUY";
                 const isExpanded = expandedTxIds.has(tx.id);
                 // Buy weighs the truck in loaded, out empty; Sell weighs it
@@ -1400,21 +1426,10 @@ export default function Transactions({ setPage }) {
                       </button>
                     </td>
                     <td className="px-3 py-3">
-                      {isAdmin ? (
-                        <select
-                          value={hqStatus}
-                          onChange={(e) => changeHqStatus(tx.id, e.target.value, tx)}
-                          className={`rounded-md border px-2 py-1 text-xs font-medium outline-none ${HQ_STATUS_STYLES[hqStatus]}`}
-                        >
-                          <option value="processing">{t("hq_processing")}</option>
-                          <option value="paid">{t("hq_paid")}</option>
-                          <option value="cancelled">{t("hq_cancelled")}</option>
-                        </select>
-                      ) : (
-                        <span className={`rounded-md border px-2 py-1 text-xs font-medium ${HQ_STATUS_STYLES[hqStatus]}`}>
-                          {t(`hq_${hqStatus}`)}
-                        </span>
-                      )}
+                      <span title={isCancelled ? "" : "Follows the Remaining balance automatically — Settled means Paid, anything owed means Processing."}
+                        className={`rounded-md border px-2 py-1 text-xs font-medium ${HQ_STATUS_STYLES[hqStatus]}`}>
+                        {t(`hq_${hqStatus}`)}
+                      </span>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
@@ -1429,6 +1444,17 @@ export default function Transactions({ setPage }) {
                           <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
                             <Flag size={12} /> {t("request_change")}
                           </button>
+                        )}
+                        {isAdmin && (
+                          isCancelled ? (
+                            <button onClick={() => restoreTransaction(tx)} title="Un-cancel — bring this transaction back into reports and the ledger" className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-emerald-300 hover:text-emerald-700">
+                              <Undo2 size={12} /> Restore
+                            </button>
+                          ) : (
+                            <button onClick={() => setCancelConfirmTx(tx)} title="Cancel this transaction — excludes it from reports and the ledger" className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-rose-300 hover:text-rose-600">
+                              <Ban size={12} /> Cancel
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
@@ -1508,7 +1534,7 @@ export default function Transactions({ setPage }) {
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
       {editTx && <EditTransactionModal tx={editTx} locations={locations} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
-      {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} />}
+      {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} onChanged={load} />}
       {photosTx && <PhotosModal tx={photosTx} onClose={() => setPhotosTx(null)} />}
       {receiptTx && (
         <div className="fixed inset-0 z-50 bg-white">
