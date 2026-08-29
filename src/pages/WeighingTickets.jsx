@@ -1592,55 +1592,70 @@ export default function WeighingTickets() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {grouped[tab]?.map((t) => (
-              // Left border + badge color: BUY=green / SELL=red (rose),
-              // matching the same convention used everywhere else this
-              // Buy/Sell distinction shows up (Transactions, Dashboard,
-              // Stock Report, Location Detail, Tax Report). [2026-08-26]
-              // SELL was blue (sky) before — changed to red per request.
-              <div key={t.id} className={`rounded-xl border border-l-4 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-slate-200 border-l-brand-500" : "border-slate-200 border-l-rose-400"}`}>
-                <div className="mb-2 flex items-start justify-between">
-                  <div>
-                    <p className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-800">
-                      <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${t.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
-                        {t.type === "BUY" ? "▲ BUY" : "▼ SELL"}
+              // Simplified board card [2026-08-29], approved via mockup: only
+              // what's needed to act on a ticket shows by default — who,
+              // truck, weight, and the Quality Ticket # (staff match this
+              // against the paper slip, so it's sized the same as weight).
+              // Ticket code / product / station / who-weighed-it moved into
+              // one small "Details" line at the bottom instead of separate
+              // sentences. Direction (Buy=green / Sell=rose) is still shown
+              // via the left accent bar, same convention used everywhere
+              // else (Transactions, Dashboard, Stock Report, Tax Report) —
+              // just without the extra "▲ BUY" text badge on top of it.
+              <div key={t.id} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className={`absolute inset-y-4 left-0 w-1 rounded-full ${t.type === "BUY" ? "bg-brand-500" : "bg-rose-400"}`} />
+                <div className="pl-3">
+                  <div className="mb-1 flex items-center justify-between">
+                    {pendingCountForTicket(t.id) > 0 ? (
+                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
+                    ) : <span />}
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-300">
+                        {t.gross_at ? new Date(t.gross_at).toLocaleTimeString("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : ""}
                       </span>
-                      {t.code}
-                      {pendingCountForTicket(t.id) > 0 && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
+                      {tab === "waiting" && (
+                        <button onClick={() => setEditTicket(t)} className="text-slate-400 hover:text-brand-600" title="Edit ticket info"><Pencil size={14} /></button>
                       )}
-                    </p>
-                    <p className="text-xs text-slate-400">{t.stationName}{t.gross_at ? ` · weighed in ${new Date(t.gross_at).toLocaleTimeString("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                      <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={15} /></button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {tab === "waiting" && (
-                      <button onClick={() => setEditTicket(t)} className="text-slate-400 hover:text-brand-600" title="Edit ticket info"><Pencil size={15} /></button>
-                    )}
-                    <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
+
+                  <p className="text-xl font-extrabold leading-tight text-slate-800">{t.party_name}</p>
+                  {t.car_plate && <p className="mb-3 text-sm font-semibold text-slate-500">{t.car_plate}</p>}
+
+                  <div className="mb-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-slate-50 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Weight</p>
+                      <p className="text-xl font-extrabold text-slate-800">{t.gross_kg != null ? fmt2(t.gross_kg) : "—"}</p>
+                    </div>
+                    <div className="rounded-lg bg-amber-50 px-3 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Ticket #</p>
+                      <p className="text-xl font-extrabold text-amber-700">{t.paper_ticket_no || "—"}</p>
+                    </div>
                   </div>
+
+                  {tab === "waiting" && (
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => setConfirmFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
+                        Finish Ticket <ArrowRight size={14} />
+                      </button>
+                      <button onClick={() => setDeclineTicketRow(t)} className="text-sm font-medium text-slate-400 hover:text-rose-600">
+                        Decline
+                      </button>
+                    </div>
+                  )}
+                  {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">Declined — {t.price_note || "no reason given"}</p>}
+
+                  {/* Details line — everything that isn't needed to decide what to do
+                      next, still one glance away: ticket code, product, station
+                      (matters when an admin is viewing "All Locations"), and who
+                      filled the ticket in (PaddyTrade staff, not the trading
+                      partner — "(staff)" matches the wording on the printed slip). */}
+                  <p className="mt-2 truncate text-[11px] text-slate-400" title={`${t.code} · ${t.product_name || ""}${t.stationName ? ` · ${t.stationName}` : ""}${t.recorded_by_name ? ` · ${t.type === "BUY" ? "Buyer (staff)" : "Seller (staff)"}: ${t.recorded_by_name}` : ""}`}>
+                    {t.code}{t.product_name ? ` · ${t.product_name}` : ""}{t.stationName ? ` · ${t.stationName}` : ""}
+                    {t.recorded_by_name ? ` · ${t.type === "BUY" ? "Buyer" : "Seller"} (staff): ${t.recorded_by_name}` : ""}
+                  </p>
                 </div>
-                <div className="mb-3 space-y-0.5 text-sm">
-                  <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
-                  <p className="text-slate-500">{t.product_name}</p>
-                  {t.gross_kg != null && <p className="text-slate-500">Gross: {fmt2(t.gross_kg)} kg {t.grossByName && <span className="text-slate-400">by {t.grossByName}</span>}</p>}
-                  {t.paper_ticket_no && <p className="text-xs text-slate-400">Quality Ticket No. {t.paper_ticket_no}</p>}
-                  {/* This is the PaddyTrade staff member who filled the ticket in, NOT the
-                      actual farmer/buyer being traded with (that's t.party_name, shown
-                      above via partyLabelEn/partyLabelKh on the slip) — "(staff)" here
-                      matches the wording already used on the printed slip so this can't
-                      be mistaken for trading-partner data again, the way it was before. */}
-                  {t.recorded_by_name && <p className="text-xs text-slate-400">{t.type === "BUY" ? "Buyer (staff)" : "Seller (staff)"}: {t.recorded_by_name}</p>}
-                </div>
-                {tab === "waiting" && (
-                  <div className="flex gap-2">
-                    <button onClick={() => setConfirmFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
-                      Finish Ticket <ArrowRight size={14} />
-                    </button>
-                    <button onClick={() => setDeclineTicketRow(t)} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
-                      Decline
-                    </button>
-                  </div>
-                )}
-                {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">Declined — {t.price_note || "no reason given"}</p>}
               </div>
             ))}
           </div>
