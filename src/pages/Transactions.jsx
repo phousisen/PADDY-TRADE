@@ -1029,9 +1029,14 @@ export default function Transactions({ setPage }) {
     try {
       const [allTxs, settings] = await Promise.all([
         api.getTransactions(),
-        api.getSettings().catch(() => []),
+        // api.getSettings() already resolves to a plain { key: value } map
+        // (see api.js), not an array of rows — every other caller in the
+        // app (Receipt.jsx, TransactionForm.jsx, WeighingTickets.jsx,
+        // SettingsPage.jsx) uses it this same way. Fall back to {} on
+        // failure, not [], so the lookups below never hit a non-object.
+        api.getSettings().catch(() => ({})),
       ]);
-      const settingsMap = Object.fromEntries((settings || []).map((s) => [s.key, s.value]));
+      const settingsMap = settings || {};
       const companyName = settingsMap.company_name_kh || settingsMap.company_name || "PaddyTrade";
       downloadLedgerWorkbook(
         { txs: allTxs, selectedLocationIds, startDate, endDate, companyName },
