@@ -235,12 +235,23 @@ const labelCls = "mb-1 block text-xs text-slate-500";
 // accentBg is optional — defaults to the original always-green circle, so
 // nothing else changes unless a caller (FinishTicketModal) passes one in
 // to match a ticket's Buy/Sell color.
-function SectionHeader({ num, title, hint, accentBg }) {
+// `titleKm`/`lang` are optional — only FinishTicketModal passes them (its
+// Khmer-translation pass), ordered the same way NewTicketFieldLabel already
+// orders Khmer-vs-English elsewhere in this file. Every other caller that
+// doesn't pass them renders exactly as before (English title only). `hint`
+// is deliberately left English-only even when titleKm is passed — matching
+// the New Ticket redesign's own precedent of dropping long explanatory
+// sentences rather than risking an awkward Khmer translation of them.
+function SectionHeader({ num, title, titleKm, hint, accentBg, lang }) {
   return (
     <div className="mb-2.5 flex items-center gap-2.5">
       <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${accentBg || "bg-brand-600"}`}>{num}</div>
       <div>
-        <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+        <h3 className="text-sm font-bold text-slate-800">
+          {titleKm ? (
+            lang === "km" ? <><span className="font-khmer">{titleKm}</span> {title}</> : <>{title} <span className="font-khmer">{titleKm}</span></>
+          ) : title}
+        </h3>
         {hint && <p className="text-xs text-slate-500">{hint}</p>}
       </div>
     </div>
@@ -1004,6 +1015,18 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
 
 function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }) {
   const isBuy = ticket.type === "BUY";
+  // Khmer translation pass — this form had none at all until now (see the
+  // section-30d note on why it was deliberately skipped back then: the
+  // Quality/Moisture/Mixture/Outthrow fields that used to live here were
+  // real industry terms not worth guessing at). Those fields were removed
+  // in section 30e/30f, so what's left (price, payment, weight, paddy
+  // type) is ordinary business vocabulary — translated here reusing the
+  // exact same terms already shipped elsewhere in the app (i18n.jsx's
+  // price_per_kg/net_weight/bank_name/bank_account/quality_grade/cancel
+  // keys, and New Ticket's own "ផលិតផល"/"empty truck"/"loaded truck"
+  // wording) rather than inventing new ones, so nothing here contradicts
+  // what staff already read on the New Ticket form or a printed receipt.
+  const { lang } = useLanguage();
   // Sell only — the paddy type being sold is now picked here instead of at
   // New Ticket (see NewTicketModal's own comment on this), since a Sell
   // draws from stock rather than creating it, so it makes more sense to
@@ -1246,11 +1269,11 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           stock, so a real sale is never blocked by a bookkeeping gap. */}
       {!isBuy && (
         <div className="mb-5">
-          <SectionHeader num={1} accentBg={accent.circle} title="Paddy Type" hint={`Which paddy from stock at this station is being sold to ${ticket.party_name || "the buyer"}`} />
+          <SectionHeader num={1} accentBg={accent.circle} title="Paddy Type" titleKm="ប្រភេទស្រូវ" lang={lang} hint={`Which paddy from stock at this station is being sold to ${ticket.party_name || "the buyer"}`} />
           <div className="rounded-lg border border-slate-200 p-4">
             {productIsCustom ? (
               <div>
-                <label className={fieldLabelCls}>Paddy Type</label>
+                <NewTicketFieldLabel icon="🌱" en="Paddy Type" km="ផលិតផល" lang={lang} />
                 <input autoFocus value={productName} onChange={(e) => setProductName(e.target.value)} className={fieldCls} placeholder="Type the paddy type" />
                 <button type="button" onClick={() => { setProductIsCustom(false); setProductName(""); }} className="mt-1 text-xs font-medium text-rose-600 hover:underline">
                   ← Back to list
@@ -1258,12 +1281,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
               </div>
             ) : inStockProducts === null ? (
               <div>
-                <label className={fieldLabelCls}>Paddy Type</label>
+                <NewTicketFieldLabel icon="🌱" en="Paddy Type" km="ផលិតផល" lang={lang} />
                 <select disabled className={fieldCls}><option>Loading what's in stock…</option></select>
               </div>
             ) : inStockProducts.length > 0 ? (
               <div>
-                <label className={fieldLabelCls}>Product — only what's currently in stock here</label>
+                <NewTicketFieldLabel icon="🌱" en="Product — only what's currently in stock here" km="ផលិតផល" lang={lang} />
                 <select
                   value={inStockProducts.some((p) => p.name === productName) ? productName : ""}
                   onChange={(e) => {
@@ -1279,7 +1302,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
               </div>
             ) : (
               <div>
-                <label className={fieldLabelCls}>Product</label>
+                <NewTicketFieldLabel icon="🌱" en="Product" km="ផលិតផល" lang={lang} />
                 <p className="mb-2 text-xs font-medium text-amber-600">No recorded stock at this station right now — showing every paddy type instead.</p>
                 <select
                   value={productOptions.includes(productName) ? productName : ""}
@@ -1301,10 +1324,11 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
       {/* Price & Total — everything that feeds the amount owed, with the running total right below it. Net/Payable Weight here depend on the tare weight captured in the Weigh Out step below — until that's filled in, this reads 0 kg, then updates live once it's captured (no need to scroll back up). */}
       <div className="mb-5">
-        <SectionHeader num={isBuy ? 1 : 2} accentBg={accent.circle} title="Price & Total" hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
+        <SectionHeader num={isBuy ? 1 : 2} accentBg={accent.circle} title="Price & Total" titleKm="តម្លៃ និងចំនួនសរុប" lang={lang} hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
         <div className={`rounded-lg border-2 p-4 ${accent.priceBox}`}>
           <label className={`mb-1 block text-sm font-semibold ${accent.priceLabel}`}>
             {isBuy ? "Price per kg (Riel) — the price agreed on the paper ticket" : "Price per kg (Riel) — optional, if already agreed"}
+            <span className="font-khmer block font-normal">តម្លៃក្នុងមួយ KG (រៀល)</span>
           </label>
           <input type="number" min="0" step="1" value={pricePerKg} disabled={!isBuy && priceNotGiven}
             onChange={(e) => setPricePerKg(e.target.value)} placeholder={isBuy ? "e.g. 1090" : "leave blank if not decided yet"}
@@ -1313,16 +1337,16 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
             <label className={`mt-2 flex items-center gap-2 text-xs font-medium ${accent.priceLabel}`}>
               <input type="checkbox" checked={priceNotGiven}
                 onChange={(e) => { setPriceNotGiven(e.target.checked); if (e.target.checked) setPricePerKg(""); }} />
-              Price not given yet — sending out to Baitang / another buyer for pricing
+              <span>Price not given yet — sending out to Baitang / another buyer for pricing<span className="font-khmer block font-normal">តម្លៃមិនទាន់សម្រេច — ផ្ញើទៅលក់ទីផ្សារក្រៅ</span></span>
             </label>
           )}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {isBuy && (
-            <div><label className={fieldLabelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={fieldCls} /></div>
+            <div><NewTicketFieldLabel icon="💰" en="Staff / Carrying Fee (optional)" km="ថ្លៃសេវា (ស្រេចចិត្ត)" lang={lang} /><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={fieldCls} /></div>
           )}
           <div>
-            <label className={fieldLabelCls}>Paddy Quality (optional)</label>
+            <NewTicketFieldLabel icon="⭐" en="Paddy Quality (optional)" km="ថ្នាក់គុណភាព (ស្រេចចិត្ត)" lang={lang} />
             <select value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={fieldCls}>
               <option value="">Not set</option>
               <option value="1">1</option>
@@ -1335,11 +1359,11 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
       {/* 4. Payment Method — decided after the total is known */}
       <div className="mb-5">
-        <SectionHeader num={isBuy ? 2 : 3} accentBg={accent.circle} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
+        <SectionHeader num={isBuy ? 2 : 3} accentBg={accent.circle} title="Payment Method" titleKm="វិធីទូទាត់" lang={lang} hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
         <div className="rounded-lg border border-slate-200 p-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={fieldLabelCls}>Bank (or Cash)</label>
+              <NewTicketFieldLabel icon="🏦" en="Bank (or Cash)" km="ធនាគារ (ឬសាច់ប្រាក់)" lang={lang} />
               <select
                 value={bankIsOther ? "__other__" : bankName}
                 onChange={(e) => {
@@ -1356,12 +1380,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                 <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${fieldCls} mt-2`} />
               )}
             </div>
-            <div><label className={fieldLabelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={fieldCls} /></div>
+            <div><NewTicketFieldLabel icon="🔢" en="Bank Account" km="លេខគណនីធនាគារ" lang={lang} /><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={fieldCls} /></div>
           </div>
           {isBuy && bankName && bankName !== "Cash" && (
             <div className="mt-3">
               <PhotoUpload
-                label="Bank QR Code (photo)"
+                label={<>Bank QR Code (photo) <span className="font-khmer">លេខកូដ QR ធនាគារ (រូបថត)</span></>}
                 kind="party-bank-qr"
                 url={bankQrUrl}
                 onUploaded={setBankQrUrl}
@@ -1377,11 +1401,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           opposite — the truck was empty at weigh-in and is now loaded up
           for delivery to the buyer. Moved to last per explicit request. */}
       <div className="mb-1">
-        <SectionHeader num={isBuy ? 3 : 4} accentBg={accent.circle} title="Weigh Out" hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
+        <SectionHeader num={isBuy ? 3 : 4} accentBg={accent.circle} title="Weigh Out" titleKm="ថ្លឹងទម្ងន់ចេញ" lang={lang} hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
         <WeightField
           locationId={ticket.location_id}
           large
           label={isBuy ? "Tare Weight — empty truck (kg)" : "Weight — loaded truck (kg)"}
+          labelKm={isBuy ? "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តដឹកទំនិញ (គីឡូក្រាម)"}
           scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
           value={tareWeight}
           onChange={setTareWeight}
@@ -1394,12 +1419,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           truck's final weight is captured above, so showing it here reads
           more naturally than sitting above the scale step. */}
       <div className="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
-        <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
-        {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
+        <div className="flex justify-between"><span className="text-slate-500">Net Weight <span className="font-khmer">ទម្ងន់សុទ្ធ</span></span><span className="font-medium">{fmt2(netKg)} kg</span></div>
+        {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight <span className="font-khmer">ទម្ងន់ត្រូវទូទាត់</span></span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
         <div className="flex justify-between border-t border-slate-200 pt-1.5">
-          <span className="font-semibold text-slate-700">Total</span>
+          <span className="font-semibold text-slate-700">Total <span className="font-khmer">សរុប</span></span>
           {!isBuy && priceNotGiven ? (
-            <span className="font-bold text-amber-600">Price pending</span>
+            <span className="font-bold text-amber-600">Price pending <span className="font-khmer">កំពុងរង់ចាំតម្លៃ</span></span>
           ) : (
             <span className={`font-bold ${accent.total}`}>{fmtRiel(total)}</span>
           )}
@@ -1414,12 +1439,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
               going through says "Not Selling" instead. This is a small,
               clearly-correct fix alongside the visual pass, not something
               separately asked for — flagged to the user. */}
-          <Ban size={14} /> {isBuy ? "Not Buying" : "Not Selling"}
+          <Ban size={14} /> {isBuy ? "Not Buying" : "Not Selling"} <span className="font-khmer">{isBuy ? "មិនទិញ" : "មិនលក់"}</span>
         </button>
         <div className="flex gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel <span className="font-khmer">បោះបង់</span></button>
           <button disabled={saving} onClick={submitFinish} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${accent.saveBtn}`}>
-            <Check size={14} /> {saving ? "Saving…" : "Save, Print & Finalize"}
+            <Check size={14} /> {saving ? <>Saving… <span className="font-khmer">កំពុងរក្សាទុក…</span></> : <>Save, Print &amp; Finalize <span className="font-khmer">រក្សាទុក បោះពុម្ព និងបញ្ចប់</span></>}
           </button>
         </div>
       </div>
