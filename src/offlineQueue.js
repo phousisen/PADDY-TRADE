@@ -1307,6 +1307,13 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
     tare_kg: ticket.tare_kg,
     tare_at: ticket.tare_at,
     quantity_kg: netKg,
+    // Sell-only snapshot of the truck's own weigh-out weight/price at the
+    // moment this ticket was finished — mirrors api.js's createTransaction,
+    // kept in sync with it on purpose (see that function's own comment).
+    // Stays untouched forever after this; quantity_kg/price_per_kg above
+    // are the ones that later switch to the buyer's confirmed numbers.
+    station_quantity_kg: ticket.type === "SELL" ? netKg : null,
+    station_price_per_kg: ticket.type === "SELL" ? ticket.price_per_kg : null,
     quality_grade: ticket.quality_grade,
     moisture_pct: ticket.moisture_pct,
     mixture_pct: ticket.mixture_pct,
@@ -1393,6 +1400,10 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
     quantity_kg: quantityKg,
     payable_kg: payableKg,
     price_per_kg: pricePerKg,
+    // Sell-only snapshot — same reasoning as finalizeTicketOffline above
+    // and api.js's createTransaction (kept in sync with both on purpose).
+    station_quantity_kg: type === "SELL" ? quantityKg : null,
+    station_price_per_kg: type === "SELL" ? pricePerKg : null,
     payment_status: paymentStatus,
     quality_grade: qualityGrade || null,
     moisture_pct: moisturePct || 0,
