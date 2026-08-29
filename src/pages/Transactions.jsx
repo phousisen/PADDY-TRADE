@@ -87,6 +87,23 @@ async function resolvePartyId(typedName, originalName, originalPartyId, type) {
   return created.id;
 }
 
+// Same idea as resolvePartyId above, for the paddy type (product) field in
+// Edit Transaction — keep the original product if untouched, reuse an
+// existing product on an exact name match, or create a new one. Mirrors
+// resolveProductIdOffline in offlineQueue.js (the New Buy/Sell form's own
+// version of this), just as a direct online call rather than going through
+// the offline queue — Edit Transaction is already an online-only,
+// password-confirmed action.
+async function resolveProductId(typedName, originalName, originalProductId) {
+  const trimmed = (typedName || "").trim();
+  if (trimmed === (originalName || "").trim()) return originalProductId;
+  const all = await api.getProducts().catch(() => []);
+  const exact = (all || []).find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+  if (exact) return exact.id;
+  const created = await api.createProduct(trimmed);
+  return created.id;
+}
+
 function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const isBuy = tx.type === "BUY";
   const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
@@ -350,6 +367,15 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const isBuy = tx.type === "BUY";
   const [locationId, setLocationId] = useState(tx.location_id || "");
   const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
+  // tx.productName comes back as the literal string "—" (see api.js's
+  // getTransactions()) when a transaction has no product_id at all, not an
+  // empty string — normalize that here so the input starts genuinely blank
+  // instead of showing a dash the staff member would have to notice and
+  // delete first.
+  const initialProductName = tx.productName && tx.productName !== "—" ? tx.productName : "";
+  const [productQuery, setProductQuery] = useState(initialProductName);
+  const [products, setProducts] = useState([]);
+  useEffect(() => { api.getProducts().then(setProducts).catch(() => {}); }, []);
   const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg ?? ""));
   const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg ?? ""));
   const [qualityGrade, setQualityGrade] = useState(tx.quality_grade || "");
@@ -380,7 +406,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const [tareOutTime, setTareOutTime] = useState(tareSplit.time);
 
   const newAmount = Math.max(0, Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
-  const canSubmit = !saving && password && partyQuery.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0;
+  const canSubmit = !saving && password && partyQuery.trim() && productQuery.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0;
 
   async function submit(e) {
     e.preventDefault();
@@ -394,8 +420,10 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
     }
     try {
       const partyId = await resolvePartyId(partyQuery, tx.partyName, tx.party_id, isBuy ? "supplier" : "buyer");
+      const productId = await resolveProductId(productQuery, initialProductName, tx.product_id);
       await onSubmit({
         partyId,
+        productId,
         locationId,
         quantityKg: parseFloat(quantityKg) || 0,
         pricePerKg: parseFloat(pricePerKg) || 0,
@@ -419,7 +447,8 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
         tareAt: combineCambodiaToISO(tareOutDate, tareOutTime),
         oldData: {
           location_id: tx.location_id, stationName: tx.stationName,
-          party_id: tx.party_id, partyName: tx.partyName, quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
+          party_id: tx.party_id, partyName: tx.partyName, product_id: tx.product_id, productName: tx.productName,
+          quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg,
           amount: tx.amount, payment_status: tx.payment_status, quality_grade: tx.quality_grade, tax_applicable: tx.tax_applicable,
           tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
           deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name,
@@ -449,6 +478,21 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
               {partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "").trim() && (
                 <p className="mt-1 text-[11px] text-slate-400">
                   Will be matched to an existing {isBuy ? "farmer" : "buyer"} with this name, or added as new, when saved.
+                </p>
+              )}
+            </div>
+
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
+              <input list="et-product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)}
+                placeholder="Type or pick a product"
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              <datalist id="et-product-options">
+                {products.map((p) => <option key={p.id} value={p.name} />)}
+              </datalist>
+              {productQuery.trim() && productQuery.trim() !== initialProductName.trim() && (
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Will be matched to an existing product with this name, or added as new, when saved.
                 </p>
               )}
             </div>
@@ -1171,7 +1215,7 @@ export default function Transactions({ setPage }) {
       oldData,
       newData: {
         code: editTx.code, partyName: editTx.partyName, location_id: updated.location_id,
-        party_id: updated.party_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
+        party_id: updated.party_id, product_id: updated.product_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
         payment_status: updated.payment_status, quality_grade: updated.quality_grade, tax_applicable: updated.tax_applicable,
         tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,
         deduction_kg: updated.deduction_kg, staff_fee: updated.staff_fee, car_plate: updated.car_plate, driver_name: updated.driver_name, note: updated.note, tx_date: updated.tx_date,
