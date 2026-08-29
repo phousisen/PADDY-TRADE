@@ -858,7 +858,13 @@ export const api = {
       productId: ticket.product_id,
       quantityKg: netKg,
       pricePerKg: ticket.price_per_kg,
-      paymentStatus: ticket.type === "BUY" ? "pending" : "paid",
+      // A Sell finished with "price not given yet" (ticket.price_per_kg
+      // is null — see WeighingTickets.jsx's submitFinish()) can't
+      // honestly be marked "paid" — nobody has settled on an amount to
+      // pay yet. Credit (still owed) is the correct starting state;
+      // staff correct it once the price is actually agreed, same as
+      // they already do via Edit Transaction.
+      paymentStatus: ticket.type === "BUY" ? "pending" : (ticket.price_per_kg == null ? "credit" : "paid"),
       userId,
       qualityGrade: ticket.quality_grade,
       taxApplicable: ticket.tax_applicable,
@@ -887,6 +893,60 @@ export const api = {
       .eq("id", id);
     if (updateErr) throw updateErr;
     return tx;
+  },
+
+  // Undoes a ticket that got Finished against the wrong truck — staff pick
+  // a ticket off the board, weigh out, price, and finalize it, and only
+  // after the receipt prints do they realize it was actually a different
+  // truck's ticket. HQ Admin only (see WeighingTickets.jsx's Finalized tab).
+  //
+  // Cancels the transaction Finish created — reusing the same hq_status
+  // flag already used everywhere else in the app to keep a bad transaction
+  // out of reports and the ledger export (see updateHqStatus above) — and
+  // resets the ticket back to "weighed_in", clearing everything Finish
+  // Ticket wrote (quality, price, tare/weigh-out, the transaction link).
+  // The original weigh-in (gross_kg) is left untouched, since that step
+  // happened correctly for this ticket and was never the mistake. The
+  // ticket then reappears in the normal waiting queue, ready to be
+  // finished again — correctly, against the right truck. A printed paper
+  // receipt from the mistaken finish can't be recalled by this — staff
+  // still need to void/staple that copy by hand.
+  async reopenTicket(id, { userId, reason }) {
+    const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
+    if (fetchErr) throw fetchErr;
+    if (ticket.stage !== "finalized") throw new Error("Only a finished ticket can be reopened.");
+    if (ticket.transaction_id) {
+      const { error: cancelErr } = await supabase
+        .from("transactions")
+        .update({ hq_status: "cancelled" })
+        .eq("id", ticket.transaction_id);
+      if (cancelErr) throw cancelErr;
+    }
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .update({
+        stage: "weighed_in",
+        quality_grade: null, moisture_pct: 0, mixture_pct: 0, outthrow_pct: 0, deduction_kg: 0,
+        price_per_kg: null, staff_fee: 0, tax_applicable: false, tax_rate: 0, price_note: null,
+        priced_at: null, priced_by: null,
+        tare_kg: null, tare_at: null, tare_by: null,
+        transaction_id: null,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    // Fire-and-forget, same reasoning as every other logAudit call — this
+    // runs right after the real mutation above already succeeded.
+    this.logAudit({
+      action: "reopen_ticket",
+      tableName: "weighing_tickets",
+      recordId: id,
+      oldData: { stage: "finalized", transactionId: ticket.transaction_id, code: ticket.code },
+      newData: { stage: "weighed_in", reason, cancelledTransactionId: ticket.transaction_id },
+      userId,
+    });
+    return data;
   },
 
   async getChangeRequests() {
