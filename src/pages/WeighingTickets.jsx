@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, Printer, X, ArrowRight, Ban, Check, Search, Pencil } from "lucide-react";
+import { useLanguage } from "../i18n.jsx";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
@@ -152,18 +153,33 @@ const ALL_STAGE_IDS = [...OPEN_STAGE_IDS, "declined"];
 
 // ---- Modal shell ----------------------------------------------------------
 
-function Modal({ title, subtitle, onClose, children, wide }) {
+// headerColor/icon are optional — only NewTicketModal passes them (colored
+// banner header). Every other caller renders exactly as before, unchanged.
+function Modal({ title, subtitle, onClose, children, wide, headerColor, icon }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className={`no-print w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 shadow-xl`}>
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-700">{title}</h3>
-            {subtitle && <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>}
+      <div className={`no-print w-full ${wide ? "max-w-2xl" : "max-w-md"} max-h-[90vh] overflow-y-auto rounded-xl bg-white shadow-xl ${headerColor ? "" : "p-5"}`}>
+        {headerColor ? (
+          <div className={`flex items-center justify-between rounded-t-xl px-5 py-4 text-white ${headerColor}`}>
+            <div className="flex items-center gap-3">
+              {icon && <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-white/20 text-lg">{icon}</div>}
+              <div>
+                <h3 className="font-bold">{title}</h3>
+                {subtitle && <p className="mt-0.5 text-xs opacity-85">{subtitle}</p>}
+              </div>
+            </div>
+            <button onClick={onClose} className="text-white/75 hover:text-white flex-shrink-0"><X size={18} /></button>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
-        </div>
-        {children}
+        ) : (
+          <div className="mb-4 flex items-start justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-700">{title}</h3>
+              {subtitle && <p className="mt-0.5 text-xs text-slate-400">{subtitle}</p>}
+            </div>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+          </div>
+        )}
+        <div className={headerColor ? "p-5" : ""}>{children}</div>
       </div>
     </div>
   );
@@ -190,8 +206,32 @@ function SectionHeader({ num, title, hint }) {
 
 // ---- New Ticket & Weigh In (combined — one screen, like the scale software's single window) ----
 
+// Bilingual field label — order follows the app's own EN/ខ្មែរ switch
+// (useLanguage()) rather than always being English-first, so this form
+// matches whichever language someone already has the rest of the app set
+// to. Both languages still show either way; only the order changes.
+function NewTicketFieldLabel({ icon, en, km, lang }) {
+  const kmEl = <span className="font-khmer">{km}</span>;
+  return (
+    <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-bold text-slate-600">
+      <span className="text-sm leading-none">{icon}</span>
+      {lang === "km" ? <>{kmEl} {en}</> : <>{en} {kmEl}</>}
+    </label>
+  );
+}
+
+function NewTicketSectionHead({ label, dotClass, textClass }) {
+  return (
+    <div className="mb-2.5 mt-5 flex items-center gap-2 first:mt-0">
+      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+      <span className={`text-[11px] font-extrabold uppercase tracking-wide ${textClass}`}>{label}</span>
+    </div>
+  );
+}
+
 function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated, initialType }) {
   const [type] = useState(initialType || "BUY");
+  const { lang } = useLanguage();
   const [locationId, setLocationId] = useState(defaultLocationId || "");
   const [partyName, setPartyName] = useState("");
   const [phone, setPhone] = useState("");
@@ -485,40 +525,58 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     }
   }
 
+  const isBuy = type === "BUY";
+  // Every color in this form follows the ticket's own direction — green
+  // for Buy, rose for Sell — matching the same convention already used
+  // for the board cards and the toolbar's + Buy / + Sell buttons. Written
+  // out as full literal class strings (not built with string
+  // interpolation) so Tailwind's build actually picks both branches up.
+  const accent = isBuy
+    ? { header: "bg-gradient-to-br from-brand-600 to-brand-700", dot: "bg-brand-600", text: "text-brand-700", focus: "focus:border-brand-600 focus:bg-white focus:ring-4 focus:ring-brand-100" }
+    : { header: "bg-gradient-to-br from-rose-600 to-rose-700", dot: "bg-rose-600", text: "text-rose-700", focus: "focus:border-rose-600 focus:bg-white focus:ring-4 focus:ring-rose-100" };
+  const fieldCls = `w-full rounded-lg border border-slate-300 bg-slate-50 px-3.5 py-3 text-[15px] font-semibold text-slate-800 outline-none ${accent.focus}`;
+
   return (
     <Modal
-      title={<>New Ticket — {type === "BUY" ? "Buy (from farmer)" : "Sell (to buyer)"} — Weigh In (Loaded)<span className="font-khmer block text-sm font-normal text-slate-500">សំបុត្រថ្មី — {type === "BUY" ? "ទិញ (ពីកសិករ)" : "លក់ (ទៅអ្នកទិញ)"} — ថ្លឹងចូល (ដឹកទំនិញ)</span></>}
-      subtitle={<>Farmer already has their guard-issued queue slip in hand<span className="font-khmer block">កសិករមានសំបុត្រជួរដែលអាណាព្យាបាលបានចេញរួចហើយ</span></>}
+      headerColor={accent.header}
+      icon="⚖️"
+      title={<>New Ticket — {isBuy ? "Buy" : "Sell"}</>}
+      subtitle="Weigh In (Loaded)"
       onClose={onClose} wide
     >
-      <div className={`mb-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
-        {type === "BUY" ? "▲ BUY" : "▼ SELL"}
-      </div>
       {isAdmin && (
-        <div className="mb-3">
+        <div className="mb-4">
           <label className={labelCls}>Location</label>
-          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={inputCls}>
+          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={fieldCls}>
             <option value="">Select location…</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
+
+      <NewTicketSectionHead label="Ticket & Truck" dotClass={accent.dot} textClass={accent.text} />
+      <div className="grid grid-cols-2 gap-3.5">
         {/* Not shown for Sell — the paper quality ticket booklet is only
             used when buying from a farmer, so this field (and its
             required-field check below) is skipped entirely on the Sell
             side. */}
-        {type === "BUY" && (
+        {isBuy && (
           <div>
-            <label className={labelCls}>Quality Ticket No.<span className="font-khmer block text-brand-600">លេខសំបុត្រគុណភាព</span></label>
-            <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
-            <p className="mt-1 text-[11px] text-slate-400">Auto-suggested from the last one used — edit if it's wrong</p>
+            <NewTicketFieldLabel icon="🎫" en="Ticket #" km="លេខសំបុត្រ" lang={lang} />
+            <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={fieldCls} placeholder="e.g. 092152" />
           </div>
         )}
-        <div className={type === "BUY" ? "" : "col-span-2"}><label className={labelCls}>Vehicle Plate Number<span className="font-khmer block text-brand-600">លេខផ្លាកយានយន្ត</span></label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
+        <div className={isBuy ? "" : "col-span-2"}>
+          <NewTicketFieldLabel icon="🚚" en="Plate" km="ផ្លាកលេខ" lang={lang} />
+          <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={fieldCls} />
+        </div>
+      </div>
+
+      <NewTicketSectionHead label="People" dotClass={accent.dot} textClass={accent.text} />
+      <div className="grid grid-cols-2 gap-3.5">
         <div className="col-span-2">
-          <label className={labelCls}>Phone (type it and tab/click away to look them up)<span className="font-khmer block text-brand-600">លេខទូរស័ព្ទ (វាយបញ្ចូល រួចចុចចេញ ដើម្បីស្វែងរក)</span></label>
-          <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={inputCls} />
+          <NewTicketFieldLabel icon="📞" en="Phone" km="ទូរស័ព្ទ" lang={lang} />
+          <input value={phone} onChange={(e) => setPhone(e.target.value)} onBlur={lookupByPhone} className={fieldCls} />
           {phoneLookupMsg && <p className={`mt-1 text-xs ${phoneLookupMsg.startsWith("Found") ? "text-emerald-600" : "text-slate-400"}`}>{phoneLookupMsg}</p>}
           {savedBank && (
             <div className="mt-2 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
@@ -533,19 +591,16 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           )}
         </div>
         <div className="col-span-2">
-          <div className="mb-1 flex items-center justify-between">
-            <label className={labelCls}>
-              {type === "BUY" ? "Seller (Farmer) Name" : "Buyer Name"}
-              <span className="font-khmer block text-brand-600">{type === "BUY" ? "ឈ្មោះអ្នកលក់ (កសិករ)" : "ឈ្មោះអ្នកទិញ"}</span>
-            </label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <NewTicketFieldLabel icon="🌾" en={isBuy ? "Seller" : "Buyer"} km={isBuy ? "អ្នកលក់" : "អ្នកទិញ"} lang={lang} />
             {effectivePreviousParty && (
               <button
                 type="button"
                 onClick={usePreviousParty}
-                className="mb-1 rounded-md border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
+                className="mb-1.5 rounded-md border border-brand-200 bg-brand-50 px-2 py-1 text-[11px] font-medium text-brand-700 hover:bg-brand-100"
                 title={`Fill in name + phone for ${effectivePreviousParty.name}`}
               >
-                Use previous {type === "BUY" ? "seller" : "buyer"}: {effectivePreviousParty.name}
+                Use previous {isBuy ? "seller" : "buyer"}: {effectivePreviousParty.name}
               </button>
             )}
           </div>
@@ -553,22 +608,22 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             list="new-ticket-party-options"
             value={partyName}
             onChange={(e) => handlePartyNameChange(e.target.value)}
-            className={inputCls}
-            placeholder="Start typing to search, or type a new name"
+            className={fieldCls}
+            placeholder="Type to search or add new"
           />
           <datalist id="new-ticket-party-options">
             {partyOptions.map((name) => <option key={name} value={name} />)}
           </datalist>
         </div>
         <div>
-          <label className={labelCls}>Product (paddy type)<span className="font-khmer block text-brand-600">ផលិតផល (ប្រភេទស្រូវ)</span></label>
+          <NewTicketFieldLabel icon="🌱" en="Product" km="ផលិតផល" lang={lang} />
           {productIsCustom ? (
             <div>
               <input
                 autoFocus
                 value={productName}
                 onChange={(e) => setProductName(e.target.value)}
-                className={inputCls}
+                className={fieldCls}
                 placeholder="Type the new paddy type"
               />
               <button
@@ -586,28 +641,27 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
                 else setProductName(e.target.value);
               }}
-              className={inputCls}
+              className={fieldCls}
             >
               <option value="" disabled>Select paddy type…</option>
               {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
               <option value="__other__">+ Add new type…</option>
             </select>
           )}
-          {!productIsCustom && <p className="mt-1 text-[11px] text-slate-400">Tip: click the list, then press a number key to jump straight to it</p>}
         </div>
-        <div><label className={labelCls}>Driver Name<span className="font-khmer block text-brand-600">ឈ្មោះអ្នកបើកបរ</span></label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
+        <div>
+          <NewTicketFieldLabel icon="🧑" en="Driver" km="អ្នកបើកបរ" lang={lang} />
+          <input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={fieldCls} placeholder="Optional" />
+        </div>
         <div className="col-span-2">
-          <label className={labelCls}>
-            {type === "BUY" ? "Buyer" : "Seller"}
-            <span className="font-khmer block text-brand-600">{type === "BUY" ? "អ្នកទិញ" : "អ្នកលក់"}</span>
-          </label>
+          <NewTicketFieldLabel icon="🧾" en={isBuy ? "Buyer (you)" : "Seller (you)"} km={isBuy ? "អ្នកទិញ" : "អ្នកលក់"} lang={lang} />
           {recordedByIsCustom ? (
             <div>
               <input
                 autoFocus={recordedByOptions.length > 0}
                 value={recordedByName}
                 onChange={(e) => setRecordedByName(e.target.value)}
-                className={inputCls}
+                className={fieldCls}
                 placeholder="Your name (whoever is filling in this ticket)"
               />
               {recordedByOptions.length > 0 && (
@@ -627,22 +681,18 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 if (e.target.value === "__other__") { setRecordedByIsCustom(true); setRecordedByName(""); }
                 else setRecordedByName(e.target.value);
               }}
-              className={inputCls}
+              className={fieldCls}
             >
               <option value="" disabled>Select your name…</option>
               {recordedByOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
               <option value="__other__">+ Add new name…</option>
             </select>
           )}
-          <p className="mt-1 text-[11px] text-slate-400">
-            {type === "BUY"
-              ? "You're the one buying this paddy on PaddyTrade's behalf — put your name here, not the farmer's."
-              : "You're the one selling this paddy on PaddyTrade's behalf — put your name here, not the buyer's."}
-          </p>
         </div>
       </div>
 
-      <div className="mt-4">
+      <NewTicketSectionHead label="Weight" dotClass={accent.dot} textClass={accent.text} />
+      <div>
         {/* Buy: the truck shows up already loaded with paddy from the
             farmer, so this first weighing is the heavier "gross" number.
             Sell: it's the reverse — the truck shows up empty and only
@@ -651,8 +701,9 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             The label follows which one is physically true right now. */}
         <WeightField
           locationId={locationId}
-          label={type === "BUY" ? "Gross Weight — loaded truck (kg)" : "Weight — empty truck (kg)"}
-          labelKm={type === "BUY" ? "ទម្ងន់សរុប — រថយន្តដឹកទំនិញ (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)"}
+          large
+          label={isBuy ? "Gross Weight (kg)" : "Weight — empty truck (kg)"}
+          labelKm={isBuy ? "ទម្ងន់សរុប (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)"}
           value={grossWeight}
           onChange={setGrossWeight}
           isAdmin={isAdmin}
@@ -660,10 +711,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
-        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
-          {saving ? "Saving…" : (<>Save & Print Weigh-In Slip<span className="font-khmer block text-xs font-normal text-emerald-100">រក្សាទុក និង បោះពុម្ពសំបុត្រថ្លឹង</span></>)}
+        <button disabled={saving} onClick={submit} className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${isBuy ? "bg-brand-600 hover:bg-brand-700" : "bg-rose-600 hover:bg-rose-700"}`}>
+          {saving ? "Saving…" : (<>Save & Print Weigh-In Slip<span className="font-khmer block text-xs font-normal text-white/85">រក្សាទុក និង បោះពុម្ពសំបុត្រថ្លឹង</span></>)}
         </button>
       </div>
     </Modal>
