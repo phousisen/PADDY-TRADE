@@ -1,15 +1,26 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers, Scale } from "lucide-react";
+import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers, Scale, RotateCcw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
+import { getAccurateNow } from "../supabaseClient.js";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${fmt(n)} ៛`; }
+// Cambodia's current calendar date (YYYY-MM-DD) — same helper as
+// Transactions.jsx/WeighingTickets.jsx, reading getAccurateNow() rather
+// than the device's own clock (see section 14's clock-accuracy fix).
+function cambodiaDateStr(d = getAccurateNow()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 const ADJUSTMENT_REASONS = [
+  { value: "reset", label: "Daily reset — remaining treated as lost" },
   { value: "moisture", label: "Moisture loss (dried out)" },
   { value: "spillage", label: "Spillage / handling loss" },
   { value: "recount", label: "Recount correction" },
@@ -25,24 +36,45 @@ const ADJUSTMENT_REASONS = [
 // Weighing Tickets board: this is a periodic reconciliation step done at
 // a normal moment, not something that has to survive a truck arriving
 // mid-storm with no signal.
-function AdjustStockModal({ station, t, onClose, onSubmit }) {
+// `todayAvgBuyPrice`: that station's weighted-average Buy price for today
+// (total riel paid ÷ total kg bought today — same two numbers already on
+// the Dashboard's "Total Buy (Today)" card), or null when nothing's been
+// bought there yet today. Only ever used to prefill the price field below,
+// which stays editable either way.
+function AdjustStockModal({ station, todayAvgBuyPrice, t, onClose, onSubmit }) {
   const previous = Number(station.current_stock_kg) || 0;
   const [newStockKg, setNewStockKg] = useState(String(previous));
   const [reason, setReason] = useState("moisture");
   const [note, setNote] = useState("");
+  // Blank by default (per the standing decision: never guess a price when
+  // there's nothing to base it on) — prefilled only when this station
+  // actually had a Buy today, still editable regardless.
+  const [priceInput, setPriceInput] = useState(todayAvgBuyPrice != null ? String(Math.round(todayAvgBuyPrice)) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   const next = parseFloat(newStockKg);
   const hasValidNext = newStockKg.trim() !== "" && Number.isFinite(next) && next >= 0;
   const delta = hasValidNext ? next - previous : 0;
+  const isLoss = hasValidNext && delta < -0.005;
+  const price = parseFloat(priceInput);
+  const hasPrice = priceInput.trim() !== "" && Number.isFinite(price) && price >= 0;
+  const valueLost = isLoss && hasPrice ? Math.abs(delta) * price : null;
   const canSubmit = !saving && hasValidNext;
+
+  // One tap for the daily habit this was built for: today's leftover stock
+  // becomes 0, reason defaults to the dedicated "reset" option, and the
+  // price field keeps whatever it already had (today's average, if any).
+  function useResetToZero() {
+    setNewStockKg("0");
+    setReason("reset");
+  }
 
   async function submit() {
     setError("");
     setSaving(true);
     try {
-      await onSubmit({ newStockKg: next, reason, note: note.trim() || null });
+      await onSubmit({ newStockKg: next, reason, note: note.trim() || null, pricePerKg: isLoss && hasPrice ? price : null });
     } catch (err) {
       // Same reasoning as every other save-with-a-modal in this app: if it
       // fails (dropped connection, permissions gap), say so instead of
@@ -58,8 +90,13 @@ function AdjustStockModal({ station, t, onClose, onSubmit }) {
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Adjust Stock — {station.name}</h3>
         <p className="mb-4 text-xs text-slate-400">Use this when what's actually on the scale doesn't match what the system shows — paddy naturally loses some weight over time from moisture drying out, spillage, or handling.</p>
 
-        <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">System currently shows</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
+        <div className="mb-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
+          <div><span className="text-slate-500">System currently shows</span> <span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
+          {previous > 0 && (
+            <button type="button" onClick={useResetToZero} className="flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">
+              <RotateCcw size={11} /> Reset to 0
+            </button>
+          )}
         </div>
 
         <label className="mb-1 block text-xs text-slate-500">Actual weighed amount now (kg)</label>
@@ -70,6 +107,26 @@ function AdjustStockModal({ station, t, onClose, onSubmit }) {
           <div className={`mb-3 rounded-lg px-3 py-2.5 text-sm ${delta < -0.005 ? "bg-rose-50 text-rose-700" : delta > 0.005 ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
             {Math.abs(delta) < 0.005 ? "No change from what the system already shows." : `${delta < 0 ? "Loss" : "Gain"} of ${fmt2(Math.abs(delta))} kg will be recorded.`}
           </div>
+        )}
+
+        {isLoss && (
+          <>
+            <label className="mb-1 block text-xs text-slate-500">Price per kg (Riel) — for valuing this loss</label>
+            <input type="number" min="0" step="1" value={priceInput} onChange={(e) => setPriceInput(e.target.value)}
+              placeholder={todayAvgBuyPrice == null ? "No Buy today yet — type in a price" : ""}
+              className="mb-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            <p className="mb-3 text-[11px] text-slate-400">
+              {todayAvgBuyPrice != null
+                ? "Auto-filled from today's average Buy price at this station — editable."
+                : "Nothing bought here yet today to average — type a price in, or leave blank to skip valuing this loss."}
+            </p>
+            {valueLost != null && (
+              <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm">
+                <span className="font-medium text-amber-700">Estimated Value Lost</span>
+                <span className="font-bold text-amber-700">{fmtRiel(valueLost)}</span>
+              </div>
+            )}
+          </>
         )}
 
         <label className="mb-1 block text-xs text-slate-500">Reason</label>
@@ -106,6 +163,7 @@ export default function StockInventory() {
   const [stations, setStations] = useState([]);
   const [products, setProducts] = useState([]);
   const [txs, setTxs] = useState([]);
+  const [adjustments, setAdjustments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
@@ -115,10 +173,11 @@ export default function StockInventory() {
     setLoading(true);
     setLoadError("");
     try {
-      const [st, tx, pr] = await Promise.all([api.getLocations(), api.getTransactions(), api.getProducts()]);
+      const [st, tx, pr, adj] = await Promise.all([api.getLocations(), api.getTransactions(), api.getProducts(), api.getStockAdjustments()]);
       setStations(st);
       setTxs(tx);
       setProducts(pr);
+      setAdjustments(adj);
     } catch (err) {
       // Without this, a failed/dropped request left the refresh icon
       // spinning forever with no error and no way to tell what happened.
@@ -130,11 +189,11 @@ export default function StockInventory() {
 
   useEffect(() => { load(); }, []);
 
-  async function submitAdjustment({ newStockKg, reason, note }) {
+  async function submitAdjustment({ newStockKg, reason, note, pricePerKg }) {
     const station = adjustStation;
     const previousStockKg = Number(station.current_stock_kg) || 0;
     await api.recordStockAdjustment({
-      locationId: station.id, previousStockKg, newStockKg, reason, note, userId: session.user.id,
+      locationId: station.id, previousStockKg, newStockKg, reason, note, pricePerKg, userId: session.user.id,
     });
     // Logged the same way every other significant change in the app is —
     // edits, cancellations, payments — so it shows up in the Activity Log
@@ -144,7 +203,7 @@ export default function StockInventory() {
       tableName: "locations",
       recordId: station.id,
       oldData: { current_stock_kg: previousStockKg },
-      newData: { current_stock_kg: newStockKg, reason, note, stationName: station.name },
+      newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: station.name },
       userId: session.user.id,
     }).catch(() => {});
     setAdjustStation(null);
@@ -164,6 +223,48 @@ export default function StockInventory() {
 
   const avgPrice = activeTxs.length ? activeTxs.reduce((s, x) => s + Number(x.price_per_kg), 0) / activeTxs.length : 0;
   const estimatedValue = Math.round(totalStockKg * avgPrice);
+
+  const todayStr = cambodiaDateStr();
+
+  // Today's weighted-average Buy price per station — total riel paid ÷
+  // total kg bought today, the same two numbers the Dashboard's "Total Buy
+  // (Today)" card already shows. Used only to prefill AdjustStockModal's
+  // price field; null (no key) means nothing was bought there yet today.
+  const todayAvgBuyPriceByLocation = useMemo(() => {
+    const sums = {};
+    for (const tx of activeTxs) {
+      if (tx.type !== "BUY" || tx.tx_date !== todayStr || !tx.location_id) continue;
+      const kg = Number(tx.quantity_kg) || 0;
+      const amt = Number(tx.total_with_tax ?? tx.amount) || 0;
+      const s = (sums[tx.location_id] = sums[tx.location_id] || { kg: 0, amt: 0 });
+      s.kg += kg;
+      s.amt += amt;
+    }
+    const out = {};
+    for (const locId in sums) {
+      if (sums[locId].kg > 0) out[locId] = sums[locId].amt / sums[locId].kg;
+    }
+    return out;
+  }, [activeTxs, todayStr]);
+
+  // Stock Loss Log — every adjustment that actually reduced stock (a
+  // "gain," like a recount finding more than expected, isn't a loss and
+  // stays out of this specific log/summary, even though it's the same
+  // underlying stock_adjustments table).
+  const lossRows = useMemo(
+    () => adjustments.filter((a) => Number(a.adjustment_kg) < -0.005),
+    [adjustments]
+  );
+  const lossMonthStr = todayStr.slice(0, 7); // "YYYY-MM"
+  // created_at is stored/returned as a UTC timestamp — convert to Cambodia's
+  // own calendar date before comparing, rather than string-matching the raw
+  // ISO value, so a loss recorded late at night doesn't get mis-bucketed
+  // against UTC's date boundary instead of the station's real one.
+  const lostToday = lossRows.filter((a) => a.created_at && cambodiaDateStr(new Date(a.created_at)) === todayStr);
+  const lostThisMonth = lossRows.filter((a) => a.created_at && cambodiaDateStr(new Date(a.created_at)).startsWith(lossMonthStr));
+  const lostTodayKg = lostToday.reduce((s, a) => s + Math.abs(Number(a.adjustment_kg)), 0);
+  const lostMonthKg = lostThisMonth.reduce((s, a) => s + Math.abs(Number(a.adjustment_kg)), 0);
+  const lostMonthValue = lostThisMonth.reduce((s, a) => s + Number(a.value_lost || 0), 0);
 
   const productsById = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
 
@@ -368,11 +469,62 @@ export default function StockInventory() {
             </tbody>
           </table>
         </div>
+
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-5 py-4">
+            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-rose-500" /> Stock Loss Log</h3>
+            <p className="mt-0.5 text-xs text-slate-400">Every stock adjustment that reduced what's on hand — moisture, spillage, or a daily reset — with what it was worth at the time.</p>
+          </div>
+          <div className="grid grid-cols-1 divide-y divide-slate-100 border-b border-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            <div className="px-5 py-3.5">
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">Lost Today</p>
+              <p className="mt-0.5 text-lg font-bold text-rose-600">{fmt2(lostTodayKg)} kg</p>
+            </div>
+            <div className="px-5 py-3.5">
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">Lost This Month</p>
+              <p className="mt-0.5 text-lg font-bold text-rose-600">{fmt2(lostMonthKg)} kg</p>
+            </div>
+            <div className="px-5 py-3.5">
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">Est. Value Lost This Month</p>
+              <p className="mt-0.5 text-lg font-bold text-rose-600">{fmtRiel(lostMonthValue)}</p>
+            </div>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
+                <th className="px-5 py-2 font-medium">Date</th>
+                <th className="px-5 py-2 font-medium">{t("station")}</th>
+                <th className="px-5 py-2 font-medium">Weight Lost</th>
+                <th className="px-5 py-2 font-medium">Price/kg Used</th>
+                <th className="px-5 py-2 font-medium">Value Lost</th>
+                <th className="px-5 py-2 font-medium">Recorded By</th>
+                <th className="px-5 py-2 font-medium">Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lossRows.map((a) => (
+                <tr key={a.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                  <td className="px-5 py-3 text-slate-500">{a.created_at ? cambodiaDateStr(new Date(a.created_at)) : "—"}</td>
+                  <td className="px-5 py-3 font-medium text-slate-700">{a.stationName}</td>
+                  <td className="px-5 py-3 font-medium text-rose-600">{fmt2(Math.abs(a.adjustment_kg))} kg</td>
+                  <td className="px-5 py-3 text-slate-600">{a.price_per_kg != null ? fmtRiel(a.price_per_kg) : <span className="text-slate-300">—</span>}</td>
+                  <td className="px-5 py-3 font-medium text-rose-600">{a.value_lost != null ? fmtRiel(a.value_lost) : <span className="font-normal text-slate-300">not valued</span>}</td>
+                  <td className="px-5 py-3 text-slate-500">{a.adjustedByName}</td>
+                  <td className="px-5 py-3 text-slate-400">{a.note || (ADJUSTMENT_REASONS.find((r) => r.value === a.reason)?.label ?? a.reason)}</td>
+                </tr>
+              ))}
+              {lossRows.length === 0 && !loading && !loadError && (
+                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No stock loss recorded yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </main>
 
       {adjustStation && (
         <AdjustStockModal
           station={adjustStation}
+          todayAvgBuyPrice={todayAvgBuyPriceByLocation[adjustStation.id] ?? null}
           t={t}
           onClose={() => setAdjustStation(null)}
           onSubmit={submitAdjustment}
