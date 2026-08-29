@@ -29,6 +29,13 @@ const PHONE_LOOKUP_TIMEOUT_MS = 4000;
 // or rejected for setLoading(false) to run.
 const BOARD_LOAD_TIMEOUT_MS = 12000;
 
+// Bounds Finish Ticket's in-stock-paddy-type lookup (Sell only — see
+// FinishTicketModal). A background nicety like the phone lookup, not the
+// page's primary data, but this one fetches every transaction at a
+// location rather than a single row, so it gets a bit more room than
+// PHONE_LOOKUP_TIMEOUT_MS on a slow connection before falling back.
+const STOCK_LOOKUP_TIMEOUT_MS = 8000;
+
 // The ONLY paddy types shown by default — deliberately just these 5, in
 // this order, not whatever else happens to already be sitting in the
 // products table from earlier testing/history. Each option is labeled
@@ -470,11 +477,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // after whatever was last typed in for that location. Staff can still
   // edit it (a spoiled ticket, a different booklet, etc.) — this only
   // fills it in when it's still blank, so it never overwrites something
-  // they already typed. Selling to a buyer doesn't use this paper quality
-  // ticket booklet at all — that's a Buy-from-farmer thing only — so this
-  // is skipped entirely on the Sell side.
+  // they already typed. Now asked on both Buy and Sell (per explicit
+  // request), and the shared per-location counter (suggestNextPaperTicketNo)
+  // is already keyed by location only, not type, so this needed no change
+  // beyond dropping the old Buy-only guard.
   useEffect(() => {
-    if (type === "BUY" && locationId && !paperTicketNo) {
+    if (locationId && !paperTicketNo) {
       const suggested = suggestNextPaperTicketNo(locationId);
       if (suggested) setPaperTicketNo(suggested);
     }
@@ -528,8 +536,13 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
   async function submit() {
     const kg = parseFloat(grossWeight);
-    if (!locationId || !partyName.trim() || !productName.trim() || !vehicleType.trim()) {
-      setError("Please fill in location, party name, product, and vehicle type.");
+    // Product is Buy-only here now — a Sell ticket picks its paddy type at
+    // Finish Ticket instead, from what's actually in stock at that point
+    // (see FinishTicketModal below), since at weigh-in time for a Sell
+    // nothing has actually been chosen yet.
+    const isBuyTicket = type === "BUY";
+    if (!locationId || !partyName.trim() || (isBuyTicket && !productName.trim()) || !vehicleType.trim()) {
+      setError(`Please fill in location, party name, ${isBuyTicket ? "product, " : ""}and vehicle type.`);
       return;
     }
     // Truck keeps the original required-plate rule. Koyun/Tractor (and any
@@ -543,7 +556,9 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setError(`Please enter the name of the ${type === "BUY" ? "buyer" : "seller"} filling in this ticket.`);
       return;
     }
-    if (type === "BUY" && !paperTicketNo.trim()) {
+    // Now required on both Buy and Sell — the paper quality-ticket booklet
+    // number, per explicit request.
+    if (!paperTicketNo.trim()) {
       setError("Please enter the number printed on the paper quality ticket.");
       return;
     }
@@ -620,17 +635,14 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
       <NewTicketSectionHead label="Ticket & Truck" dotClass={accent.dot} textClass={accent.text} />
       <div className="grid grid-cols-2 gap-3.5">
-        {/* Not shown for Sell — the paper quality ticket booklet is only
-            used when buying from a farmer, so this field (and its
-            required-field check below) is skipped entirely on the Sell
-            side. */}
-        {isBuy && (
-          <div>
-            <NewTicketFieldLabel icon="🎫" en="Ticket #" km="លេខសំបុត្រ" lang={lang} />
-            <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={fieldCls} placeholder="e.g. 092152" />
-          </div>
-        )}
-        <div className={isBuy ? "" : "col-span-2"}>
+        {/* Now asked on both Buy and Sell, per explicit request — the
+            paper quality-ticket booklet number, entered here so it matches
+            what staff wrote on the physical slip. */}
+        <div>
+          <NewTicketFieldLabel icon="🎫" en="Ticket #" km="លេខសំបុត្រ" lang={lang} />
+          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={fieldCls} placeholder="e.g. 092152" />
+        </div>
+        <div>
           <NewTicketFieldLabel icon="🚚" en="Vehicle" km="យានយន្ត" lang={lang} />
           <div className="grid grid-cols-2 gap-2">
             {vehicleTypeIsCustom ? (
@@ -716,41 +728,47 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             {partyOptions.map((name) => <option key={name} value={name} />)}
           </datalist>
         </div>
-        <div>
-          <NewTicketFieldLabel icon="🌱" en="Product" km="ផលិតផល" lang={lang} />
-          {productIsCustom ? (
-            <div>
-              <input
-                autoFocus
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
+        {/* Product moved off this form for Sell — a Sell ticket now picks
+            its paddy type at Finish Ticket instead, from what's actually in
+            stock at that point (see FinishTicketModal). Still asked here
+            for Buy, unchanged. */}
+        {isBuy && (
+          <div>
+            <NewTicketFieldLabel icon="🌱" en="Product" km="ផលិតផល" lang={lang} />
+            {productIsCustom ? (
+              <div>
+                <input
+                  autoFocus
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  className={fieldCls}
+                  placeholder="Type the new paddy type"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setProductIsCustom(false); setProductName(""); }}
+                  className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+                >
+                  ← Back to list
+                </button>
+              </div>
+            ) : (
+              <select
+                value={productOptions.includes(productName) ? productName : ""}
+                onChange={(e) => {
+                  if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
+                  else setProductName(e.target.value);
+                }}
                 className={fieldCls}
-                placeholder="Type the new paddy type"
-              />
-              <button
-                type="button"
-                onClick={() => { setProductIsCustom(false); setProductName(""); }}
-                className="mt-1 text-xs font-medium text-brand-600 hover:underline"
               >
-                ← Back to list
-              </button>
-            </div>
-          ) : (
-            <select
-              value={productOptions.includes(productName) ? productName : ""}
-              onChange={(e) => {
-                if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
-                else setProductName(e.target.value);
-              }}
-              className={fieldCls}
-            >
-              <option value="" disabled>Select paddy type…</option>
-              {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
-              <option value="__other__">+ Add new type…</option>
-            </select>
-          )}
-        </div>
-        <div>
+                <option value="" disabled>Select paddy type…</option>
+                {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
+                <option value="__other__">+ Add new type…</option>
+              </select>
+            )}
+          </div>
+        )}
+        <div className={isBuy ? "" : "col-span-2"}>
           <NewTicketFieldLabel icon="🧑" en="Driver" km="អ្នកបើកបរ" lang={lang} />
           <input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={fieldCls} placeholder="Optional" />
         </div>
@@ -986,6 +1004,26 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
 
 function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }) {
   const isBuy = ticket.type === "BUY";
+  // Sell only — the paddy type being sold is now picked here instead of at
+  // New Ticket (see NewTicketModal's own comment on this), since a Sell
+  // draws from stock rather than creating it, so it makes more sense to
+  // choose once it's actually known what's on hand. Falls back to the same
+  // growable local list New Ticket/Edit Ticket use if nothing loads.
+  const [productName, setProductName] = useState(ticket.product_name || "");
+  const [productIsCustom, setProductIsCustom] = useState(false);
+  const [productOptions] = useState(() => {
+    const seen = new Set(PADDY_TYPE_SEED.map((n) => n.toLowerCase()));
+    const extras = getCustomPaddyTypes().filter((name) => {
+      const key = (name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [...PADDY_TYPE_SEED, ...extras];
+  });
+  // null = still loading; [] = loaded, nothing currently in stock at this
+  // station (falls back to productOptions above, with a warning shown).
+  const [inStockProducts, setInStockProducts] = useState(null);
   const [qualityGrade, setQualityGrade] = useState("");
   const [moisturePct, setMoisturePct] = useState("");
   const [mixturePct, setMixturePct] = useState("");
@@ -1027,6 +1065,44 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.id]);
 
+  // Sell only — replays this location's real Buy/Sell transaction history
+  // to work out which paddy types actually have stock left, same math
+  // Stock Inventory's own "Stock by Paddy Type" breakdown uses (net
+  // payable weight: +Buy, -Sell, cancelled transactions excluded), so the
+  // dropdown below always agrees with what Stock Inventory would show.
+  // Falls back to an empty list (not an error) on any failure or timeout —
+  // the field then falls back to the full paddy-type list, with a
+  // warning, rather than silently blocking a real sale.
+  useEffect(() => {
+    if (isBuy) return;
+    let cancelled = false;
+    (async () => {
+      const txs = await withTimeout(
+        api.getTransactions({ locationId: ticket.location_id }).catch(() => null),
+        STOCK_LOOKUP_TIMEOUT_MS,
+        null
+      );
+      if (cancelled) return;
+      if (!txs) { setInStockProducts([]); return; }
+      const stockByProduct = {};
+      for (const tx of txs) {
+        if (!tx.product_id) continue;
+        if ((tx.hq_status || "processing") === "cancelled") continue;
+        const payable = Math.max(0, Number(tx.quantity_kg || 0) - Number(tx.deduction_kg || 0));
+        const delta = tx.type === "BUY" ? payable : -payable;
+        if (!stockByProduct[tx.product_id]) stockByProduct[tx.product_id] = { kg: 0, name: tx.productName || "—" };
+        stockByProduct[tx.product_id].kg += delta;
+      }
+      const inStock = Object.entries(stockByProduct)
+        .map(([id, v]) => ({ id, name: v.name, kg: v.kg }))
+        .filter((p) => p.kg > 0.5) // small threshold — ignores rounding dust, not a real remaining amount
+        .sort((a, b) => b.kg - a.kg);
+      setInStockProducts(inStock);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.location_id, isBuy]);
+
   // Buy: paddy weight is In minus Out (arrives loaded, leaves empty).
   // Sell: it's Out minus In (arrives empty, leaves loaded for delivery).
   const netKg = Math.max(0, isBuy
@@ -1056,12 +1132,25 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     // price left blank (0), and corrected later from the Transactions
     // list once it's actually agreed.
     if (isBuy && !pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
+    // Sell only — New Ticket no longer asks for the paddy type (see
+    // NewTicketModal), so it has to be chosen here before a sale can
+    // actually finish.
+    if (!isBuy && !productName.trim()) { setError("Please select which paddy type is being sold."); return; }
     if (!tareKg || tareKg <= 0) { setError(isBuy ? "Please enter the empty truck's weight." : "Please enter the loaded truck's weight."); return; }
     // Photo of the paper ticket is off while testing — no camera on this
     // computer yet. Re-add this check once photos are actually possible.
     setError("");
     setSaving(true);
     try {
+      // Sell only — save the chosen paddy type onto the ticket first (via
+      // the same editTicketOffline path Edit Ticket uses for a plate/name
+      // correction), so it's already there by the time finalizeTicketOffline
+      // below builds the real transaction from the ticket's own fields.
+      if (!isBuy) {
+        const productId = await resolveProductIdOffline(productName);
+        if (productIsCustom) addCustomPaddyType(productName);
+        editTicketOffline(ticket.id, { productId, productName: productName.trim(), userId: session.user.id });
+      }
       const finalBankQrUrl = isBuy && bankName && bankName !== "Cash" ? bankQrUrl : null;
       // Buy always has a real number here (required above). Sell stores
       // an actual null — not 0 — whenever the price isn't settled yet
@@ -1143,12 +1232,76 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           from this form for now (not deleted — see the state variables
           and submitFinish() above/below, still fully wired) since staff
           have never actually been filling them in; easy to bring back if
-          that changes. Numbering below reflects the new order (1/2/3),
-          not the original 1–5. */}
+          that changes. Sell also gets a new first step, Paddy Type, since
+          Product moved here from New Ticket (see NewTicketModal). Numbering
+          below reflects this actual order, not the original 1–5. */}
 
-      {/* 1. Price & Total — everything that feeds the amount owed, with the running total right below it. Net/Payable Weight here depend on the tare weight captured in step 3 below — until that's filled in, this reads 0 kg, then updates live once it's captured (no need to scroll back up). */}
+      {/* Sell only, step 1 — Product moved here from New Ticket, since a
+          Sell is drawing from stock rather than creating it, so this is
+          the point where it's actually known what's being sold. Lists
+          only paddy types with real stock left at this station (computed
+          from real transaction history — see the effect above), with each
+          option showing how much is on hand. Falls back to the full
+          paddy-type list (with a warning) if nothing is currently in
+          stock, so a real sale is never blocked by a bookkeeping gap. */}
+      {!isBuy && (
+        <div className="mb-5">
+          <SectionHeader num={1} accentBg={accent.circle} title="Paddy Type" hint={`Which paddy from stock at this station is being sold to ${ticket.party_name || "the buyer"}`} />
+          <div className="rounded-lg border border-slate-200 p-4">
+            {productIsCustom ? (
+              <div>
+                <label className={fieldLabelCls}>Paddy Type</label>
+                <input autoFocus value={productName} onChange={(e) => setProductName(e.target.value)} className={fieldCls} placeholder="Type the paddy type" />
+                <button type="button" onClick={() => { setProductIsCustom(false); setProductName(""); }} className="mt-1 text-xs font-medium text-rose-600 hover:underline">
+                  ← Back to list
+                </button>
+              </div>
+            ) : inStockProducts === null ? (
+              <div>
+                <label className={fieldLabelCls}>Paddy Type</label>
+                <select disabled className={fieldCls}><option>Loading what's in stock…</option></select>
+              </div>
+            ) : inStockProducts.length > 0 ? (
+              <div>
+                <label className={fieldLabelCls}>Product — only what's currently in stock here</label>
+                <select
+                  value={inStockProducts.some((p) => p.name === productName) ? productName : ""}
+                  onChange={(e) => {
+                    if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
+                    else setProductName(e.target.value);
+                  }}
+                  className={fieldCls}
+                >
+                  <option value="" disabled>Select from what's in stock…</option>
+                  {inStockProducts.map((p) => <option key={p.id} value={p.name}>{p.name} — {fmt2(p.kg)} kg in stock</option>)}
+                  <option value="__other__">Something else / not listed…</option>
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className={fieldLabelCls}>Product</label>
+                <p className="mb-2 text-xs font-medium text-amber-600">No recorded stock at this station right now — showing every paddy type instead.</p>
+                <select
+                  value={productOptions.includes(productName) ? productName : ""}
+                  onChange={(e) => {
+                    if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
+                    else setProductName(e.target.value);
+                  }}
+                  className={fieldCls}
+                >
+                  <option value="" disabled>Select paddy type…</option>
+                  {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
+                  <option value="__other__">+ Add new type…</option>
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Price & Total — everything that feeds the amount owed, with the running total right below it. Net/Payable Weight here depend on the tare weight captured in the Weigh Out step below — until that's filled in, this reads 0 kg, then updates live once it's captured (no need to scroll back up). */}
       <div className="mb-5">
-        <SectionHeader num={1} accentBg={accent.circle} title="Price & Total" hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
+        <SectionHeader num={isBuy ? 1 : 2} accentBg={accent.circle} title="Price & Total" hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
         <div className={`rounded-lg border-2 p-4 ${accent.priceBox}`}>
           <label className={`mb-1 block text-sm font-semibold ${accent.priceLabel}`}>
             {isBuy ? "Price per kg (Riel) — the price agreed on the paper ticket" : "Price per kg (Riel) — optional, if already agreed"}
@@ -1182,7 +1335,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 
       {/* 4. Payment Method — decided after the total is known */}
       <div className="mb-5">
-        <SectionHeader num={2} accentBg={accent.circle} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
+        <SectionHeader num={isBuy ? 2 : 3} accentBg={accent.circle} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
         <div className="rounded-lg border border-slate-200 p-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -1224,7 +1377,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           opposite — the truck was empty at weigh-in and is now loaded up
           for delivery to the buyer. Moved to last per explicit request. */}
       <div className="mb-1">
-        <SectionHeader num={3} accentBg={accent.circle} title="Weigh Out" hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
+        <SectionHeader num={isBuy ? 3 : 4} accentBg={accent.circle} title="Weigh Out" hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
         <WeightField
           locationId={ticket.location_id}
           large
