@@ -629,6 +629,17 @@ export const api = {
       price_per_kg: pricePerKg,
       amount,
       payment_status: paymentStatus,
+      // Sell-only snapshot of what was recorded when the sale was first
+      // created — the truck's own weigh-out weight and the price agreed
+      // (if any) at that point, before it's driven to the buyer and
+      // weighed/priced again there. Never touched again after this —
+      // quantity_kg/price_per_kg/amount above are the ones that switch to
+      // the buyer's confirmed numbers once that happens (see
+      // confirmBuyerSale below), so this pair stays the permanent "what we
+      // sent out" reference for measuring transport loss. Buy has no
+      // second weighing elsewhere, so this is left null there.
+      station_quantity_kg: type === "SELL" ? quantityKg : null,
+      station_price_per_kg: type === "SELL" ? pricePerKg : null,
       created_by: userId,
       quality_grade: qualityGrade || null,
       tax_applicable: !!taxApplicable,
@@ -1038,6 +1049,43 @@ export const api = {
         ...(grossAt !== undefined ? { gross_at: grossAt } : {}),
         ...(tareKg !== undefined ? { tare_kg: tareKg } : {}),
         ...(tareAt !== undefined ? { tare_at: tareAt } : {}),
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Sell only — records the buyer's actual final weight & price once the
+  // truck has been to their place and weighed/priced there (see
+  // Transactions.jsx's ConfirmBuyerSaleModal). Deliberately a small,
+  // separate function rather than routing through updateTransaction above
+  // — that function writes several fields (payment_status, quality_grade,
+  // tax_applicable/tax_rate) unconditionally, so a minimal caller would
+  // need to round-trip every one of them just to avoid silently wiping
+  // them; a dedicated update here only ever touches the handful of fields
+  // this screen actually changes. `deductionKg` is passed in from the
+  // transaction's own current value (not a new one — this screen doesn't
+  // edit it) purely so the new amount is computed with the same
+  // payable-weight math as everywhere else. `amount` here is the same
+  // pre-tax subtotal the table always stores (tax_applicable/tax_rate are
+  // display-only fields on this table and are left untouched, whatever
+  // they were already set to). The transaction's original
+  // quantity_kg/price_per_kg (as recorded at the station) are never
+  // touched here — see createTransaction's station_quantity_kg/
+  // station_price_per_kg above, which is where that snapshot lives.
+  async confirmBuyerSale(id, { quantityKg, pricePerKg, deductionKg, userId }) {
+    const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
+    const subtotal = Math.round(Math.max(0, payableKg * pricePerKg) * 100) / 100;
+    const { data, error } = await supabase
+      .from("transactions")
+      .update({
+        quantity_kg: quantityKg,
+        price_per_kg: pricePerKg,
+        amount: subtotal,
+        buyer_confirmed_at: getAccurateNow().toISOString(),
+        buyer_confirmed_by: userId,
       })
       .eq("id", id)
       .select()
