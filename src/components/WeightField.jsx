@@ -20,7 +20,11 @@ const TESTING_ALLOW_STAFF_MANUAL_ENTRY = false;
 // Admin/Owner logins always get a small, opt-in "Enter manually" link
 // underneath — an emergency-only override for the rare case the scale
 // itself is down and a truck still needs to be processed.
-export default function WeightField({ locationId, label, labelKm, scaleLabel, scaleLabelKm, value, onChange, isAdmin }) {
+// `large` is optional — only NewTicketModal passes it, to make the
+// scale-reading box bigger and easier to spot at a glance there. Every
+// other caller (Finish Ticket, Edit Ticket, TransactionForm) doesn't pass
+// it and renders exactly as before.
+export default function WeightField({ locationId, label, labelKm, scaleLabel, scaleLabelKm, value, onChange, isAdmin, large }) {
   const { connected, weightKg } = useLiveWeight(locationId);
   const [manualMode, setManualMode] = useState(false);
 
@@ -30,20 +34,20 @@ export default function WeightField({ locationId, label, labelKm, scaleLabel, sc
 
   return (
     <div>
-      <div className={`mb-2 flex items-center justify-between gap-3 rounded-lg border px-4 py-3 ${connected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
+      <div className={`mb-2 flex items-center justify-between gap-3 rounded-lg border ${large ? "px-5 py-4" : "px-4 py-3"} ${connected ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
         <div className="flex items-center gap-2.5">
-          <span className={`h-2 w-2 rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
+          <span className={`${large ? "h-2.5 w-2.5" : "h-2 w-2"} rounded-full ${connected ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`} />
           <div>
-            <p className={`text-xs font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>
+            <p className={`${large ? "text-sm" : "text-xs"} font-medium ${connected ? "text-emerald-700" : "text-slate-400"}`}>
               {connected ? (scaleLabel || "Live Scale Weight") : "Scale not connected"}
               <span className="font-khmer block font-normal">{connected ? (scaleLabelKm || "ទម្ងន់ជញ្ជីងផ្ទាល់") : "ជញ្ជីងមិនទាន់ភ្ជាប់"}</span>
             </p>
-            <p className={`text-lg font-bold ${connected ? "text-emerald-800" : "text-slate-300"}`}>{connected ? `${fmt2(weightKg)} kg` : "— kg"}</p>
+            <p className={`${large ? "text-2xl" : "text-lg"} font-bold ${connected ? "text-emerald-800" : "text-slate-300"}`}>{connected ? `${fmt2(weightKg)} kg` : "— kg"}</p>
           </div>
         </div>
         {connected && (
           <button type="button" onClick={() => onChange(String(weightKg))}
-            className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-100">
+            className={`rounded-lg border border-emerald-300 bg-white font-medium text-emerald-700 hover:bg-emerald-100 ${large ? "px-3.5 py-2 text-sm" : "px-3 py-1.5 text-xs"}`}>
             Capture This Weight
             <span className="font-khmer block font-normal">ចាប់យកទម្ងន់នេះ</span>
           </button>
