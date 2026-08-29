@@ -1137,6 +1137,88 @@ function DeclineModal({ ticket, onClose, onDeclined }) {
   );
 }
 
+// ---- Confirm-the-truck step, before Finish Ticket's long form opens ------
+//
+// Added after staff finished a few tickets against the wrong truck — with
+// several trucks in progress at once, it's easy to tap "Finish Ticket" on
+// the wrong card in a busy list. This one glance, big-text check happens
+// BEFORE any weighing/pricing is typed in, right where the wrong pick
+// actually happens, instead of only being discoverable afterward.
+function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
+  return (
+    <Modal title="Confirm the truck" onClose={onClose}>
+      <p className="mb-4 text-sm text-slate-500">Double-check this matches the truck on the scale right now before continuing.</p>
+      <div className="mb-5 rounded-lg border-2 border-brand-200 bg-brand-50 p-4 text-center">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${ticket.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
+          {ticket.type === "BUY" ? "▲ BUY" : "▼ SELL"}
+        </span>
+        <p className="mt-2 text-2xl font-bold text-slate-800">{ticket.car_plate || "No plate on file"}</p>
+        <p className="mt-1 text-lg font-medium text-slate-700">{ticket.party_name}</p>
+        <p className="text-sm text-slate-500">{ticket.product_name} · Ticket {ticket.code}{ticket.paper_ticket_no ? ` · Quality Ticket No. ${ticket.paper_ticket_no}` : ""}</p>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">This isn't it — cancel</button>
+        <button onClick={onConfirm} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          Yes, this is the right truck <ArrowRight size={14} />
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ---- Reopen a mistakenly-finished ticket (HQ Admin only) -----------------
+//
+// For when Finish Ticket already happened against the wrong ticket and the
+// receipt already printed. Cancels the transaction it created (same
+// hq_status flag already used elsewhere to keep bad transactions out of
+// reports/the ledger) and sends the ticket back to the waiting queue,
+// keeping only its original weigh-in, so it can be finished again against
+// the right truck. See api.js's reopenTicket for exactly what's reset.
+function ReopenTicketModal({ ticket, onClose, onReopened }) {
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const { session } = useAuth();
+
+  async function submit() {
+    if (!reason.trim()) { setError("Please note why this ticket is being reopened — it's kept in the audit log."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      await api.reopenTicket(ticket.id, { userId: session.user.id, reason: reason.trim() });
+      onReopened();
+    } catch (e) {
+      setError(e.message || "Couldn't reopen this ticket — check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Reopen Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-slate-500">
+        Use this when Finish Ticket was completed against the wrong truck. This cancels the transaction
+        it created — {ticket.code} will no longer count in reports or the ledger export — and puts the
+        ticket back in the waiting queue with only its original weigh-in kept, ready to be finished again.
+      </p>
+      <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+        If a receipt from this ticket was already printed and handed over, this can't recall it — void or staple that paper copy by hand.
+      </div>
+      <label className={labelCls}>Reason (required)</label>
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+        placeholder="e.g. Finished against the wrong ticket — this was actually truck 3A-1205"
+        className={`${inputCls} resize-none`} />
+      {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
+      <div className="mt-4 flex justify-end gap-2">
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+        <button disabled={saving} onClick={submit} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40">
+          {saving ? "Reopening…" : "Reopen Ticket"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ---- Interim slip (printed at weigh-in, mirrors the paper queue ticket) ------
 
 // Final approved design [2026-08-25]: bordered/lines-only monochrome layout
@@ -1306,12 +1388,20 @@ export default function WeighingTickets() {
   const [tab, setTab] = useState("waiting");
   const [search, setSearch] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [confirmFinishTicket, setConfirmFinishTicket] = useState(null);
   const [finishTicket, setFinishTicket] = useState(null);
   const [editTicket, setEditTicket] = useState(null);
   const [declineTicketRow, setDeclineTicketRow] = useState(null);
   const [slipTicket, setSlipTicket] = useState(null);
   const [finalReceipt, setFinalReceipt] = useState(null);
   const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
+  // Finalized tab — HQ Admin only, for reopening a ticket that got
+  // finished against the wrong truck (see ReopenTicketModal above). Loaded
+  // on demand, separately from the main open-tickets board above, since a
+  // finalized ticket isn't part of ALL_STAGE_IDS/the board's own `tickets`.
+  const [finalizedTickets, setFinalizedTickets] = useState([]);
+  const [loadingFinalized, setLoadingFinalized] = useState(false);
+  const [reopenTicketRow, setReopenTicketRow] = useState(null);
 
   const effectiveLocationId = isAdmin ? locationId : profile?.location_id;
 
@@ -1358,6 +1448,18 @@ export default function WeighingTickets() {
   }
   useEffect(() => { load(); }, [effectiveLocationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Loads the Finalized tab's list only when it's actually open — no point
+  // fetching 30 finished tickets on every page load when almost nobody
+  // needs this tab most of the time. Admin-only, same as the tab itself.
+  useEffect(() => {
+    if (tab !== "finalized" || !isAdmin) return;
+    setLoadingFinalized(true);
+    api.getTickets({ locationId: effectiveLocationId || undefined, stages: ["finalized"], limit: 30 })
+      .then(setFinalizedTickets)
+      .catch(() => setFinalizedTickets([]))
+      .finally(() => setLoadingFinalized(false));
+  }, [tab, isAdmin, effectiveLocationId]);
+
   // Once a sync round finishes with nothing left queued, refresh from the
   // server so friendly names (station, which staff member weighed it,
   // etc.) fill in for anything that was created or updated offline.
@@ -1381,6 +1483,18 @@ export default function WeighingTickets() {
     return { waiting, declined };
   }, [tickets, search]);
 
+  // Same code/plate/Quality-Ticket-No. search as `grouped` above, applied
+  // to the separately-loaded Finalized list.
+  const visibleFinalized = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return finalizedTickets;
+    return finalizedTickets.filter((t) =>
+      (t.code || "").toLowerCase().includes(q) ||
+      (t.car_plate || "").toLowerCase().includes(q) ||
+      (t.paper_ticket_no || "").toLowerCase().includes(q)
+    );
+  }, [finalizedTickets, search]);
+
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Weighing Tickets" subtitle="Weigh in once, finish the ticket once the truck's back and empty" />
@@ -1400,6 +1514,12 @@ export default function WeighingTickets() {
               className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "declined" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
               Declined <span className={`rounded-full px-1.5 text-xs ${tab === "declined" ? "bg-brand-700" : "bg-slate-200"}`}>{grouped.declined.length}</span>
             </button>
+            {isAdmin && (
+              <button onClick={() => setTab("finalized")}
+                className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${tab === "finalized" ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+                Finalized
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <div className="relative">
@@ -1423,10 +1543,47 @@ export default function WeighingTickets() {
           </div>
         </div>
         {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">A ticket shows up here once it's been weighed in — the queue slip and quality/price decision on paper happen before this, same as today.</p>}
+        {tab === "finalized" && <p className="mt-2 text-xs text-slate-400">Most recently finished tickets. If Finish Ticket was completed against the wrong truck, reopen it here — see the card for what that does.</p>}
       </div>
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
-        {loading ? (
+        {tab === "finalized" ? (
+          loadingFinalized ? (
+            <p className="text-center text-sm text-slate-400">Loading…</p>
+          ) : visibleFinalized.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
+              {search.trim() ? "No finished tickets match that search." : "No finished tickets yet."}
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {visibleFinalized.map((t) => (
+                <div key={t.id} className={`rounded-xl border border-l-4 bg-white p-4 shadow-sm ${t.type === "BUY" ? "border-slate-200 border-l-brand-500" : "border-slate-200 border-l-rose-400"}`}>
+                  <div className="mb-2 flex items-start justify-between">
+                    <div>
+                      <p className="flex flex-wrap items-center gap-1.5 font-semibold text-slate-800">
+                        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${t.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
+                          {t.type === "BUY" ? "▲ BUY" : "▼ SELL"}
+                        </span>
+                        {t.code}
+                      </p>
+                      <p className="text-xs text-slate-400">{t.stationName}{t.tare_at ? ` · finished ${new Date(t.tare_at).toLocaleTimeString("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                    </div>
+                    <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
+                  </div>
+                  <div className="mb-3 space-y-0.5 text-sm">
+                    <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
+                    <p className="text-slate-500">{t.product_name}</p>
+                    <p className="text-slate-500">Weigh In: {fmt2(t.gross_kg)} kg · Weigh Out: {fmt2(t.tare_kg)} kg</p>
+                    {t.price_per_kg != null && <p className="text-slate-500">Price: {fmtRiel(t.price_per_kg)}/kg</p>}
+                  </div>
+                  <button onClick={() => setReopenTicketRow(t)} className="w-full rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
+                    Reopen — wrong ticket was finished
+                  </button>
+                </div>
+              ))}
+            </div>
+          )
+        ) : loading ? (
           <p className="text-center text-sm text-slate-400">Loading…</p>
         ) : grouped[tab]?.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
@@ -1475,7 +1632,7 @@ export default function WeighingTickets() {
                 </div>
                 {tab === "waiting" && (
                   <div className="flex gap-2">
-                    <button onClick={() => setFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
+                    <button onClick={() => setConfirmFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2 text-sm font-medium text-white hover:bg-brand-700">
                       Finish Ticket <ArrowRight size={14} />
                     </button>
                     <button onClick={() => setDeclineTicketRow(t)} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
@@ -1497,6 +1654,26 @@ export default function WeighingTickets() {
           isAdmin={isAdmin}
           onClose={() => setShowNew(false)}
           onCreated={(t) => { setShowNew(false); load(); setSlipTicket(t); }}
+        />
+      )}
+      {confirmFinishTicket && (
+        <ConfirmFinishModal
+          ticket={confirmFinishTicket}
+          onClose={() => setConfirmFinishTicket(null)}
+          onConfirm={() => { setFinishTicket(confirmFinishTicket); setConfirmFinishTicket(null); }}
+        />
+      )}
+      {reopenTicketRow && (
+        <ReopenTicketModal
+          ticket={reopenTicketRow}
+          onClose={() => setReopenTicketRow(null)}
+          onReopened={() => {
+            // Reopened ticket now belongs on the waiting board, not this
+            // list — drop it immediately rather than waiting on a refetch.
+            setFinalizedTickets((prev) => prev.filter((row) => row.id !== reopenTicketRow.id));
+            setReopenTicketRow(null);
+            load();
+          }}
         />
       )}
       {finishTicket && (
