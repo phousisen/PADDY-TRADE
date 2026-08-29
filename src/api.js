@@ -267,8 +267,18 @@ export const api = {
     return data.map((a) => ({ ...a, stationName: a.locations?.name || "—", adjustedByName: a.profiles?.full_name || "—" }));
   },
 
-  async recordStockAdjustment({ locationId, previousStockKg, newStockKg, reason, note, userId }) {
+  // `pricePerKg` is only ever meaningful for a LOSS (adjustmentKg < 0) — the
+  // per-kg value used to put a real riel figure on paddy that's being
+  // written off (moisture/spillage/a daily reset), typically the day's
+  // weighted-average Buy price at that location (see StockInventory.jsx).
+  // Left null for a gain (recount finding more than expected) or when no
+  // price was available/entered — `valueLost` then stays null too rather
+  // than silently computing off a missing price.
+  async recordStockAdjustment({ locationId, previousStockKg, newStockKg, reason, note, userId, pricePerKg }) {
     const adjustmentKg = Math.round((newStockKg - previousStockKg) * 100) / 100;
+    const valueLost = adjustmentKg < 0 && pricePerKg != null
+      ? Math.round(Math.abs(adjustmentKg) * pricePerKg * 100) / 100
+      : null;
     const { data, error } = await supabase
       .from("stock_adjustments")
       .insert({
@@ -279,6 +289,8 @@ export const api = {
         reason,
         note: note || null,
         adjusted_by: userId,
+        price_per_kg: adjustmentKg < 0 ? (pricePerKg ?? null) : null,
+        value_lost: valueLost,
       })
       .select()
       .single();
