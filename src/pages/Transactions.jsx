@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2 } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -8,6 +8,8 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { onSyncStatusChange, getCachedTransactions, mergeServerTransactions, isTransactionPendingSync, getCachedPayments, mergeServerPayments, withTimeout } from "../offlineQueue.js";
+import { downloadLedgerWorkbook } from "../ledgerExport.js";
+import { cambodiaTimestamp } from "../reportExport.js";
 import Receipt from "./Receipt.jsx";
 
 // Bounds how long a fresh load waits on the server before giving up and
@@ -855,6 +857,8 @@ export default function Transactions({ setPage }) {
   // rather than round-tripping to the server for every date change.
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  const [exportingLedger, setExportingLedger] = useState(false);
+  const [exportLedgerError, setExportLedgerError] = useState("");
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
@@ -1011,18 +1015,33 @@ export default function Transactions({ setPage }) {
     return out;
   }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds, startDate, endDate]);
 
-  function exportCsv() {
-    const header = ["#", "Type", "Transaction ID", "Date", "Location", "Party", "Car Plate", "Truck/Driver", "Qty (kg)", "Amount (Riel)", "Paid (Riel)", "Remaining (Riel)", "HQ Status"];
-    const lines = visibleRows.map((tx, i) => {
-      const remaining = remainingByTx[tx.id] || 0;
-      return [i + 1, tx.type, tx.code, tx.tx_date, tx.stationName, tx.partyName, tx.car_plate || "", tx.driver_name || "", tx.quantity_kg, tx.amount, Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining), remaining, tx.hq_status || "processing"];
-    });
-    const csv = [header, ...lines].map((r) => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "transactions.csv"; a.click();
-    URL.revokeObjectURL(url);
+  // Exports the "IMPORT / EXPORT" coupon-ledger workbook (grouped by
+  // product, with Sub-Total/TOTAL rows) that replaces the old plain CSV —
+  // modeled directly on the paper/old-system report format the station
+  // already uses. Always pulls every Buy AND Sell transaction fresh from
+  // the server (not just whatever's in the on-screen Buy/Sell/Unpaid tab
+  // right now), since both an IMPORT and an EXPORT section are always
+  // shown together — only the Location filter and Date Range filter
+  // already active on this page carry over into what's exported.
+  async function exportLedger() {
+    setExportingLedger(true);
+    setExportLedgerError("");
+    try {
+      const [allTxs, settings] = await Promise.all([
+        api.getTransactions(),
+        api.getSettings().catch(() => []),
+      ]);
+      const settingsMap = Object.fromEntries((settings || []).map((s) => [s.key, s.value]));
+      const companyName = settingsMap.company_name_kh || settingsMap.company_name || "PaddyTrade";
+      downloadLedgerWorkbook(
+        { txs: allTxs, selectedLocationIds, startDate, endDate, companyName },
+        `PaddyTrade_Ledger_${cambodiaTimestamp()}.xlsx`
+      );
+    } catch (err) {
+      setExportLedgerError(err.message || "Export failed — check your connection and try again.");
+    } finally {
+      setExportingLedger(false);
+    }
   }
 
   async function submitRequest(reason, proposedData) {
@@ -1201,11 +1220,20 @@ export default function Transactions({ setPage }) {
             )}
           </div>
           <div className="flex gap-2">
-            <button onClick={exportCsv} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"><Download size={14} /> {t("export_csv")}</button>
+            <button onClick={exportLedger} disabled={exportingLedger} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+              {exportingLedger ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <Download size={14} />}
+              {exportingLedger ? "Exporting..." : t("export_ledger")}
+            </button>
             <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
             <button onClick={() => setPage("new-sell")} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"><Plus size={14} /> {t("new_sell")}</button>
           </div>
         </div>
+        {exportLedgerError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
+            <span>{exportLedgerError}</span>
+            <button onClick={exportLedger} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
