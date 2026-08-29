@@ -225,10 +225,13 @@ const labelCls = "mb-1 block text-xs text-slate-500";
 // clear steps (weigh, quality, price, payment, proof) instead of one long
 // unbroken list of fields, so a new staff member can follow it top to
 // bottom without guessing what comes next.
-function SectionHeader({ num, title, hint }) {
+// accentBg is optional — defaults to the original always-green circle, so
+// nothing else changes unless a caller (FinishTicketModal) passes one in
+// to match a ticket's Buy/Sell color.
+function SectionHeader({ num, title, hint, accentBg }) {
   return (
     <div className="mb-2.5 flex items-center gap-2.5">
-      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-brand-600 text-[11px] font-bold text-white">{num}</div>
+      <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white ${accentBg || "bg-brand-600"}`}>{num}</div>
       <div>
         <h3 className="text-sm font-bold text-slate-800">{title}</h3>
         {hint && <p className="text-xs text-slate-500">{hint}</p>}
@@ -1038,7 +1041,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   async function submitDecline() {
     setSaving(true);
     try {
-      setTicketPriceOffline(ticket.id, { priceNote: priceNote || "Not buying", userId: session.user.id, decline: true });
+      setTicketPriceOffline(ticket.id, { priceNote: priceNote || (isBuy ? "Not buying" : "Not selling"), userId: session.user.id, decline: true });
       onDeclined();
     } finally {
       setSaving(false);
@@ -1114,48 +1117,47 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     }
   }
 
+  // Same accent system as the New Ticket redesign — green for Buy, rose
+  // for Sell, matching the board cards and toolbar. Written as full
+  // literal class strings (not interpolated) so Tailwind's build picks
+  // both branches up regardless of which one renders at runtime.
+  const accent = isBuy
+    ? { header: "bg-gradient-to-br from-brand-600 to-brand-700", circle: "bg-brand-600", priceBox: "border-brand-200 bg-brand-50", priceLabel: "text-brand-800", priceInput: "border-brand-300 focus:border-brand-500 focus:ring-brand-100", total: "text-brand-700", saveBtn: "bg-brand-600 hover:bg-brand-700" }
+    : { header: "bg-gradient-to-br from-rose-600 to-rose-700", circle: "bg-rose-600", priceBox: "border-rose-200 bg-rose-50", priceLabel: "text-rose-800", priceInput: "border-rose-300 focus:border-rose-500 focus:ring-rose-100", total: "text-rose-700", saveBtn: "bg-rose-600 hover:bg-rose-700" };
+  // Bolder, more visible boxes — same look as the New Ticket redesign.
+  // Local to this modal only (module-level inputCls/labelCls are shared
+  // by several other modals in this file and are left untouched).
+  const fieldCls = "w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 text-sm font-medium text-slate-800 outline-none focus:border-brand-600 focus:bg-white focus:ring-4 focus:ring-brand-100";
+  const fieldLabelCls = "mb-1 block text-xs font-semibold text-slate-600";
+
   return (
-    <Modal title={`Finish Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate} · ${isBuy ? "Gross" : "Weighed in"}: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`} onClose={onClose} wide>
-      {/* 1. Weigh Out — the physical action happening right now. Buy: the
-          truck is empty now, having dropped off its paddy. Sell: it's the
-          opposite — the truck was empty at weigh-in and is now loaded up
-          for delivery to the buyer. */}
-      <div className="mb-5">
-        <SectionHeader num={1} title="Weigh Out" hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
-        <WeightField
-          locationId={ticket.location_id}
-          label={isBuy ? "Tare Weight — empty truck (kg)" : "Weight — loaded truck (kg)"}
-          scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
-          value={tareWeight}
-          onChange={setTareWeight}
-          isAdmin={isAdmin}
-        />
-      </div>
+    <Modal
+      headerColor={accent.header}
+      icon="🏁"
+      title={`Finish Ticket ${ticket.code}`}
+      subtitle={`${ticket.party_name} · ${ticket.car_plate} · ${isBuy ? "Gross" : "Weighed in"}: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`}
+      onClose={onClose} wide
+    >
+      {/* Reordered per explicit request: Price first, Payment second, the
+          Weigh Out/scale step last. Quality and Note & Proof are removed
+          from this form for now (not deleted — see the state variables
+          and submitFinish() above/below, still fully wired) since staff
+          have never actually been filling them in; easy to bring back if
+          that changes. Numbering below reflects the new order (1/2/3),
+          not the original 1–5. */}
 
-      {/* 2. Quality — transcribed from the paper ticket */}
+      {/* 1. Price & Total — everything that feeds the amount owed, with the running total right below it. Net/Payable Weight here depend on the tare weight captured in step 3 below — until that's filled in, this reads 0 kg, then updates live once it's captured (no need to scroll back up). */}
       <div className="mb-5">
-        <SectionHeader num={2} title="Quality" hint="The grade and quality readings already agreed on the paper ticket" />
-        <div className="grid grid-cols-3 gap-3 rounded-lg border border-slate-200 p-4">
-          <div><label className={labelCls}>Quality Grade</label><input value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Moisture %</label><input type="number" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Mixture %</label><input type="number" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Outthrow %</label><input type="number" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className={inputCls} /></div>
-          <div><label className={labelCls}>Deduction (kg)</label><input type="number" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className={inputCls} /></div>
-        </div>
-      </div>
-
-      {/* 3. Price & Total — everything that feeds the amount owed, with the running total right below it */}
-      <div className="mb-5">
-        <SectionHeader num={3} title="Price & Total" hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
-        <div className="rounded-lg border-2 border-brand-200 bg-brand-50 p-4">
-          <label className="mb-1 block text-sm font-semibold text-brand-800">
+        <SectionHeader num={1} accentBg={accent.circle} title="Price & Total" hint={isBuy ? "What this truckload is worth" : "Leave blank if the price isn't settled with the buyer yet — it can be added later from Transactions"} />
+        <div className={`rounded-lg border-2 p-4 ${accent.priceBox}`}>
+          <label className={`mb-1 block text-sm font-semibold ${accent.priceLabel}`}>
             {isBuy ? "Price per kg (Riel) — the price agreed on the paper ticket" : "Price per kg (Riel) — optional, if already agreed"}
           </label>
           <input type="number" min="0" step="1" value={pricePerKg} disabled={!isBuy && priceNotGiven}
             onChange={(e) => setPricePerKg(e.target.value)} placeholder={isBuy ? "e.g. 1090" : "leave blank if not decided yet"}
-            className="w-full rounded-lg border border-brand-300 bg-white px-3 py-3 text-lg font-semibold outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100 disabled:bg-slate-100 disabled:text-slate-400" />
+            className={`w-full rounded-lg border bg-white px-3 py-3 text-lg font-semibold outline-none focus:ring-2 disabled:bg-slate-100 disabled:text-slate-400 ${accent.priceInput}`} />
           {!isBuy && (
-            <label className="mt-2 flex items-center gap-2 text-xs font-medium text-brand-700">
+            <label className={`mt-2 flex items-center gap-2 text-xs font-medium ${accent.priceLabel}`}>
               <input type="checkbox" checked={priceNotGiven}
                 onChange={(e) => { setPriceNotGiven(e.target.checked); if (e.target.checked) setPricePerKg(""); }} />
               Price not given yet — sending out to Baitang / another buyer for pricing
@@ -1164,51 +1166,44 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {isBuy && (
-            <div><label className={labelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={inputCls} /></div>
+            <div><label className={fieldLabelCls}>Staff / Carrying Fee (optional)</label><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={fieldCls} /></div>
           )}
-          <div className="flex items-end gap-2">
-            <label className="flex items-center gap-2 text-xs text-slate-500"><input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} /> Tax applicable</label>
-            {taxApplicable && <input type="number" value={taxRate} onChange={(e) => setTaxRate(e.target.value)} className={`${inputCls} w-20`} />}
-          </div>
-        </div>
-        <div className="mt-3 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
-          {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
-          <div className="flex justify-between border-t border-slate-200 pt-1.5">
-            <span className="font-semibold text-slate-700">Total</span>
-            {!isBuy && priceNotGiven ? (
-              <span className="font-bold text-amber-600">Price pending</span>
-            ) : (
-              <span className="font-bold text-brand-700">{fmtRiel(total)}</span>
-            )}
+          <div>
+            <label className={fieldLabelCls}>Paddy Quality (optional)</label>
+            <select value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={fieldCls}>
+              <option value="">Not set</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
           </div>
         </div>
       </div>
 
       {/* 4. Payment Method — decided after the total is known */}
       <div className="mb-5">
-        <SectionHeader num={4} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
+        <SectionHeader num={2} accentBg={accent.circle} title="Payment Method" hint={`How ${ticket.party_name || "this farmer"} will be paid`} />
         <div className="rounded-lg border border-slate-200 p-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelCls}>Bank (or Cash)</label>
+              <label className={fieldLabelCls}>Bank (or Cash)</label>
               <select
                 value={bankIsOther ? "__other__" : bankName}
                 onChange={(e) => {
                   if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
                   else { setBankIsOther(false); setBankName(e.target.value); }
                 }}
-                className={inputCls}
+                className={fieldCls}
               >
                 <option value="" disabled>Select payment method / bank</option>
                 {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
                 <option value="__other__">Other...</option>
               </select>
               {bankIsOther && (
-                <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${inputCls} mt-2`} />
+                <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${fieldCls} mt-2`} />
               )}
             </div>
-            <div><label className={labelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} /></div>
+            <div><label className={fieldLabelCls}>Bank Account</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={fieldCls} /></div>
           </div>
           {isBuy && bankName && bankName !== "Cash" && (
             <div className="mt-3">
@@ -1224,27 +1219,53 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
         </div>
       </div>
 
-      {/* 5. Note & Proof — wraps up the ticket; the required photo is the last thing before Save */}
+      {/* 3. Weigh Out — the physical action happening right now. Buy: the
+          truck is empty now, having dropped off its paddy. Sell: it's the
+          opposite — the truck was empty at weigh-in and is now loaded up
+          for delivery to the buyer. Moved to last per explicit request. */}
       <div className="mb-1">
-        <SectionHeader num={5} title="Note & Proof" hint="Optional note, and the signed paper ticket for HQ to check against" />
-        <div className="rounded-lg border border-slate-200 p-4">
-          <div className="mb-3"><label className={labelCls}>Note</label><input value={priceNote} onChange={(e) => setPriceNote(e.target.value)} className={inputCls} placeholder="optional" /></div>
-          <PhotoUpload
-            label="Photo of the finished, signed paper ticket" kind="receipt"
-            url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-            hint="So HQ can check it against what's entered here (optional)"
-          />
+        <SectionHeader num={3} accentBg={accent.circle} title="Weigh Out" hint={isBuy ? "The truck is empty and on the scale right now" : "The truck is now loaded and on the scale right now"} />
+        <WeightField
+          locationId={ticket.location_id}
+          large
+          label={isBuy ? "Tare Weight — empty truck (kg)" : "Weight — loaded truck (kg)"}
+          scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
+          value={tareWeight}
+          onChange={setTareWeight}
+          isAdmin={isAdmin}
+        />
+      </div>
+
+      {/* Net Weight / Total summary — moved here (after Weigh Out) per
+          explicit request: the net weight isn't actually known until the
+          truck's final weight is captured above, so showing it here reads
+          more naturally than sitting above the scale step. */}
+      <div className="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm">
+        <div className="flex justify-between"><span className="text-slate-500">Net Weight</span><span className="font-medium">{fmt2(netKg)} kg</span></div>
+        {(parseFloat(deductionKg) || 0) > 0 && <div className="flex justify-between"><span className="text-slate-500">Payable Weight</span><span className="font-medium">{fmt2(payableKg)} kg</span></div>}
+        <div className="flex justify-between border-t border-slate-200 pt-1.5">
+          <span className="font-semibold text-slate-700">Total</span>
+          {!isBuy && priceNotGiven ? (
+            <span className="font-bold text-amber-600">Price pending</span>
+          ) : (
+            <span className={`font-bold ${accent.total}`}>{fmtRiel(total)}</span>
+          )}
         </div>
       </div>
 
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-between gap-2">
         <button onClick={submitDecline} disabled={saving} className="flex items-center gap-1.5 rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40">
-          <Ban size={14} /> Not Buying
+          {/* Wording follows the ticket's own direction now — "Not Buying"
+              only made sense for Buy tickets; a Sell ticket that isn't
+              going through says "Not Selling" instead. This is a small,
+              clearly-correct fix alongside the visual pass, not something
+              separately asked for — flagged to the user. */}
+          <Ban size={14} /> {isBuy ? "Not Buying" : "Not Selling"}
         </button>
         <div className="flex gap-2">
           <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-          <button disabled={saving} onClick={submitFinish} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40">
+          <button disabled={saving} onClick={submitFinish} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${accent.saveBtn}`}>
             <Check size={14} /> {saving ? "Saving…" : "Save, Print & Finalize"}
           </button>
         </div>
