@@ -72,6 +72,39 @@ function addCustomPaddyType(name) {
   }
 }
 
+// Vehicle type on the New Ticket form — same growable-list pattern as
+// paddy types above. Truck gets a plate number (the original behavior);
+// anything else (Koyun, Tractor, or a new type someone adds later) gets a
+// bag count instead, since those don't have license plates. The combined
+// "Type: value" text (e.g. "Truck: 3A-1890", "Koyun: 12 bags") is what
+// actually gets saved into the ticket's existing car_plate field — no
+// database change needed, and every other screen that already displays
+// car_plate (board cards, receipts, Excel export, Transactions) keeps
+// working without modification.
+const VEHICLE_TYPE_SEED = ["Truck", "Koyun", "Tractor"];
+const CUSTOM_VEHICLE_TYPES_KEY = "ptw_custom_vehicle_types_v1";
+function getCustomVehicleTypes() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_VEHICLE_TYPES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+function addCustomVehicleType(name) {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return;
+  try {
+    const list = getCustomVehicleTypes();
+    if (!list.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
+      list.push(trimmed);
+      localStorage.setItem(CUSTOM_VEHICLE_TYPES_KEY, JSON.stringify(list));
+    }
+  } catch {
+    // Storage full/unavailable — same fallback as paddy types above.
+  }
+}
+
 // Same idea, for the "Buyer"/"Seller" (whoever is actually filling in the
 // ticket) field below — starts empty and grows as names get typed in on
 // this device via "+ Add new name…", numbered the same way so staff can
@@ -235,7 +268,23 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [locationId, setLocationId] = useState(defaultLocationId || "");
   const [partyName, setPartyName] = useState("");
   const [phone, setPhone] = useState("");
-  const [carPlate, setCarPlate] = useState("");
+  // Vehicle type (Truck/Koyun/Tractor/custom) + its value — a plate
+  // number for Truck, a bag count for anything else. Combined into the
+  // ticket's existing car_plate field at submit time; see
+  // addCustomVehicleType above for why.
+  const [vehicleType, setVehicleType] = useState("Truck");
+  const [vehicleTypeIsCustom, setVehicleTypeIsCustom] = useState(false);
+  const [vehicleValue, setVehicleValue] = useState("");
+  const [vehicleTypeOptions] = useState(() => {
+    const seen = new Set(VEHICLE_TYPE_SEED.map((n) => n.toLowerCase()));
+    const extras = getCustomVehicleTypes().filter((name) => {
+      const key = (name || "").trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return [...VEHICLE_TYPE_SEED, ...extras];
+  });
   const [driverName, setDriverName] = useState("");
   const [productName, setProductName] = useState("");
   const [paperTicketNo, setPaperTicketNo] = useState("");
@@ -476,8 +525,15 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
   async function submit() {
     const kg = parseFloat(grossWeight);
-    if (!locationId || !partyName.trim() || !productName.trim() || !carPlate.trim()) {
-      setError("Please fill in location, party name, product, and plate number.");
+    if (!locationId || !partyName.trim() || !productName.trim() || !vehicleType.trim()) {
+      setError("Please fill in location, party name, product, and vehicle type.");
+      return;
+    }
+    // Truck keeps the original required-plate rule. Koyun/Tractor (and any
+    // custom type someone adds later) use a bag count instead, which is
+    // optional — a station may just not have counted bags for every load.
+    if (vehicleType === "Truck" && !vehicleValue.trim()) {
+      setError("Please enter the truck's plate number.");
       return;
     }
     if (!recordedByName.trim()) {
@@ -501,8 +557,13 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       // its own numbered option next time (see PADDY_TYPE_SEED above) —
       // a no-op if it was already picked from the list.
       if (productIsCustom) addCustomPaddyType(productName);
-      // Same for a newly-typed "Buyer"/"Seller" name.
+      // Same for a newly-typed vehicle type and a newly-typed "Buyer"/"Seller" name.
+      if (vehicleTypeIsCustom) addCustomVehicleType(vehicleType);
       if (recordedByIsCustom) addRecordedByName(locationId, recordedByName);
+      // "Truck: 3A-1890" / "Koyun: 12 bags" / just "Tractor" if no bag
+      // count was entered — saved into the ticket's existing car_plate
+      // field (see addCustomVehicleType above for why).
+      const carPlate = vehicleValue.trim() ? `${vehicleType.trim()}: ${vehicleValue.trim()}` : vehicleType.trim();
       const selectedLocation = locations.find((l) => l.id === locationId);
       const locationName = selectedLocation?.name;
       const ticket = createTicketOffline({
@@ -567,8 +628,45 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           </div>
         )}
         <div className={isBuy ? "" : "col-span-2"}>
-          <NewTicketFieldLabel icon="🚚" en="Plate" km="ផ្លាកលេខ" lang={lang} />
-          <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={fieldCls} />
+          <NewTicketFieldLabel icon="🚚" en="Vehicle" km="យានយន្ត" lang={lang} />
+          <div className="grid grid-cols-2 gap-2">
+            {vehicleTypeIsCustom ? (
+              <div>
+                <input
+                  autoFocus
+                  value={vehicleType}
+                  onChange={(e) => setVehicleType(e.target.value)}
+                  className={fieldCls}
+                  placeholder="New type"
+                />
+                <button
+                  type="button"
+                  onClick={() => { setVehicleTypeIsCustom(false); setVehicleType("Truck"); }}
+                  className="mt-1 text-xs font-medium text-brand-600 hover:underline"
+                >
+                  ← Back to list
+                </button>
+              </div>
+            ) : (
+              <select
+                value={vehicleTypeOptions.includes(vehicleType) ? vehicleType : ""}
+                onChange={(e) => {
+                  if (e.target.value === "__other__") { setVehicleTypeIsCustom(true); setVehicleType(""); }
+                  else setVehicleType(e.target.value);
+                }}
+                className={fieldCls}
+              >
+                {vehicleTypeOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
+                <option value="__other__">+ Add new…</option>
+              </select>
+            )}
+            <input
+              value={vehicleValue}
+              onChange={(e) => setVehicleValue(e.target.value)}
+              className={fieldCls}
+              placeholder={vehicleType === "Truck" ? "Plate #" : "Bags (optional)"}
+            />
+          </div>
         </div>
       </div>
 
@@ -1339,7 +1437,12 @@ function TicketSlip({ ticket, onClose }) {
             <div className="head-right">
               <span className="doc-type">Weight Ticket — {isBuy ? "Import" : "Export"}</span>
               <div className="doc-no">No. {ticket.code}</div>
-              <div className="doc-sub">Truck No. {ticket.car_plate || "—"}</div>
+              {/* No "Truck No." label here on purpose — car_plate can now
+                  read "Truck: 3A-1890" or "Koyun: 12 bags" etc. (see
+                  addCustomVehicleType above), and it already names the
+                  vehicle type itself, so a static "Truck No." prefix
+                  would be wrong/redundant for anything but a truck. */}
+              <div className="doc-sub">{ticket.car_plate || "—"}</div>
             </div>
           </div>
 
