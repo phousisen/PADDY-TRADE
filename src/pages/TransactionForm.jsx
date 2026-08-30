@@ -195,7 +195,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     setError("");
     const effectiveStationId = isAdmin ? stationId : profile?.location_id;
     if (!isAdmin && !effectiveStationId) { setError("Your account has no location assigned yet. Ask HQ to assign one to your login."); return; }
-    if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || !pricePerKg) { setError(t("required_fields")); return; }
+    // Price is only required for a Buy — it's already agreed with the
+    // farmer on the paper ticket by this point. A Sell can be saved with
+    // no price yet (the buyer hasn't settled on one), matching Weighing
+    // Tickets' own Finish Ticket flow — it gets corrected later from the
+    // Transactions list once it's actually agreed. See finalPricePerKg
+    // below for how a blank price is actually stored.
+    if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || (isBuy && !pricePerKg)) { setError(t("required_fields")); return; }
     if (!txDate) { setError("Please pick a transaction date."); return; }
     // Receipt photo is off while testing — no camera on this computer yet.
     // Re-add this check once photos are actually possible.
@@ -256,9 +262,21 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
 
       const productId = await resolveProductIdOffline(productQuery.trim());
 
-      const tx = createTransactionOffline({
+      // Buy always has a real number (required above). Sell stores an
+      // actual null — not 0 — whenever the price was left blank, same
+      // reasoning as Weighing Tickets' own price-not-given-yet state (see
+      // WeighingTickets.jsx's submitFinish()): so the receipt and every
+      // report can tell "no price yet" apart from "genuinely priced at 0."
+      const finalPricePerKg = isBuy ? (parseFloat(pricePerKg) || 0) : (pricePerKg.trim() === "" ? null : (parseFloat(pricePerKg) || 0));
+      // A Sell with no price yet can't actually be "Paid" — there's
+      // nothing to have paid. Force it to Credit (still owed) rather than
+      // silently recording a real ₣0 "payment received" below, regardless
+      // of whatever the Payment Status dropdown happens to say.
+      const finalPaymentStatus = !isBuy && finalPricePerKg == null ? "credit" : paymentStatus;
+
+      const tx = await createTransactionOffline({
         type, locationId: effectiveStationId, partyId, productId,
-        quantityKg: netKg, pricePerKg: parseFloat(pricePerKg), paymentStatus, userId: session.user.id,
+        quantityKg: netKg, pricePerKg: finalPricePerKg, paymentStatus: finalPaymentStatus, userId: session.user.id,
         txDate,
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
         taxApplicable, taxRate: parseFloat(taxRate) || 0,
@@ -288,15 +306,18 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         tableName: "transactions",
         recordId: tx.id,
         newData: {
-          code: tx.code, type, partyName, quantityKg: netKg, pricePerKg: parseFloat(pricePerKg),
-          amount: tx.amount, stationName: myStation?.name, txDate: tx.tx_date, paymentStatus,
+          code: tx.code, type, partyName, quantityKg: netKg, pricePerKg: finalPricePerKg,
+          amount: tx.amount, stationName: myStation?.name, txDate: tx.tx_date, paymentStatus: finalPaymentStatus,
         },
         userId: session.user.id,
       });
 
       // If it was entered as already paid, record that cash movement immediately
       // so it shows up correctly in Accounts Payable/Receivable and Cash Flow.
-      if (paymentStatus === "paid") {
+      // finalPaymentStatus is never "paid" when finalPricePerKg is null (see
+      // above), so this can't fire a real ₣0 "payment received" record for
+      // a transaction nobody has actually agreed a price on yet.
+      if (finalPaymentStatus === "paid") {
         const createdPayment = createPaymentOffline({
           type: isBuy ? "pay_supplier" : "receive_customer",
           transactionId: tx.id,
@@ -532,6 +553,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     onChange={(e) => { setPricePerKg(e.target.value); setPriceOverridden(true); }}
                     placeholder="0.00" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   {isBuy && <p className="mt-1 text-[11px] text-slate-400">Auto-filled from grade — edit to override</p>}
+                  {!isBuy && <p className="mt-1 text-[11px] text-slate-400">Optional — leave blank if the buyer hasn't agreed a price yet. Add it later from the Transactions list.</p>}
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-slate-500">{t("payment_status")}</label>
