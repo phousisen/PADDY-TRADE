@@ -70,6 +70,26 @@ function cambodiaNow() {
 // getting the whole offline queue stuck — this lookup only has to be
 // fast, not the only line of defense against a duplicate.
 const ONLINE_LOOKUP_TIMEOUT_MS = 1200;
+
+// [2026-08-30] Used only by finalizeTicketOffline/createTransactionOffline
+// below, and deliberately much longer than ONLINE_LOOKUP_TIMEOUT_MS above —
+// that one guards a keystroke-driven lookup where staff are actively typing
+// and waiting; this one guards the one moment (Finish Ticket / Save on a
+// manual Buy or Sell) where a receipt is about to print and become the
+// farmer's or buyer's paper proof of the deal. Jomnoum, Aug 2026: two
+// tickets were finished and a real receipt printed for each, but the actual
+// database write never went out — it just sat queued on that one browser
+// and, as far as anyone can tell, whatever was holding it was gone by the
+// time anyone checked days later (see the project log for the full
+// investigation). The save itself was never the problem — it's already
+// solid — the problem was that printing never waited to find out whether it
+// had actually reached the server, so there was nothing to notice was wrong
+// until someone happened to compare paper receipts against the app much
+// later. Giving the save up to this long, only while online, to actually
+// land before the receipt prints closes almost all of that window, while
+// never blocking a genuinely offline station — see the call sites.
+const FINISH_SYNC_TIMEOUT_MS = 7000;
+
 export function withTimeout(promise, ms, fallbackValue) {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(fallbackValue), ms);
@@ -1261,7 +1281,7 @@ export function setTicketTareOffline(id, { tareKg, userId }) {
 // numbers (the exact same math FinalizeModal already previews) and queue
 // the real save for later. Once synced, the permanent server copy has
 // this same id, so nothing about the receipt has to change.
-export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl }) {
+export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl }) {
   const transactionId = newId();
   const transactionCode = genLocalTxCode(ticket.type);
   // Same fix as api.js's finalizeTicket (kept in sync with it on purpose):
@@ -1278,7 +1298,14 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
 
   patchCachedTicket(ticket.id, { stage: "finalized", transaction_id: transactionId });
   enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, transactionId, transactionCode, receiptPhotoUrl } });
-  trySync();
+  // See FINISH_SYNC_TIMEOUT_MS above for why this waits, bounded, instead
+  // of firing and forgetting like every other offline write in this file.
+  // Genuinely offline stays exactly as fast as before — nothing to wait on.
+  if (navigator.onLine) {
+    await withTimeout(trySync(), FINISH_SYNC_TIMEOUT_MS, null);
+  } else {
+    trySync();
+  }
 
   const { date: nowDate, time: nowTime } = cambodiaNow();
   const tx = {
@@ -1365,7 +1392,7 @@ export function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl 
 // without them here, the record cached below for the Transactions list
 // would have nothing to show in its Party/Station columns until the real
 // sync completes, same gap this whole change exists to close.
-export function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
+export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
   const id = newId();
   const code = genLocalTxCode(type);
   const payableKg = Math.max(0, (quantityKg || 0) - (deductionKg || 0));
@@ -1382,7 +1409,12 @@ export function createTransactionOffline({ type, locationId, partyId, productId,
       staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
     },
   });
-  trySync();
+  // Same reasoning as finalizeTicketOffline above — see FINISH_SYNC_TIMEOUT_MS.
+  if (navigator.onLine) {
+    await withTimeout(trySync(), FINISH_SYNC_TIMEOUT_MS, null);
+  } else {
+    trySync();
+  }
 
   const tx = {
     id, code, type,
