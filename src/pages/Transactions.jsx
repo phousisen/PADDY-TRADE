@@ -1432,11 +1432,18 @@ export default function Transactions({ setPage }) {
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              {/* Section 36: per request, went back to this table's original
+                  format instead of the merged 9-column layout (section 34) or
+                  the card layout (section 35). Only 3 changes from the
+                  original: Transaction ID no longer has its own column — it's
+                  stacked below the Type badge; Photos no longer has its own
+                  column — it's stacked below the HQ Confirmation pill; the
+                  Status column (the confirmed/needs-attention icon) is
+                  removed entirely (the icon isn't shown anywhere anymore). */}
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
                 <th className="w-8 px-2 py-3"></th>
                 <th className="px-5 py-3 font-semibold">#</th>
                 <th className="px-3 py-3 font-semibold">Type</th>
-                <th className="px-3 py-3 font-semibold">{t("col_id")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_date")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_station")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_party")}</th>
@@ -1444,8 +1451,6 @@ export default function Transactions({ setPage }) {
                 <th className="px-3 py-3 font-semibold">{t("col_amount")}</th>
                 <th className="px-3 py-3 font-semibold">Paid</th>
                 <th className="px-3 py-3 font-semibold">Remaining</th>
-                <th className="px-3 py-3 font-semibold">{t("col_status")}</th>
-                <th className="px-3 py-3 font-semibold">Photos</th>
                 <th className="px-3 py-3 font-semibold">{t("hq_confirmation")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_action")}</th>
               </tr>
@@ -1484,9 +1489,7 @@ export default function Transactions({ setPage }) {
                       <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
                         {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </span>
-                    </td>
-                    <td className="px-3 py-3.5">
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"}`}>{tx.code}</span>
+                      <span className={`mt-1 block w-fit rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"}`}>{tx.code}</span>
                       {isTransactionPendingSync(tx.id) && (
                         <span title="Saved on this device, still waiting to sync to PaddyTrade's shared database" className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200">
                           <RefreshCw size={9} /> Not synced
@@ -1534,17 +1537,14 @@ export default function Transactions({ setPage }) {
                         <span className="text-xs font-medium text-brand-600">Settled</span>
                       )}
                     </td>
-                    <td className="px-3 py-3">{tx.status === "confirmed" ? <CheckCircle2 size={16} className="text-emerald-500" /> : <AlertTriangle size={16} className="text-amber-500" />}</td>
-                    <td className="px-3 py-3">
-                      <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                        <Camera size={12} /> {[tx.receipt_photo_url, tx.payment_proof_url, tx.bank_qr_url].filter(Boolean).length}
-                      </button>
-                    </td>
                     <td className="px-3 py-3">
                       <span title={isCancelled ? "" : "Follows the Remaining balance automatically — Settled means Paid, anything owed means Processing."}
-                        className={`rounded-md border px-2 py-1 text-xs font-medium ${HQ_STATUS_STYLES[hqStatus]}`}>
+                        className={`flex w-fit items-center rounded-md border px-2 py-1 text-xs font-medium ${HQ_STATUS_STYLES[hqStatus]}`}>
                         {t(`hq_${hqStatus}`)}
                       </span>
+                      <button onClick={() => setPhotosTx(tx)} className="mt-1 flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
+                        <Camera size={12} /> {[tx.receipt_photo_url, tx.payment_proof_url, tx.bank_qr_url].filter(Boolean).length}
+                      </button>
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
@@ -1582,7 +1582,7 @@ export default function Transactions({ setPage }) {
                   {isExpanded && (
                     <tr className="border-b border-slate-50 bg-slate-50/70">
                       <td></td>
-                      <td colSpan={14} className="px-5 py-4">
+                      <td colSpan={11} className="px-5 py-4">
                         <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
                           <div>
                             <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Price / kg</p>
@@ -1687,8 +1687,8 @@ export default function Transactions({ setPage }) {
                   </Fragment>
                 );
               })}
-              {visibleRows.length === 0 && loading && <tr><td colSpan={15} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {visibleRows.length === 0 && !loading && <tr><td colSpan={15} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
+              {visibleRows.length === 0 && loading && <tr><td colSpan={12} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {visibleRows.length === 0 && !loading && <tr><td colSpan={12} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
