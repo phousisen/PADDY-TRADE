@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight, Ban, Undo2 } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight, ChevronLeft, Ban, Undo2 } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -987,6 +987,13 @@ export default function Transactions({ setPage }) {
   const isAdmin = profile?.role === "admin";
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
+  // Section 37: some station PCs' mouse/trackpad can't scroll the table
+  // sideways at all (no horizontal scroll wheel, no two-finger swipe), so
+  // there was no way to reach the Print button even though the table is
+  // technically scrollable. These two on-screen arrow buttons scroll the
+  // table by clicking instead, no gesture required.
+  const tableScrollRef = useRef(null);
+  const scrollTable = (dir) => tableScrollRef.current?.scrollBy({ left: dir * 420, behavior: "smooth" });
   const [type, setType] = useState("");
   // Kept as two separate toggles rather than one combined "unpaid" flag —
   // "Unpaid" only ever means money owed to a farmer on a Buy, "Not
@@ -1429,7 +1436,17 @@ export default function Transactions({ setPage }) {
           </div>
         )}
 
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <div className="mb-2 flex items-center justify-end gap-2">
+          <span className="text-xs text-slate-400">Can't scroll with your mouse? Use these:</span>
+          <button onClick={() => scrollTable(-1)} title="Scroll table left" className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
+            <ChevronLeft size={16} />
+          </button>
+          <button onClick={() => scrollTable(1)} title="Scroll table right" className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
+            <ChevronRight size={16} />
+          </button>
+        </div>
+
+        <div ref={tableScrollRef} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               {/* Section 36: per request, went back to this table's original
