@@ -1010,6 +1010,28 @@ export default function Transactions({ setPage }) {
   const [endDate, setEndDate] = useState(null);
   const [exportingLedger, setExportingLedger] = useState(false);
   const [exportLedgerError, setExportLedgerError] = useState("");
+  // Consolidated "Filters" popover — Unpaid (Buys), Not Received (Sells),
+  // Date Range and Location all live inside it now instead of each being
+  // its own button in the toolbar. None of the state or logic for any of
+  // those four filters changed at all — this is purely which button
+  // reveals them.
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtersRef = useRef(null);
+  useEffect(() => {
+    if (!filtersOpen) return;
+    function onDocClick(e) {
+      if (filtersRef.current && !filtersRef.current.contains(e.target)) setFiltersOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [filtersOpen]);
+  // Client-side pagination — 20 rows per page. Deliberately NOT part of
+  // load() or the offline cache/merge logic above: every transaction for
+  // the current type/filters is still fetched and merged exactly as
+  // before, this only slices what's already loaded for display, so the
+  // pagination has zero effect on what data is available or how it syncs.
+  const PAGE_SIZE = 20;
+  const [pageNum, setPageNum] = useState(1);
   const [requestTx, setRequestTx] = useState(null);
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
@@ -1181,6 +1203,24 @@ export default function Transactions({ setPage }) {
     if (endDate) out = out.filter((tx) => tx.tx_date <= endDate);
     return out;
   }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds, startDate, endDate]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
+  // Jump back to page 1 whenever the underlying filter set changes — a
+  // "page 3" that made sense for one filter combination is almost never
+  // meaningful for the next one.
+  useEffect(() => {
+    setPageNum(1);
+  }, [type, unpaidBuysOnly, notReceivedOnly, selectedLocationIds, startDate, endDate]);
+  // Safety net for the case above missing something (e.g. a background
+  // reload after a sync shrinks the list while someone's sitting on the
+  // last page) — never leave pageNum pointing past the real last page.
+  useEffect(() => {
+    setPageNum((p) => Math.min(p, totalPages));
+  }, [totalPages]);
+  const pagedRows = useMemo(
+    () => visibleRows.slice((pageNum - 1) * PAGE_SIZE, pageNum * PAGE_SIZE),
+    [visibleRows, pageNum]
+  );
 
   // Exports the "IMPORT / EXPORT" coupon-ledger workbook (grouped by
   // product, with Sub-Total/TOTAL rows) that replaces the old plain CSV —
@@ -1378,6 +1418,29 @@ export default function Transactions({ setPage }) {
     load();
   }
 
+  // Drives the "Filters" button's count badge and the plain-text summary
+  // next to it — purely presentational, reads the same state the four
+  // filters underneath it already use.
+  const activeFilterCount =
+    (unpaidBuysOnly ? 1 : 0) + (notReceivedOnly ? 1 : 0) + (startDate || endDate ? 1 : 0) + (selectedLocationIds.length > 0 ? 1 : 0);
+  const dateRangeSummary = startDate && endDate ? `${startDate} – ${endDate}` : startDate ? `From ${startDate}` : endDate ? `Until ${endDate}` : "All Time";
+  const locationSummary = !isAdmin
+    ? ""
+    : selectedLocationIds.length === 0
+    ? "All Locations"
+    : selectedLocationIds.length === 1
+    ? locations.find((l) => l.id === selectedLocationIds[0])?.name || "All Locations"
+    : `${selectedLocationIds.length} locations`;
+
+  // Page numbers to show in the pagination bar: always first, last, the
+  // current page and its immediate neighbors, with "…" filling any gap —
+  // avoids printing 40+ page buttons in a row on a long list.
+  const pageNumbers = [];
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === 1 || p === totalPages || Math.abs(p - pageNum) <= 1) pageNumbers.push(p);
+    else if (pageNumbers[pageNumbers.length - 1] !== "…") pageNumbers.push("…");
+  }
+
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar
@@ -1408,25 +1471,60 @@ export default function Transactions({ setPage }) {
             <Lock size={14} /> {t("cannot_edit")}
           </div>
         )}
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            {[{ v: "", l: t("all") }, { v: "BUY", l: t("buy") }, { v: "SELL", l: t("sell") }].map((opt) => (
-              <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${type === opt.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{opt.l}</button>
-            ))}
-            <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
-            <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
-            <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
-            {isAdmin && locations.length > 1 && (
-              <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
-            )}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
+              {[{ v: "", l: t("all") }, { v: "BUY", l: t("buy") }, { v: "SELL", l: t("sell") }].map((opt) => (
+                <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-md px-4 py-1.5 text-sm font-medium ${type === opt.v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{opt.l}</button>
+              ))}
+            </div>
+
+            {/* Consolidated Filters button — Unpaid (Buys), Not Received
+                (Sells), Date Range and Location all live in this popover
+                now. Each one is still the exact same component/state as
+                before; only where it's shown changed. */}
+            <div className="relative" ref={filtersRef}>
+              <button
+                onClick={() => setFiltersOpen((v) => !v)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium ${filtersOpen || activeFilterCount > 0 ? "border-brand-300 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+              >
+                <Filter size={13} /> Filters
+                {activeFilterCount > 0 && (
+                  <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-slate-200 px-1 text-[10.5px] font-semibold text-slate-600">{activeFilterCount}</span>
+                )}
+              </button>
+              {filtersOpen && (
+                <div className="absolute left-0 top-full z-20 mt-2 w-max min-w-[280px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
+                    <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
+                    {isAdmin && locations.length > 1 && (
+                      <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
+                    )}
+                  </div>
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={() => { setUnpaidBuysOnly(false); setNotReceivedOnly(false); setStartDate(null); setEndDate(null); setSelectedLocationIds([]); }}
+                      className="mt-2 text-xs font-medium text-slate-400 hover:text-slate-600"
+                    >
+                      Clear all filters
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <span className="text-sm text-slate-400">{dateRangeSummary}{locationSummary && ` · ${locationSummary}`}</span>
           </div>
-          <div className="flex gap-2">
-            <button onClick={exportLedger} disabled={exportingLedger} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-              {exportingLedger ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <Download size={14} />}
-              {exportingLedger ? "Exporting..." : t("export_ledger")}
+          <div className="flex items-center gap-2">
+            <button onClick={exportLedger} disabled={exportingLedger} title={exportingLedger ? "Exporting..." : t("export_ledger")} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+              {exportingLedger ? <Loader2 size={15} className="animate-spin text-slate-400" /> : <Download size={15} />}
             </button>
-            <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
-            <button onClick={() => setPage("new-sell")} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"><Plus size={14} /> {t("new_sell")}</button>
+            <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
+            <button onClick={() => setPage("new-sell")} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"><Plus size={14} /> {t("new_sell")}</button>
           </div>
         </div>
         {exportLedgerError && (
@@ -1460,6 +1558,7 @@ export default function Transactions({ setPage }) {
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
                 <th className="w-8 px-2 py-3"></th>
                 <th className="px-5 py-3 font-semibold">#</th>
+                <th className="px-3 py-3 font-semibold">Ticket #</th>
                 <th className="px-3 py-3 font-semibold">Type</th>
                 <th className="px-3 py-3 font-semibold">{t("col_date")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_station")}</th>
@@ -1473,7 +1572,7 @@ export default function Transactions({ setPage }) {
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((tx, i) => {
+              {pagedRows.map((tx, i) => {
                 const isCancelled = (tx.hq_status || "processing") === "cancelled";
                 const remaining = remainingByTx[tx.id] || 0;
                 // Processing vs Paid is no longer something anyone picks —
@@ -1501,12 +1600,27 @@ export default function Transactions({ setPage }) {
                         <ChevronRight size={15} className={`transition-transform ${isExpanded ? "rotate-90 text-brand-600" : ""}`} />
                       </button>
                     </td>
-                    <td className="px-5 py-3.5 text-slate-400">{i + 1}</td>
+                    <td className="px-5 py-3.5 text-slate-400">{(pageNum - 1) * PAGE_SIZE + i + 1}</td>
+                    <td className="px-3 py-3.5">
+                      {/* Ticket # — the paper ticket number staff actually
+                          write on and search by, now its own column instead
+                          of buried under the Type badge. The RCP-xxx receipt
+                          code moved down here as a small secondary line;
+                          falls back to the receipt code alone on any older
+                          row saved before paper_ticket_no was captured. */}
+                      {tx.paper_ticket_no ? (
+                        <>
+                          <div className="font-bold text-slate-800">{tx.paper_ticket_no}</div>
+                          <div className="text-xs text-slate-400">{tx.code}</div>
+                        </>
+                      ) : (
+                        <div className="font-bold text-slate-800">{tx.code}</div>
+                      )}
+                    </td>
                     <td className="px-3 py-3.5">
                       <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-1 text-xs font-bold ${tx.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
                         {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </span>
-                      <span className={`mt-1 block w-fit rounded px-1.5 py-0.5 text-xs font-semibold ${tx.type === "BUY" ? "bg-brand-50 text-brand-600" : "bg-rose-50 text-rose-600"}`}>{tx.code}</span>
                       {isTransactionPendingSync(tx.id) && (
                         <span title="Saved on this device, still waiting to sync to PaddyTrade's shared database" className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200">
                           <RefreshCw size={9} /> Not synced
@@ -1704,11 +1818,51 @@ export default function Transactions({ setPage }) {
                   </Fragment>
                 );
               })}
-              {visibleRows.length === 0 && loading && <tr><td colSpan={12} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {visibleRows.length === 0 && !loading && <tr><td colSpan={12} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
+              {pagedRows.length === 0 && loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
+
+        {visibleRows.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-4 text-sm text-slate-500">
+            <div>
+              Showing <span className="font-semibold text-slate-800">{(pageNum - 1) * PAGE_SIZE + 1}–{Math.min(pageNum * PAGE_SIZE, visibleRows.length)}</span> of{" "}
+              <span className="font-semibold text-slate-800">{visibleRows.length}</span> transactions
+            </div>
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setPageNum((p) => Math.max(1, p - 1))}
+                  disabled={pageNum === 1}
+                  className={`flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-slate-200 bg-white ${pageNum === 1 ? "text-slate-300" : "text-slate-500 hover:bg-slate-50"}`}
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                {pageNumbers.map((p, idx) =>
+                  p === "…" ? (
+                    <span key={`ellipsis-${idx}`} className="flex h-[30px] w-[30px] items-center justify-center text-slate-300">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPageNum(p)}
+                      className={`flex h-[30px] w-[30px] items-center justify-center rounded-lg text-sm font-medium ${p === pageNum ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+                <button
+                  onClick={() => setPageNum((p) => Math.min(totalPages, p + 1))}
+                  disabled={pageNum === totalPages}
+                  className={`flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-slate-200 bg-white ${pageNum === totalPages ? "text-slate-300" : "text-slate-500 hover:bg-slate-50"}`}
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </main>
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
