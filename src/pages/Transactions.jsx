@@ -1421,16 +1421,10 @@ export default function Transactions({ setPage }) {
   // Drives the "Filters" button's count badge and the plain-text summary
   // next to it — purely presentational, reads the same state the four
   // filters underneath it already use.
-  const activeFilterCount =
-    (unpaidBuysOnly ? 1 : 0) + (notReceivedOnly ? 1 : 0) + (startDate || endDate ? 1 : 0) + (selectedLocationIds.length > 0 ? 1 : 0);
-  const dateRangeSummary = startDate && endDate ? `${startDate} – ${endDate}` : startDate ? `From ${startDate}` : endDate ? `Until ${endDate}` : "All Time";
-  const locationSummary = !isAdmin
-    ? ""
-    : selectedLocationIds.length === 0
-    ? "All Locations"
-    : selectedLocationIds.length === 1
-    ? locations.find((l) => l.id === selectedLocationIds[0])?.name || "All Locations"
-    : `${selectedLocationIds.length} locations`;
+  // Only counts what's actually inside the Filters popover now — Date
+  // Range and Location are their own visible controls again, so they're
+  // not part of this badge.
+  const activeFilterCount = (unpaidBuysOnly ? 1 : 0) + (notReceivedOnly ? 1 : 0);
 
   // Page numbers to show in the pagination bar: always first, last, the
   // current page and its immediate neighbors, with "…" filling any gap —
@@ -1479,10 +1473,9 @@ export default function Transactions({ setPage }) {
               ))}
             </div>
 
-            {/* Consolidated Filters button — Unpaid (Buys), Not Received
-                (Sells), Date Range and Location all live in this popover
-                now. Each one is still the exact same component/state as
-                before; only where it's shown changed. */}
+            {/* Filters popover now only holds Unpaid (Buys) / Not Received
+                (Sells) — Date Range and Location are their own visible
+                controls again, right next to it, same as before. */}
             <div className="relative" ref={filtersRef}>
               <button
                 onClick={() => setFiltersOpen((v) => !v)}
@@ -1495,29 +1488,26 @@ export default function Transactions({ setPage }) {
               </button>
               {filtersOpen && (
                 <div className="absolute left-0 top-full z-20 mt-2 w-max min-w-[280px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
-                  <div className="mb-2 flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
                     <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
-                    {isAdmin && locations.length > 1 && (
-                      <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
-                    )}
-                  </div>
-                  {activeFilterCount > 0 && (
+                  {(unpaidBuysOnly || notReceivedOnly) && (
                     <button
-                      onClick={() => { setUnpaidBuysOnly(false); setNotReceivedOnly(false); setStartDate(null); setEndDate(null); setSelectedLocationIds([]); }}
+                      onClick={() => { setUnpaidBuysOnly(false); setNotReceivedOnly(false); }}
                       className="mt-2 text-xs font-medium text-slate-400 hover:text-slate-600"
                     >
-                      Clear all filters
+                      Clear
                     </button>
                   )}
                 </div>
               )}
             </div>
 
-            <span className="text-sm text-slate-400">{dateRangeSummary}{locationSummary && ` · ${locationSummary}`}</span>
+            <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
+            {isAdmin && locations.length > 1 && (
+              <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
+            )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={exportLedger} disabled={exportingLedger} title={exportingLedger ? "Exporting..." : t("export_ledger")} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
