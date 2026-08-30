@@ -1206,7 +1206,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // No date picker here on purpose — this is finalized the moment the
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
-      const tx = finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl });
+      const tx = await finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl });
       // Same reasoning as the manual Buy/Sell form (TransactionForm.jsx):
       // every new transaction should show up in the Activity Log, including
       // the original entry, not just later edits. This path (finalizing a
