@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity } from "lucide-react";
+import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity, ChevronRight } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -67,7 +67,7 @@ const PERIODS = [
   { id: "custom", label: "Custom" },
 ];
 
-export default function Dashboard() {
+export default function Dashboard({ setPage, setSelectedLocationId }) {
   const { t } = useLanguage();
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -281,11 +281,25 @@ export default function Dashboard() {
                   <th className="px-3 py-2.5 font-semibold">Buy (kg)</th>
                   <th className="px-3 py-2.5 font-semibold">Sell (kg)</th>
                   <th className="px-3 py-2.5 font-semibold">Stock</th>
+                  {isAdmin && <th className="w-8 px-3 py-2.5"></th>}
                 </tr>
               </thead>
               <tbody>
+                {/* [2026-08-31] Rows are now clickable for HQ Admin/Owner —
+                    opens LocationDetail (same page the Locations list
+                    already links to), so "what's happening at this
+                    location" is one click away instead of only reachable
+                    via Settings > Locations. Sample-approved: same table,
+                    same columns, just a hover highlight + chevron added.
+                    Not clickable for non-admin roles since station-detail
+                    is gated to isAdmin in App.jsx — clicking would only
+                    hit a permission-denied screen for them. */}
                 {locationPerformance.map(({ loc, buyKg, sellKg, pct }) => (
-                  <tr key={loc.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
+                  <tr
+                    key={loc.id}
+                    onClick={isAdmin ? () => { setSelectedLocationId(loc.id); setPage("station-detail"); } : undefined}
+                    className={`border-b border-slate-50 last:border-0 ${isAdmin ? "cursor-pointer hover:bg-brand-50" : "hover:bg-slate-50/60"}`}
+                  >
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
                         <span className={`h-2 w-2 rounded-full ${pct > 80 ? "bg-emerald-500" : pct > 40 ? "bg-gold-500" : "bg-rose-400"}`} />
@@ -303,10 +317,15 @@ export default function Dashboard() {
                         <span className="text-[11px] text-slate-400">{pct}%</span>
                       </div>
                     </td>
+                    {isAdmin && (
+                      <td className="px-3 py-3.5 text-slate-300">
+                        <ChevronRight size={15} />
+                      </td>
+                    )}
                   </tr>
                 ))}
-                {loading && locations.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
+                {loading && locations.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
               </tbody>
             </table>
             </div>
