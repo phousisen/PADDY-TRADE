@@ -59,7 +59,13 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
   }
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col bg-gradient-to-b from-brand-900 to-brand-950 px-3 py-4">
+    // [2026-08-31] Hidden below the `md` breakpoint — MobileNav.jsx (a
+    // fixed bottom tab bar + a full-screen "More" sheet) takes over
+    // navigation on phone-width screens instead. This is the only line
+    // that changed in this file: everything else — nav items, permission
+    // checks, styling — is untouched, so desktop/tablet behavior is
+    // pixel-identical to before.
+    <aside className="hidden h-screen w-64 shrink-0 flex-col bg-gradient-to-b from-brand-900 to-brand-950 px-3 py-4 md:flex">
       {/* Logo — a gradient tile instead of a flat block, so the app feels
           like a real product with a mark rather than an icon on a swatch. */}
       <div className="mb-4 flex items-center gap-2.5 px-2">
