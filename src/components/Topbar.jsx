@@ -3,6 +3,7 @@ import { Search, Bell, WifiOff, RefreshCw, AlertTriangle } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { onSyncStatusChange } from "../offlineQueue.js";
+import NeedsAttentionModal from "./NeedsAttentionModal.jsx";
 
 // Global "unsynced changes" banner — lives here (not in individual pages)
 // specifically because Topbar is rendered on every real page in the app.
@@ -16,8 +17,24 @@ import { onSyncStatusChange } from "../offlineQueue.js";
 function SyncStatusBanner({ onSignInAgain }) {
   const [status, setStatus] = useState({ online: true, syncing: false, pending: 0, stuck: false, sessionExpired: false });
   useEffect(() => onSyncStatusChange(setStatus), []);
+  // [2026-08-30] Reachable from every one of this banner's states below —
+  // see NeedsAttentionModal.jsx for what it actually shows (every field of
+  // every unsynced finalize/save on this device, pulled straight from
+  // local cache, so nothing here ever has to be retyped from a paper
+  // copy).
+  const [showNeedsAttention, setShowNeedsAttention] = useState(false);
+  const needsAttentionButton = (
+    <button
+      type="button"
+      onClick={() => setShowNeedsAttention(true)}
+      className="shrink-0 rounded-md bg-white/20 px-2.5 py-1 font-semibold hover:bg-white/30"
+    >
+      Needs Attention
+    </button>
+  );
+  const modal = showNeedsAttention ? <NeedsAttentionModal onClose={() => setShowNeedsAttention(false)} /> : null;
 
-  if (status.pending === 0 && !status.stuck && !status.sessionExpired) return null;
+  if (status.pending === 0 && !status.stuck && !status.sessionExpired) return modal;
 
   // [2026-08-28] This browser's login itself expired and couldn't renew
   // itself automatically (see ensureFreshSession in supabaseClient.js) —
@@ -30,19 +47,22 @@ function SyncStatusBanner({ onSignInAgain }) {
   // by doing that; it all resumes and saves normally right after.
   if (status.sessionExpired) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-600 px-6 py-2 text-xs font-semibold text-white">
-        <div className="flex items-center gap-2">
-          <AlertTriangle size={13} />
-          Your login has expired.{status.pending > 0 ? ` ${status.pending} change${status.pending === 1 ? "" : "s"} on this device ${status.pending === 1 ? "is" : "are"} saved safely and waiting — nothing will be lost.` : ""} Sign in again to keep going.
+      <>
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-600 px-6 py-2 text-xs font-semibold text-white">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={13} />
+            Your login has expired.{status.pending > 0 ? ` ${status.pending} change${status.pending === 1 ? "" : "s"} on this device ${status.pending === 1 ? "is" : "are"} saved safely and waiting — nothing will be lost.` : ""} Sign in again to keep going.
+          </div>
+          <button
+            type="button"
+            onClick={onSignInAgain}
+            className="shrink-0 rounded-md bg-white/15 px-3 py-1 font-semibold hover:bg-white/25"
+          >
+            Sign In Again
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onSignInAgain}
-          className="shrink-0 rounded-md bg-white/15 px-3 py-1 font-semibold hover:bg-white/25"
-        >
-          Sign In Again
-        </button>
-      </div>
+        {modal}
+      </>
     );
   }
 
@@ -55,34 +75,60 @@ function SyncStatusBanner({ onSignInAgain }) {
   // we say so explicitly.
   if (status.stuck) {
     return (
-      <div className="flex flex-col gap-0.5 bg-rose-600 px-6 py-2 text-xs font-semibold text-white">
-        <div className="flex items-center gap-2">
-          <AlertTriangle size={13} />
-          {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
-        </div>
-        {status.lastStuckError && (
-          <div className="pl-[21px] font-normal text-rose-100">
-            Reason shown by the server ({status.stuckCount === 1 ? "1 ticket affected" : `${status.stuckCount} tickets affected`}): "{status.lastStuckError}" — share this exact text with an admin.
+      <>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 bg-rose-600 px-6 py-2 text-xs font-semibold text-white">
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={13} />
+              {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
+            </div>
+            {status.lastStuckError && (
+              <div className="pl-[21px] font-normal text-rose-100">
+                Reason shown by the server ({status.stuckCount === 1 ? "1 ticket affected" : `${status.stuckCount} tickets affected`}): "{status.lastStuckError}" — share this exact text with an admin.
+              </div>
+            )}
           </div>
-        )}
-      </div>
+          {needsAttentionButton}
+        </div>
+        {modal}
+      </>
     );
   }
 
   if (!status.online) {
     return (
-      <div className="flex items-center gap-2 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-700">
-        <WifiOff size={13} />
-        No internet — working offline. {status.pending > 0 ? `${status.pending} change${status.pending === 1 ? "" : "s"} saved on this device only, waiting to sync once it's back — don't close this browser or clear its data until then.` : "Anything you save is kept on this device until the connection returns."}
-      </div>
+      <>
+        <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-700">
+          <div className="flex items-center gap-2">
+            <WifiOff size={13} />
+            No internet — working offline. {status.pending > 0 ? `${status.pending} change${status.pending === 1 ? "" : "s"} saved on this device only, waiting to sync once it's back — don't close this browser or clear its data until then.` : "Anything you save is kept on this device until the connection returns."}
+          </div>
+          {status.pending > 0 && (
+            <button type="button" onClick={() => setShowNeedsAttention(true)} className="shrink-0 rounded-md bg-amber-100 px-2.5 py-1 font-semibold text-amber-700 hover:bg-amber-200">
+              View Details
+            </button>
+          )}
+        </div>
+        {modal}
+      </>
     );
   }
 
   return (
-    <div className="flex items-center gap-2 bg-brand-50 px-6 py-2 text-xs font-medium text-brand-700">
-      <RefreshCw size={13} className={status.syncing ? "animate-spin" : ""} />
-      {status.syncing ? "Connected — syncing to PaddyTrade…" : `Connected — ${status.pending} change${status.pending === 1 ? "" : "s"} waiting to sync…`}
-    </div>
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-brand-50 px-6 py-2 text-xs font-medium text-brand-700">
+        <div className="flex items-center gap-2">
+          <RefreshCw size={13} className={status.syncing ? "animate-spin" : ""} />
+          {status.syncing ? "Connected — syncing to PaddyTrade…" : `Connected — ${status.pending} change${status.pending === 1 ? "" : "s"} waiting to sync…`}
+        </div>
+        {status.pending > 0 && (
+          <button type="button" onClick={() => setShowNeedsAttention(true)} className="shrink-0 rounded-md bg-brand-100 px-2.5 py-1 font-semibold text-brand-700 hover:bg-brand-200">
+            View Details
+          </button>
+        )}
+      </div>
+      {modal}
+    </>
   );
 }
 
