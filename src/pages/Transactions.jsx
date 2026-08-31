@@ -1524,7 +1524,12 @@ export default function Transactions({ setPage }) {
           </div>
         )}
 
-        <div className="mb-2 flex items-center justify-end gap-2">
+        {/* [2026-08-31] This "scroll with these" hint and the table itself
+            are both desktop-only now (hidden md:hidden below) — a phone
+            gets its own card list instead (md:hidden block right after the
+            table), so there's no sideways-scrolling table on a touchscreen
+            to explain in the first place. Nothing here changes at md+. */}
+        <div className="mb-2 hidden items-center justify-end gap-2 md:flex">
           <span className="text-xs text-slate-400">Can't scroll with your mouse? Use these:</span>
           <button onClick={() => scrollTable(-1)} title="Scroll table left" className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
             <ChevronLeft size={16} />
@@ -1534,7 +1539,7 @@ export default function Transactions({ setPage }) {
           </button>
         </div>
 
-        <div ref={tableScrollRef} className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        <div ref={tableScrollRef} className="hidden rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               {/* Section 36: per request, went back to this table's original
@@ -1812,6 +1817,144 @@ export default function Transactions({ setPage }) {
               {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
+        </div>
+
+        {/* [2026-08-31] Phone card list — same rows, data, and action
+            handlers as the table above (approved via mockup), just laid
+            out as cards instead of 13 table columns. hidden at md+ since
+            the table already covers that. Tap a card to expand the same
+            weigh-in/weigh-out detail the table's chevron shows. */}
+        <div className="flex flex-col gap-3 md:hidden">
+          {pagedRows.map((tx) => {
+            const isCancelled = (tx.hq_status || "processing") === "cancelled";
+            const remaining = remainingByTx[tx.id] || 0;
+            const hqStatus = isCancelled ? "cancelled" : remaining <= 0.01 ? "paid" : "processing";
+            const isBuy = tx.type === "BUY";
+            const isExpanded = expandedTxIds.has(tx.id);
+            const payableKg = Math.max(0, (tx.quantity_kg || 0) - (tx.deduction_kg || 0));
+            const photoCount = [tx.receipt_photo_url, tx.payment_proof_url, tx.bank_qr_url].filter(Boolean).length;
+            return (
+              <div key={`card-${tx.id}`} className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${isCancelled ? "opacity-50" : ""}`}>
+                <div className={`absolute inset-y-4 left-0 w-1 rounded-full ${isBuy ? "bg-brand-500" : "bg-rose-400"}`} />
+                <div className="pl-3">
+                  <button onClick={() => toggleExpand(tx.id)} className="flex w-full items-start justify-between gap-2 text-left">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`flex w-fit items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${isBuy ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
+                          {isBuy ? "▲ BUY" : "▼ SELL"}
+                        </span>
+                        <span className="font-bold text-slate-800">{tx.paper_ticket_no || tx.code}</span>
+                        {isTransactionPendingSync(tx.id) && (
+                          <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                            <RefreshCw size={9} /> Not synced
+                          </span>
+                        )}
+                      </div>
+                      {tx.paper_ticket_no && <p className="mt-0.5 text-xs text-slate-400">{tx.code}</p>}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs text-slate-400">{tx.tx_date}</p>
+                      <p className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</p>
+                    </div>
+                  </button>
+
+                  <p className="mt-2 font-semibold text-slate-800">{tx.partyName}</p>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-400">
+                    <span className="flex items-center gap-1"><MapPin size={11} className="text-slate-300" />{tx.stationName}</span>
+                    {(tx.car_plate || tx.driver_name) && <span>🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</span>}
+                  </div>
+
+                  <div className="mt-2.5 flex gap-2">
+                    <div className="rounded-lg bg-slate-50 px-3 py-1.5">
+                      <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Weight</p>
+                      <p className="text-sm font-bold text-slate-800">{fmt2(tx.quantity_kg)} kg</p>
+                    </div>
+                    {tx.price_per_kg != null && (
+                      <div className="rounded-lg bg-slate-50 px-3 py-1.5">
+                        <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Price / kg</p>
+                        <p className="text-sm font-bold text-slate-800">{fmtRiel(tx.price_per_kg)}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {tx.station_quantity_kg != null && (
+                    tx.buyer_confirmed_at ? (
+                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">✓ Confirmed</span>
+                    ) : (
+                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">⏳ Pending buyer confirmation</span>
+                    )
+                  )}
+
+                  <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                    <div>
+                      {isCancelled ? (
+                        <span className="text-xs text-slate-400">Excluded from reports</span>
+                      ) : remaining > 0.01 ? (
+                        isAdmin ? (
+                          <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
+                            <Wallet size={12} /> {fmtRiel(remaining)} due
+                          </button>
+                        ) : (
+                          <span className="flex items-center gap-1 rounded-md border border-gold-100 bg-gold-50/60 px-2 py-1 text-xs font-medium text-gold-700">
+                            <Wallet size={12} /> {fmtRiel(remaining)} due
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs font-medium text-brand-600">Settled</span>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-extrabold text-slate-800">{fmtRiel(tx.total_with_tax ?? tx.amount)}</p>
+                      {tx.tax_applicable && <p className="text-[10px] text-slate-400">incl. {tx.tax_rate}% VAT</p>}
+                    </div>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-slate-100 pt-3">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">Weigh In {isBuy ? "(loaded)" : "(empty)"}</p>
+                        <p className="text-sm font-semibold text-slate-800">{tx.gross_kg != null ? `${fmt2(tx.gross_kg)} kg` : "Not recorded"}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">Weigh Out {isBuy ? "(empty)" : "(loaded)"}</p>
+                        <p className="text-sm font-semibold text-slate-800">{tx.tare_kg != null ? `${fmt2(tx.tare_kg)} kg` : "Not recorded"}</p>
+                      </div>
+                      {(tx.deduction_kg || 0) > 0 && (
+                        <>
+                          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Deduction</p><p className="text-sm font-semibold text-slate-800">{fmt2(tx.deduction_kg)} kg</p></div>
+                          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Payable Weight</p><p className="text-sm font-semibold text-slate-800">{fmt2(payableKg)} kg</p></div>
+                        </>
+                      )}
+                      <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Recorded By</p><p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p></div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                    <button onClick={() => setReceiptTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Printer size={12} /> Receipt</button>
+                    <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Camera size={12} /> Photos ({photoCount})</button>
+                    <button onClick={() => setViewPaymentsTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Wallet size={12} /> Payments</button>
+                    {isAdmin ? (
+                      <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Pencil size={12} /> Edit</button>
+                    ) : (
+                      <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Flag size={12} /> {t("request_change")}</button>
+                    )}
+                    {isAdmin && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
+                      <button onClick={() => setConfirmSaleTx(tx)} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700"><CheckCircle2 size={12} /> Confirm Sale</button>
+                    )}
+                    {isAdmin && (
+                      isCancelled ? (
+                        <button onClick={() => restoreTransaction(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Undo2 size={12} /> Restore</button>
+                      ) : (
+                        <button onClick={() => setCancelConfirmTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Ban size={12} /> Cancel</button>
+                      )
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {pagedRows.length === 0 && loading && <p className="py-10 text-center text-sm text-slate-400">Loading…</p>}
+          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</p>}
         </div>
 
         {visibleRows.length > 0 && (
