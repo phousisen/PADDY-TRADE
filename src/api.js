@@ -508,7 +508,14 @@ export const api = {
   // `id` is optional — used by the offline queue to replay a party that
   // was already created locally with a client-generated UUID, so a
   // retried sync op reuses that same id instead of making a duplicate.
-  async createParty({ id, name, type, phone, idNumber, bankName, bankAccount, bankQrUrl, company, destination, locationId }) {
+  // idPhotoUrl/verifiedAt/verifiedBy [2026-08-31]: the "farmer/buyer holding
+  // their own bank QR" identity photo, and who confirmed the profile as
+  // verified and when — see migration_registration_feature.sql. All three
+  // are optional and every existing caller (offline queue replay, the old
+  // public self-registration page) simply omits them, so this stays fully
+  // backward-compatible — nothing about an existing call site's behavior
+  // changes.
+  async createParty({ id, name, type, phone, idNumber, bankName, bankAccount, bankQrUrl, idPhotoUrl, verifiedAt, verifiedBy, company, destination, locationId }) {
     const row = {
       ...(id ? { id } : {}),
       name,
@@ -518,6 +525,9 @@ export const api = {
       bank_name: bankName,
       bank_account: bankAccount,
       bank_qr_url: bankQrUrl || null,
+      id_photo_url: idPhotoUrl || null,
+      verified_at: verifiedAt || null,
+      verified_by: verifiedBy || null,
       company,
       destination,
       location_id: locationId,
@@ -549,11 +559,24 @@ export const api = {
     }
   },
 
-  async updateParty(id, { bankName, bankAccount, bankQrUrl }) {
+  // Widened [2026-08-31] to also cover name/phone/idNumber/the identity
+  // photo/verified stamp, for the new staff-facing registration screen
+  // ("complete this farmer's existing profile" instead of creating a
+  // second, separate record for the same person). Every existing caller
+  // that only ever passed bankName/bankAccount/bankQrUrl keeps working
+  // exactly as before — the new fields are only patched when actually
+  // provided, same as the original three already worked.
+  async updateParty(id, { name, phone, idNumber, bankName, bankAccount, bankQrUrl, idPhotoUrl, verifiedAt, verifiedBy }) {
     const patch = {};
+    if (name !== undefined) patch.name = name;
+    if (phone !== undefined) patch.phone = phone;
+    if (idNumber !== undefined) patch.id_number = idNumber;
     if (bankName !== undefined) patch.bank_name = bankName;
     if (bankAccount !== undefined) patch.bank_account = bankAccount;
     if (bankQrUrl !== undefined) patch.bank_qr_url = bankQrUrl;
+    if (idPhotoUrl !== undefined) patch.id_photo_url = idPhotoUrl;
+    if (verifiedAt !== undefined) patch.verified_at = verifiedAt;
+    if (verifiedBy !== undefined) patch.verified_by = verifiedBy;
     const { data, error } = await supabase.from("parties").update(patch).eq("id", id).select();
     if (error) throw error;
     // Same reasoning as insertOrFetchExisting above: a save that legitimately
