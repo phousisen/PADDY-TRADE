@@ -366,8 +366,14 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isBuy ? t("new_buy_title") : t("new_sell_title")} />
       <main className="flex-1 overflow-y-auto p-6">
-        <form onSubmit={handleSubmit} className="grid grid-cols-3 gap-5">
-          <div className="col-span-2 space-y-5">
+        {/* [2026-08-31] grid-cols-1 lg:grid-cols-3 instead of a flat
+            grid-cols-3 — same fix as Dashboard's Location Performance /
+            Live Feed row: this form + its summary panel used to squeeze
+            into a third of the screen each on phone. Now stacks full-width
+            (form first, summary panel below it) below the lg breakpoint,
+            unchanged on desktop/laptop. */}
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="space-y-5 lg:col-span-2">
             {/* Section 1: Party Information */}
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
@@ -639,7 +645,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
             {error && <p className="text-sm text-rose-500">{error}</p>}
           </div>
 
-          <div className="col-span-1">
+          <div className="lg:col-span-1">
             <div className="sticky top-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h3 className="mb-4 font-semibold text-slate-700">{t("summary")}</h3>
               <div className="mb-4 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-4 text-white">
