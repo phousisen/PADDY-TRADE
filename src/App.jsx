@@ -5,6 +5,7 @@ import { api } from "./api.js";
 import { startAutoSync } from "./offlineQueue.js";
 import Login from "./pages/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
+import MobileNav from "./components/MobileNav.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import StockInventory from "./pages/StockInventory.jsx";
 import Transactions from "./pages/Transactions.jsx";
@@ -169,6 +170,13 @@ export default function App() {
     <div className="flex bg-paper">
       <Sidebar page={page} setPage={setPage} pendingRequests={pendingRequests} />
       {renderPage()}
+      {/* [2026-08-31] Phone-only bottom tab bar + "More" sheet — takes
+          over navigation below the `md` breakpoint, where Sidebar above
+          is hidden. Fixed-positioned, so its place in this tree doesn't
+          affect layout; see index.css for the matching bottom padding
+          added to every page's own scroll area so this doesn't cover
+          content. */}
+      <MobileNav page={page} setPage={setPage} pendingRequests={pendingRequests} />
     </div>
   );
 }
