@@ -21,6 +21,7 @@ import RolesPage from "./pages/RolesPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import ReceiptTemplateEditor from "./pages/ReceiptTemplateEditor.jsx";
 import RegisterFarmer from "./pages/RegisterFarmer.jsx";
+import RegisterPartyStaff from "./pages/RegisterPartyStaff.jsx";
 
 export default function App() {
   const { session, profile, loading } = useAuth();
@@ -83,6 +84,26 @@ export default function App() {
 
   if (!session || !profile) {
     return <Login />;
+  }
+
+  // [2026-08-31] A deliberately narrow, self-contained restriction: an
+  // account whose permission set is EXACTLY ["manage_parties"] and nothing
+  // else — no create_transactions, no view_dashboard, nothing — is treated
+  // as registration-only and dropped straight onto that one screen, no
+  // sidebar, no other page reachable at all. This is what the new
+  // "Registrar" role (created from the Roles page: Own Location, only
+  // "View & edit farmers/buyers" checked) resolves to.
+  //
+  // Every role that already existed before this change — Owner, HQ Admin,
+  // Manager, Staff, Suspended — carries more than just that one permission
+  // (or, for Suspended, none at all), so none of them can ever match this
+  // condition. This can only ever affect a role someone deliberately
+  // creates with exactly this one narrow permission and nothing more —
+  // existing accounts behave exactly as they did before this change.
+  const permissions = Array.isArray(profile.permissions) ? profile.permissions : [];
+  const isRegistrationOnly = permissions.length > 0 && permissions.every((p) => p === "manage_parties");
+  if (isRegistrationOnly) {
+    return <RegisterPartyStaff />;
   }
 
   const isAdmin = profile.role === "admin";
