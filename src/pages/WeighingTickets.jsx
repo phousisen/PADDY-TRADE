@@ -1224,6 +1224,18 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
         userId: session.user.id,
       });
       onFinalized(tx);
+    } catch (err) {
+      // [2026-08-30] finalizeTicketOffline now throws instead of silently
+      // proceeding when it can't durably save this device's copy of the
+      // finalize, or can't confirm within FINISH_SYNC_TIMEOUT_MS that it
+      // reached the shared database — see the 2026-08-30 audit, Part 0.
+      // Before this, nothing here caught that (there was no catch at all),
+      // so onFinalized(tx) never even ran, but no error ever reached the
+      // person waiting either — they'd have no reason to know Finish
+      // Ticket hadn't actually completed. Showing the message here means
+      // an ungenerated receipt is now visible and actionable instead of
+      // just as though the button never worked.
+      setError(err.message || "Something went wrong finishing this ticket. Please try again.");
     } finally {
       setSaving(false);
     }
