@@ -153,12 +153,32 @@ function readJSON(key, fallback) {
     return fallback;
   }
 }
+// [2026-08-30] Returns whether the write actually landed, instead of
+// swallowing a failure silently. Found during the 2026-08-30 bug audit
+// (triggered by tickets that finalized/printed at Ping Pong without
+// showing up in Transactions): a full or blocked localStorage meant an
+// enqueue()'d op never actually made it to the one place trySync() looks
+// (getQueue(), which reads straight back from localStorage) — but nothing
+// downstream ever found out, so the receipt printed anyway for a change
+// that was never durably queued at all. Callers on the safety-critical
+// path (see enqueue below, and finalizeTicketOffline/
+// createTransactionOffline further down) now check this before treating
+// anything as saved. One retry before giving up, in case this was a
+// one-off hiccup (e.g. racing another tab's write of a different key)
+// rather than storage genuinely being full.
 function writeJSON(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
-    // Storage full or unavailable — nothing we can do locally, the queue
-    // just won't persist across a page reload this one time.
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+      return true;
+    } catch {
+      // Storage full or unavailable even on retry — the caller decides
+      // what to do; this one write just did not happen.
+      return false;
+    }
   }
 }
 
@@ -192,6 +212,14 @@ function writeJSON(key, value) {
 // window down to the handful of instructions between the pre-write
 // recheck and the write itself, rather than fully eliminating it — but that
 // window is now about as small as plain synchronous JS can make it.
+// [2026-08-30] Returns { queue, persisted } instead of the bare array —
+// persisted is false when writeJSON's actual disk write failed (see
+// writeJSON above). Nothing before today's audit ever checked this, which
+// is exactly how a finalize could be treated as "queued" when it was
+// really only ever sitting in a local variable. No existing caller reads
+// this function's return value yet (they only cared about the side
+// effect), so widening it here is safe — enqueue() below is the first to
+// actually use it.
 function mutateQueue(mutator) {
   for (let attempt = 0; attempt < 25; attempt++) {
     let rawBefore;
@@ -204,15 +232,16 @@ function mutateQueue(mutator) {
     try { rawNow = localStorage.getItem(QUEUE_KEY); } catch { rawNow = null; }
     if (rawNow !== rawBefore) continue; // someone else wrote in between — redo against their latest state
 
-    writeJSON(QUEUE_KEY, next);
+    const persisted = writeJSON(QUEUE_KEY, next);
     notifyStatus();
-    return next;
+    return { queue: next, persisted };
   }
   // 25 collisions in a row would mean something is pathologically wrong
   // (not just two tabs racing occasionally) — fall back to whatever is
-  // currently stored rather than looping forever.
+  // currently stored rather than looping forever. The mutation was never
+  // applied, so this is not persisted either.
   notifyStatus();
-  return getQueue();
+  return { queue: getQueue(), persisted: false };
 }
 
 // ---------------------------------------------------------------------
@@ -282,6 +311,17 @@ export function upsertCachedTransaction(tx) {
   const i = list.findIndex((t) => t.id === tx.id);
   if (i >= 0) list[i] = { ...list[i], ...tx };
   else list.unshift(tx);
+  writeJSON(TX_CACHE_KEY, list);
+  return list;
+}
+
+// [2026-08-30] Used only by discardStuckFinalize/discardStuckManualEntry
+// below — deliberately removes a locally-cached transaction that's being
+// discarded, not just hidden. Only ever called on a transaction whose op
+// has already been confirmed genuinely stuck (repeated real failures) and
+// is about to be removed from the queue at the same time.
+function removeCachedTransaction(id) {
+  const list = getCachedTransactions().filter((t) => t.id !== id);
   writeJSON(TX_CACHE_KEY, list);
   return list;
 }
@@ -496,6 +536,14 @@ export async function refreshLookupCaches() {
 export function getQueue() {
   return readJSON(QUEUE_KEY, []);
 }
+// [2026-08-30] Returns { opId, persisted } — persisted is false when the
+// underlying localStorage write failed (see writeJSON/mutateQueue above).
+// Every other call site in this file still just calls enqueue(...) as a
+// bare statement and is unaffected; finalizeTicketOffline and
+// createTransactionOffline are the two that now check this before letting
+// anything print, since those are the two writes a real receipt depends
+// on (see FINISH_SYNC_TIMEOUT_MS above for the incident that made that
+// distinction matter).
 export function enqueue(op) {
   // Every op gets a stable id of its own (separate from ticketId/partyId,
   // which name what the op acts ON, not the op itself) so a specific op
@@ -503,7 +551,22 @@ export function enqueue(op) {
   // just "whatever's currently at the front" — which matters once ops for
   // different tickets are allowed to be attempted out of relative order
   // (see trySync below).
-  mutateQueue((q) => { q.push({ ...op, _id: newId() }); return q; });
+  const opId = newId();
+  // [2026-08-30] queuedAt: when this op was actually enqueued, so the
+  // Needs Attention panel (getNeedsAttentionTransactions below) can show
+  // "queued 14 min ago" instead of just a bare list with no sense of how
+  // long something's been waiting.
+  const queuedAt = getAccurateNow().toISOString();
+  const { persisted } = mutateQueue((q) => { q.push({ ...op, _id: opId, queuedAt }); return q; });
+  return { opId, persisted };
+}
+// True if a specific op (by the id enqueue() gave it) is still sitting in
+// the durable queue — i.e. not yet removed by a successful sync. Used to
+// confirm a specific finalize/create actually got processed by a trySync()
+// pass, rather than trusting that trySync() resolving means it did (see
+// the syncPromise race explained above trySync).
+function isOpQueued(opId) {
+  return getQueue().some((op) => op._id === opId);
 }
 // Removes one specific op by id, wherever it currently sits in the queue —
 // used instead of a plain shift() so a later, unrelated op that finished
@@ -557,6 +620,81 @@ export function isTransactionPendingSync(transactionId) {
     (op.type === "createTransaction" && op.payload?.id === transactionId) ||
     (op.type === "finalizeTicket" && op.payload?.transactionId === transactionId)
   );
+}
+
+// ---------------------------------------------------------------------
+// [2026-08-30] "Needs Attention" — the direct answer to "what if it never
+// loads, and I have to type it in new?" Every field a finalize/manual-save
+// needs to be recovered is already sitting in getCachedTransactions() (the
+// exact object the receipt itself was built from) the whole time it's
+// queued — nothing about a stuck or slow sync ever deletes it. This just
+// surfaces that data instead of leaving it invisible in localStorage,
+// where the only other way to find it was comparing paper against the
+// Transactions List by hand. See NeedsAttentionModal.jsx (reachable from
+// Topbar.jsx on every page) for where this is actually shown.
+// ---------------------------------------------------------------------
+
+// One entry per still-unsynced finalizeTicket/createTransaction op, each
+// carrying its full cached transaction (every field the receipt used) plus
+// how long it's been queued and, if it's failed enough times in a row to
+// count as genuinely stuck (see STUCK_THRESHOLD below), the exact error
+// text and a way out. Sorted oldest-first — whatever's been waiting
+// longest needs eyes on it soonest.
+export function getNeedsAttentionTransactions() {
+  const txById = new Map(getCachedTransactions().map((t) => [t.id, t]));
+  const items = [];
+  for (const op of getQueue()) {
+    if (op.type !== "finalizeTicket" && op.type !== "createTransaction") continue;
+    const txId = op.type === "finalizeTicket" ? op.payload?.transactionId : op.payload?.id;
+    const tx = txId ? txById.get(txId) : null;
+    if (!tx) continue; // shouldn't normally happen — the cache write always happens right alongside the enqueue
+    const stuckEntry = stuckOps.get(op._id) || null;
+    items.push({
+      tx,
+      opId: op._id,
+      opType: op.type,
+      ticketId: op.ticketId || null,
+      queuedAt: op.queuedAt || null,
+      attempts: stuckEntry ? stuckEntry.attempts : 0,
+      lastError: stuckEntry ? stuckEntry.error : null,
+      isStuck: !!(stuckEntry && stuckEntry.attempts >= STUCK_THRESHOLD),
+    });
+  }
+  items.sort((a, b) => new Date(a.queuedAt || 0) - new Date(b.queuedAt || 0));
+  return items;
+}
+
+// Cancels a genuinely stuck finalizeTicket op (repeated real failures —
+// see isStuck above, not just "still waiting") and sends the ticket back
+// to the Waiting board exactly as it was right before Finish Ticket was
+// pressed. Nothing about the ticket's own weigh-in/quality/price fields
+// was ever touched by finalizing it, so nothing here needs to be retyped
+// — staff just press Finish Ticket again once whatever was wrong (a bad
+// value, a permissions issue) is fixed. Removing the op first means the
+// old stuck attempt can never also go through later and create a second
+// transaction alongside the new one.
+export function discardStuckFinalize(opId) {
+  const op = getQueue().find((o) => o._id === opId);
+  if (!op || op.type !== "finalizeTicket") return false;
+  const txId = op.payload?.transactionId;
+  removeOp(opId);
+  if (txId) removeCachedTransaction(txId);
+  if (op.ticketId) patchCachedTicket(op.ticketId, { stage: "weighed_out", transaction_id: null });
+  return true;
+}
+
+// Same idea for a stuck manual Buy/Sell (createTransaction) — there's no
+// ticket to send back here, so this just clears the stuck attempt itself.
+// The full details shown in NeedsAttentionModal.jsx should be copied into
+// a fresh New Buy/Sell entry BEFORE calling this, if the sale is still
+// real — once removed, this exact attempt is gone for good.
+export function discardStuckManualEntry(opId) {
+  const op = getQueue().find((o) => o._id === opId);
+  if (!op || op.type !== "createTransaction") return false;
+  const txId = op.payload?.id;
+  removeOp(opId);
+  if (txId) removeCachedTransaction(txId);
+  return true;
 }
 
 // ---------------------------------------------------------------------
@@ -1017,6 +1155,15 @@ function normalizeSyncedTransaction(op, result) {
     stationPhone: cached.stationPhone || result.stationPhone,
     status: result.status ?? cached.status ?? "confirmed",
     hq_status: result.hq_status ?? cached.hq_status ?? "processing",
+    // [2026-08-30] This function only ever runs once an op has actually
+    // succeeded (see the TX_OP_TYPES branch in trySync below) — so however
+    // `needs_verification` was left on the cached copy, it's genuinely
+    // confirmed synced now. Without this explicit false, `{...cached,
+    // ...result}` would leave a `true` set at print time stuck on this
+    // device's cached copy forever (the real database row has no such
+    // column to overwrite it with), even though the sync it was warning
+    // about has since gone through fine.
+    needs_verification: false,
   };
 }
 
@@ -1296,21 +1443,84 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   const taxAmount = ticket.tax_applicable ? Math.round(subtotal * (ticket.tax_rate || 0)) / 100 : 0;
   const amount = Math.round((subtotal) * 100) / 100;
 
-  patchCachedTicket(ticket.id, { stage: "finalized", transaction_id: transactionId });
-  enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, transactionId, transactionCode, receiptPhotoUrl } });
+  // [2026-08-30] Two gaps found in the 2026-08-30 audit (triggered by
+  // finished tickets not showing up in Transactions at Ping Pong), both
+  // fixed here — see the audit doc "Part 0" for the full write-up:
+  //
+  //   0.1 — enqueue() could silently fail to persist (storage full or
+  //   blocked). Nothing downstream ever checked, so a receipt could print
+  //   for a finalize that was never actually queued anywhere durable.
+  //   Fixed below by checking `persisted` before doing anything else, and
+  //   throwing instead of proceeding when it's false.
+  //
+  //   0.2 — trySync()'s single shared in-flight promise could resolve
+  //   without ever having attempted THIS op, if a sync pass that started
+  //   just before this op was enqueued happened to already be wrapping up.
+  //   Fixed below by re-checking whether the op is still queued after
+  //   trySync() resolves, and calling trySync() again (a genuinely fresh
+  //   pass, once the stale one has finished) if it's still there — bounded
+  //   by the same FINISH_SYNC_TIMEOUT_MS budget as before.
+  //
+  // Reusing an already-queued op instead of enqueueing a second one
+  // matters here specifically: if a previous attempt on this same ticket
+  // already got past the persisted check but then failed to confirm sync
+  // in time (thrown below), staff pressing Finish Ticket again must not
+  // create a second finalizeTicket op for the same ticket — that would
+  // eventually try to create two transactions for one truckload.
+  const existingOp = getQueue().find((op) => op.type === "finalizeTicket" && op.ticketId === ticket.id);
+  let opId, persisted, finalTransactionId, finalTransactionCode;
+  if (existingOp) {
+    opId = existingOp._id;
+    persisted = true; // it's sitting in getQueue(), which reads straight from disk
+    finalTransactionId = existingOp.payload.transactionId;
+    finalTransactionCode = existingOp.payload.transactionCode;
+  } else {
+    finalTransactionId = transactionId;
+    finalTransactionCode = transactionCode;
+    const enqueued = enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, transactionId, transactionCode, receiptPhotoUrl } });
+    opId = enqueued.opId;
+    persisted = enqueued.persisted;
+  }
+
+  if (!persisted) {
+    throw new Error("Could not save this ticket on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Finish Ticket again in a moment, or free up space on this device if it keeps happening.");
+  }
+
   // See FINISH_SYNC_TIMEOUT_MS above for why this waits, bounded, instead
   // of firing and forgetting like every other offline write in this file.
   // Genuinely offline stays exactly as fast as before — nothing to wait on.
+  //
+  // [2026-08-30] Changed from blocking to flagging, per direction: the
+  // storage-write failure above (gap 0.1) still blocks outright, because
+  // there is nothing durable to fall back on if that failed. This case
+  // (gap 0.2) is different — the op IS safely and durably queued (the
+  // `persisted` check above already confirmed that), so instead of
+  // stopping the print, this now prints normally and marks the
+  // transaction `needs_verification: true` — surfaced as the printed
+  // warning band on the receipt (Receipt.jsx) and as an entry in the
+  // "Needs Attention" panel (Topbar.jsx / NeedsAttentionModal.jsx) until
+  // it actually syncs, instead of disappearing the moment the receipt
+  // prints. Nothing about the automatic retrying below changes.
+  let needsVerification = false;
   if (navigator.onLine) {
-    await withTimeout(trySync(), FINISH_SYNC_TIMEOUT_MS, null);
+    const deadline = Date.now() + FINISH_SYNC_TIMEOUT_MS;
+    let confirmed = !isOpQueued(opId); // e.g. a previous attempt already got it synced between attempts
+    while (!confirmed && Date.now() < deadline) {
+      await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
+      confirmed = !isOpQueued(opId);
+    }
+    needsVerification = !confirmed;
   } else {
     trySync();
   }
 
+  patchCachedTicket(ticket.id, { stage: "finalized", transaction_id: finalTransactionId });
+
   const { date: nowDate, time: nowTime } = cambodiaNow();
   const tx = {
-    id: transactionId,
-    code: transactionCode,
+    needs_verification: needsVerification,
+    id: finalTransactionId,
+    code: finalTransactionCode,
     type: ticket.type,
     tx_date: txDate || nowDate,
     tx_time: nowTime,
@@ -1401,7 +1611,15 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
   const taxAmount = taxApplicable ? Math.round(amount * (taxRate || 0)) / 100 : 0;
   const { date: nowDate, time: nowTime } = cambodiaNow();
 
-  enqueue({
+  // See the long comment in finalizeTicketOffline above for why this
+  // checks `persisted` and loops on `isOpQueued` — same two 2026-08-30
+  // audit gaps (0.1 silent storage-write failure, 0.2 the trySync()
+  // shared-promise race), same fix. No op-reuse dedup here (unlike
+  // finalizeTicketOffline): a manual entry has no ticket id to key a
+  // duplicate check on, and the Save button is already disabled while
+  // `saving` is true, so a genuine retry after an error here is always a
+  // deliberate new attempt, not an accidental double-submit.
+  const { opId, persisted } = enqueue({
     type: "createTransaction",
     payload: {
       id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId,
@@ -1409,14 +1627,26 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
       staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
     },
   });
-  // Same reasoning as finalizeTicketOffline above — see FINISH_SYNC_TIMEOUT_MS.
+  if (!persisted) {
+    throw new Error("Could not save this entry on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Save again in a moment, or free up space on this device if it keeps happening.");
+  }
+  // Same reasoning as finalizeTicketOffline above — see FINISH_SYNC_TIMEOUT_MS
+  // and the 2026-08-30 comment there on why this flags instead of blocking.
+  let needsVerification = false;
   if (navigator.onLine) {
-    await withTimeout(trySync(), FINISH_SYNC_TIMEOUT_MS, null);
+    const deadline = Date.now() + FINISH_SYNC_TIMEOUT_MS;
+    let confirmed = !isOpQueued(opId);
+    while (!confirmed && Date.now() < deadline) {
+      await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
+      confirmed = !isOpQueued(opId);
+    }
+    needsVerification = !confirmed;
   } else {
     trySync();
   }
 
   const tx = {
+    needs_verification: needsVerification,
     id, code, type,
     tx_date: txDate || nowDate,
     tx_time: nowTime,
