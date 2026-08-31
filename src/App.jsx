@@ -114,7 +114,7 @@ export default function App() {
     if (isStaff && (page === "reports" || page === "payments" || page === "stations" || page === "station-detail" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
       return <PermissionDenied />;
     }
-    if (page === "dashboard") return <Dashboard />;
+    if (page === "dashboard") return <Dashboard setPage={setPage} setSelectedLocationId={setSelectedLocationId} />;
     if (page === "stock") return <StockInventory />;
     if (page === "transactions") return <Transactions setPage={setPage} />;
     if (page === "tickets") return <WeighingTickets />;
