@@ -104,7 +104,7 @@ export default function SettingsPage() {
             <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
           </div>
         ) : (
-          <div className="grid max-w-5xl grid-cols-2 gap-5">
+          <div className="grid max-w-5xl grid-cols-1 gap-5 md:grid-cols-2">
             {FIELD_GROUPS.map((group) => (
               <div key={group.key} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-1 flex items-center gap-2">
