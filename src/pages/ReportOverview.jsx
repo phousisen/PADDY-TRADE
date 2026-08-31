@@ -133,7 +133,10 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
 
   return (
     <div>
-      <div className="grid grid-cols-2 gap-5">
+      {/* [2026-08-31] grid-cols-1 md:grid-cols-2 instead of a flat
+          grid-cols-2 — these two panels used to squeeze side by side on a
+          phone screen; now stack full-width below the md breakpoint. */}
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-700"><TrendingUp size={16} className="text-brand-600" /> Profit &amp; Loss</h3>
           <Row label="Total Sales (Revenue)" value={calc.totalSell} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
