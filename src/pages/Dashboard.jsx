@@ -210,7 +210,15 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="mb-5 grid grid-cols-4 gap-4">
+        {/* [2026-08-31] grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 instead of
+            a flat grid-cols-4 — that fixed 4-across layout had no phone-size
+            version at all, so on a narrow screen each card was squeezed to
+            a sliver and its own text overflowed sideways out of it (the
+            "zoomed in and scattered" look). Same responsive pattern already
+            used for the Weighing Tickets board elsewhere in this app —
+            stacks to one full-width column on phone, 2 on tablet, the
+            original 4 on desktop/laptop, so nothing changes there at all. */}
+        <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-brand-600"><TrendingUp size={16} /></div>
             <p className="text-xs font-medium text-slate-500">Total Buy ({rangeLabel})</p>
@@ -249,12 +257,22 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-5">
-          <div className="col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* [2026-08-31] Same fix as the KPI row above — grid-cols-1 lg:grid-cols-3
+            instead of a flat grid-cols-3, so Location Performance and Live
+            Feed stack full-width on phone/tablet instead of both being
+            squeezed into a third of the screen each. Unchanged on desktop
+            (lg: and up), where this was already the right layout. */}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
               <h3 className="font-bold text-slate-800">Location Performance ({rangeLabel})</h3>
               <span className="text-[11px] text-slate-400">{locations.length} location(s)</span>
             </div>
+            {/* overflow-x-auto: a defensive safety net so the table scrolls
+                sideways on its own if it's ever still too wide for a very
+                narrow phone, instead of pushing the whole page wider than
+                the screen the way the fixed 3-column grid used to. */}
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
@@ -290,6 +308,7 @@ export default function Dashboard() {
                 {locations.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
