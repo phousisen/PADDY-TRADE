@@ -47,7 +47,9 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
           <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
-      <div className="mb-4 grid grid-cols-3 gap-4">
+      {/* [2026-08-31] Same fix as Dashboard's KPI row — stacks on phone
+          instead of squeezing 3 across, unchanged on tablet/desktop. */}
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs text-slate-400">Output Tax (collected on sales)</p>
           <p className="text-2xl font-bold text-emerald-600">{fmtRiel(outputTax)}</p>
