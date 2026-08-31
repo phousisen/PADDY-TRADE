@@ -14,12 +14,13 @@
 // who should never be able to reach anything else; (2) any other account
 // with manage_parties can be routed here too later if wanted (not wired
 // into the main sidebar yet, kept out of scope for this pass).
-import { useState } from "react";
-import { Search, AlertTriangle, UserPlus, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Search, AlertTriangle, UserPlus, CheckCircle2, WifiOff } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
+import { getCachedParties, addCachedParty, setCachedParties, enqueue, trySync, newId } from "../offlineQueue.js";
 
 const inputCls = "w-full rounded-lg border border-slate-300 px-4 py-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1.5 block text-sm font-medium text-slate-600";
@@ -48,6 +49,22 @@ export default function RegisterPartyStaff() {
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(false);
 
+  // [2026-08-31] Tracks whether the device currently has a connection, so
+  // search can fall back to what's already saved on this device, and the
+  // form can warn that photos specifically still need a live connection
+  // (see the offline save note further down).
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+
   async function runSearch(e) {
     e?.preventDefault();
     const q = query.trim();
@@ -55,6 +72,26 @@ export default function RegisterPartyStaff() {
     setSearching(true);
     setSearchError("");
     setSearched(true);
+
+    // [2026-08-31] Checked first, every time — instant, and it's what
+    // this falls back to entirely with no connection. Covers records
+    // created on THIS device that haven't synced yet too, not just a
+    // slow/offline fallback.
+    const qLower = q.toLowerCase();
+    const cacheMatches = getCachedParties().filter(
+      (p) => (!scopedLocationId || p.location_id === scopedLocationId) &&
+        ((p.name || "").toLowerCase().includes(qLower) || (p.phone || "").includes(q))
+    );
+
+    if (!navigator.onLine) {
+      setResults(cacheMatches);
+      setSearchError(cacheMatches.length === 0
+        ? "No connection — only records already saved on this device can be found right now."
+        : "No connection — showing matches already saved on this device.");
+      setSearching(false);
+      return;
+    }
+
     try {
       // getParties applies its filters together (not name-OR-phone), so a
       // typed-in phone number wouldn't match on name and vice versa — two
@@ -64,10 +101,15 @@ export default function RegisterPartyStaff() {
         api.getParties({ q, locationId: scopedLocationId }),
         api.getParties({ qPhone: q, locationId: scopedLocationId }),
       ]);
-      const merged = [...byName, ...byPhone].filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
+      const merged = [...cacheMatches, ...byName, ...byPhone].filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
       setResults(merged);
     } catch (err) {
-      setSearchError(err.message || "Search failed — check your connection and try again.");
+      // A live lookup can fail (flaky connection) even while navigator.onLine
+      // says true — same graceful fallback as a clean offline state.
+      setResults(cacheMatches);
+      setSearchError(cacheMatches.length > 0
+        ? "Couldn't reach the server — showing matches already saved on this device."
+        : (err.message || "Search failed — check your connection and try again."));
     } finally {
       setSearching(false);
     }
@@ -135,11 +177,43 @@ export default function RegisterPartyStaff() {
         idPhotoUrl: form.idPhotoUrl,
         ...verifiedStamp,
       };
+      // [2026-08-31] Saved through the same offline queue Weighing Tickets
+      // already relies on (offlineQueue.js's createParty/updateParty ops —
+      // the exact ones api.js already supports) instead of calling the API
+      // directly. This means registering or completing a profile now works
+      // with no signal too: it's kept on this device and cached
+      // immediately (so it shows up right away searching here again),
+      // then reaches the shared database automatically the next time
+      // there's a connection — the same thing that already happens for a
+      // weighing ticket saved offline. The two photos above are the one
+      // part of this that still needs a live connection (see the note in
+      // the form) — everything else here does not.
       if (editingId) {
-        await api.updateParty(editingId, shared);
+        const list = getCachedParties();
+        const idx = list.findIndex((p) => p.id === editingId);
+        if (idx >= 0) {
+          list[idx] = {
+            ...list[idx],
+            name: shared.name, phone: shared.phone, id_number: shared.idNumber,
+            bank_name: shared.bankName, bank_account: shared.bankAccount, bank_qr_url: shared.bankQrUrl,
+            id_photo_url: shared.idPhotoUrl,
+            ...(shared.verifiedAt ? { verified_at: shared.verifiedAt, verified_by: shared.verifiedBy } : {}),
+          };
+          setCachedParties(list);
+        }
+        enqueue({ type: "updateParty", partyId: editingId, payload: shared });
       } else {
-        await api.createParty({ ...shared, type: form.type, locationId: profile?.location_id || null });
+        const id = newId();
+        const locationId = profile?.location_id || null;
+        addCachedParty({
+          id, name: shared.name, type: form.type, location_id: locationId,
+          phone: shared.phone, id_number: shared.idNumber, bank_name: shared.bankName, bank_account: shared.bankAccount,
+          bank_qr_url: shared.bankQrUrl, id_photo_url: shared.idPhotoUrl,
+          verified_at: shared.verifiedAt || null, verified_by: shared.verifiedBy || null,
+        });
+        enqueue({ type: "createParty", payload: { id, ...shared, type: form.type, locationId } });
       }
+      trySync();
       setSaved(true);
       setForm(null);
       setEditingId(null);
@@ -194,6 +268,12 @@ export default function RegisterPartyStaff() {
               <input className={inputCls} value={form.bankAccount} onChange={(e) => set("bankAccount", e.target.value)} placeholder="e.g. 000 123 456" />
             </div>
 
+            {!online && (
+              <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2.5 text-xs text-slate-500">
+                <WifiOff size={14} className="mt-0.5 shrink-0" />
+                No connection right now — photos can't be added until you're back online. The rest of this profile will still save and sync automatically.
+              </div>
+            )}
             <div className="flex flex-wrap gap-4 pt-1">
               <PhotoUpload label="1. Photo of the QR code" kind="party-bank-qr" required url={form.bankQrUrl} onUploaded={(url) => set("bankQrUrl", url)} hint="Clear, close-up shot" />
               <PhotoUpload label={`2. Photo of ${form.name || "them"} holding this QR`} kind="party-id-photo" required url={form.idPhotoUrl} onUploaded={(url) => set("idPhotoUrl", url)} hint="Face & QR both visible" />
