@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, PlusCircle } from "lucide-react";
+import { Search, PlusCircle, UserPlus } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
@@ -7,7 +7,7 @@ import { paidStatusMap } from "./ReportOverview.jsx";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty }) {
+export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty, onRegister }) {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
 
@@ -101,15 +101,29 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
       <Topbar title={title} />
       <main className="flex-1 overflow-y-auto p-6">
         {kind !== "stations" && (
-          <div className="mb-4 relative w-full max-w-xs">
-            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name or phone…"
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-            />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="relative w-full max-w-xs">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name or phone…"
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+            </div>
+            {/* [2026-08-31] Lives here instead of its own sidebar item, so
+                the sidebar itself stays exactly as many rows as it always
+                was — this is the one entry point into the search-first
+                registration screen for anyone with manage_parties. */}
+            {onRegister && (
+              <button
+                onClick={onRegister}
+                className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white hover:bg-brand-700"
+              >
+                <UserPlus size={14} /> Register {kind === "suppliers" ? "Farmer" : "Buyer"}
+              </button>
+            )}
           </div>
         )}
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
