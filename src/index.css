@@ -18,6 +18,23 @@ input[type="number"] {
   appearance: textfield;
 }
 
+/* [2026-08-31] Room for MobileNav.jsx's fixed bottom tab bar (phone
+   screens only) so it doesn't sit on top of the last bit of content on
+   every page. Every top-level page uses the same `<main class="...
+   overflow-y-auto ...">` as its one scrollable content region — verified
+   by checking every <main> tag in the codebase; nothing else (modals
+   included) uses a bare <main>, they're all plain <div>s — so one rule
+   here covers every page instead of editing each page file individually.
+   `main.overflow-y-auto` (two selectors) is deliberately more specific
+   than Tailwind's own single-class p-*/pb-* utilities so this actually
+   wins; !important as a second guarantee regardless of exact utility
+   classes a given page happens to use. */
+@media (max-width: 767px) {
+  main.overflow-y-auto {
+    padding-bottom: 5rem !important;
+  }
+}
+
 /* ===========================================================================
    On-screen preview for the Receipt / Weigh-In Slip [2026-08-25]
    ---------------------------------------------------------------------------
@@ -111,27 +128,6 @@ input[type="number"] {
 #receipt-root .sig-line, #ticket-slip-root .sig-line { border-top: 1px solid #000; margin-bottom: 4px; }
 #receipt-root .sig-box .kh, #ticket-slip-root .sig-box .kh { font-size: 9.5px; font-weight: 700; }
 #receipt-root .sig-box .en, #ticket-slip-root .sig-box .en { font-size: 8px; color: #475569; }
-
-/* [2026-08-30] "Needs verification" band — see Receipt.jsx. Only rendered
-   when a finalize/save printed without confirming it reached the shared
-   database in time. Sits inside #receipt-root's existing padding (no
-   negative-margin edge bleed — deliberately simple, since the print
-   version below has to share space inside a hard 136mm height cap with
-   limited spare room, and an edge-to-edge band would need to reconcile
-   this file's px-based screen padding against the print block's mm units
-   with no way to verify the result here without an actual print test).
-   Kept short and compact either way so it can't push the signature area
-   off the printed page. */
-#receipt-root .verify-band {
-  display: flex; align-items: flex-start; gap: 6px;
-  background: repeating-linear-gradient(135deg, #fff1f2, #fff1f2 8px, #ffe4e6 8px, #ffe4e6 16px);
-  border: 1.5px solid #e11d48;
-  border-radius: 4px;
-  margin: 0 0 8px;
-  padding: 5px 9px;
-  font-size: 10px; font-weight: 700; color: #9f1239; line-height: 1.35;
-}
-#receipt-root .verify-band .tri { font-size: 13px; line-height: 1; flex-shrink: 0; margin-top: 1px; }
 
 /* Page size [updated 2026-08-25]: 210mm x 140mm — the actual physical
    continuous-feed form size, not A4. This used to say `size: A4` because
@@ -410,13 +406,4 @@ input[type="number"] {
   #receipt-root .sig-line { border-top: 1px solid #000; margin-bottom: 0.8mm; }
   #receipt-root .sig-box .kh { font-size: 10px; font-weight: 700; }
   #receipt-root .sig-box .en { font-size: 7.5px; color: #374151; }
-
-  /* Tighter than the shared/screen version above — #receipt-root has a
-     hard max-height: 136mm cap just above with overflow: hidden, and this
-     must not eat into the margin that leaves for the actual ticket
-     content below it. Kept to a single compact line's worth of padding;
-     border-width left alone (mm rounding on a already-thin border isn't
-     worth it). */
-  #receipt-root .verify-band { padding: 1.2mm 2mm; font-size: 8.5px; margin: 0 0 1.2mm; }
-  #receipt-root .verify-band .tri { font-size: 10.5px; }
 }
