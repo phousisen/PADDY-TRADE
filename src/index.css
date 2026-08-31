@@ -28,10 +28,13 @@ input[type="number"] {
    `main.overflow-y-auto` (two selectors) is deliberately more specific
    than Tailwind's own single-class padding utilities (p-6, pb-4, etc.)
    so this actually wins; !important as a second guarantee regardless of
-   exact utility classes a given page happens to use. */
+   exact utility classes a given page happens to use.
+   Bumped 5rem -> 6rem when the tab bar itself grew (bigger icons/text,
+   more padding, per explicit request) so it still doesn't cover the last
+   bit of content on a phone with a home-indicator safe-area. */
 @media (max-width: 767px) {
   main.overflow-y-auto {
-    padding-bottom: 5rem !important;
+    padding-bottom: 6rem !important;
   }
 }
 
