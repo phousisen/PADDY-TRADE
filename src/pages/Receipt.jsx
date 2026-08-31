@@ -61,6 +61,19 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
 
   return (
     <div id="receipt-root">
+      {/* [2026-08-30] Prints as part of the physical page — unlike the
+          no-print banner further down (which only ever showed on THIS
+          screen), whoever walks away holding this paper sees it too. Only
+          set when the ~7s wait for sync confirmation ran out (see
+          finalizeTicketOffline/createTransactionOffline in
+          offlineQueue.js) — not shown for the ordinary brief "still
+          syncing" moment every transaction passes through. */}
+      {tx.needs_verification && (
+        <div className="verify-band">
+          <span className="tri">⚠</span>
+          <span>NOT YET CONFIRMED SAVED — check the Needs Attention panel if this isn't on Transactions soon.</span>
+        </div>
+      )}
       <div className="head">
         <img className="head-logo" src="/logo-paitong.png" alt="Company logo" />
         <div className="head-mid">
