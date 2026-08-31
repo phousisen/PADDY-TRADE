@@ -106,7 +106,10 @@ export default function LocationDetail({ locationId, setPage }) {
           )}
         </div>
 
-        <div className="mb-5 grid grid-cols-4 gap-4">
+        {/* [2026-08-31] Same fix as Dashboard's KPI row — grid-cols-1
+            sm:grid-cols-2 lg:grid-cols-4 instead of a flat grid-cols-4,
+            which used to squeeze these 4 cards on a phone screen. */}
+        <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Warehouse size={13} /> {isCombined ? "Combined Stock" : "Current Stock"}</div>
             <p className="text-xl font-bold text-slate-800">{fmt2(stockKg)} kg</p>
