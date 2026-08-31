@@ -76,10 +76,13 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
 
   return (
     <>
-      {/* Bottom tab bar */}
+      {/* [2026-08-31] Bottom tab bar made bigger per explicit request — icon
+          19→22, text 10px→11px, more padding, plus a soft rounded highlight
+          behind whichever tab is active so it's clearer at a glance where
+          you are. Purely a phone thing (md:hidden), doesn't touch desktop. */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-40 flex border-t border-black/20 bg-brand-950 md:hidden"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        className="fixed inset-x-0 bottom-0 z-40 flex gap-1 border-t border-black/20 bg-brand-950 px-1.5 pt-2 md:hidden"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 8px)" }}
       >
         {primaryTabs.map((tabItem) => {
           const active = page === tabItem.id;
@@ -87,18 +90,18 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
             <button
               key={tabItem.id}
               onClick={() => go(tabItem.id)}
-              className={`flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-semibold ${active ? "text-white" : "text-brand-300/70"}`}
+              className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold ${active ? "bg-white/10 text-white" : "text-brand-300/70"}`}
             >
-              <tabItem.icon size={19} className={active ? "text-brand-400" : ""} />
+              <tabItem.icon size={22} className={active ? "text-brand-400" : ""} />
               {tabItem.label}
             </button>
           );
         })}
         <button
           onClick={() => setMoreOpen(true)}
-          className={`flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-[10px] font-semibold ${isMoreActive || moreOpen ? "text-white" : "text-brand-300/70"}`}
+          className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold ${isMoreActive || moreOpen ? "bg-white/10 text-white" : "text-brand-300/70"}`}
         >
-          <Menu size={19} className={isMoreActive || moreOpen ? "text-brand-400" : ""} />
+          <Menu size={22} className={isMoreActive || moreOpen ? "text-brand-400" : ""} />
           More
         </button>
       </nav>
