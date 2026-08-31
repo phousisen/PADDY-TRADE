@@ -24,7 +24,7 @@ import RegisterFarmer from "./pages/RegisterFarmer.jsx";
 import RegisterPartyStaff from "./pages/RegisterPartyStaff.jsx";
 
 export default function App() {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, loading, hasPermission } = useAuth();
   const { t } = useLanguage();
   const [page, setPage] = useState("dashboard");
   const [selectedLocationId, setSelectedLocationId] = useState(null);
@@ -141,8 +141,18 @@ export default function App() {
         <p>Printed receipts and weigh-in slips now use a fixed design (with the company logo and each location's own address/phone). Changing anything on this old page would no longer affect what gets printed.</p>
       </div>
     ) : <PermissionDenied />;
-    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} />;
-    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} />;
+    // [2026-08-31] Same screen the restricted "Registrar" role is dropped
+    // onto full-screen above — reachable normally via a "Register
+    // Farmer/Buyer" button on the Farmers/Buyers pages themselves (not a
+    // separate sidebar item — see SimpleListPage.jsx), for any role that
+    // already has manage_parties (Staff, Manager, HQ Admin, Owner all do
+    // today). Doesn't grant anything new: every one of those roles can
+    // already create/edit a party via Suppliers/Buyers — this is just a
+    // faster, search-first way to reach the same thing, with the
+    // identity-photo verification step built in.
+    if (page === "register-party") return hasPermission("manage_parties") ? <RegisterPartyStaff /> : <PermissionDenied />;
+    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} />;
+    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} />;
     if (page === "party-detail") return <PartyDetail partyId={openParty?.id} kind={openParty?.kind} setPage={setPage} onBuyFor={startBuyFor} onSellFor={startSellFor} />;
     return <Dashboard />;
   }
