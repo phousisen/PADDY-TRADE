@@ -126,7 +126,64 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
             )}
           </div>
         )}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+        {/* [2026-08-31] Phone-width card list — Farmers/Buyers only (the
+            "stations" kind, unreachable from the real nav today anyway,
+            keeps the table unconditionally so nothing here can end up with
+            no visible rows at all). The table below stays exactly as it
+            was and is simply hidden below the `md` breakpoint instead;
+            this card block is the phone-sized replacement for it, built
+            from the same `filteredRows` data. */}
+        {kind !== "stations" && (
+          <div className="flex flex-col gap-2.5 md:hidden">
+            {filteredRows.map((r) => (
+              <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    {onOpenParty ? (
+                      <button onClick={() => onOpenParty(r)} className="truncate text-left text-sm font-semibold text-brand-700 underline decoration-dotted">
+                        {r.name || "—"}
+                      </button>
+                    ) : (
+                      <p className="truncate text-sm font-semibold text-slate-800">{r.name || "—"}</p>
+                    )}
+                    <p className="mt-0.5 truncate text-xs text-slate-400">{r.phone || "No phone on file"}</p>
+                  </div>
+                  {(onBuyFor || onSellFor) && (
+                    <button
+                      onClick={() => (onBuyFor ? onBuyFor(r) : onSellFor(r))}
+                      className="flex shrink-0 items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white"
+                    >
+                      <PlusCircle size={13} /> {onBuyFor ? "Buy" : "Sell"}
+                    </button>
+                  )}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-2.5 text-xs">
+                  {kind === "suppliers" ? (
+                    <>
+                      <div><span className="text-slate-400">Bank</span><p className="font-medium text-slate-700">{r.bank_name || "—"}</p></div>
+                      <div><span className="text-slate-400">Total Bought</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
+                      <div><span className="text-slate-400">Paid</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
+                      <div><span className="text-slate-400">Unpaid</span><p className={`font-medium ${r.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                    </>
+                  ) : (
+                    <>
+                      <div><span className="text-slate-400">Company</span><p className="font-medium text-slate-700">{r.company || "—"}</p></div>
+                      <div><span className="text-slate-400">Total Sold</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
+                      <div><span className="text-slate-400">Received</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
+                      <div><span className="text-slate-400">Not Received</span><p className={`font-medium ${r.remaining > 0.01 ? "text-amber-600" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+            {filteredRows.length === 0 && (
+              <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
+                {rows.length === 0 ? "No records visible to your account." : "No matches for your search."}
+              </div>
+            )}
+          </div>
+        )}
+        <div className={`${kind !== "stations" ? "hidden md:block " : ""}rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto`}>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
