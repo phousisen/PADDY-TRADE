@@ -5,6 +5,11 @@ import {
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 
+// [2026-08-31] Registration was briefly its own top-level sidebar item —
+// dropped in favor of a "Register Farmer/Buyer" button living directly on
+// the Farmers/Buyers pages instead (see SimpleListPage.jsx), so the
+// sidebar itself stays exactly as many rows as it was before this
+// feature existed.
 export default function Sidebar({ page, setPage, pendingRequests }) {
   const { lang, setLang, t } = useLanguage();
   const { profile, logout } = useAuth();
