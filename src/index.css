@@ -26,9 +26,9 @@ input[type="number"] {
    included) uses a bare <main>, they're all plain <div>s — so one rule
    here covers every page instead of editing each page file individually.
    `main.overflow-y-auto` (two selectors) is deliberately more specific
-   than Tailwind's own single-class p-*/pb-* utilities so this actually
-   wins; !important as a second guarantee regardless of exact utility
-   classes a given page happens to use. */
+   than Tailwind's own single-class padding utilities (p-6, pb-4, etc.)
+   so this actually wins; !important as a second guarantee regardless of
+   exact utility classes a given page happens to use. */
 @media (max-width: 767px) {
   main.overflow-y-auto {
     padding-bottom: 5rem !important;
