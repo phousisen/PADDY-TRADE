@@ -96,7 +96,9 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
         </div>
       )}
 
-      <div className="mb-5 grid grid-cols-3 gap-4">
+      {/* [2026-08-31] Same fix as Dashboard's KPI row — stacks on phone
+          instead of squeezing 3 across, unchanged on tablet/desktop. */}
+      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-600"><TrendingDown size={16} /></div>
           <p className="text-xs font-medium text-slate-500">Total Loss</p>
