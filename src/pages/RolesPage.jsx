@@ -78,8 +78,12 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
         <ArrowLeft size={15} /> Back to roles
       </button>
 
-      <div className="grid max-w-4xl grid-cols-3 gap-5">
-        <div className="col-span-2 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      {/* [2026-08-31] grid-cols-1 lg:grid-cols-3 instead of a flat
+          grid-cols-3 — this form + its permissions sidebar used to squeeze
+          into a third of the screen each on phone; now stacks full-width
+          below the lg breakpoint, unchanged on desktop. */}
+      <div className="grid max-w-4xl grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
           <div className="mb-5 grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-xs text-slate-500">Role name</label>
@@ -139,7 +143,7 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
         </div>
 
         {!isNew && (
-          <div className="col-span-1 h-fit rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="h-fit rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-1">
             <p className="mb-3 text-sm font-semibold text-slate-700">Accounts with this role ({members.length})</p>
             {members.length === 0 && <p className="text-xs text-slate-400">Nobody has this role right now.</p>}
             <div className="space-y-2">
