@@ -210,36 +210,37 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* [2026-08-31] grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 instead of
-            a flat grid-cols-4 — that fixed 4-across layout had no phone-size
-            version at all, so on a narrow screen each card was squeezed to
-            a sliver and its own text overflowed sideways out of it (the
-            "zoomed in and scattered" look). Same responsive pattern already
-            used for the Weighing Tickets board elsewhere in this app —
-            stacks to one full-width column on phone, 2 on tablet, the
-            original 4 on desktop/laptop, so nothing changes there at all. */}
-        <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-brand-100 text-brand-600"><TrendingUp size={16} /></div>
-            <p className="text-xs font-medium text-slate-500">Total Buy ({rangeLabel})</p>
-            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totalBuyKg)} kg</p>
-            <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalBuyAmt)} paid out</p>
+        {/* [2026-08-31] grid-cols-2 lg:grid-cols-4 (was grid-cols-1
+            sm:grid-cols-2 lg:grid-cols-4) — per explicit request, this now
+            shows 2 compact cards per row on phone/tablet instead of one
+            huge full-width card per row, sample-approved. Cards themselves
+            get smaller padding/icon/text below lg (icon box, headline
+            number, etc.) so they read like a real dashboard instead of a
+            stack of oversized tiles; every lg: class below restores the
+            exact original desktop sizing (p-5, h-9 w-9 icon box, text-2xl
+            number, etc.), so nothing changes there at all. */}
+        <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
+            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-brand-100 text-brand-600 lg:mb-3.5 lg:h-9 lg:w-9"><TrendingUp size={15} /></div>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Total Buy ({rangeLabel})</p>
+            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(totalBuyKg)} kg</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalBuyAmt)} paid out</p>
             {avgBuyPrice != null && (
-              <div className="mt-2 inline-flex items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2.5 py-1 text-[11px] font-semibold text-brand-700">
+              <div className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[9.5px] font-semibold text-brand-700 lg:mt-2 lg:px-2.5 lg:py-1 lg:text-[11px]">
                 ⚖ Avg {fmtRiel(avgBuyPrice)}/kg
               </div>
             )}
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-600"><TrendingDown size={16} /></div>
-            <p className="text-xs font-medium text-slate-500">Total Sell ({rangeLabel})</p>
-            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totalSellKg)} kg</p>
-            <p className="mt-1 text-[11px] text-slate-400">{fmtRiel(totalSellAmt)} received</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
+            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-rose-100 text-rose-600 lg:mb-3.5 lg:h-9 lg:w-9"><TrendingDown size={15} /></div>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Total Sell ({rangeLabel})</p>
+            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(totalSellKg)} kg</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalSellAmt)} received</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Warehouse size={16} /></div>
-            <p className="text-xs font-medium text-slate-500">Current Stock (All-Time)</p>
-            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(netStockKg)} kg</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
+            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 lg:mb-3.5 lg:h-9 lg:w-9"><Warehouse size={15} /></div>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Current Stock (All-Time)</p>
+            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(netStockKg)} kg</p>
             {/* This is deliberately NOT "today's buy minus today's sell" —
                 it's the real running total built up over the location's
                 entire history. Sitting next to the two "Today" cards made
@@ -247,13 +248,13 @@ export default function Dashboard() {
                 unless the location's stock happened to start today at
                 zero. Spelling that out here so it reads correctly at a
                 glance instead of looking like a math error. */}
-            <p className="mt-1 text-[11px] text-slate-400">on hand right now, across {locations.length} location(s) — not just today</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">on hand right now, across {locations.length} location(s) — not just today</p>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-gold-100 text-gold-700"><MapPin size={16} /></div>
-            <p className="text-xs font-medium text-slate-500">Active Locations</p>
-            <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{locations.length}</p>
-            <p className="mt-1 text-[11px] text-slate-400">{periodTxs.length} transaction(s) — {rangeLabel}</p>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
+            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-gold-100 text-gold-700 lg:mb-3.5 lg:h-9 lg:w-9"><MapPin size={15} /></div>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Active Locations</p>
+            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{locations.length}</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{periodTxs.length} transaction(s) — {rangeLabel}</p>
           </div>
         </div>
 
