@@ -16,6 +16,7 @@ import Reports from "./pages/Reports.jsx";
 import Expenses from "./pages/Expenses.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
 import LocationsPage from "./pages/LocationsPage.jsx";
+import StationHealth from "./pages/StationHealth.jsx";
 import LocationDetail from "./pages/LocationDetail.jsx";
 import PartyDetail from "./pages/PartyDetail.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
@@ -24,6 +25,7 @@ import SettingsPage from "./pages/SettingsPage.jsx";
 import ReceiptTemplateEditor from "./pages/ReceiptTemplateEditor.jsx";
 import RegisterFarmer from "./pages/RegisterFarmer.jsx";
 import RegisterPartyStaff from "./pages/RegisterPartyStaff.jsx";
+import SetPassword from "./pages/SetPassword.jsx";
 
 export default function App() {
   const { session, profile, loading, hasPermission } = useAuth();
@@ -80,6 +82,16 @@ export default function App() {
     return <RegisterFarmer locationId={regParams.get("loc") || null} />;
   }
 
+  // [2026-09-01] Where the "Email Invite" link (AddUserModal.jsx /
+  // api.inviteUserAccount) lands -- checked before the login gate below,
+  // same reasoning as ?register=1 above: clicking the emailed link signs
+  // this browser into a short-lived recovery session itself, so this has
+  // to work whether or not this browser was already signed in as someone
+  // else, and without waiting on the normal profile load.
+  if (regParams.get("setpassword") === "1") {
+    return <SetPassword />;
+  }
+
   if (loading) {
     return <div className="flex h-screen w-full items-center justify-center bg-slate-50 text-slate-400 text-sm">Loading…</div>;
   }
@@ -117,7 +129,7 @@ export default function App() {
   const canViewReports = !isStaff || hasPermission("view_reports");
 
   function renderPage() {
-    if (isStaff && (page === "stations" || page === "station-detail" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
+    if (isStaff && (page === "stations" || page === "station-detail" || page === "station-health" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
       return <PermissionDenied />;
     }
     if (isStaff && (page === "reports" || page === "payments" || page === "expenses") && !canViewReports) {
@@ -132,6 +144,7 @@ export default function App() {
     if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;
     if (page === "stations") return isAdmin ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
     if (page === "station-detail") return isAdmin ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
+    if (page === "station-health") return isAdmin ? <StationHealth /> : <PermissionDenied />;
     if (page === "reports") return canViewReports ? <Reports /> : <PermissionDenied />;
     if (page === "payments") return canViewReports ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
     if (page === "expenses") return canViewReports ? <Expenses /> : <PermissionDenied />;
