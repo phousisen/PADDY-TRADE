@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Warehouse, Receipt, Users, MapPin, BarChart3,
-  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Wallet,
+  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Wallet, Activity,
 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -62,6 +62,12 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
           label: "System",
           items: [
             { id: "stations", label: t("nav_stations"), icon: MapPin },
+            // [2026-09-01] One glance at all 5 stations' recent-activity
+            // status instead of finding out something's gone quiet from a
+            // phone call or a missing-receipt investigation days later —
+            // see StationHealth.jsx for exactly what it does and doesn't
+            // measure (recent transactions, not a live scale connection).
+            { id: "station-health", label: "Station Health", icon: Activity },
             { id: "users", label: "Users", icon: UserCog },
             { id: "roles", label: "Roles", icon: ShieldCheck },
             { id: "settings", label: t("nav_settings"), icon: Settings },
