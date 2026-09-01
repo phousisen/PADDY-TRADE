@@ -127,6 +127,47 @@ export default function StockInventory() {
     return out;
   }, [activeTxs, todayStr]);
 
+  // [2026-09-01] Fallback for a station that hasn't bought anything YET
+  // today (so todayAvgBuyPriceByLocation has no entry for it) — same
+  // weighted-average calculation, just widened to that station's last 30
+  // days of Buys instead of only today's. Used to still suggest a price for
+  // AdjustStockModal instead of leaving it blank (previously: any stock
+  // reset done before that station's first Buy of the day got recorded with
+  // no price and no value at all, unless someone typed one in by hand).
+  const recentAvgBuyPriceByLocation = useMemo(() => {
+    const cutoff = new Date(getAccurateNow());
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cambodiaDateStr(cutoff);
+    const sums = {};
+    for (const tx of activeTxs) {
+      if (tx.type !== "BUY" || !tx.location_id || tx.tx_date < cutoffStr) continue;
+      const kg = Number(tx.quantity_kg) || 0;
+      const amt = Number(tx.total_with_tax ?? tx.amount) || 0;
+      const s = (sums[tx.location_id] = sums[tx.location_id] || { kg: 0, amt: 0 });
+      s.kg += kg;
+      s.amt += amt;
+    }
+    const out = {};
+    for (const locId in sums) {
+      if (sums[locId].kg > 0) out[locId] = sums[locId].amt / sums[locId].kg;
+    }
+    return out;
+  }, [activeTxs]);
+
+  // What AdjustStockModal actually receives: today's price when this
+  // station bought something today (most accurate), otherwise its last-30-
+  // days average (still a real, recent number instead of nothing), otherwise
+  // null when there's truly nothing to base a price on at all.
+  const priceSuggestionByLocation = useMemo(() => {
+    const out = {};
+    const ids = new Set([...Object.keys(todayAvgBuyPriceByLocation), ...Object.keys(recentAvgBuyPriceByLocation)]);
+    for (const locId of ids) {
+      if (todayAvgBuyPriceByLocation[locId] != null) out[locId] = { price: todayAvgBuyPriceByLocation[locId], source: "today" };
+      else if (recentAvgBuyPriceByLocation[locId] != null) out[locId] = { price: recentAvgBuyPriceByLocation[locId], source: "recent" };
+    }
+    return out;
+  }, [todayAvgBuyPriceByLocation, recentAvgBuyPriceByLocation]);
+
   // Stock Loss Log — every adjustment that actually reduced stock (a
   // "gain," like a recount finding more than expected, isn't a loss and
   // stays out of this specific log/summary, even though it's the same
@@ -433,7 +474,7 @@ export default function StockInventory() {
       {adjustStation && (
         <AdjustStockModal
           station={adjustStation}
-          todayAvgBuyPrice={todayAvgBuyPriceByLocation[adjustStation.id] ?? null}
+          priceSuggestion={priceSuggestionByLocation[adjustStation.id] ?? null}
           t={t}
           isAdmin={isAdmin}
           onClose={() => setAdjustStation(null)}
