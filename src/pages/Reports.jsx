@@ -75,35 +75,33 @@ export default function Reports({ initialTab = "overview" }) {
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={t("reports_title")} subtitle={t("reports_subtitle")} />
-      <div className="border-b border-slate-200 bg-white px-6">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-1 overflow-x-auto">
-            {tabs.map((tb) => (
-              <button
-                key={tb.id}
-                onClick={() => setTab(tb.id)}
-                className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-3 text-sm font-medium transition-colors ${
-                  tab === tb.id ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                <tb.icon size={15} /> {tb.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex items-center gap-2 py-2">
-            <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
-            {locations.length > 1 && (
-              <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
-            )}
+      <div className="border-b border-slate-200 bg-white px-6 pt-3">
+        <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+          <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
+          {locations.length > 1 && (
+            <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
+          )}
+          <button
+            onClick={exportExcel}
+            disabled={exporting}
+            className="flex items-center gap-1.5 rounded-lg bg-brand-700 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-brand-800 disabled:opacity-50"
+          >
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {exporting ? "Exporting..." : "Export to Excel"}
+          </button>
+        </div>
+        <div className="flex gap-0.5 overflow-x-auto">
+          {tabs.map((tb) => (
             <button
-              onClick={exportExcel}
-              disabled={exporting}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              key={tb.id}
+              onClick={() => setTab(tb.id)}
+              className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors ${
+                tab === tb.id ? "border-brand-600 text-brand-700" : "border-transparent text-slate-400 hover:text-slate-600"
+              }`}
             >
-              {exporting ? <Loader2 size={14} className="animate-spin text-slate-400" /> : <Download size={14} className="text-slate-400" />}
-              {exporting ? "Exporting..." : "Export to Excel"}
+              <tb.icon size={14} /> {tb.label}
             </button>
-          </div>
+          ))}
         </div>
       </div>
       {exportError && (
@@ -112,7 +110,7 @@ export default function Reports({ initialTab = "overview" }) {
           <button onClick={exportExcel} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
-      <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
+      <main className="flex-1 overflow-y-auto bg-paper p-6">
         {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
         {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
