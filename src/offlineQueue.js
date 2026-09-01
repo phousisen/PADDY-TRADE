@@ -726,10 +726,53 @@ export function onSyncStatusChange(fn) {
 const stuckOps = new Map(); // opId -> { since, lastFailedAt, attempts, error, opType, ticketId }
 const STUCK_THRESHOLD = 3; // consecutive failed attempts, while online, before we call it "stuck"
 
+// [2026-09-01] `navigator.onLine` alone isn't a reliable way to tell "the
+// connection is fine, this is a real problem" apart from "the connection
+// just isn't actually working right now" — it only reflects whether the
+// device's network adapter is attached to SOME network, not whether that
+// network can actually reach PaddyTrade's server. A Wi-Fi connection that's
+// dropping in and out (associated to the router one moment, gone the next)
+// can report `navigator.onLine: true` at the exact instant a save is
+// attempted and fails — which is exactly what happened at Jomnoum: repeated
+// "TypeError: Failed to fetch" failures got counted as "stuck, call an
+// admin" even though the real cause was a flaky connection, not bad data.
+//
+// A much more reliable signal is the shape of the error itself. `fetch()`
+// throws a bare TypeError specifically when the request never reached a
+// server at all — no DNS, no route, blocked, connection refused, CORS —
+// regardless of what `navigator.onLine` claims. Our own request-timeout
+// error (see runOpWithTimeout above) means the same thing: a connection too
+// unstable to complete a save, not a data problem. Neither should ever
+// count toward "stuck". An error Supabase/Postgrest actually returned after
+// a real response came back (an RLS rejection, a bad constraint, anything
+// from api.js) looks nothing like this — that one really is a problem an
+// admin needs to look at, and still counts.
+//
+// Checked by MESSAGE TEXT, not just `err.name` — the exact error seen at
+// Jomnoum came through as the string "TypeError: Failed to fetch" in
+// `err.message` itself (something between the browser and here re-wraps
+// the original TypeError rather than passing it through with its `.name`
+// intact), so relying on `err.name === "TypeError"` alone would have missed
+// the very case this exists to catch. Firefox/Safari phrase the same
+// network-level failure differently ("NetworkError when attempting to
+// fetch resource", "Load failed") — matched too, for the same reason.
+function isConnectivityError(err) {
+  if (!err) return false;
+  const text = `${err.name || ""} ${err.message || err}`.toLowerCase();
+  if (text.includes("typeerror")) return true;
+  if (text.includes("failed to fetch")) return true;
+  if (text.includes("networkerror")) return true;
+  if (text.includes("load failed")) return true;
+  if (text.includes("timed out waiting for a response")) return true;
+  return false;
+}
+
 function noteOpFailure(op, err) {
-  if (!navigator.onLine) {
-    // Not actually stuck — just offline, which is expected and resolves on
-    // its own. Don't let failures recorded here linger and misreport as
+  if (!navigator.onLine || isConnectivityError(err)) {
+    // Not actually stuck — either genuinely offline, or the request never
+    // reached the server at all (see isConnectivityError above), both of
+    // which resolve themselves once the connection is actually working
+    // again. Don't let failures recorded here linger and misreport as
     // "stuck" once the connection comes back and these same ops succeed on
     // their very first real attempt.
     clearStuckTracking();
@@ -1302,9 +1345,24 @@ export async function resolveProductIdOffline(typedName) {
 // required. `locationName`/`locationAddress`/`locationPhone` are only used
 // for the on-screen/print label — resolved locally from the already-loaded
 // `locations` list (see add_location_address_phone.sql), no network call.
-export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+//
+// `grossKg` is captured HERE, as part of ticket creation itself, rather
+// than through a separate follow-up setTicketGrossOffline() call right
+// after (that was the old two-step shape — see NewTicketModal in
+// WeighingTickets.jsx). The two-step version created a real gap: the
+// ticket could reach the server via one save while the weight reached it
+// via a second, independent save, and if that second save never made it
+// through (a dropped connection, a closed tab, a stuck sync — exactly
+// what happened at Jomnoum on 2026-09-01) the ticket was left sitting on
+// the board permanently showing "—" for weight, with no way to tell it
+// apart from a ticket that was ever going to get one. Now there is only
+// ever one save, so a ticket either exists with its weight already on it,
+// or it doesn't exist yet at all.
+export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg }) {
   const id = newId();
   const code = genLocalTicketCode();
+  const hasGross = grossKg != null;
+  const nowIso = getAccurateNow().toISOString();
   const ticket = {
     id, code, type,
     location_id: locationId, stationName: locationName || "—",
@@ -1321,17 +1379,20 @@ export function createTicketOffline({ type, locationId, locationName, locationAd
     // account is logged in on this device and may be shared by several
     // people during a shift.
     recorded_by_name: recordedByName || null,
-    stage: "arrived",
-    gross_kg: null, gross_at: null, gross_by: null, grossByName: null,
+    stage: hasGross ? "weighed_in" : "arrived",
+    gross_kg: hasGross ? grossKg : null,
+    gross_at: hasGross ? nowIso : null,
+    gross_by: hasGross ? userId : null,
+    grossByName: null,
     quality_grade: null, moisture_pct: null, mixture_pct: null, outthrow_pct: null,
     deduction_kg: 0, price_per_kg: null, staff_fee: 0, tax_applicable: false, tax_rate: 10,
     price_note: null, priced_at: null, priced_by: null, pricedByName: null,
     tare_kg: null, tare_at: null, tare_by: null, tareByName: null,
     transaction_id: null, note: null,
-    created_by: userId, createdByName: null, created_at: getAccurateNow().toISOString(),
+    created_by: userId, createdByName: null, created_at: nowIso,
   };
   upsertCachedTicket(ticket);
-  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName } });
+  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg: hasGross ? grossKg : undefined } });
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
