@@ -283,6 +283,33 @@ function NewTicketSectionHead({ label, dotClass, textClass }) {
   );
 }
 
+// [2026-09-01] Entry Sanity Check — a plain, non-blocking "are you sure?"
+// shown at the moment a paper ticket number that's already on file for this
+// station is about to be saved again. Never blocks staff from continuing —
+// "Use it anyway" always works — this only exists to put a second look in
+// front of a reused ticket number, the kind of mistake that's turned into
+// real Change Requests this year. (An earlier version of this also flagged
+// unusually high weights — dropped per explicit feedback that the weight
+// check wasn't wanted; only the duplicate-ticket check remains.)
+function SanityWarningModal({ warning, onBack, onProceed }) {
+  return (
+    <Modal title={`Ticket #${warning.ticketNo} already used`} onClose={onBack}>
+      <p className="mb-4 text-sm text-slate-500">
+        This Quality Ticket No. was already recorded here{warning.match?.party_name ? ` for ${warning.match.party_name}` : ""}
+        {warning.match?.created_at ? ` on ${new Date(warning.match.created_at).toLocaleDateString()}` : ""}. Double-check the number on the paper slip before continuing.
+      </p>
+      <div className="flex justify-end gap-2">
+        <button onClick={onBack} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
+          Go back and check
+        </button>
+        <button onClick={onProceed} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
+          Use it anyway
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated, initialType }) {
   const [type] = useState(initialType || "BUY");
   const { lang } = useLanguage();
@@ -312,6 +339,16 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [grossWeight, setGrossWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // [2026-09-01] Entry Sanity Check — a non-blocking "are you sure?" for a
+  // paper ticket number reused by accident, the mistake that's turned into
+  // real Change Requests this year. `activeWarning` holds it when submit()
+  // finds one (null the rest of the time); dupWarningShown remembers the
+  // exact ticket number staff already said was correct, so re-submitting
+  // with that same number doesn't ask again — changing the field re-arms
+  // the check. (A weight-based version of this check was tried too and
+  // dropped per explicit feedback — ticket-number duplicates only.)
+  const [activeWarning, setActiveWarning] = useState(null);
+  const [dupWarningShown, setDupWarningShown] = useState(null);
   const [phoneLookupMsg, setPhoneLookupMsg] = useState("");
   // Whatever bank name/account/QR photo this person already has on file
   // (if any) — captured the moment their phone number matches someone, so
@@ -577,6 +614,23 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setError("Please enter the truck's gross (loaded) weight.");
       return;
     }
+    // Entry sanity check — reads from the already-loaded local ticket cache
+    // (the same one "Use previous Seller/Buyer" above reads from), so it
+    // adds no network round-trip and can't block a genuinely offline
+    // station. Skipped once staff have already said this exact ticket
+    // number is correct (see dupWarningShown above); firing it returns
+    // early instead of saving.
+    const trimmedTicketNo = paperTicketNo.trim();
+    if (trimmedTicketNo && trimmedTicketNo !== dupWarningShown) {
+      const dupMatch = getCachedTickets().find(
+        (t) => t.location_id === locationId &&
+          (t.paper_ticket_no || "").trim().toLowerCase() === trimmedTicketNo.toLowerCase()
+      );
+      if (dupMatch) {
+        setActiveWarning({ kind: "duplicate", ticketNo: trimmedTicketNo, match: dupMatch });
+        return;
+      }
+    }
     setSaving(true);
     setError("");
     try {
@@ -627,6 +681,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const fieldCls = `w-full rounded-lg border border-slate-300 bg-slate-50 px-3.5 py-3 text-[15px] font-semibold text-slate-800 outline-none ${accent.focus}`;
 
   return (
+    <>
     <Modal
       headerColor={accent.header}
       icon="⚖️"
@@ -848,6 +903,21 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </button>
       </div>
     </Modal>
+    {activeWarning && (
+      <SanityWarningModal
+        warning={activeWarning}
+        onBack={() => setActiveWarning(null)}
+        onProceed={() => {
+          setDupWarningShown(activeWarning.ticketNo);
+          setActiveWarning(null);
+          // Re-run submit() now that this specific value is remembered as
+          // already-confirmed — it'll pass straight through this check and
+          // either hit the other one or go ahead and save.
+          submit();
+        }}
+      />
+    )}
+    </>
   );
 }
 
