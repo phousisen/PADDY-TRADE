@@ -1,4 +1,5 @@
 import { supabase, getAccurateNow } from "./supabaseClient.js";
+import { isViewOnlyMode, ViewOnlyError } from "./viewOnlyGuard.js";
 
 // Widened from a 4-digit (1000-9999, ~9,000 possible values) space to
 // 6-digit (~900,000) — the 4-digit space was small enough that, across two
@@ -114,7 +115,7 @@ async function extractFnError(error) {
   return error?.message || String(error);
 }
 
-export const api = {
+const rawApi = {
   async getLocations() {
     const { data, error } = await supabase.from("locations").select("*").order("name");
     if (error) throw error;
@@ -1047,6 +1048,45 @@ export const api = {
     return data;
   },
 
+  // [2026-09-01] "Restore" a wrongly-declined ticket (HQ Admin only) — for
+  // when Decline was tapped by mistake, or the reason turned out not to
+  // hold up (e.g. a re-check of the load). Mirrors reopenTicket's approach
+  // one stage earlier: undoes exactly what DeclineModal/setTicketPriceOffline
+  // wrote (quality/price/tax/note fields, all null'd or zeroed the same way
+  // a fresh weigh-in ticket starts out) and sends the ticket back to
+  // "weighed_in", so it reappears on the normal waiting queue ready to be
+  // priced or declined again — correctly this time. The original weigh-in
+  // (gross_kg) is untouched, since that step was never in question. No
+  // transaction to cancel here — a declined ticket was never finalized.
+  async restoreTicket(id, { userId, reason }) {
+    const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
+    if (fetchErr) throw fetchErr;
+    if (ticket.stage !== "declined") throw new Error("Only a declined ticket can be restored.");
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .update({
+        stage: "weighed_in",
+        quality_grade: null, moisture_pct: 0, mixture_pct: 0, outthrow_pct: 0, deduction_kg: 0,
+        price_per_kg: null, staff_fee: 0, tax_applicable: false, tax_rate: 0, price_note: null,
+        priced_at: null, priced_by: null,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    if (error) throw error;
+    // Fire-and-forget, same reasoning as every other logAudit call — this
+    // runs right after the real mutation above already succeeded.
+    this.logAudit({
+      action: "restore_declined_ticket",
+      tableName: "weighing_tickets",
+      recordId: id,
+      oldData: { stage: "declined", priceNote: ticket.price_note, code: ticket.code },
+      newData: { stage: "weighed_in", reason },
+      userId,
+    });
+    return data;
+  },
+
   async getChangeRequests() {
     const { data, error } = await supabase
       .from("change_requests")
@@ -1247,3 +1287,41 @@ export const api = {
     return insertOrFetchExisting("payments", row);
   },
 };
+
+// [2026-09-01] Final backstop for view-only accounts (see
+// viewOnlyGuard.js) — every write in the app eventually funnels through
+// one of the methods above, whether directly (Users/Roles/Settings/
+// Locations/Stock/Expenses/Change Requests, which call `api.*` straight
+// away) or indirectly (tickets/transactions/payments/parties/products,
+// which go through offlineQueue.js first and reach these same methods
+// only once a sync actually runs). Rather than hand-adding a check to
+// every individual write method above — 30+ of them, and an easy place to
+// eventually miss one when a new method gets added later — this wraps the
+// whole object in a Proxy that blocks EVERY method except the read-only
+// ones by name convention. Every method in this file already follows that
+// convention consistently (see the full list above): `get*`/`list*` read,
+// everything else writes. A future method keeps this protection for free
+// as long as it follows the same naming convention.
+const ALWAYS_ALLOWED = new Set([
+  // Self-service device presence / logout acknowledgement — not business
+  // data, and blocking these would break a view-only account's own
+  // session (e.g. it would never be able to acknowledge being signed out
+  // by an admin).
+  "touchLastSeen",
+  "acknowledgeLogout",
+]);
+
+function isReadOnlyMethodName(name) {
+  return name.startsWith("get") || name.startsWith("list") || ALWAYS_ALLOWED.has(name);
+}
+
+export const api = new Proxy(rawApi, {
+  get(target, prop, receiver) {
+    const value = Reflect.get(target, prop, receiver);
+    if (typeof value !== "function" || isReadOnlyMethodName(prop)) return value;
+    return function guardedApiMethod(...args) {
+      if (isViewOnlyMode()) return Promise.reject(new ViewOnlyError());
+      return value.apply(target, args);
+    };
+  },
+});
