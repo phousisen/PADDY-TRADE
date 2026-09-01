@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td } from "../components/ReportUI.jsx";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
@@ -72,7 +73,7 @@ function AddEntryForm({ profile, onAdd }) {
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
       <div>
         <label className="mb-1 block text-xs text-slate-500">Type</label>
         <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
@@ -193,6 +194,8 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
     );
   }
 
+  const net = totalIn - totalOut;
+
   return (
     <div>
       {loadError && (
@@ -201,43 +204,36 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
           <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-4">
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-xs text-slate-400">Total In</p>
-            <p className="text-xl font-bold text-emerald-600">{fmtRiel(totalIn)}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-xs text-slate-400">Total Out</p>
-            <p className="text-xl font-bold text-rose-600">{fmtRiel(totalOut)}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="text-xs text-slate-400">Net</p>
-            <p className={`text-xl font-bold ${totalIn - totalOut >= 0 ? "text-slate-800" : "text-rose-600"}`}>{fmtRiel(totalIn - totalOut)}</p>
-          </div>
-        </div>
+
+      <SummaryStrip>
+        <SummaryCell label="Total In" value={fmtRiel(totalIn)} tone="pos" />
+        <SummaryCell label="Total Out" value={fmtRiel(totalOut)} tone="neg" />
+        <SummaryCell label="Net" value={fmtRiel(net)} tone={net >= 0 ? "pos" : "neg"} />
+      </SummaryStrip>
+
+      <div className="mb-4 flex justify-end">
         {profile?.location_id || isAdmin ? <AddEntryForm profile={profile} onAdd={addEntry} /> : null}
       </div>
 
-      <p className="mb-3 text-xs text-slate-400">
+      <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
         "Running Total" only adds up the entries listed below (whatever date range/location you've filtered to) — it is not a real bank account
         balance and there is no starting/opening balance set anywhere in the system. A big negative number usually just means outgoing payments
         were recorded in this period without matching money-in entries also being recorded here (for example, capital or loan funds that came in
         before this date range, or that were received but never logged as a payment). Click any row linked to a transaction to open its receipt.
-      </p>
+      </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-        <table className="w-full text-sm">
+      <TableCard>
+        <Table>
           <thead>
-            <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-              <th className="px-5 py-3 font-medium">Date</th>
-              <th className="px-5 py-3 font-medium">Time</th>
-              <th className="px-5 py-3 font-medium">Type</th>
-              <th className="px-5 py-3 font-medium">Paid to / Received from</th>
-              <th className="px-5 py-3 font-medium">Note</th>
-              <th className="px-5 py-3 font-medium">Recorded by</th>
-              <th className="px-5 py-3 font-medium">Amount</th>
-              <th className="px-5 py-3 font-medium">Running Total</th>
+            <tr>
+              <Th>Date</Th>
+              <Th>Time</Th>
+              <Th>Type</Th>
+              <Th>Paid to / Received from</Th>
+              <Th>Note</Th>
+              <Th>Recorded by</Th>
+              <Th num>Amount</Th>
+              <Th num>Running Total</Th>
             </tr>
           </thead>
           <tbody>
@@ -248,21 +244,21 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
                 title={p.transaction_id ? "Click to view this transaction's receipt" : "Manual entry — not linked to a transaction"}
                 className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${p.transaction_id ? "cursor-pointer" : ""}`}
               >
-                <td className="px-5 py-3 text-slate-500">{p.pay_date}</td>
-                <td className="px-5 py-3 text-slate-500">{cambodiaTime(p.created_at)}</td>
-                <td className="px-5 py-3 text-slate-700">{TYPE_LABELS[p.type] || p.type}</td>
-                <td className="px-5 py-3 text-slate-700">{p.partyName || "—"}{p.txCode ? <span className="ml-1 text-xs text-slate-400">({p.txCode})</span> : null}</td>
-                <td className="px-5 py-3 text-slate-600">{p.memo || "—"}</td>
-                <td className="px-5 py-3 text-slate-500">{p.createdByName}</td>
-                <td className={`px-5 py-3 font-medium ${p.signedAmount >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{p.signedAmount >= 0 ? "+" : ""}{fmtRiel(p.signedAmount)}</td>
-                <td className="px-5 py-3 text-slate-700">{fmtRiel(p.balance)}</td>
+                <Td>{p.pay_date}</Td>
+                <Td>{cambodiaTime(p.created_at)}</Td>
+                <Td>{TYPE_LABELS[p.type] || p.type}</Td>
+                <Td>{p.partyName || "—"}{p.txCode ? <span className="ml-1 text-[11px] text-slate-400">({p.txCode})</span> : null}</Td>
+                <Td>{p.memo || "—"}</Td>
+                <Td>{p.createdByName}</Td>
+                <Td num className={p.signedAmount >= 0 ? "!text-brand-700 !font-semibold" : "!text-rose-600 !font-semibold"}>{p.signedAmount >= 0 ? "+" : ""}{fmtRiel(p.signedAmount)}</Td>
+                <Td num>{fmtRiel(p.balance)}</Td>
               </tr>
             ))}
-            {loading && ledger.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-            {ledger.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No cash movements recorded yet.</td></tr>}
+            {loading && ledger.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></tr>}
+            {ledger.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No cash movements recorded yet.</td></tr>}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableCard>
     </div>
   );
 }
