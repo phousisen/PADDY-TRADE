@@ -216,18 +216,29 @@ export default function StockInventory() {
 
   // Stock isn't tracked per paddy type in the database — each location just
   // has one running total. To break it down by type, replay every
-  // transaction's net weight (weight minus quality deduction), adding it for
-  // Buys and subtracting it for Sells, grouped by location and paddy type —
-  // skipping anything dated at or before that location's last adjustment
-  // (see comment above).
+  // transaction's net weighed weight, adding it for Buys and subtracting it
+  // for Sells, grouped by location and paddy type — skipping anything dated
+  // at or before that location's last adjustment (see comment above).
+  //
+  // [2026-09-01] Fixed to use `quantity_kg` (the real weighed net — gross
+  // minus tare) instead of `quantity_kg - deduction_kg`. Confirmed with the
+  // user: a quality deduction (moisture/mixture/outthrow %) is a PRICE
+  // adjustment only — nothing is physically sorted out or discarded at the
+  // station, the full weighed-in paddy stays in the pile. Subtracting the
+  // deduction here was silently undercounting real physical stock, and
+  // disagreeing with `current_stock_kg` (the number this whole page's
+  // total, and the Dashboard, are built from), which was never subtracting
+  // it. This was very likely a real contributor to stock feeling like it
+  // "wasn't sitting right" — the two numbers on this very page could drift
+  // apart by however much deduction had accumulated.
   const stockByLocationProduct = useMemo(() => {
     const map = {};
     for (const tx of activeTxs) {
       if (!tx.location_id || !tx.product_id) continue;
       const lastAdjAt = lastAdjustmentAtByLocation[tx.location_id];
       if (lastAdjAt && tx.created_at && tx.created_at <= lastAdjAt) continue;
-      const payable = Math.max(0, Number(tx.quantity_kg || 0) - Number(tx.deduction_kg || 0));
-      const delta = tx.type === "BUY" ? payable : -payable;
+      const netKg = Number(tx.quantity_kg) || 0;
+      const delta = tx.type === "BUY" ? netKg : -netKg;
       map[tx.location_id] = map[tx.location_id] || {};
       map[tx.location_id][tx.product_id] = (map[tx.location_id][tx.product_id] || 0) + delta;
     }
@@ -269,6 +280,185 @@ export default function StockInventory() {
       }))
       .sort((a, b) => b.kg - a.kg);
   }
+
+  // ---- Daily Stock Ledger [2026-09-01] ------------------------------------
+  //
+  // Answers "how much stock did we have each day, and how much came in,
+  // went out, or was lost" — one row per calendar day, instead of only the
+  // single running total the rest of this page shows. Rebuilt live from the
+  // real transaction/adjustment history every time it's viewed (never a
+  // separately stored number) on purpose: current_stock_kg is a STORED
+  // running total, and stored numbers are exactly what's caused stock to
+  // drift out of sync before (see the fix_recalculate_current_stock.sql
+  // note in the project log) — this can't drift the same way, because
+  // there's nothing cached to go stale. Uses `quantity_kg` throughout (the
+  // real weighed net), same physical-weight rule as the fix above.
+  //
+  // Each day: Opening = previous day's Closing. Buy adds, Sell subtracts.
+  // A stock adjustment that day (the existing "Reset to 0"/correction
+  // habit from the Stock Loss Log below) is treated as a checkpoint — the
+  // gap between where the day's Buy/Sell activity alone would have landed
+  // and what the adjustment actually set the total to becomes that day's
+  // "Adjusted" figure, so a loss/gain shows up on the day it really
+  // happened instead of only in a separate list. If more than one
+  // adjustment lands on the same day, only the last one (by time) is the
+  // day's real checkpoint.
+  //
+  // Per-paddy-type breakdown resets to zero on any day that had an
+  // adjustment — a manual adjustment only ever corrects the single
+  // combined number, never a specific type, so there's no way to know
+  // which types made up what was corrected. Same convention this page's
+  // existing combined breakdown table already uses for its one "since the
+  // last reset" window, just applied at every past reset instead of only
+  // the most recent one.
+  function buildDailyLedger(locationId) {
+    const txEvents = activeTxs.filter((tx) => tx.location_id === locationId && tx.tx_date);
+    const adjEvents = adjustments.filter((a) => a.location_id === locationId && a.created_at);
+    if (txEvents.length === 0 && adjEvents.length === 0) return [];
+
+    const byDate = {};
+    function bucket(date) {
+      return (byDate[date] = byDate[date] || { date, buyKg: 0, sellKg: 0, buyAmt: 0, sellAmt: 0, adjustments: [], byProduct: {} });
+    }
+    for (const tx of txEvents) {
+      const b = bucket(tx.tx_date);
+      const kg = Number(tx.quantity_kg) || 0;
+      // Real riel paid/received, not a re-derived estimate — same field
+      // (total_with_tax, falling back to amount) the Dashboard's own
+      // "Total Buy/Sell (Today)" cards already read.
+      const riel = Number(tx.total_with_tax ?? tx.amount) || 0;
+      if (tx.type === "BUY") {
+        b.buyKg += kg;
+        b.buyAmt += riel;
+      } else {
+        b.sellKg += kg;
+        b.sellAmt += riel;
+      }
+      if (tx.product_id) {
+        const p = (b.byProduct[tx.product_id] = b.byProduct[tx.product_id] || { in: 0, out: 0 });
+        if (tx.type === "BUY") p.in += kg; else p.out += kg;
+      }
+    }
+    for (const a of adjEvents) {
+      bucket(cambodiaDateStr(new Date(a.created_at))).adjustments.push(a);
+    }
+
+    const dates = Object.keys(byDate).sort();
+    let runningKg = 0;
+    let runningByProduct = {};
+    const rows = [];
+    for (const date of dates) {
+      const b = byDate[date];
+      const opening = runningKg;
+      const openingByProduct = { ...runningByProduct };
+      let closing = opening + b.buyKg - b.sellKg;
+      let adjustedKg = 0;
+      let adjustmentDetails = [];
+      let resetHappened = false;
+
+      if (b.adjustments.length > 0) {
+        const sorted = [...b.adjustments].sort((x, y) => (x.created_at < y.created_at ? -1 : 1));
+        const last = sorted[sorted.length - 1];
+        adjustedKg = Number(last.new_stock_kg) - closing;
+        closing = Number(last.new_stock_kg);
+        resetHappened = true;
+        adjustmentDetails = sorted.map((a) => ({
+          kg: Number(a.adjustment_kg),
+          reason: ADJUSTMENT_REASONS.find((r) => r.value === a.reason)?.label ?? a.reason,
+          note: a.note,
+          valueLost: a.value_lost,
+        }));
+      }
+      // Valued at cost (what was paid to acquire it), not resale price —
+      // the standard write-off convention, and the same price the Adjust
+      // modal already suggests when a loss is entered. Sums every
+      // adjustment that landed this day; a day with no valued loss (an
+      // adjustment recorded with no price, or a pure gain) reads as 0.
+      const valueLostToday = adjustmentDetails.reduce((s, a) => s + (a.kg < 0 ? Number(a.valueLost) || 0 : 0), 0);
+
+      const closingByProduct = { ...openingByProduct };
+      for (const prodId in b.byProduct) {
+        closingByProduct[prodId] = (closingByProduct[prodId] || 0) + b.byProduct[prodId].in - b.byProduct[prodId].out;
+      }
+      if (resetHappened) {
+        for (const prodId in closingByProduct) closingByProduct[prodId] = 0;
+      }
+
+      rows.push({
+        date,
+        opening,
+        boughtKg: b.buyKg,
+        spentAmt: b.buyAmt,
+        soldKg: b.sellKg,
+        earnedAmt: b.sellAmt,
+        adjustedKg,
+        adjustmentDetails,
+        valueLostToday,
+        closing,
+        byProduct: Object.entries(closingByProduct)
+          // Keep a type with real activity that day even if it netted to
+          // ~0 (bought and sold the same amount), not just a nonzero
+          // closing balance — otherwise a day's Bought/Sold-that-day
+          // columns could show a type that then vanishes from the list.
+          .filter(([prodId, kg]) => Math.abs(kg) > 0.01 || Math.abs(b.byProduct[prodId]?.in || 0) > 0.01 || Math.abs(b.byProduct[prodId]?.out || 0) > 0.01)
+          .map(([prodId, kg]) => ({
+            productId: prodId,
+            name: productsById[prodId]?.name || "—",
+            inKg: b.byProduct[prodId]?.in || 0,
+            outKg: b.byProduct[prodId]?.out || 0,
+            closingKg: kg,
+            value: kg * (avgPriceByProduct[prodId] ?? avgPrice),
+          }))
+          .sort((a, c) => c.closingKg - a.closingKg),
+      });
+
+      runningKg = closing;
+      runningByProduct = closingByProduct;
+    }
+    return rows;
+  }
+
+  const [ledgerLocationId, setLedgerLocationId] = useState("");
+  const [ledgerPeriod, setLedgerPeriod] = useState("30d");
+  const [ledgerExpandedDate, setLedgerExpandedDate] = useState(null);
+
+  const activeLedgerLocationId = ledgerLocationId || stations[0]?.id || "";
+  const fullLedger = useMemo(
+    () => (activeLedgerLocationId ? buildDailyLedger(activeLedgerLocationId) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeLedgerLocationId, activeTxs, adjustments, avgPrice, avgPriceByProduct, productsById]
+  );
+  const ledgerRows = useMemo(() => {
+    if (ledgerPeriod === "all") return fullLedger;
+    const days = ledgerPeriod === "7d" ? 7 : ledgerPeriod === "30d" ? 30 : null;
+    let cutoff;
+    if (days) {
+      const d = new Date(getAccurateNow());
+      d.setDate(d.getDate() - days);
+      cutoff = cambodiaDateStr(d);
+    } else {
+      // "month" — from the 1st of the current Cambodia calendar month.
+      cutoff = `${todayStr.slice(0, 7)}-01`;
+    }
+    return fullLedger.filter((r) => r.date >= cutoff);
+  }, [fullLedger, ledgerPeriod, todayStr]);
+
+  // Totals row at the bottom of the ledger — same numbers as the rows
+  // above, just summed across whatever period is currently selected.
+  const ledgerTotals = useMemo(() => {
+    const t = { boughtKg: 0, spentAmt: 0, soldKg: 0, earnedAmt: 0, adjustedKg: 0, valueLostToday: 0 };
+    for (const r of ledgerRows) {
+      t.boughtKg += r.boughtKg;
+      t.spentAmt += r.spentAmt;
+      t.soldKg += r.soldKg;
+      t.earnedAmt += r.earnedAmt;
+      t.adjustedKg += r.adjustedKg;
+      t.valueLostToday += r.valueLostToday;
+    }
+    t.marginAmt = t.earnedAmt - t.spentAmt;
+    t.netAmt = t.marginAmt - t.valueLostToday;
+    return t;
+  }, [ledgerRows]);
 
   const combinedRows = productRows(combinedByProduct);
 
@@ -468,6 +658,181 @@ export default function StockInventory() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* [2026-09-01] Daily Stock Ledger — a real daily finance-and-stock
+            record per station: one row per day (Opening / Bought In /
+            Spent / Sold Out / Earned / Lost / Value Lost / Closing), each
+            expandable into that day's paddy-type breakdown, plus a totals
+            row for whatever period is selected. Styled deliberately like a
+            finance statement — tight right-aligned figures, a total row —
+            approved via sample before building (see the mockup shared
+            earlier). Rebuilt live from real transaction/adjustment history
+            every time it's opened — see buildDailyLedger above for why
+            that's on purpose, and note that this table itself is what
+            answers "how much did we spend/earn/lose" per day; nothing
+            equivalent was added to the Dashboard, by request. */}
+        <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+            <div>
+              <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Layers size={16} className="text-brand-600" /> Daily Stock Ledger</h3>
+              <p className="mt-0.5 text-xs text-slate-400">What each station spent, earned, lost, and closed with — day by day.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={activeLedgerLocationId}
+                onChange={(e) => { setLedgerLocationId(e.target.value); setLedgerExpandedDate(null); }}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600"
+              >
+                {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <div className="flex overflow-hidden rounded-lg border border-slate-200">
+                {[["7d", "7 Days"], ["30d", "30 Days"], ["month", "This Month"], ["all", "All Time"]].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setLedgerPeriod(val)}
+                    className={`px-3 py-1.5 text-xs font-semibold ${ledgerPeriod === val ? "bg-brand-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+          <table className="w-full text-[13px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50 text-right text-[10.5px] uppercase tracking-wide text-slate-400">
+                <th className="px-4 py-2.5 text-left font-semibold">Date</th>
+                <th className="px-4 py-2.5 font-semibold">Opening</th>
+                <th className="px-4 py-2.5 font-semibold">Bought In</th>
+                <th className="px-4 py-2.5 font-semibold">Spent</th>
+                <th className="px-4 py-2.5 font-semibold">Sold Out</th>
+                <th className="px-4 py-2.5 font-semibold">Earned</th>
+                <th className="px-4 py-2.5 font-semibold">Lost</th>
+                <th className="px-4 py-2.5 font-semibold">Value Lost</th>
+                <th className="px-4 py-2.5 font-semibold">Closing</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...ledgerRows].reverse().map((r) => {
+                const isOpen = ledgerExpandedDate === r.date;
+                return (
+                  <Fragment key={r.date}>
+                    <tr onClick={() => setLedgerExpandedDate(isOpen ? null : r.date)} className="cursor-pointer border-b border-slate-50 text-right last:border-0 hover:bg-slate-50/60">
+                      <td className="px-4 py-3 text-left font-semibold text-slate-700">{r.date}</td>
+                      <td className="px-4 py-3 text-slate-500">{fmt2(r.opening)} kg</td>
+                      <td className="px-4 py-3 text-brand-600">{r.boughtKg > 0.005 ? `+${fmt2(r.boughtKg)} kg` : <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 text-slate-600">{r.spentAmt > 0.5 ? fmtRiel(r.spentAmt) : <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 text-rose-500">{r.soldKg > 0.005 ? `−${fmt2(r.soldKg)} kg` : <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 font-medium text-brand-700">{r.earnedAmt > 0.5 ? fmtRiel(r.earnedAmt) : <span className="font-normal text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3">
+                        {Math.abs(r.adjustedKg) > 0.005 ? (
+                          <span className={r.adjustedKg < 0 ? "font-medium text-rose-600" : "font-medium text-emerald-600"}>
+                            {r.adjustedKg > 0 ? "+" : "−"}{fmt2(Math.abs(r.adjustedKg))} kg
+                            {r.adjustmentDetails[r.adjustmentDetails.length - 1]?.reason && (
+                              <span className="ml-1 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
+                                {r.adjustmentDetails[r.adjustmentDetails.length - 1].reason}
+                              </span>
+                            )}
+                          </span>
+                        ) : <span className="text-slate-300">—</span>}
+                      </td>
+                      <td className="px-4 py-3 font-medium text-rose-600">{r.valueLostToday > 0.5 ? fmtRiel(r.valueLostToday) : <span className="font-normal text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 font-bold text-slate-800">{fmt2(r.closing)} kg</td>
+                      <td className="px-4 py-3 text-right">
+                        {isOpen ? <ChevronDown size={16} className="ml-auto text-slate-400" /> : <ChevronRight size={16} className="ml-auto text-slate-300" />}
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr className="border-b border-slate-50 bg-slate-50/60 last:border-0">
+                        <td colSpan={10} className="px-5 py-3">
+                          {r.byProduct.length === 0 ? (
+                            <p className="py-2 text-center text-xs text-slate-400">No paddy-type activity this day.</p>
+                          ) : (
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-left text-xs text-slate-400">
+                                  <th className="py-1.5 pl-2 font-medium">Paddy Type</th>
+                                  <th className="py-1.5 font-medium">Bought In</th>
+                                  <th className="py-1.5 font-medium">Sold Out</th>
+                                  <th className="py-1.5 font-medium">Closing</th>
+                                  <th className="py-1.5 font-medium">{t("stock_value_col")}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {r.byProduct.map((p) => (
+                                  <tr key={p.productId} className="border-t border-white">
+                                    <td className="py-1.5 pl-2 text-slate-600">{p.name}</td>
+                                    <td className="py-1.5 text-brand-600">{p.inKg > 0.005 ? `+${fmt2(p.inKg)} kg` : <span className="text-slate-300">—</span>}</td>
+                                    <td className="py-1.5 text-rose-500">{p.outKg > 0.005 ? `−${fmt2(p.outKg)} kg` : <span className="text-slate-300">—</span>}</td>
+                                    <td className="py-1.5 font-medium text-slate-700">{fmt2(p.closingKg)} kg</td>
+                                    <td className="py-1.5 font-medium text-slate-700">{fmtRiel(p.value)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                          {r.adjustmentDetails.length > 0 && (
+                            <div className="mt-2 space-y-1 border-t border-white pt-2">
+                              {r.adjustmentDetails.map((a, i) => (
+                                <p key={i} className="pl-2 text-xs text-slate-500">
+                                  <span className={a.kg < 0 ? "font-medium text-rose-600" : "font-medium text-emerald-600"}>
+                                    {a.kg > 0 ? "+" : ""}{fmt2(a.kg)} kg
+                                  </span>
+                                  {" — "}{a.reason}{a.note ? `: ${a.note}` : ""}
+                                  {a.valueLost != null ? ` (${fmtRiel(a.valueLost)} lost)` : ""}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+              {ledgerRows.length === 0 && !loading && !loadError && (
+                <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-slate-400">No activity recorded for this station in this period.</td></tr>
+              )}
+            </tbody>
+            {ledgerRows.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-brand-600 bg-brand-50/60 text-right">
+                  <td className="px-4 py-3 text-left font-bold text-brand-900">
+                    {ledgerPeriod === "7d" ? "7-Day" : ledgerPeriod === "30d" ? "30-Day" : ledgerPeriod === "month" ? "This Month's" : "All-Time"} Total
+                  </td>
+                  <td className="px-4 py-3"></td>
+                  <td className="px-4 py-3 font-bold text-brand-700">+{fmt2(ledgerTotals.boughtKg)} kg</td>
+                  <td className="px-4 py-3 font-bold text-slate-700">{fmtRiel(ledgerTotals.spentAmt)}</td>
+                  <td className="px-4 py-3 font-bold text-rose-600">−{fmt2(ledgerTotals.soldKg)} kg</td>
+                  <td className="px-4 py-3 font-bold text-brand-700">{fmtRiel(ledgerTotals.earnedAmt)}</td>
+                  <td className="px-4 py-3 font-bold text-rose-600">{Math.abs(ledgerTotals.adjustedKg) > 0.005 ? `${ledgerTotals.adjustedKg < 0 ? "−" : "+"}${fmt2(Math.abs(ledgerTotals.adjustedKg))} kg` : "—"}</td>
+                  <td className="px-4 py-3 font-bold text-rose-600">{ledgerTotals.valueLostToday > 0.5 ? fmtRiel(ledgerTotals.valueLostToday) : "—"}</td>
+                  <td className="px-4 py-3 font-bold text-slate-800">{fmt2(ledgerRows[ledgerRows.length - 1]?.closing ?? 0)} kg</td>
+                  <td className="px-4 py-3"></td>
+                </tr>
+                <tr className="bg-brand-50/60 text-right">
+                  <td className="px-4 pb-3 text-left text-xs font-semibold text-brand-800">Gross Margin (Earned − Spent)</td>
+                  <td colSpan={5}></td>
+                  <td colSpan={2} className="px-4 pb-3">
+                    <span className={ledgerTotals.marginAmt >= 0 ? "font-bold text-brand-700" : "font-bold text-rose-600"}>{ledgerTotals.marginAmt >= 0 ? "+" : ""}{fmtRiel(ledgerTotals.marginAmt)}</span>
+                  </td>
+                  <td className="px-4 pb-3"></td>
+                </tr>
+                <tr className="bg-brand-50/60 text-right">
+                  <td className="px-4 pb-4 text-left text-xs font-semibold text-brand-800">Net Result (Margin − Value Lost)</td>
+                  <td colSpan={5}></td>
+                  <td colSpan={2} className="px-4 pb-4">
+                    <span className={ledgerTotals.netAmt >= 0 ? "font-bold text-brand-700" : "font-bold text-rose-600"}>{ledgerTotals.netAmt >= 0 ? "+" : ""}{fmtRiel(ledgerTotals.netAmt)}</span>
+                  </td>
+                  <td className="px-4 pb-4"></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+          </div>
         </div>
       </main>
 
