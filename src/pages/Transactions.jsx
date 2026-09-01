@@ -1461,7 +1461,7 @@ export default function Transactions({ setPage }) {
           failure specifically, which is a different condition. */}
       {loadError && syncStatus.online && (
         <div className="flex items-center gap-2 bg-rose-50 px-6 py-2 text-xs font-medium text-rose-700">
-          <WifiOff size={13} /> Couldn't reach the server just now — showing the last data loaded. Retrying automatically.
+          <WifiOff size={13} /> {t("offline_banner_short")}
         </div>
       )}
       <main className="flex-1 overflow-y-auto p-6">
@@ -1486,7 +1486,7 @@ export default function Transactions({ setPage }) {
                 onClick={() => setFiltersOpen((v) => !v)}
                 className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium ${filtersOpen || activeFilterCount > 0 ? "border-brand-300 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
               >
-                <Filter size={13} /> Filters
+                <Filter size={13} /> {t("filters_btn")}
                 {activeFilterCount > 0 && (
                   <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-slate-200 px-1 text-[10.5px] font-semibold text-slate-600">{activeFilterCount}</span>
                 )}
@@ -1494,15 +1494,15 @@ export default function Transactions({ setPage }) {
               {filtersOpen && (
                 <div className="absolute left-0 top-full z-20 mt-2 w-max min-w-[280px] rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Unpaid (Buys)</button>
-                    <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>Not Received (Sells)</button>
+                    <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{t("filter_unpaid_buys")}</button>
+                    <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{t("filter_not_received")}</button>
                   </div>
                   {(unpaidBuysOnly || notReceivedOnly) && (
                     <button
                       onClick={() => { setUnpaidBuysOnly(false); setNotReceivedOnly(false); }}
                       className="mt-2 text-xs font-medium text-slate-400 hover:text-slate-600"
                     >
-                      Clear
+                      {t("clear_btn")}
                     </button>
                   )}
                 </div>
@@ -1525,7 +1525,7 @@ export default function Transactions({ setPage }) {
         {exportLedgerError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-600">
             <span>{exportLedgerError}</span>
-            <button onClick={exportLedger} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+            <button onClick={exportLedger} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_btn")}</button>
           </div>
         )}
 
@@ -1851,7 +1851,7 @@ export default function Transactions({ setPage }) {
                         <span className="font-bold text-slate-800">{tx.paper_ticket_no || tx.code}</span>
                         {isTransactionPendingSync(tx.id) && (
                           <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                            <RefreshCw size={9} /> Not synced
+                            <RefreshCw size={9} /> {t("not_synced")}
                           </span>
                         )}
                       </div>
@@ -1871,12 +1871,12 @@ export default function Transactions({ setPage }) {
 
                   <div className="mt-2.5 flex gap-2">
                     <div className="rounded-lg bg-slate-50 px-3 py-1.5">
-                      <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Weight</p>
+                      <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">{t("word_weight")}</p>
                       <p className="text-sm font-bold text-slate-800">{fmt2(tx.quantity_kg)} kg</p>
                     </div>
                     {tx.price_per_kg != null && (
                       <div className="rounded-lg bg-slate-50 px-3 py-1.5">
-                        <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">Price / kg</p>
+                        <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">{t("price_per_kg")}</p>
                         <p className="text-sm font-bold text-slate-800">{fmtRiel(tx.price_per_kg)}</p>
                       </div>
                     )}
@@ -1884,73 +1884,73 @@ export default function Transactions({ setPage }) {
 
                   {tx.station_quantity_kg != null && (
                     tx.buyer_confirmed_at ? (
-                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">✓ Confirmed</span>
+                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">✓ {t("tx_confirmed")}</span>
                     ) : (
-                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">⏳ Pending buyer confirmation</span>
+                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">⏳ {t("tx_pending_confirm")}</span>
                     )
                   )}
 
                   <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
                     <div>
                       {isCancelled ? (
-                        <span className="text-xs text-slate-400">Excluded from reports</span>
+                        <span className="text-xs text-slate-400">{t("tx_excluded")}</span>
                       ) : remaining > 0.01 ? (
                         isAdmin ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
-                            <Wallet size={12} /> {fmtRiel(remaining)} due
+                            <Wallet size={12} /> {t("tx_due", { amount: fmtRiel(remaining) })}
                           </button>
                         ) : (
                           <span className="flex items-center gap-1 rounded-md border border-gold-100 bg-gold-50/60 px-2 py-1 text-xs font-medium text-gold-700">
-                            <Wallet size={12} /> {fmtRiel(remaining)} due
+                            <Wallet size={12} /> {t("tx_due", { amount: fmtRiel(remaining) })}
                           </span>
                         )
                       ) : (
-                        <span className="text-xs font-medium text-brand-600">Settled</span>
+                        <span className="text-xs font-medium text-brand-600">{t("tx_settled")}</span>
                       )}
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-extrabold text-slate-800">{fmtRiel(tx.total_with_tax ?? tx.amount)}</p>
-                      {tx.tax_applicable && <p className="text-[10px] text-slate-400">incl. {tx.tax_rate}% VAT</p>}
+                      {tx.tax_applicable && <p className="text-[10px] text-slate-400">{t("tx_incl_vat", { rate: tx.tax_rate })}</p>}
                     </div>
                   </div>
 
                   {isExpanded && (
                     <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-slate-100 pt-3">
                       <div>
-                        <p className="text-[10px] uppercase tracking-wide text-slate-400">Weigh In {isBuy ? "(loaded)" : "(empty)"}</p>
-                        <p className="text-sm font-semibold text-slate-800">{tx.gross_kg != null ? `${fmt2(tx.gross_kg)} kg` : "Not recorded"}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t("weigh_in_label")} {isBuy ? t("loaded_suffix") : t("empty_suffix")}</p>
+                        <p className="text-sm font-semibold text-slate-800">{tx.gross_kg != null ? `${fmt2(tx.gross_kg)} kg` : t("not_recorded")}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] uppercase tracking-wide text-slate-400">Weigh Out {isBuy ? "(empty)" : "(loaded)"}</p>
-                        <p className="text-sm font-semibold text-slate-800">{tx.tare_kg != null ? `${fmt2(tx.tare_kg)} kg` : "Not recorded"}</p>
+                        <p className="text-[10px] uppercase tracking-wide text-slate-400">{t("weigh_out_label")} {isBuy ? t("empty_suffix") : t("loaded_suffix")}</p>
+                        <p className="text-sm font-semibold text-slate-800">{tx.tare_kg != null ? `${fmt2(tx.tare_kg)} kg` : t("not_recorded")}</p>
                       </div>
                       {(tx.deduction_kg || 0) > 0 && (
                         <>
-                          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Deduction</p><p className="text-sm font-semibold text-slate-800">{fmt2(tx.deduction_kg)} kg</p></div>
-                          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Payable Weight</p><p className="text-sm font-semibold text-slate-800">{fmt2(payableKg)} kg</p></div>
+                          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">{t("deduction_label")}</p><p className="text-sm font-semibold text-slate-800">{fmt2(tx.deduction_kg)} kg</p></div>
+                          <div><p className="text-[10px] uppercase tracking-wide text-slate-400">{t("payable_weight_label")}</p><p className="text-sm font-semibold text-slate-800">{fmt2(payableKg)} kg</p></div>
                         </>
                       )}
-                      <div><p className="text-[10px] uppercase tracking-wide text-slate-400">Recorded By</p><p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p></div>
+                      <div><p className="text-[10px] uppercase tracking-wide text-slate-400">{t("recorded_by_label")}</p><p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p></div>
                     </div>
                   )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                    <button onClick={() => setReceiptTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Printer size={12} /> Receipt</button>
-                    <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Camera size={12} /> Photos ({photoCount})</button>
-                    <button onClick={() => setViewPaymentsTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Wallet size={12} /> Payments</button>
+                    <button onClick={() => setReceiptTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Printer size={12} /> {t("btn_receipt")}</button>
+                    <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Camera size={12} /> {t("btn_photos")} ({photoCount})</button>
+                    <button onClick={() => setViewPaymentsTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Wallet size={12} /> {t("btn_payments")}</button>
                     {isAdmin ? (
-                      <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Pencil size={12} /> Edit</button>
+                      <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Pencil size={12} /> {t("btn_edit")}</button>
                     ) : (
                       <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Flag size={12} /> {t("request_change")}</button>
                     )}
                     {isAdmin && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
-                      <button onClick={() => setConfirmSaleTx(tx)} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700"><CheckCircle2 size={12} /> Confirm Sale</button>
+                      <button onClick={() => setConfirmSaleTx(tx)} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700"><CheckCircle2 size={12} /> {t("btn_confirm_sale")}</button>
                     )}
                     {isAdmin && (
                       isCancelled ? (
-                        <button onClick={() => restoreTransaction(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Undo2 size={12} /> Restore</button>
+                        <button onClick={() => restoreTransaction(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Undo2 size={12} /> {t("btn_restore")}</button>
                       ) : (
-                        <button onClick={() => setCancelConfirmTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Ban size={12} /> Cancel</button>
+                        <button onClick={() => setCancelConfirmTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Ban size={12} /> {t("btn_cancel_tx")}</button>
                       )
                     )}
                   </div>
@@ -1958,15 +1958,18 @@ export default function Transactions({ setPage }) {
               </div>
             );
           })}
-          {pagedRows.length === 0 && loading && <p className="py-10 text-center text-sm text-slate-400">Loading…</p>}
-          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</p>}
+          {pagedRows.length === 0 && loading && <p className="py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
+          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</p>}
         </div>
 
         {visibleRows.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 px-1 pt-4 text-sm text-slate-500">
             <div>
-              Showing <span className="font-semibold text-slate-800">{(pageNum - 1) * PAGE_SIZE + 1}–{Math.min(pageNum * PAGE_SIZE, visibleRows.length)}</span> of{" "}
-              <span className="font-semibold text-slate-800">{visibleRows.length}</span> transactions
+              {t("tx_showing", {
+                a: (pageNum - 1) * PAGE_SIZE + 1,
+                b: Math.min(pageNum * PAGE_SIZE, visibleRows.length),
+                c: visibleRows.length,
+              })}
             </div>
             {totalPages > 1 && (
               <div className="flex items-center gap-1.5">
