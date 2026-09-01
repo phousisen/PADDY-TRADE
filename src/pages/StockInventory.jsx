@@ -362,12 +362,24 @@ export default function StockInventory() {
         adjustedKg = Number(last.new_stock_kg) - closing;
         closing = Number(last.new_stock_kg);
         resetHappened = true;
-        adjustmentDetails = sorted.map((a) => ({
-          kg: Number(a.adjustment_kg),
-          reason: ADJUSTMENT_REASONS.find((r) => r.value === a.reason)?.label ?? a.reason,
-          note: a.note,
-          valueLost: a.value_lost,
-        }));
+        adjustmentDetails = sorted.map((a) => {
+          const kg = Number(a.adjustment_kg);
+          const label = ADJUSTMENT_REASONS.find((r) => r.value === a.reason)?.label ?? a.reason;
+          // [2026-09-01] Every ADJUSTMENT_REASONS label is written for the
+          // normal case — stock coming in LOWER than the book expected
+          // ("...remaining treated as lost", "Moisture loss (dried out)",
+          // etc). That's backwards on the rarer day an adjustment actually
+          // pushes the balance UP (a recount finding more than expected —
+          // or, as with a negative running balance below, simply
+          // correcting an already-broken number back toward reality).
+          // Showing the raw "...treated as lost" text next to a positive
+          // kg figure is a straight contradiction, so a gain gets its own,
+          // honest phrasing instead of the reason's canned sentence.
+          const displayReason = kg >= 0
+            ? (a.reason === "recount" ? "Recount — more than expected" : "Corrected up")
+            : label;
+          return { kg, reason: label, displayReason, note: a.note, valueLost: a.value_lost };
+        });
       }
       // Valued at cost (what was paid to acquire it), not resale price —
       // the standard write-off convention, and the same price the Adjust
@@ -416,6 +428,25 @@ export default function StockInventory() {
       runningByProduct = closingByProduct;
     }
     return rows;
+  }
+
+  // [2026-09-01] A location's running balance can compute out negative —
+  // not a bug in the math, but real transaction history saying more paddy
+  // was sold than was ever recorded bought (before the ledger's first
+  // known event, or from a genuine gap somewhere in that station's Buy
+  // tickets). Physical stock can never actually be negative, so rather
+  // than show it as if it were an ordinary number, flag it — it's a real
+  // "something's missing from the records" signal worth checking, not
+  // noise to hide.
+  function balanceCell(kg, boldClass) {
+    if (kg < -0.005) {
+      return (
+        <span className="font-medium text-amber-600" title="Negative running balance — this station's records show more paddy sold than was ever recorded bought up to this point. Worth checking for a missing Buy ticket earlier in its history.">
+          {fmt2(kg)} kg <span className="rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">Check records</span>
+        </span>
+      );
+    }
+    return <span className={boldClass || ""}>{fmt2(kg)} kg</span>;
   }
 
   const [ledgerLocationId, setLedgerLocationId] = useState("");
@@ -722,7 +753,7 @@ export default function StockInventory() {
                   <Fragment key={r.date}>
                     <tr onClick={() => setLedgerExpandedDate(isOpen ? null : r.date)} className="cursor-pointer border-b border-slate-50 text-right last:border-0 hover:bg-slate-50/60">
                       <td className="px-4 py-3 text-left font-semibold text-slate-700">{r.date}</td>
-                      <td className="px-4 py-3 text-slate-500">{fmt2(r.opening)} kg</td>
+                      <td className="px-4 py-3 text-slate-500">{balanceCell(r.opening)}</td>
                       <td className="px-4 py-3 text-brand-600">{r.boughtKg > 0.005 ? `+${fmt2(r.boughtKg)} kg` : <span className="text-slate-300">—</span>}</td>
                       <td className="px-4 py-3 text-slate-600">{r.spentAmt > 0.5 ? fmtRiel(r.spentAmt) : <span className="text-slate-300">—</span>}</td>
                       <td className="px-4 py-3 text-rose-500">{r.soldKg > 0.005 ? `−${fmt2(r.soldKg)} kg` : <span className="text-slate-300">—</span>}</td>
@@ -731,16 +762,16 @@ export default function StockInventory() {
                         {Math.abs(r.adjustedKg) > 0.005 ? (
                           <span className={r.adjustedKg < 0 ? "font-medium text-rose-600" : "font-medium text-emerald-600"}>
                             {r.adjustedKg > 0 ? "+" : "−"}{fmt2(Math.abs(r.adjustedKg))} kg
-                            {r.adjustmentDetails[r.adjustmentDetails.length - 1]?.reason && (
+                            {r.adjustmentDetails[r.adjustmentDetails.length - 1]?.displayReason && (
                               <span className="ml-1 rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">
-                                {r.adjustmentDetails[r.adjustmentDetails.length - 1].reason}
+                                {r.adjustmentDetails[r.adjustmentDetails.length - 1].displayReason}
                               </span>
                             )}
                           </span>
                         ) : <span className="text-slate-300">—</span>}
                       </td>
                       <td className="px-4 py-3 font-medium text-rose-600">{r.valueLostToday > 0.5 ? fmtRiel(r.valueLostToday) : <span className="font-normal text-slate-300">—</span>}</td>
-                      <td className="px-4 py-3 font-bold text-slate-800">{fmt2(r.closing)} kg</td>
+                      <td className="px-4 py-3">{balanceCell(r.closing, "font-bold text-slate-800")}</td>
                       <td className="px-4 py-3 text-right">
                         {isOpen ? <ChevronDown size={16} className="ml-auto text-slate-400" /> : <ChevronRight size={16} className="ml-auto text-slate-300" />}
                       </td>
@@ -781,7 +812,7 @@ export default function StockInventory() {
                                   <span className={a.kg < 0 ? "font-medium text-rose-600" : "font-medium text-emerald-600"}>
                                     {a.kg > 0 ? "+" : ""}{fmt2(a.kg)} kg
                                   </span>
-                                  {" — "}{a.reason}{a.note ? `: ${a.note}` : ""}
+                                  {" — "}{a.displayReason}{a.note ? `: ${a.note}` : ""}
                                   {a.valueLost != null ? ` (${fmtRiel(a.valueLost)} lost)` : ""}
                                 </p>
                               ))}
