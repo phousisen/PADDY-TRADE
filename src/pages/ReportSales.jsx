@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
+import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr, Tfoot } from "../components/ReportUI.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -91,136 +92,147 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className={`flex gap-2 ${view === "byitem" ? "opacity-40 pointer-events-none" : ""}`}>
-          <span className="text-xs font-medium text-slate-400 self-center">Group by:</span>
-          {[{ v: "party", l: "Customer" }, { v: "product", l: "Paddy Type" }, { v: "location", l: "Location" }].map((o) => (
-            <button key={o.v} onClick={() => setGroupBy(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${groupBy === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          {[{ v: "summary", l: "Summary" }, { v: "detail", l: "Detail" }, { v: "byitem", l: "By Item" }].map((o) => (
-            <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
-          ))}
-        </div>
-      </div>
+      <SummaryStrip>
+        <SummaryCell label="Total Sold" value={`${fmt2(totalQty)} kg`} />
+        <SummaryCell label="Total Revenue" value={fmtRiel(totalAmount)} />
+      </SummaryStrip>
 
-      <div className="mb-4 flex gap-4">
-        <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Total Sold</p>
-          <p className="text-2xl font-bold text-slate-800">{fmt2(totalQty)} kg</p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className={`flex flex-wrap gap-2 ${view === "byitem" ? "opacity-40 pointer-events-none" : ""}`}>
+          <span className="self-center text-[11.5px] font-medium text-slate-400">Group by:</span>
+          {[{ v: "party", l: "Customer" }, { v: "product", l: "Paddy Type" }, { v: "location", l: "Location" }].map((o) => (
+            <button key={o.v} onClick={() => setGroupBy(o.v)} className={`rounded-lg border px-3 py-1.5 text-[13.5px] ${groupBy === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+          ))}
         </div>
-        <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Total Revenue</p>
-          <p className="text-2xl font-bold text-slate-800">{fmtRiel(totalAmount)}</p>
+        <div className="flex flex-wrap gap-2">
+          {[{ v: "summary", l: "Summary" }, { v: "detail", l: "Detail" }, { v: "byitem", l: "By Item" }].map((o) => (
+            <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-[13.5px] ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+          ))}
         </div>
       </div>
 
       {view === "byitem" ? (
         <div>
           {byItemGroups.map((g) => (
-            <div key={g.name} className="mb-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
-                <h3 className="font-semibold text-slate-700">{g.name}</h3>
-                <p className="text-xs text-slate-400">{fmt2(g.totalQty)} kg · {fmtRiel(g.totalAmount)}</p>
-              </div>
-              <table className="w-full text-sm">
+            <TableCard
+              key={g.name}
+              title={g.name}
+              right={<span className="text-[11.5px] font-normal text-slate-400">{fmt2(g.totalQty)} kg · {fmtRiel(g.totalAmount)}</span>}
+              className="mb-4"
+            >
+              <Table>
                 <thead>
-                  <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                    <th className="px-5 py-2 font-medium">Date</th>
-                    <th className="px-5 py-2 font-medium">Bill #</th>
-                    <th className="px-5 py-2 font-medium">Note</th>
-                    <th className="px-5 py-2 font-medium">Buyer / Truck</th>
-                    <th className="px-5 py-2 font-medium">Received</th>
-                    <th className="px-5 py-2 font-medium">Qty (kg)</th>
-                    <th className="px-5 py-2 font-medium">Sale Price</th>
-                    <th className="px-5 py-2 font-medium">Amount</th>
-                    <th className="px-5 py-2 font-medium">Balance</th>
+                  <tr>
+                    <Th>Date</Th><Th>Bill #</Th><Th>Note</Th><Th>Buyer / Truck</Th><Th>Received</Th>
+                    <Th num>Qty (kg)</Th><Th num>Sale Price</Th><Th num>Amount</Th><Th num>Balance</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {g.rows.map((r) => (
-                    <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                      <td className="px-5 py-2.5 text-slate-500">{r.tx_date}</td>
-                      <td className="px-5 py-2.5 font-medium text-slate-700">{r.code}</td>
-                      <td className="px-5 py-2.5 text-slate-500">{r.note || "—"}</td>
-                      <td className="px-5 py-2.5 text-slate-600">{r.partyName}{r.driver_name ? ` · ${r.driver_name}` : ""}</td>
-                      <td className={`px-5 py-2.5 font-medium ${r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
+                    <Tr key={r.id}>
+                      <Td>{r.tx_date}</Td>
+                      <Td name>{r.code}</Td>
+                      <Td>{r.note || "—"}</Td>
+                      <Td>{r.partyName}{r.driver_name ? ` · ${r.driver_name}` : ""}</Td>
+                      <Td className={r.payStatus === "paid" ? "!text-brand-700 !font-semibold" : r.payStatus === "partial" ? "!text-amber-600 !font-semibold" : "!text-rose-600 !font-semibold"}>
                         {r.payStatus === "paid" ? "Received" : r.payStatus === "partial" ? "Partial" : "Not Received"}
-                        {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} received</div>}
-                        {r.payStatus !== "unpaid" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
-                      </td>
-                      <td className="px-5 py-2.5 text-slate-700">{fmt2(r.quantity_kg)}</td>
-                      <td className="px-5 py-2.5 text-slate-700">{fmtRiel(r.price_per_kg)}</td>
-                      <td className="px-5 py-2.5 font-medium text-slate-800">{fmtRiel(r.amount)}</td>
-                      <td className="px-5 py-2.5 text-slate-700">{fmtRiel(r.runningBalance)}</td>
-                    </tr>
+                        {r.payStatus === "partial" && <div className="text-[11px] font-normal text-slate-400">{fmtRiel(r.paidSoFar)} received</div>}
+                        {r.payStatus !== "unpaid" && r.paidDate && <div className="text-[11px] font-normal text-slate-400">{r.paidDate}</div>}
+                      </Td>
+                      <Td num>{fmt2(r.quantity_kg)}</Td>
+                      <Td num>{fmtRiel(r.price_per_kg)}</Td>
+                      <Td num>{fmtRiel(r.amount)}</Td>
+                      <Td num>{fmtRiel(r.runningBalance)}</Td>
+                    </Tr>
                   ))}
                   {g.rows.length === 0 && (
-                    <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-slate-400">No sales for this type yet.</td></tr>
+                    <Tr><td colSpan={9} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No sales for this type yet.</td></Tr>
                   )}
                 </tbody>
-              </table>
-            </div>
+                {g.rows.length > 0 && (
+                  <Tfoot>
+                    <tr>
+                      <td colSpan={5}>Total</td>
+                      <td className="text-right">{fmt2(g.totalQty)}</td>
+                      <td></td>
+                      <td className="text-right">{fmtRiel(g.totalAmount)}</td>
+                      <td></td>
+                    </tr>
+                  </Tfoot>
+                )}
+              </Table>
+            </TableCard>
           ))}
           {byItemGroups.length === 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">No sales yet.</div>
+            <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-[13.5px] text-slate-400">No sales yet.</div>
           )}
         </div>
+      ) : view === "summary" ? (
+        <TableCard>
+          <Table>
+            <thead>
+              <tr>
+                <Th>{groupBy === "party" ? "Customer" : groupBy === "product" ? "Paddy Type" : "Location"}</Th>
+                <Th num>Transactions</Th><Th num>Qty (kg)</Th><Th num>Amount</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {grouped.map((g) => (
+                <Tr key={g.name}>
+                  <Td name>{g.name}</Td>
+                  <Td num>{g.count}</Td>
+                  <Td num>{fmt2(g.qty)}</Td>
+                  <Td num>{fmtRiel(g.amount)}</Td>
+                </Tr>
+              ))}
+              {grouped.length === 0 && <Tr><td colSpan={4} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No sales yet.</td></Tr>}
+            </tbody>
+            {grouped.length > 0 && (
+              <Tfoot>
+                <tr>
+                  <td>Total</td>
+                  <td className="text-right">{rows.length}</td>
+                  <td className="text-right">{fmt2(totalQty)}</td>
+                  <td className="text-right">{fmtRiel(totalAmount)}</td>
+                </tr>
+              </Tfoot>
+            )}
+          </Table>
+        </TableCard>
       ) : (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-          {view === "summary" ? (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                  <th className="px-5 py-3 font-medium">{groupBy === "party" ? "Customer" : groupBy === "product" ? "Paddy Type" : "Location"}</th>
-                  <th className="px-5 py-3 font-medium">Transactions</th>
-                  <th className="px-5 py-3 font-medium">Qty (kg)</th>
-                  <th className="px-5 py-3 font-medium">Amount</th>
+        <TableCard>
+          <Table>
+            <thead>
+              <tr>
+                <Th>Date</Th><Th>Receipt</Th><Th>Customer</Th><Th>Paddy Type</Th><Th>Location</Th>
+                <Th num>Qty (kg)</Th><Th num>Amount</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <Tr key={r.id}>
+                  <Td>{r.tx_date}</Td>
+                  <Td name>{r.code}</Td>
+                  <Td>{r.partyName}</Td>
+                  <Td>{r.productName}</Td>
+                  <Td>{r.stationName}</Td>
+                  <Td num>{fmt2(r.quantity_kg)}</Td>
+                  <Td num>{fmtRiel(r.amount)}</Td>
+                </Tr>
+              ))}
+              {rows.length === 0 && <Tr><td colSpan={7} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No sales yet.</td></Tr>}
+            </tbody>
+            {rows.length > 0 && (
+              <Tfoot>
+                <tr>
+                  <td colSpan={5}>Total</td>
+                  <td className="text-right">{fmt2(totalQty)}</td>
+                  <td className="text-right">{fmtRiel(totalAmount)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {grouped.map((g) => (
-                  <tr key={g.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                    <td className="px-5 py-3 font-medium text-slate-700">{g.name}</td>
-                    <td className="px-5 py-3 text-slate-600">{g.count}</td>
-                    <td className="px-5 py-3 text-slate-700">{fmt2(g.qty)}</td>
-                    <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(g.amount)}</td>
-                  </tr>
-                ))}
-                {grouped.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No sales yet.</td></tr>}
-              </tbody>
-            </table>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                  <th className="px-5 py-3 font-medium">Date</th>
-                  <th className="px-5 py-3 font-medium">Receipt</th>
-                  <th className="px-5 py-3 font-medium">Customer</th>
-                  <th className="px-5 py-3 font-medium">Paddy Type</th>
-                  <th className="px-5 py-3 font-medium">Location</th>
-                  <th className="px-5 py-3 font-medium">Qty (kg)</th>
-                  <th className="px-5 py-3 font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                    <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
-                    <td className="px-5 py-3 font-medium text-slate-700">{r.code}</td>
-                    <td className="px-5 py-3 text-slate-700">{r.partyName}</td>
-                    <td className="px-5 py-3 text-slate-600">{r.productName}</td>
-                    <td className="px-5 py-3 text-slate-600">{r.stationName}</td>
-                    <td className="px-5 py-3 text-slate-700">{fmt2(r.quantity_kg)}</td>
-                    <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>
-                  </tr>
-                ))}
-                {rows.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No sales yet.</td></tr>}
-              </tbody>
-            </table>
-          )}
-        </div>
+              </Tfoot>
+            )}
+          </Table>
+        </TableCard>
       )}
     </div>
   );
