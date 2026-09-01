@@ -765,7 +765,21 @@ export const api = {
   // `id` is optional — passed by the offline queue when a ticket was
   // already opened locally (client-generated UUID) while offline, so a
   // retried sync reuses that same id instead of opening a second ticket.
-  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName }) {
+  //
+  // `grossKg` is optional too, but in practice always present — every
+  // real caller (NewTicketModal) requires a weight before it will even
+  // let staff submit the form. It's captured in this SAME insert, not a
+  // separate setTicketGross update right after (see createTicketOffline
+  // in offlineQueue.js for the full story of why this changed on
+  // 2026-09-01): before, a ticket was always created with no weight first
+  // and then patched a moment later, so any interruption between those
+  // two saves — a dropped connection, a closed tab, a sync error — could
+  // leave a ticket permanently stuck on the board showing "—" for weight
+  // (first seen live at Jomnoum). Folding the weight into the same
+  // request means a ticket that reaches the server always already has
+  // one; there's no window where it can exist without it.
+  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg }) {
+    const hasGross = grossKg != null;
     const row = {
       ...(id ? { id } : {}),
       code: code || genTicketCode(),
@@ -780,7 +794,10 @@ export const api = {
       driver_name: driverName || null,
       product_id: productId || null,
       product_name: productName,
-      stage: "arrived",
+      stage: hasGross ? "weighed_in" : "arrived",
+      gross_kg: hasGross ? grossKg : null,
+      gross_at: hasGross ? getAccurateNow().toISOString() : null,
+      gross_by: hasGross ? userId : null,
       created_by: userId,
       paper_ticket_no: paperTicketNo || null,
       bank_qr_url: bankQrUrl || null,
