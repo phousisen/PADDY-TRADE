@@ -61,13 +61,18 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
 
   return (
     <div id="receipt-root">
-      {/* [2026-08-30] Prints as part of the physical page — unlike the
-          no-print banner further down (which only ever showed on THIS
-          screen), whoever walks away holding this paper sees it too. Only
-          set when the ~7s wait for sync confirmation ran out (see
-          finalizeTicketOffline/createTransactionOffline in
+      {/* [2026-08-30] Only set when the ~7s wait for sync confirmation ran
+          out (see finalizeTicketOffline/createTransactionOffline in
           offlineQueue.js) — not shown for the ordinary brief "still
-          syncing" moment every transaction passes through. */}
+          syncing" moment every transaction passes through.
+          [2026-09-01] Originally printed onto the physical page on
+          purpose (unlike the no-print banner further down, which only
+          ever showed on this screen), so whoever walked away holding the
+          paper would see it too. Per explicit request, it's now
+          print-hidden (see the `.verify-band` rule inside @media print in
+          index.css) — this still renders and is still visible right here
+          on screen exactly as before, it just no longer appears on the
+          printed slip itself. */}
       {tx.needs_verification && (
         <div className="verify-band">
           <span className="tri">⚠</span>
