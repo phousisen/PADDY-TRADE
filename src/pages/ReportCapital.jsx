@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Users, Landmark } from "lucide-react";
+import { Plus } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
@@ -57,7 +58,7 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
   }
 
   return (
-    <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label className="mb-1 block text-xs text-slate-500">Location</label>
@@ -148,7 +149,7 @@ function AddLoanEntryForm({ locations, onAdd }) {
   }
 
   return (
-    <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label className="mb-1 block text-xs text-slate-500">Location</label>
@@ -298,83 +299,79 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
           <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
+
+      <SummaryStrip>
+        <SummaryCell label="Total Partner Capital" value={fmtRiel(totalCapital)} tone={totalCapital >= 0 ? "pos" : "neg"} />
+        <SummaryCell label="Total Bank Loans Outstanding" value={fmtRiel(totalOutstandingLoans)} tone={totalOutstandingLoans > 0 ? "neg" : "pos"} />
+      </SummaryStrip>
+
       <div className="mb-8">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-              <p className="flex items-center gap-1.5 text-xs text-slate-400"><Users size={12} /> Total Partner Capital</p>
-              <p className={`text-xl font-bold ${totalCapital >= 0 ? "text-slate-800" : "text-rose-600"}`}>{fmtRiel(totalCapital)}</p>
-            </div>
-          </div>
+        <div className="mb-3 flex justify-end">
           <AddCapitalEntryForm locations={locations} partners={partners} onAddPartner={addPartner} onAdd={addCapitalEntry} />
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
+        <TableCard title="Partner Capital">
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Partner</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Contributed</th>
-                <th className="px-5 py-3 font-medium">Withdrawn</th>
-                <th className="px-5 py-3 font-medium">Net Capital</th>
+              <tr>
+                <Th>Partner</Th>
+                <Th>Location</Th>
+                <Th num>Contributed</Th>
+                <Th num>Withdrawn</Th>
+                <Th num>Net Capital</Th>
               </tr>
             </thead>
             <tbody>
               {capByPartner.map((r) => (
-                <tr key={`${r.name}-${r.location}`} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 font-medium text-slate-700">{r.name}</td>
-                  <td className="px-5 py-3 text-slate-600">{r.location}</td>
-                  <td className="px-5 py-3 text-emerald-600">{fmtRiel(r.contributed)}</td>
-                  <td className="px-5 py-3 text-rose-600">{fmtRiel(r.withdrawn)}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.net)}</td>
-                </tr>
+                <Tr key={`${r.name}-${r.location}`}>
+                  <Td name>{r.name}</Td>
+                  <Td>{r.location}</Td>
+                  <Td num className="!text-brand-700">{fmtRiel(r.contributed)}</Td>
+                  <Td num className="!text-rose-600">{fmtRiel(r.withdrawn)}</Td>
+                  <Td num className="!font-semibold !text-slate-900">{fmtRiel(r.net)}</Td>
+                </Tr>
               ))}
-              {loading && capByPartner.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {capByPartner.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No partner capital recorded yet.</td></tr>}
+              {loading && capByPartner.length === 0 && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+              {capByPartner.length === 0 && !loading && !loadError && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No partner capital recorded yet.</td></Tr>}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        </TableCard>
       </div>
 
       <div>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-            <p className="flex items-center gap-1.5 text-xs text-slate-400"><Landmark size={12} /> Total Bank Loans Outstanding</p>
-            <p className={`text-xl font-bold ${totalOutstandingLoans > 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtRiel(totalOutstandingLoans)}</p>
-          </div>
+        <div className="mb-3 flex justify-end">
           <AddLoanEntryForm locations={locations} onAdd={addLoanEntry} />
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-          <table className="w-full text-sm">
+        <TableCard title="Bank Loans">
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Bank / Lender</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Borrowed</th>
-                <th className="px-5 py-3 font-medium">Repaid</th>
-                <th className="px-5 py-3 font-medium">Outstanding</th>
+              <tr>
+                <Th>Bank / Lender</Th>
+                <Th>Location</Th>
+                <Th num>Borrowed</Th>
+                <Th num>Repaid</Th>
+                <Th num>Outstanding</Th>
               </tr>
             </thead>
             <tbody>
               {loansByLender.map((r) => (
-                <tr key={`${r.name}-${r.location}`} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 font-medium text-slate-700">{r.name}</td>
-                  <td className="px-5 py-3 text-slate-600">{r.location}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmtRiel(r.borrowed)}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmtRiel(r.repaid)}</td>
-                  <td className={`px-5 py-3 font-medium ${r.outstanding > 0 ? "text-rose-600" : "text-slate-800"}`}>{fmtRiel(r.outstanding)}</td>
-                </tr>
+                <Tr key={`${r.name}-${r.location}`}>
+                  <Td name>{r.name}</Td>
+                  <Td>{r.location}</Td>
+                  <Td num>{fmtRiel(r.borrowed)}</Td>
+                  <Td num>{fmtRiel(r.repaid)}</Td>
+                  <Td num className={r.outstanding > 0 ? "!text-rose-600 !font-semibold" : "!font-semibold !text-slate-900"}>{fmtRiel(r.outstanding)}</Td>
+                </Tr>
               ))}
-              {loading && loansByLender.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {loansByLender.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No bank loans recorded yet.</td></tr>}
+              {loading && loansByLender.length === 0 && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+              {loansByLender.length === 0 && !loading && !loadError && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No bank loans recorded yet.</td></Tr>}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        </TableCard>
       </div>
 
-      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+      <div className="mt-5 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
         These totals feed directly into the Balance Sheet's Equity (Partner Capital) and Liabilities (Bank Loans) lines.
       </div>
     </div>
