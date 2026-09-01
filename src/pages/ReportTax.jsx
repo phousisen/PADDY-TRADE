@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ReceiptText } from "lucide-react";
 import { api } from "../api.js";
+import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -42,66 +43,50 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
   return (
     <div>
       {loadError && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] text-rose-600">
           <span>{loadError}</span>
           <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
-      {/* [2026-08-31] Same fix as Dashboard's KPI row — stacks on phone
-          instead of squeezing 3 across, unchanged on tablet/desktop. */}
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Output Tax (collected on sales)</p>
-          <p className="text-2xl font-bold text-emerald-600">{fmtRiel(outputTax)}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">Input Tax (paid on purchases)</p>
-          <p className="text-2xl font-bold text-slate-700">{fmtRiel(inputTax)}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-400">{netPayable >= 0 ? "Net Tax Payable" : "Net Tax Refundable"}</p>
-          <p className={`text-2xl font-bold ${netPayable >= 0 ? "text-rose-600" : "text-emerald-600"}`}>{fmtRiel(Math.abs(netPayable))}</p>
-        </div>
-      </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-        <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
-          <ReceiptText size={16} className="text-brand-600" />
-          <h3 className="font-semibold text-slate-700">Taxable Transactions</h3>
-        </div>
-        <table className="w-full text-sm">
+      <SummaryStrip>
+        <SummaryCell label="Output Tax (collected on sales)" value={fmtRiel(outputTax)} tone="pos" />
+        <SummaryCell label="Input Tax (paid on purchases)" value={fmtRiel(inputTax)} />
+        <SummaryCell
+          label={netPayable >= 0 ? "Net Tax Payable" : "Net Tax Refundable"}
+          value={fmtRiel(Math.abs(netPayable))}
+          tone={netPayable >= 0 ? "neg" : "pos"}
+        />
+      </SummaryStrip>
+
+      <TableCard title="Taxable Transactions" right={<ReceiptText size={14} className="text-slate-300" />}>
+        <Table>
           <thead>
-            <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-              <th className="px-5 py-3 font-medium">Date</th>
-              <th className="px-3 py-3 font-medium">Receipt</th>
-              <th className="px-3 py-3 font-medium">Type</th>
-              <th className="px-3 py-3 font-medium">Party</th>
-              <th className="px-3 py-3 font-medium">Subtotal</th>
-              <th className="px-3 py-3 font-medium">Rate</th>
-              <th className="px-3 py-3 font-medium">Tax</th>
-              <th className="px-3 py-3 font-medium">Total</th>
+            <tr>
+              <Th>Date</Th><Th>Receipt</Th><Th>Type</Th><Th>Party</Th>
+              <Th num>Subtotal</Th><Th num>Rate</Th><Th num>Tax</Th><Th num>Total</Th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((t) => (
-              <tr key={t.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                <td className="px-5 py-3 text-slate-500">{t.tx_date}</td>
-                <td className="px-3 py-3 font-medium text-slate-700">{t.code}</td>
-                <td className="px-3 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t.type}</span></td>
-                <td className="px-3 py-3 text-slate-700">{t.partyName}</td>
-                <td className="px-3 py-3 text-slate-600">{fmtRiel(t.amount)}</td>
-                <td className="px-3 py-3 text-slate-600">{t.tax_rate}%</td>
-                <td className="px-3 py-3 text-slate-700">{fmtRiel(t.tax_amount)}</td>
-                <td className="px-3 py-3 font-medium text-slate-800">{fmtRiel(t.total_with_tax)}</td>
-              </tr>
+              <Tr key={t.id}>
+                <Td>{t.tx_date}</Td>
+                <Td name>{t.code}</Td>
+                <Td><span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${t.type === "BUY" ? "bg-brand-50 text-brand-700" : "bg-rose-50 text-rose-600"}`}>{t.type}</span></Td>
+                <Td>{t.partyName}</Td>
+                <Td num>{fmtRiel(t.amount)}</Td>
+                <Td num>{t.tax_rate}%</Td>
+                <Td num>{fmtRiel(t.tax_amount)}</Td>
+                <Td num name>{fmtRiel(t.total_with_tax)}</Td>
+              </Tr>
             ))}
-            {loading && sorted.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-            {sorted.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No taxable transactions recorded yet.</td></tr>}
+            {loading && sorted.length === 0 && <Tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+            {sorted.length === 0 && !loading && !loadError && <Tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No taxable transactions recorded yet.</td></Tr>}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableCard>
 
-      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+      <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
         Only transactions with "Apply VAT" checked at entry show up here. Tax rates are fully editable per transaction — nothing is assumed automatically.
       </div>
     </div>
