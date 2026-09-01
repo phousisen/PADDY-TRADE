@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+import { TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 
@@ -49,73 +50,67 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
   return (
     <div>
       {loadError && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] text-rose-600">
           <span>{loadError}</span>
           <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
       <div className="mb-4 flex justify-end gap-2">
         {[{ v: "summary", l: "Summary" }, { v: "detail", l: "Movement Detail" }].map((o) => (
-          <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+          <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-[13.5px] ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-        {view === "summary" ? (
-          <table className="w-full text-sm">
+      {view === "summary" ? (
+        <TableCard>
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Current Stock (kg)</th>
-                <th className="px-5 py-3 font-medium">Capacity (kg)</th>
-                <th className="px-5 py-3 font-medium">% Full</th>
+              <tr>
+                <Th>Location</Th><Th num>Current Stock (kg)</Th><Th num>Capacity (kg)</Th><Th num>% Full</Th>
               </tr>
             </thead>
             <tbody>
               {stations.map((s) => {
                 const pct = Math.round((Number(s.current_stock_kg) / Number(s.capacity_kg)) * 100);
                 return (
-                  <tr key={s.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                    <td className="px-5 py-3 font-medium text-slate-700">{s.name}</td>
-                    <td className="px-5 py-3 text-slate-700">{fmt2(s.current_stock_kg)}</td>
-                    <td className="px-5 py-3 text-slate-600">{fmt2(s.capacity_kg)}</td>
-                    <td className="px-5 py-3 text-slate-600">{pct}%</td>
-                  </tr>
+                  <Tr key={s.id}>
+                    <Td name>{s.name}</Td>
+                    <Td num>{fmt2(s.current_stock_kg)}</Td>
+                    <Td num>{fmt2(s.capacity_kg)}</Td>
+                    <Td num>{pct}%</Td>
+                  </Tr>
                 );
               })}
-              {loading && stations.length === 0 && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {stations.length === 0 && !loading && !loadError && <tr><td colSpan={4} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>}
+              {loading && stations.length === 0 && <Tr><td colSpan={4} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+              {stations.length === 0 && !loading && !loadError && <Tr><td colSpan={4} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No locations visible to your account.</td></Tr>}
             </tbody>
-          </table>
-        ) : (
-          <table className="w-full text-sm">
+          </Table>
+        </TableCard>
+      ) : (
+        <TableCard>
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Receipt</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Type</th>
-                <th className="px-5 py-3 font-medium">Change (kg)</th>
-                <th className="px-5 py-3 font-medium">Running Balance</th>
+              <tr>
+                <Th>Date</Th><Th>Receipt</Th><Th>Location</Th><Th>Type</Th><Th num>Change (kg)</Th><Th num>Running Balance</Th>
               </tr>
             </thead>
             <tbody>
               {movements.map((m) => (
-                <tr key={m.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 text-slate-500">{m.tx_date}</td>
-                  <td className="px-5 py-3 font-medium text-slate-700">{m.code}</td>
-                  <td className="px-5 py-3 text-slate-600">{m.stationName}</td>
-                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${m.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{m.type}</span></td>
-                  <td className={`px-5 py-3 font-medium ${m.delta >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{m.delta >= 0 ? "+" : ""}{fmt2(m.delta)}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmt2(m.runningBalance)}</td>
-                </tr>
+                <Tr key={m.id}>
+                  <Td>{m.tx_date}</Td>
+                  <Td name>{m.code}</Td>
+                  <Td>{m.stationName}</Td>
+                  <Td><span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${m.type === "BUY" ? "bg-brand-50 text-brand-700" : "bg-rose-50 text-rose-600"}`}>{m.type}</span></Td>
+                  <Td num className={m.delta >= 0 ? "!text-brand-700 !font-semibold" : "!text-rose-600 !font-semibold"}>{m.delta >= 0 ? "+" : ""}{fmt2(m.delta)}</Td>
+                  <Td num>{fmt2(m.runningBalance)}</Td>
+                </Tr>
               ))}
-              {loading && movements.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {movements.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">No stock movements yet.</td></tr>}
+              {loading && movements.length === 0 && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+              {movements.length === 0 && !loading && !loadError && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No stock movements yet.</td></Tr>}
             </tbody>
-          </table>
-        )}
-      </div>
+          </Table>
+        </TableCard>
+      )}
     </div>
   );
 }
