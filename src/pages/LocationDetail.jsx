@@ -86,10 +86,10 @@ export default function LocationDetail({ locationId, setPage }) {
   const combinedCapacity = useMemo(() => allLocations.reduce((s, l) => s + Number(l.capacity_kg), 0), [allLocations]);
 
   // Today's weighted-average Buy price at this station — same two numbers
-  // as the Dashboard's "Total Buy (Today)" card — used only to prefill
-  // AdjustStockModal's price field; null when nothing's been bought here
-  // yet today. Single-location version of StockInventory.jsx's
-  // todayAvgBuyPriceByLocation, since txs here is already scoped to one.
+  // as the Dashboard's "Total Buy (Today)" card — used to prefill
+  // AdjustStockModal's price field. Single-location version of
+  // StockInventory.jsx's todayAvgBuyPriceByLocation, since txs here is
+  // already scoped to one.
   const todayAvgBuyPrice = useMemo(() => {
     if (isCombined) return null;
     const todayStr = cambodiaDateStr();
@@ -102,6 +102,34 @@ export default function LocationDetail({ locationId, setPage }) {
     }
     return kg > 0 ? amt / kg : null;
   }, [txs, isCombined]);
+
+  // [2026-09-01] Fallback for when this station hasn't bought anything YET
+  // today — same weighted-average calculation, widened to the last 30 days
+  // — so a stock reset done before the day's first Buy still gets a
+  // suggested price instead of a blank field. Single-location version of
+  // StockInventory.jsx's recentAvgBuyPriceByLocation.
+  const recentAvgBuyPrice = useMemo(() => {
+    if (isCombined) return null;
+    const cutoff = new Date(getAccurateNow());
+    cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffStr = cambodiaDateStr(cutoff);
+    let kg = 0, amt = 0;
+    for (const tx of txs) {
+      if ((tx.hq_status || "processing") === "cancelled") continue;
+      if (tx.type !== "BUY" || tx.tx_date < cutoffStr) continue;
+      kg += Number(tx.quantity_kg) || 0;
+      amt += Number(tx.total_with_tax ?? tx.amount) || 0;
+    }
+    return kg > 0 ? amt / kg : null;
+  }, [txs, isCombined]);
+
+  // What AdjustStockModal actually receives — see StockInventory.jsx's
+  // priceSuggestionByLocation for the same logic across every station.
+  const priceSuggestion = useMemo(() => {
+    if (todayAvgBuyPrice != null) return { price: todayAvgBuyPrice, source: "today" };
+    if (recentAvgBuyPrice != null) return { price: recentAvgBuyPrice, source: "recent" };
+    return null;
+  }, [todayAvgBuyPrice, recentAvgBuyPrice]);
 
   async function submitAdjustment({ newStockKg, reason, note, pricePerKg }) {
     const previousStockKg = Number(location.current_stock_kg) || 0;
@@ -325,7 +353,7 @@ export default function LocationDetail({ locationId, setPage }) {
       {adjustOpen && !isCombined && location && (
         <AdjustStockModal
           station={location}
-          todayAvgBuyPrice={todayAvgBuyPrice}
+          priceSuggestion={priceSuggestion}
           t={t}
           isAdmin={isAdmin}
           onClose={() => setAdjustOpen(false)}
