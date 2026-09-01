@@ -1,10 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, X, Eye } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
+
+// [2026-09-01] "Ticket Queue" design (Option B) — status carried by a
+// colored left edge on each row/card instead of a filled pill background,
+// used on the list rows, the status label itself, and the Review modal's
+// own left edge (see LEFT_BORDER below) so the popup doesn't feel like a
+// different app from the row that opened it.
+const LEFT_BORDER = { pending: "border-l-amber-500", approved: "border-l-brand-600", rejected: "border-l-rose-500" };
+const STATUS_TEXT = { pending: "text-amber-700", approved: "text-brand-700", rejected: "text-rose-600" };
+const STATUS_DOT = { pending: "bg-amber-500", approved: "bg-brand-600", rejected: "bg-rose-500" };
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -31,6 +40,56 @@ function fmtCambodiaDateTime(iso) {
 function fmtCambodiaDate(iso) {
   if (!iso) return "—";
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso));
+}
+
+// [2026-09-01] Powers the redesigned list's "What They're Trying to
+// Change" column — a compact, at-a-glance summary of ONLY the fields that
+// actually differ, computed the exact same way ReviewRequestModal's own
+// DiffRow table already does (same field list, same proposedAmount
+// formula), just condensed to a few lines instead of a full table. Kept as
+// its own separate function rather than refactoring the modal to share it,
+// so a change here can never affect the modal's already-working approve/
+// reject logic. Returns null for an older-style, reason-only request (no
+// proposed_data at all) so the caller can render the reason text instead.
+function summarizeChanges(req) {
+  const tx = req.transactions || {};
+  const p = req.proposed_data;
+  if (!p) return null;
+  const isBuy = tx.type === "BUY";
+  const fields = [
+    { label: isBuy ? "Seller" : "Buyer", cur: req.currentPartyName, next: p.partyName },
+    { label: "Weight (kg)", cur: fmt2(tx.quantity_kg), next: fmt2(p.quantityKg) },
+    { label: "Price/kg", cur: fmtRiel(tx.price_per_kg), next: fmtRiel(p.pricePerKg) },
+    ...(isBuy ? [{ label: "Quality Grade", cur: tx.quality_grade || "—", next: p.qualityGrade || "—" }] : []),
+    { label: "Payment Status", cur: tx.payment_status, next: p.paymentStatus },
+    { label: "VAT", cur: tx.tax_applicable ? `${tx.tax_rate}%` : "No", next: p.taxApplicable ? `${p.taxRate}%` : "No" },
+    { label: "Deduction (kg)", cur: fmt2(tx.deduction_kg), next: fmt2(p.deductionKg) },
+    ...(isBuy ? [{ label: "Staff/Carrying Fee", cur: fmtRiel(tx.staff_fee || 0), next: fmtRiel(p.staffFee || 0) }] : []),
+    { label: "Moisture/Mixture/Outthrow %", cur: `${tx.moisture_pct || 0}/${tx.mixture_pct || 0}/${tx.outthrow_pct || 0}`, next: `${p.moisturePct || 0}/${p.mixturePct || 0}/${p.outthrowPct || 0}` },
+    { label: "Car Plate", cur: tx.car_plate || "—", next: p.carPlate || "—" },
+    { label: "Truck/Driver Name", cur: tx.driver_name || "—", next: p.driverName || "—" },
+    { label: "Note", cur: tx.note || "—", next: p.note || "—" },
+  ];
+  const changed = fields.filter((f) => String(f.cur ?? "") !== String(f.next ?? ""));
+  // Same total-amount formula as ReviewRequestModal's own proposedAmount —
+  // surfaced here too since a price/weight/deduction/fee change often
+  // matters most as "how much does the total move," not just the raw
+  // field-by-field values.
+  const currentAmount = tx.amount;
+  const proposedAmount = Math.max(0, Math.max(0, (p.quantityKg || 0) - (p.deductionKg || 0)) * (p.pricePerKg || 0) - (isBuy ? (p.staffFee || 0) : 0));
+  if (Math.round(currentAmount) !== Math.round(proposedAmount)) {
+    changed.push({ label: "Total", cur: fmtRiel(currentAmount), next: fmtRiel(proposedAmount) });
+  }
+  return changed;
+}
+
+function StatusPill({ status, label }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-[12px] font-semibold ${STATUS_TEXT[status] || "text-slate-500"}`}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[status] || "bg-slate-400"}`} />
+      {label}
+    </span>
+  );
 }
 
 function DiffRow({ label, current, proposed }) {
@@ -94,9 +153,13 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+      <div className={`max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border-l-[3px] bg-white p-5 shadow-xl ${LEFT_BORDER[req.status] || "border-l-slate-300"}`}>
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Eye size={16} className="text-brand-600" /> Review Change Request</h3>
-        <p className="mb-3 text-xs text-slate-400">{req.transactionCode} · Requested by {req.requestedByName} · {fmtCambodiaDateTime(req.created_at)}</p>
+        <p className="mb-3 text-xs text-slate-400">
+          {req.transactions?.paper_ticket_no || req.transactionCode}
+          {req.transactions?.paper_ticket_no && <span className="text-slate-300"> ({req.transactionCode})</span>}
+          {" "}· Requested by {req.requestedByName} · {fmtCambodiaDateTime(req.created_at)}
+        </p>
 
         <div className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
           <span className="font-medium text-slate-500">Reason: </span>{req.reason}
@@ -157,6 +220,17 @@ export default function ChangeRequests() {
 
   async function load() { setRows(await api.getChangeRequests()); }
   useEffect(() => { load(); }, []);
+
+  // Same "this month" basis Stock Loss and every other summary strip in
+  // the app uses — grouped by the request's own date (created_at), since
+  // change_requests doesn't keep a separate resolved-on timestamp.
+  const thisMonthStr = cambodiaDateStr().slice(0, 7);
+  const counts = useMemo(() => {
+    const pending = rows.filter((r) => r.status === "pending").length;
+    const approved = rows.filter((r) => r.status === "approved" && cambodiaDateStr(new Date(r.created_at)).startsWith(thisMonthStr)).length;
+    const rejected = rows.filter((r) => r.status === "rejected" && cambodiaDateStr(new Date(r.created_at)).startsWith(thisMonthStr)).length;
+    return { pending, approved, rejected };
+  }, [rows, thisMonthStr]);
 
   async function approveAndApply(req) {
     const tx = req.transactions;
@@ -243,42 +317,53 @@ export default function ChangeRequests() {
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={t("requests_title")} subtitle={t("requests_subtitle")} />
-      <main className="flex-1 overflow-y-auto p-6">
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">{t("col_id")}</th>
-                <th className="px-3 py-3 font-medium">{t("requested_by")}</th>
-                <th className="px-3 py-3 font-medium">{t("requested_on")}</th>
-                <th className="px-3 py-3 font-medium">{t("reason")}</th>
-                <th className="px-3 py-3 font-medium">Redo?</th>
-                <th className="px-3 py-3 font-medium">{t("col_status")}</th>
-                <th className="px-3 py-3 font-medium">{t("col_action")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-b border-slate-50 last:border-0 align-top hover:bg-slate-50/60">
-                  <td className="px-5 py-3 font-medium text-slate-700">{r.transactionCode}</td>
-                  <td className="px-3 py-3 text-slate-600">{r.requestedByName}</td>
-                  <td className="px-3 py-3 text-slate-500">{fmtCambodiaDate(r.created_at)}</td>
-                  <td className="px-3 py-3 max-w-xs text-slate-600">{r.reason}</td>
-                  <td className="px-3 py-3 text-xs text-slate-400">{r.proposed_data ? "Yes" : "Reason only"}</td>
-                  <td className="px-3 py-3">
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${r.status === "pending" ? "bg-amber-50 text-amber-600" : r.status === "approved" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t(`status_${r.status}`)}</span>
-                  </td>
-                  <td className="px-3 py-3">
-                    {r.status === "pending" ? (
-                      <button onClick={() => setReviewReq(r)} className="flex items-center gap-1 rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700"><Eye size={12} /> Review</button>
-                    ) : <span className="text-xs text-slate-300">—</span>}
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_requests")}</td></tr>}
-            </tbody>
-          </table>
+      <main className="flex-1 overflow-y-auto bg-paper p-6">
+        <div className="mb-5 flex flex-wrap items-baseline gap-x-5 gap-y-1 px-0.5 text-[13px] text-slate-400">
+          <span><b className={`font-semibold tabular-nums ${counts.pending > 0 ? "text-amber-700" : "text-slate-900"}`}>{counts.pending}</b> pending</span>
+          <span className="text-slate-300">·</span>
+          <span><b className="font-semibold tabular-nums text-slate-900">{counts.approved}</b> approved this month</span>
+          <span className="text-slate-300">·</span>
+          <span><b className="font-semibold tabular-nums text-slate-900">{counts.rejected}</b> rejected this month</span>
         </div>
+
+        {rows.length === 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t("no_requests")}</div>
+        )}
+
+        {rows.map((r) => {
+          const tx = r.transactions || {};
+          const ticketNo = tx.paper_ticket_no;
+          const changes = summarizeChanges(r);
+          const extra = changes && changes.length > 1 ? changes.length - 1 : 0;
+          return (
+            <div key={r.id} className={`mb-2.5 flex items-center gap-4 rounded-lg border border-slate-200 border-l-[3px] bg-white px-4 py-3.5 hover:shadow-sm ${LEFT_BORDER[r.status] || "border-l-slate-300"}`}>
+              <div className="w-20 shrink-0">
+                <div className={`text-[15px] font-bold tabular-nums leading-tight ${ticketNo ? "text-slate-900" : "text-[12px] font-semibold text-slate-400"}`}>{ticketNo || "no ticket #"}</div>
+                {tx.type && <div className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-400">{tx.type}</div>}
+              </div>
+              <div className="min-w-0 flex-1">
+                {changes === null ? (
+                  <p className="truncate text-[13.5px] italic text-slate-600">{r.reason}</p>
+                ) : changes.length === 0 ? (
+                  <p className="text-[13.5px] text-slate-400">No field differences on file</p>
+                ) : (
+                  <p className="truncate text-[13.5px] text-slate-900">
+                    <span className="font-medium text-slate-500">{changes[0].label}:</span>{" "}
+                    {changes[0].cur} <span className="mx-1 text-slate-300">→</span> <span className="font-semibold">{changes[0].next}</span>
+                    {extra > 0 && <span className="ml-1.5 text-[12px] font-normal text-slate-400">+{extra} more field{extra === 1 ? "" : "s"}</span>}
+                  </p>
+                )}
+                <p className="mt-0.5 truncate text-[12px] text-slate-400">{r.requestedByName} · {fmtCambodiaDate(r.created_at)}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-4">
+                <StatusPill status={r.status} label={t(`status_${r.status}`)} />
+                {r.status === "pending" ? (
+                  <button onClick={() => setReviewReq(r)} className="flex items-center gap-1 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"><Eye size={12} /> Review</button>
+                ) : <span className="px-1 text-xs text-slate-300">—</span>}
+              </div>
+            </div>
+          );
+        })}
       </main>
       {reviewReq && (
         <ReviewRequestModal
