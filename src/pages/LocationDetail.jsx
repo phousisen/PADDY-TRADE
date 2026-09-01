@@ -327,6 +327,7 @@ export default function LocationDetail({ locationId, setPage }) {
           station={location}
           todayAvgBuyPrice={todayAvgBuyPrice}
           t={t}
+          isAdmin={isAdmin}
           onClose={() => setAdjustOpen(false)}
           onSubmit={submitAdjustment}
         />
