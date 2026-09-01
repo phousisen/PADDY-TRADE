@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Search, Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut } from "lucide-react";
+import { Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { onSyncStatusChange } from "../offlineQueue.js";
@@ -435,15 +435,14 @@ export default function Topbar({ title, subtitle }) {
   const { profile, logout } = useAuth();
   return (
     <>
-      {/* [2026-08-31] Mobile fix: the search box (w-64) + profile block used
-          to always render, which left almost no room for the title on a
-          phone-width screen and forced it to wrap onto 2-3 lines, pushing
-          into the content below. Below md, both are hidden (the search
-          input still has no onChange — that part's unaffected) and the
-          title gets `truncate` so it stays on one line instead of wrapping.
-          At md+ this renders exactly as before: same search box, same
-          profile block, nothing about the PC layout changes.
-          [2026-09-01] The bell itself is no longer purely decorative — see
+      {/* [2026-08-31] Mobile fix: the title gets `truncate` so it stays on
+          one line instead of wrapping into the content below.
+          [2026-09-01] Removed the header search box entirely — it never
+          did anything (no onChange, wired to nothing, since before this
+          comment's own history). A real, working search now lives on the
+          one page it's actually needed — Transactions List — instead of a
+          fake global one here that searched nothing at all.
+          The bell itself is no longer purely decorative — see
           NotificationBell above — so it's intentionally left visible at every
           width, mobile included, rather than folded under the md breakpoint
           with the rest; something needing attention should be reachable from
@@ -454,10 +453,6 @@ export default function Topbar({ title, subtitle }) {
           {subtitle && <p className="mt-0.5 truncate text-xs text-slate-400">{subtitle}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-3 md:gap-4">
-          <div className="relative hidden md:block">
-            <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input type="text" placeholder={t("search_placeholder")} className="w-64 rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100" />
-          </div>
           <NotificationBell />
           <AccountMenu profile={profile} t={t} logout={logout} />
         </div>
