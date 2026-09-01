@@ -31,7 +31,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
 
   const primaryTabs = [
     { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
-    { id: "tickets", label: "Tickets", icon: Scale },
+    { id: "tickets", label: t("nav_tickets"), icon: Scale },
     { id: "transactions", label: t("nav_transactions"), icon: Receipt },
     { id: "suppliers", label: t("nav_suppliers"), icon: Users },
   ];
@@ -41,15 +41,15 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
     ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
     { id: "stock", label: t("nav_stock"), icon: Warehouse },
     ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
-    ...(canViewReports ? [{ id: "expenses", label: "Expenses", icon: Wallet }] : []),
+    ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet }] : []),
   ];
 
   const systemItems = isAdmin
     ? [
         { id: "stations", label: t("nav_stations"), icon: MapPin },
-        { id: "station-health", label: "Station Health", icon: Activity },
-        { id: "users", label: "Users", icon: UserCog },
-        { id: "roles", label: "Roles", icon: ShieldCheck },
+        { id: "station-health", label: t("nav_station_health"), icon: Activity },
+        { id: "users", label: t("nav_users"), icon: UserCog },
+        { id: "roles", label: t("nav_roles"), icon: ShieldCheck },
         { id: "settings", label: t("nav_settings"), icon: Settings },
       ]
     : [];
@@ -108,7 +108,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
           className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold ${isMoreActive || moreOpen ? "bg-white/10 text-white" : "text-brand-300/70"}`}
         >
           <Menu size={22} className={isMoreActive || moreOpen ? "text-brand-400" : ""} />
-          More
+          {t("more_tab")}
         </button>
       </nav>
 
@@ -145,7 +145,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
 
             {systemItems.length > 0 && (
               <>
-                <p className="mb-1 mt-5 px-3 text-[10px] font-semibold uppercase tracking-wider text-brand-400">System Management</p>
+                <p className="mb-1 mt-5 px-3 text-[10px] font-semibold uppercase tracking-wider text-brand-400">{t("system_management")}</p>
                 <div className="flex flex-col gap-0.5">
                   {systemItems.map((item) => <MenuRow key={item.id} item={item} />)}
                 </div>
@@ -156,7 +156,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
               <button onClick={() => setLang(lang === "en" ? "km" : "en")} className="flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm text-brand-200/85">
                 <Languages size={18} className="shrink-0" />
                 <span className="flex-1">{lang === "en" ? "English" : "ខ្មែរ"}</span>
-                <span className="text-xs text-brand-400">{lang === "en" ? "Switch to KM" : "Switch to EN"}</span>
+                <span className="text-xs text-brand-400">{t(lang === "en" ? "switch_to_km" : "switch_to_en")}</span>
               </button>
               <button onClick={logout} className="flex items-center gap-3 rounded-lg px-3 py-3 text-left text-sm text-brand-200/85">
                 <LogOut size={18} className="shrink-0" />
