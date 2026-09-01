@@ -435,6 +435,7 @@ export default function StockInventory() {
           station={adjustStation}
           todayAvgBuyPrice={todayAvgBuyPriceByLocation[adjustStation.id] ?? null}
           t={t}
+          isAdmin={isAdmin}
           onClose={() => setAdjustStation(null)}
           onSubmit={submitAdjustment}
         />
