@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   LayoutGrid, Scale, Receipt, Users, Menu, X, Warehouse, ShoppingCart,
   MapPin, BarChart3, Settings, Languages, ClipboardList, LogOut, UserCog,
-  ShieldCheck,
+  ShieldCheck, Wallet,
 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -20,10 +20,14 @@ import { useAuth } from "../AuthContext.jsx";
 export default function MobileNav({ page, setPage, pendingRequests }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { lang, setLang, t } = useLanguage();
-  const { profile, logout } = useAuth();
+  const { profile, hasPermission, logout } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isStaff = profile?.role === "staff";
   const isOwner = !!profile?.isOwner;
+  // Same rule as App.jsx/Sidebar.jsx's canViewReports — a Staff account
+  // granted "View Financial Reports" via Settings -> Roles should see
+  // Reports/Expenses here too, not just on desktop.
+  const canViewReports = !isStaff || hasPermission("view_reports");
 
   const primaryTabs = [
     { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
@@ -36,7 +40,8 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
     { id: "buyers", label: t("nav_buyers"), icon: ShoppingCart },
     ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
     { id: "stock", label: t("nav_stock"), icon: Warehouse },
-    ...(!isStaff ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
+    ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
+    ...(canViewReports ? [{ id: "expenses", label: "Expenses", icon: Wallet }] : []),
   ];
 
   const systemItems = isAdmin
