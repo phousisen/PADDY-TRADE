@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Printer, X, ArrowRight, Ban, Check, Search, Pencil } from "lucide-react";
+import { Plus, Printer, X, ArrowRight, Ban, Check, Search, Pencil, RotateCcw } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
@@ -1653,6 +1653,60 @@ function ReopenTicketModal({ ticket, onClose, onReopened }) {
   );
 }
 
+// ---- Restore a wrongly-declined ticket (HQ Admin only) -------------------
+//
+// [2026-09-01] For when Decline was tapped by mistake or the reason turned
+// out not to hold up. Same shape as ReopenTicketModal above, one stage
+// earlier: sends the ticket back to "weighed_in" so it reappears on the
+// waiting board, ready to be priced (or declined again) correctly. See
+// api.js's restoreTicket for exactly what's reset.
+function RestoreTicketModal({ ticket, onClose, onRestored }) {
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const { session } = useAuth();
+
+  async function submit() {
+    if (!reason.trim()) { setError("Please note why this decline is being reversed — it's kept in the audit log."); return; }
+    setError("");
+    setSaving(true);
+    try {
+      await api.restoreTicket(ticket.id, { userId: session.user.id, reason: reason.trim() });
+      onRestored();
+    } catch (e) {
+      setError(e.message || "Couldn't restore this ticket — check the connection and try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal title={`Restore Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
+      <p className="mb-3 text-sm text-slate-500">
+        Use this when a ticket was declined by mistake. This clears the decline reason and puts
+        {" "}{ticket.code} back in the waiting queue with only its original weigh-in kept, ready to be
+        priced (or declined again) correctly.
+      </p>
+      {ticket.price_note && (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+          Current decline reason: <span className="font-medium text-slate-700">{ticket.price_note}</span>
+        </div>
+      )}
+      <label className={labelCls}>Reason (required)</label>
+      <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+        placeholder="e.g. Declined by mistake — this load actually passed quality check"
+        className={`${inputCls} resize-none`} />
+      {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
+      <div className="mt-4 flex justify-end gap-2">
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+          {saving ? "Restoring…" : "Restore Ticket"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 // ---- Interim slip (printed at weigh-in, mirrors the paper queue ticket) ------
 
 // Final approved design [2026-08-25]: bordered/lines-only monochrome layout
@@ -1823,7 +1877,7 @@ export default function WeighingTickets() {
   // silently shadow the translation function and break every t("...") call
   // inside those blocks.
   const { t: tr } = useLanguage();
-  const { profile, session } = useAuth();
+  const { profile, session, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   const [locations, setLocations] = useState([]);
   const [locationId, setLocationId] = useState("");
@@ -1847,13 +1901,30 @@ export default function WeighingTickets() {
   const [finalizedTickets, setFinalizedTickets] = useState([]);
   const [loadingFinalized, setLoadingFinalized] = useState(false);
   const [reopenTicketRow, setReopenTicketRow] = useState(null);
+  // Declined tab — HQ Admin only, for bringing back a wrongly-declined
+  // ticket (see RestoreTicketModal above). Declined tickets already live
+  // in the main `tickets`/`grouped.declined` list (declined IS one of
+  // ALL_STAGE_IDS), so unlike reopenTicketRow's finalized-ticket lookup
+  // this doesn't need its own fetch — just which row's modal is open.
+  const [restoreTicketRow, setRestoreTicketRow] = useState(null);
 
-  const effectiveLocationId = isAdmin ? locationId : profile?.location_id;
+  // [2026-09-01] `|| isViewOnly` — a view-only account (see
+  // viewOnlyGuard.js) reaches this page with `profile.role` still "staff"
+  // and its own custom role set to "All Locations" scope, which already
+  // leaves `profile.location_id` null (see AddUserModal's
+  // `locationForRole`) — so this would have happened to work anyway
+  // (`effectiveLocationId` below falls through to null either way, which
+  // means "no location filter" both to the fetch and to the RLS policies
+  // actually enforcing what this account can see). Made explicit instead
+  // of relying on that coincidence, since it's also what lets the "All
+  // Locations" picker further down actually respond to a specific
+  // location being chosen, the same way it already does for isAdmin.
+  const effectiveLocationId = (isAdmin || isViewOnly) ? locationId : profile?.location_id;
 
   useEffect(() => {
     api.getLocations().then((locs) => {
       setLocations(locs);
-      if (!isAdmin && profile?.location_id) setLocationId(profile.location_id);
+      if (!isAdmin && !isViewOnly && profile?.location_id) setLocationId(profile.location_id);
     });
     // Starts trying to send any queued offline changes the moment the
     // connection is back (plus a 15s safety check), and keeps the local
@@ -1895,15 +1966,16 @@ export default function WeighingTickets() {
 
   // Loads the Finalized tab's list only when it's actually open — no point
   // fetching 30 finished tickets on every page load when almost nobody
-  // needs this tab most of the time. Admin-only, same as the tab itself.
+  // needs this tab most of the time. Admin (or view-only) only, same as
+  // the tab itself.
   useEffect(() => {
-    if (tab !== "finalized" || !isAdmin) return;
+    if (tab !== "finalized" || !(isAdmin || isViewOnly)) return;
     setLoadingFinalized(true);
     api.getTickets({ locationId: effectiveLocationId || undefined, stages: ["finalized"], limit: 30 })
       .then(setFinalizedTickets)
       .catch(() => setFinalizedTickets([]))
       .finally(() => setLoadingFinalized(false));
-  }, [tab, isAdmin, effectiveLocationId]);
+  }, [tab, isAdmin, isViewOnly, effectiveLocationId]);
 
   // Once a sync round finishes with nothing left queued, refresh from the
   // server so friendly names (station, which staff member weighed it,
@@ -1959,7 +2031,7 @@ export default function WeighingTickets() {
               className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "declined" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
               {tr("wt_tab_declined")} <span className="text-xs opacity-75">{grouped.declined.length}</span>
             </button>
-            {isAdmin && (
+            {(isAdmin || isViewOnly) && (
               <button onClick={() => setTab("finalized")}
                 className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "finalized" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
                 {tr("wt_tab_finalized")}
@@ -1976,20 +2048,27 @@ export default function WeighingTickets() {
                 className="w-36 border-none bg-transparent text-sm outline-none placeholder:text-slate-400 sm:w-40"
               />
             </div>
-            {isAdmin && locations.length > 1 && (
+            {(isAdmin || isViewOnly) && locations.length > 1 && (
               <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
                 <option value="">{tr("all_locations")}</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             )}
-            <div className="flex items-center gap-2.5">
-              <button onClick={() => { setNewTicketType("BUY"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-brand-700">
-                <Plus size={16} /> {tr("buy")}
-              </button>
-              <button onClick={() => { setNewTicketType("SELL"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-rose-700">
-                <Plus size={16} /> {tr("sell")}
-              </button>
-            </div>
+            {/* [2026-09-01] A view-only account (see viewOnlyGuard.js) sees
+                the whole board but never these two — the api.js/
+                offlineQueue.js guard would also block the save if this were
+                somehow reached, this just keeps the screen honest about
+                what the account can actually do. */}
+            {!isViewOnly && (
+              <div className="flex items-center gap-2.5">
+                <button onClick={() => { setNewTicketType("BUY"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-brand-700">
+                  <Plus size={16} /> {tr("buy")}
+                </button>
+                <button onClick={() => { setNewTicketType("SELL"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-rose-700">
+                  <Plus size={16} /> {tr("sell")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
         {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">{tr("wt_hint_waiting")}</p>}
@@ -2026,9 +2105,11 @@ export default function WeighingTickets() {
                     <p className="text-slate-500">{tr("wt_weigh_in_short")} {fmt2(t.gross_kg)} kg · {tr("wt_weigh_out_short")} {fmt2(t.tare_kg)} kg</p>
                     {t.price_per_kg != null && <p className="text-slate-500">{tr("wt_price_short")} {fmtRiel(t.price_per_kg)}/kg</p>}
                   </div>
-                  <button onClick={() => setReopenTicketRow(t)} className="w-full rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
-                    {tr("wt_reopen_btn")}
-                  </button>
+                  {!isViewOnly && (
+                    <button onClick={() => setReopenTicketRow(t)} className="w-full rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
+                      {tr("wt_reopen_btn")}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -2063,7 +2144,7 @@ export default function WeighingTickets() {
                       <span className="text-xs text-slate-300">
                         {t.gross_at ? new Date(t.gross_at).toLocaleTimeString("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : ""}
                       </span>
-                      {tab === "waiting" && (
+                      {tab === "waiting" && !isViewOnly && (
                         <button onClick={() => setEditTicket(t)} className="text-slate-400 hover:text-brand-600" title="Edit ticket info"><Pencil size={14} /></button>
                       )}
                       <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={15} /></button>
@@ -2084,7 +2165,7 @@ export default function WeighingTickets() {
                     </div>
                   </div>
 
-                  {tab === "waiting" && (
+                  {tab === "waiting" && !isViewOnly && (
                     <div className="flex items-center gap-3">
                       <button onClick={() => setConfirmFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
                         {tr("wt_finish_btn")} <ArrowRight size={14} />
@@ -2095,6 +2176,15 @@ export default function WeighingTickets() {
                     </div>
                   )}
                   {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">{tr("wt_declined_prefix")} {t.price_note || tr("wt_no_reason")}</p>}
+                  {/* [2026-09-01] Restoring a wrongly-declined ticket is the
+                      same trust level as reopening a finalized one — HQ
+                      Admin only. See RestoreTicketModal above / api.js's
+                      restoreTicket for what it resets. */}
+                  {tab === "declined" && isAdmin && !isViewOnly && (
+                    <button onClick={() => setRestoreTicketRow(t)} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-brand-200 px-3 py-2 text-sm font-medium text-brand-600 hover:bg-brand-50">
+                      <RotateCcw size={14} /> Restore Ticket
+                    </button>
+                  )}
 
                   {/* Details line — everything that isn't needed to decide what to do
                       next, still one glance away: ticket code, product, station
@@ -2138,6 +2228,16 @@ export default function WeighingTickets() {
             // list — drop it immediately rather than waiting on a refetch.
             setFinalizedTickets((prev) => prev.filter((row) => row.id !== reopenTicketRow.id));
             setReopenTicketRow(null);
+            load();
+          }}
+        />
+      )}
+      {restoreTicketRow && (
+        <RestoreTicketModal
+          ticket={restoreTicketRow}
+          onClose={() => setRestoreTicketRow(null)}
+          onRestored={() => {
+            setRestoreTicketRow(null);
             load();
           }}
         />
