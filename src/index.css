@@ -216,6 +216,19 @@ input[type="number"] {
   #ticket-slip-root, #ticket-slip-root * {
     visibility: visible !important;
   }
+  /* [2026-09-01] The "NOT YET CONFIRMED SAVED" warning band
+     (Receipt.jsx's .verify-band, shown when a transaction hasn't been
+     confirmed synced within the ~7s wait — see finalizeTicketOffline in
+     offlineQueue.js) was originally printed onto the physical paper on
+     purpose, so whoever walked away holding it would see something was
+     unconfirmed even if only the paper survived. Per explicit request,
+     it no longer prints — it still shows on screen exactly as before
+     (this rule only applies under @media print), staff just won't see it
+     on the printed slip itself anymore. `display: none` (not
+     `visibility: hidden`) so it doesn't reserve blank space on the page. */
+  .verify-band {
+    display: none !important;
+  }
   /* ===================================================================
      Weigh-In Slip (TicketSlip, in WeighingTickets.jsx) — bordered
      lines-only monochrome design, approved [2026-08-25]: logo +
