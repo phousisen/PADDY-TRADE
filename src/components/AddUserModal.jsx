@@ -4,6 +4,7 @@ import { api } from "../api.js";
 
 export default function AddUserModal({ roles, locations, isOwner, onClose, onCreated }) {
   const pickableRoles = isOwner ? roles : roles.filter((r) => r.scope === "own_location");
+  const [mode, setMode] = useState("password"); // "password" | "invite"
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,16 +18,30 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
 
   async function submit(e) {
     e.preventDefault();
-    if (!fullName.trim() || !email.trim() || password.length < 6) {
+    if (!fullName.trim() || !email.trim()) {
+      setError("Fill in a name and email.");
+      return;
+    }
+    if (mode === "password" && password.length < 6) {
       setError("Fill in a name, email, and a password of at least 6 characters.");
       return;
     }
     setSaving(true);
     setError("");
     try {
+      const locationForRole = selectedRole?.scope === "all" ? null : locationId || null;
+      if (mode === "invite") {
+        // Reuses the exact same account-creation path as "Set a password
+        // now" below, just with a made-up password nobody uses -- see
+        // api.inviteUserAccount for the full explanation.
+        await api.inviteUserAccount({ email: email.trim(), fullName: fullName.trim(), roleId, locationId: locationForRole });
+        setNotice(`Invite sent to ${email.trim()}. They'll get an email with a link to set their own password and sign in.`);
+        setTimeout(() => onCreated(), 3500);
+        return;
+      }
       const result = await api.createUserAccount({
         email: email.trim(), password, fullName: fullName.trim(), roleId,
-        locationId: selectedRole?.scope === "all" ? null : locationId || null,
+        locationId: locationForRole,
       });
       if (!result.emailConfirmed) {
         setNotice("Account created. Since this project may require email confirmation, if they can't log in right away, check Supabase → Authentication → Settings and turn off \"Confirm email\", or manually confirm them from Authentication → Users.");
@@ -52,6 +67,17 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
           <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700">{notice}</p>
         ) : (
           <form onSubmit={submit}>
+            <div className="mb-3 flex rounded-lg bg-slate-100 p-1 text-xs font-medium">
+              <button type="button" onClick={() => setMode("password")}
+                className={`flex-1 rounded-md py-1.5 ${mode === "password" ? "bg-white text-slate-700 shadow-sm" : "text-slate-500"}`}>
+                Set a password now
+              </button>
+              <button type="button" onClick={() => setMode("invite")}
+                className={`flex-1 rounded-md py-1.5 ${mode === "invite" ? "bg-white text-slate-700 shadow-sm" : "text-slate-500"}`}>
+                Email them an invite
+              </button>
+            </div>
+
             <label className="mb-1 block text-xs text-slate-500">Full name</label>
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} autoFocus
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
@@ -60,9 +86,17 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-            <label className="mb-1 block text-xs text-slate-500">Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters"
-              className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            {mode === "password" ? (
+              <>
+                <label className="mb-1 block text-xs text-slate-500">Password</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters"
+                  className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </>
+            ) : (
+              <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-[11.5px] text-slate-500">
+                They'll get an email with a link to choose their own password — no password to hand them yourself.
+              </p>
+            )}
 
             <label className="mb-1 block text-xs text-slate-500">Role</label>
             <select value={roleId} onChange={(e) => setRoleId(e.target.value)}
@@ -86,7 +120,7 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
             <div className="flex justify-end gap-2">
               <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
               <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-                {saving ? "Creating..." : "Add User"}
+                {saving ? (mode === "invite" ? "Sending..." : "Creating...") : (mode === "invite" ? "Send Invite" : "Add User")}
               </button>
             </div>
           </form>
