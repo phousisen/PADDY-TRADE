@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { TrendingDown, TrendingUp, ClipboardList } from "lucide-react";
 import { api } from "../api.js";
+import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 
@@ -90,102 +90,69 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
   return (
     <div>
       {loadError && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] text-rose-600">
           <span>{loadError}</span>
           <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
 
-      {/* [2026-08-31] Same fix as Dashboard's KPI row — stacks on phone
-          instead of squeezing 3 across, unchanged on tablet/desktop. */}
-      <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-rose-100 text-rose-600"><TrendingDown size={16} /></div>
-          <p className="text-xs font-medium text-slate-500">Total Loss</p>
-          <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totals.lossKg)} kg</p>
-          <p className="mt-1 text-[11px] text-slate-400">moisture, spillage, and other recorded loss</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600"><TrendingUp size={16} /></div>
-          <p className="text-xs font-medium text-slate-500">Total Gain</p>
-          <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{fmt2(totals.gainKg)} kg</p>
-          <p className="mt-1 text-[11px] text-slate-400">from recount corrections, if any</p>
-        </div>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3.5 flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><ClipboardList size={16} /></div>
-          <p className="text-xs font-medium text-slate-500">Adjustments Recorded</p>
-          <p className="mt-1.5 text-2xl font-extrabold tracking-tight text-slate-800">{totals.count}</p>
-          <p className="mt-1 text-[11px] text-slate-400">net {totals.netKg >= 0 ? "+" : ""}{fmt2(totals.netKg)} kg over this period</p>
-        </div>
-      </div>
+      <SummaryStrip>
+        <SummaryCell label="Total Loss" value={`${fmt2(totals.lossKg)} kg`} sub="moisture, spillage, and other recorded loss" tone="neg" />
+        <SummaryCell label="Total Gain" value={`${fmt2(totals.gainKg)} kg`} sub="from recount corrections, if any" tone="pos" />
+        <SummaryCell label="Adjustments Recorded" value={totals.count} sub={`net ${totals.netKg >= 0 ? "+" : ""}${fmt2(totals.netKg)} kg over this period`} />
+      </SummaryStrip>
 
-      <div className="mb-5 rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="font-semibold text-slate-700">By Location</h3>
-        </div>
-        <table className="w-full text-sm">
+      <TableCard title="By Location" className="mb-4">
+        <Table>
           <thead>
-            <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-              <th className="px-5 py-3 font-medium">Location</th>
-              <th className="px-5 py-3 font-medium">Adjustments</th>
-              <th className="px-5 py-3 font-medium">Loss (kg)</th>
-              <th className="px-5 py-3 font-medium">Gain (kg)</th>
-              <th className="px-5 py-3 font-medium">Net (kg)</th>
+            <tr>
+              <Th>Location</Th><Th num>Adjustments</Th><Th num>Loss (kg)</Th><Th num>Gain (kg)</Th><Th num>Net (kg)</Th>
             </tr>
           </thead>
           <tbody>
             {byLocation.map((l) => (
-              <tr key={l.locationName} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                <td className="px-5 py-3 font-medium text-slate-700">{l.locationName}</td>
-                <td className="px-5 py-3 text-slate-600">{l.count}</td>
-                <td className="px-5 py-3 text-rose-600">{l.lossKg > 0 ? `-${fmt2(l.lossKg)}` : "—"}</td>
-                <td className="px-5 py-3 text-emerald-600">{l.gainKg > 0 ? `+${fmt2(l.gainKg)}` : "—"}</td>
-                <td className={`px-5 py-3 font-medium ${l.gainKg - l.lossKg < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+              <Tr key={l.locationName}>
+                <Td name>{l.locationName}</Td>
+                <Td num>{l.count}</Td>
+                <Td num className="!text-rose-600">{l.lossKg > 0 ? `-${fmt2(l.lossKg)}` : "—"}</Td>
+                <Td num className="!text-brand-700">{l.gainKg > 0 ? `+${fmt2(l.gainKg)}` : "—"}</Td>
+                <Td num className={l.gainKg - l.lossKg < 0 ? "!text-rose-600 !font-semibold" : "!text-brand-700 !font-semibold"}>
                   {l.gainKg - l.lossKg >= 0 ? "+" : ""}{fmt2(l.gainKg - l.lossKg)}
-                </td>
-              </tr>
+                </Td>
+              </Tr>
             ))}
-            {loading && byLocation.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-            {byLocation.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No stock adjustments recorded for this period.</td></tr>}
+            {loading && byLocation.length === 0 && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+            {byLocation.length === 0 && !loading && !loadError && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No stock adjustments recorded for this period.</td></Tr>}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableCard>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-        <div className="border-b border-slate-100 px-5 py-4">
-          <h3 className="font-semibold text-slate-700">Adjustment History</h3>
-        </div>
-        <table className="w-full text-sm">
+      <TableCard title="Adjustment History">
+        <Table>
           <thead>
-            <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-              <th className="px-5 py-3 font-medium">Date</th>
-              <th className="px-5 py-3 font-medium">Location</th>
-              <th className="px-5 py-3 font-medium">Previous → New (kg)</th>
-              <th className="px-5 py-3 font-medium">Change (kg)</th>
-              <th className="px-5 py-3 font-medium">Reason</th>
-              <th className="px-5 py-3 font-medium">Note</th>
-              <th className="px-5 py-3 font-medium">Recorded By</th>
+            <tr>
+              <Th>Date</Th><Th>Location</Th><Th>Previous → New (kg)</Th><Th num>Change (kg)</Th><Th>Reason</Th><Th>Note</Th><Th>Recorded By</Th>
             </tr>
           </thead>
           <tbody>
             {adjustments.map((a) => (
-              <tr key={a.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                <td className="px-5 py-3 text-slate-500">{fmtDateTime(a.created_at)}</td>
-                <td className="px-5 py-3 text-slate-600">{a.stationName}</td>
-                <td className="px-5 py-3 text-slate-600">{fmt2(a.previous_stock_kg)} → {fmt2(a.new_stock_kg)}</td>
-                <td className={`px-5 py-3 font-medium ${Number(a.adjustment_kg) < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+              <Tr key={a.id}>
+                <Td>{fmtDateTime(a.created_at)}</Td>
+                <Td>{a.stationName}</Td>
+                <Td>{fmt2(a.previous_stock_kg)} → {fmt2(a.new_stock_kg)}</Td>
+                <Td num className={Number(a.adjustment_kg) < 0 ? "!text-rose-600 !font-semibold" : "!text-brand-700 !font-semibold"}>
                   {Number(a.adjustment_kg) >= 0 ? "+" : ""}{fmt2(a.adjustment_kg)}
-                </td>
-                <td className="px-5 py-3"><span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">{REASON_LABELS[a.reason] || a.reason}</span></td>
-                <td className="px-5 py-3 text-xs text-slate-400">{a.note || "—"}</td>
-                <td className="px-5 py-3 text-slate-500">{a.adjustedByName}</td>
-              </tr>
+                </Td>
+                <Td><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600">{REASON_LABELS[a.reason] || a.reason}</span></Td>
+                <Td className="!text-slate-400">{a.note || "—"}</Td>
+                <Td>{a.adjustedByName}</Td>
+              </Tr>
             ))}
-            {loading && adjustments.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-            {adjustments.length === 0 && !loading && !loadError && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No stock adjustments recorded for this period.</td></tr>}
+            {loading && adjustments.length === 0 && <Tr><td colSpan={7} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+            {adjustments.length === 0 && !loading && !loadError && <Tr><td colSpan={7} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No stock adjustments recorded for this period.</td></Tr>}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </TableCard>
     </div>
   );
 }
