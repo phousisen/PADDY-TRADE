@@ -10,7 +10,7 @@ import Receipt from "./Receipt.jsx";
 import {
   startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
-  setTicketGrossOffline, setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
+  setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
   suggestNextPaperTicketNo, withTimeout, logAuditOffline,
 } from "../offlineQueue.js";
@@ -649,6 +649,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       const carPlate = vehicleValue.trim() ? `${vehicleType.trim()}: ${vehicleValue.trim()}` : vehicleType.trim();
       const selectedLocation = locations.find((l) => l.id === locationId);
       const locationName = selectedLocation?.name;
+      // Weight is passed in right here, as part of the one ticket-creation
+      // save, instead of a second setTicketGrossOffline call right after —
+      // see the comment on createTicketOffline in offlineQueue.js for why
+      // that changed (a ticket used to be able to reach the server with no
+      // weight attached if the follow-up save never made it through).
       const ticket = createTicketOffline({
         type, locationId, locationName,
         locationAddress: selectedLocation?.address, locationPhone: selectedLocation?.phone,
@@ -659,9 +664,9 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         bankName: savedBank?.bankName || undefined,
         bankAccount: savedBank?.bankAccount || undefined,
         bankQrUrl: savedBank?.bankQrUrl || undefined,
+        grossKg: kg,
       });
-      const weighedIn = setTicketGrossOffline(ticket.id, { grossKg: kg, userId: session.user.id });
-      onCreated(weighedIn);
+      onCreated(ticket);
     } catch (err) {
       setError(err.message || "Something went wrong.");
     } finally {
@@ -1813,6 +1818,11 @@ function TicketSlip({ ticket, onClose }) {
 // ---- Main page ------------------------------------------------------------
 
 export default function WeighingTickets() {
+  // Named `tr`, not `t` — several ticket-list `.map((t) => ...)` callbacks
+  // below use `t` as the loop variable (the ticket itself), which would
+  // silently shadow the translation function and break every t("...") call
+  // inside those blocks.
+  const { t: tr } = useLanguage();
   const { profile, session } = useAuth();
   const isAdmin = profile?.role === "admin";
   const [locations, setLocations] = useState([]);
@@ -1932,7 +1942,7 @@ export default function WeighingTickets() {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Weighing Tickets" subtitle="Weigh in once, finish the ticket once the truck's back and empty" />
+      <Topbar title={tr("wt_title")} subtitle={tr("wt_subtitle")} />
 
       {/* The global "unsynced changes" banner in Topbar.jsx now covers this
           on every page — the syncStatus subscription below stays, since
@@ -1943,16 +1953,16 @@ export default function WeighingTickets() {
           <div className="flex gap-1 overflow-x-auto">
             <button onClick={() => setTab("waiting")}
               className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "waiting" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
-              Waiting <span className="text-xs opacity-75">{grouped.waiting.length}</span>
+              {tr("wt_tab_waiting")} <span className="text-xs opacity-75">{grouped.waiting.length}</span>
             </button>
             <button onClick={() => setTab("declined")}
               className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "declined" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
-              Declined <span className="text-xs opacity-75">{grouped.declined.length}</span>
+              {tr("wt_tab_declined")} <span className="text-xs opacity-75">{grouped.declined.length}</span>
             </button>
             {isAdmin && (
               <button onClick={() => setTab("finalized")}
                 className={`flex items-center gap-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-semibold ${tab === "finalized" ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
-                Finalized
+                {tr("wt_tab_finalized")}
               </button>
             )}
           </div>
@@ -1962,37 +1972,37 @@ export default function WeighingTickets() {
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Ticket # or plate…"
+                placeholder={tr("wt_search_placeholder")}
                 className="w-36 border-none bg-transparent text-sm outline-none placeholder:text-slate-400 sm:w-40"
               />
             </div>
             {isAdmin && locations.length > 1 && (
               <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm">
-                <option value="">All Locations</option>
+                <option value="">{tr("all_locations")}</option>
                 {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             )}
             <div className="flex items-center gap-2.5">
               <button onClick={() => { setNewTicketType("BUY"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-brand-700">
-                <Plus size={16} /> Buy
+                <Plus size={16} /> {tr("buy")}
               </button>
               <button onClick={() => { setNewTicketType("SELL"); setShowNew(true); }} className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-8 py-3 text-[15px] font-bold text-white hover:bg-rose-700">
-                <Plus size={16} /> Sell
+                <Plus size={16} /> {tr("sell")}
               </button>
             </div>
           </div>
         </div>
-        {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">A ticket shows up here once it's been weighed in — the queue slip and quality/price decision on paper happen before this, same as today.</p>}
-        {tab === "finalized" && <p className="mt-2 text-xs text-slate-400">Most recently finished tickets. If Finish Ticket was completed against the wrong truck, reopen it here — see the card for what that does.</p>}
+        {tab === "waiting" && <p className="mt-2 text-xs text-slate-400">{tr("wt_hint_waiting")}</p>}
+        {tab === "finalized" && <p className="mt-2 text-xs text-slate-400">{tr("wt_hint_finalized")}</p>}
       </div>
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
         {tab === "finalized" ? (
           loadingFinalized ? (
-            <p className="text-center text-sm text-slate-400">Loading…</p>
+            <p className="text-center text-sm text-slate-400">{tr("loading_label")}</p>
           ) : visibleFinalized.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
-              {search.trim() ? "No finished tickets match that search." : "No finished tickets yet."}
+              {search.trim() ? tr("wt_no_finalized_match") : tr("wt_no_finalized")}
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -2013,21 +2023,21 @@ export default function WeighingTickets() {
                   <div className="mb-3 space-y-0.5 text-sm">
                     <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
                     <p className="text-slate-500">{t.product_name}</p>
-                    <p className="text-slate-500">Weigh In: {fmt2(t.gross_kg)} kg · Weigh Out: {fmt2(t.tare_kg)} kg</p>
-                    {t.price_per_kg != null && <p className="text-slate-500">Price: {fmtRiel(t.price_per_kg)}/kg</p>}
+                    <p className="text-slate-500">{tr("wt_weigh_in_short")} {fmt2(t.gross_kg)} kg · {tr("wt_weigh_out_short")} {fmt2(t.tare_kg)} kg</p>
+                    {t.price_per_kg != null && <p className="text-slate-500">{tr("wt_price_short")} {fmtRiel(t.price_per_kg)}/kg</p>}
                   </div>
                   <button onClick={() => setReopenTicketRow(t)} className="w-full rounded-lg border border-rose-200 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50">
-                    Reopen — wrong ticket was finished
+                    {tr("wt_reopen_btn")}
                   </button>
                 </div>
               ))}
             </div>
           )
         ) : loading ? (
-          <p className="text-center text-sm text-slate-400">Loading…</p>
+          <p className="text-center text-sm text-slate-400">{tr("loading_label")}</p>
         ) : grouped[tab]?.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-400">
-            {search.trim() ? "No tickets match that search." : "No tickets here right now."}
+            {search.trim() ? tr("wt_no_match") : tr("wt_no_tickets")}
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -2047,7 +2057,7 @@ export default function WeighingTickets() {
                 <div className="pl-3">
                   <div className="mb-1 flex items-center justify-between">
                     {pendingCountForTicket(t.id) > 0 ? (
-                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">not synced</span>
+                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">{tr("not_synced")}</span>
                     ) : <span />}
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-300">
@@ -2065,11 +2075,11 @@ export default function WeighingTickets() {
 
                   <div className="mb-3 grid grid-cols-2 gap-2">
                     <div className="rounded-lg bg-slate-50 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Weight</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{tr("word_weight")}</p>
                       <p className="text-xl font-extrabold text-slate-800">{t.gross_kg != null ? fmt2(t.gross_kg) : "—"}</p>
                     </div>
                     <div className="rounded-lg bg-amber-50 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">Ticket #</p>
+                      <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">{tr("wt_ticket_no_label")}</p>
                       <p className="text-xl font-extrabold text-amber-700">{t.paper_ticket_no || "—"}</p>
                     </div>
                   </div>
@@ -2077,14 +2087,14 @@ export default function WeighingTickets() {
                   {tab === "waiting" && (
                     <div className="flex items-center gap-3">
                       <button onClick={() => setConfirmFinishTicket(t)} className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-600 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">
-                        Finish Ticket <ArrowRight size={14} />
+                        {tr("wt_finish_btn")} <ArrowRight size={14} />
                       </button>
                       <button onClick={() => setDeclineTicketRow(t)} className="text-sm font-medium text-slate-400 hover:text-rose-600">
-                        Decline
+                        {tr("wt_decline_btn")}
                       </button>
                     </div>
                   )}
-                  {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">Declined — {t.price_note || "no reason given"}</p>}
+                  {tab === "declined" && <p className="text-center text-xs font-medium text-rose-500">{tr("wt_declined_prefix")} {t.price_note || tr("wt_no_reason")}</p>}
 
                   {/* Details line — everything that isn't needed to decide what to do
                       next, still one glance away: ticket code, product, station
