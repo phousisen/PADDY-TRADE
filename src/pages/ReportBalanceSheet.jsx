@@ -28,18 +28,29 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
     .filter((t) => !endDate || t.tx_date <= endDate);
   const filteredTxs = selectedLocationIds.length ? activeTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : activeTxs;
 
+  // Same date-range filtering as activeTxs/filteredTxs above, applied to
+  // the "expense"-type rows already sitting in the payments ledger (see
+  // Expenses.jsx) — see computeFinancials' comment on why this stays
+  // period-scoped instead of all-time.
+  const activeExpenses = payments
+    .filter((p) => p.type === "expense")
+    .filter((p) => !startDate || p.pay_date >= startDate)
+    .filter((p) => !endDate || p.pay_date <= endDate);
+  const filteredExpenses = selectedLocationIds.length ? activeExpenses.filter((p) => selectedLocationIds.includes(p.location_id)) : activeExpenses;
+
   const calc = useMemo(
-    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries, payments),
-    [filteredTxs, filteredStations, capitalEntries, loanEntries, payments]
+    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries, payments, filteredExpenses),
+    [filteredTxs, filteredStations, capitalEntries, loanEntries, payments, filteredExpenses]
   );
 
   const byLocation = useMemo(() => {
     return filteredStations.map((s) => {
       const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments);
+      const stationExpenses = activeExpenses.filter((p) => p.location_id === s.id);
+      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments, stationExpenses);
       return { station: s, ...c };
     });
-  }, [activeTxs, filteredStations, capitalEntries, loanEntries, payments]);
+  }, [activeTxs, activeExpenses, filteredStations, capitalEntries, loanEntries, payments]);
 
   const rangeLabel = !startDate && !endDate ? "All time" : `${startDate || "…"} to ${endDate || "…"}`;
   const balances = Math.abs(calc.totalAssets - (calc.totalLiabilities + calc.equity)) < 1;

@@ -33,12 +33,21 @@ export function paidStatusMap(txs, payments) {
 // them down to whatever locations are represented in `stations` itself, the
 // same way inventory value is scoped to those stations' stock. `payments`
 // is likewise the full, unfiltered payments list — see paidStatusMap above.
-export function computeFinancials(txs, stations, capitalEntries = [], loanEntries = [], payments = []) {
+// `expenses` is DIFFERENT from `payments`: it must already be filtered down
+// to the same date range and locations as `txs` before it's passed in (see
+// how ReportOverview/ReportBalanceSheet build it below) — unlike Partner
+// Capital/Bank Loans, which behave as running point-in-time balances by
+// design, Operating Expenses is a period figure just like Sales/Purchases,
+// and this Balance Sheet is itself date-filtered, so an all-time expense
+// number would be inconsistent with everything else on it.
+export function computeFinancials(txs, stations, capitalEntries = [], loanEntries = [], payments = [], expenses = []) {
   const buys = txs.filter((x) => x.type === "BUY");
   const sells = txs.filter((x) => x.type === "SELL");
   const totalBuy = buys.reduce((s, x) => s + Number(x.amount), 0);
   const totalSell = sells.reduce((s, x) => s + Number(x.amount), 0);
   const grossProfit = totalSell - totalBuy;
+  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const netProfit = grossProfit - totalExpenses;
 
   const paidMap = paidStatusMap(txs, payments);
   const accountsPayable = buys.reduce((s, x) => s + (paidMap[x.id]?.remaining || 0), 0);
@@ -60,7 +69,9 @@ export function computeFinancials(txs, stations, capitalEntries = [], loanEntrie
   // createBankLoanEntry). Folding their net effect in here keeps Cash Flow,
   // this Cash line, and the Capital & Loans totals all consistent with
   // each other instead of Retained Earnings silently plugging the gap.
-  const cashEstimate = paidSell - paidBuy + partnerCapital + bankLoansOutstanding;
+  // Operating expenses are real cash out too (staff pay, fuel, rent, etc. —
+  // see Expenses.jsx), so they're subtracted the same way.
+  const cashEstimate = paidSell - paidBuy + partnerCapital + bankLoansOutstanding - totalExpenses;
   const totalBuyKg = buys.reduce((s, x) => s + Number(x.quantity_kg), 0) || 1;
   const avgCostPerKg = totalBuy / totalBuyKg;
   const totalStockKg = stations.reduce((s, x) => s + Number(x.current_stock_kg), 0);
@@ -76,7 +87,7 @@ export function computeFinancials(txs, stations, capitalEntries = [], loanEntrie
   const retainedEarnings = equity - partnerCapital;
 
   return {
-    totalBuy, totalSell, grossProfit, accountsPayable, accountsReceivable, cashEstimate, inventoryValue,
+    totalBuy, totalSell, grossProfit, totalExpenses, netProfit, accountsPayable, accountsReceivable, cashEstimate, inventoryValue,
     totalAssets, bankLoansOutstanding, totalLiabilities, partnerCapital, retainedEarnings, equity,
   };
 }
@@ -105,18 +116,29 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     .filter((t) => !endDate || t.tx_date <= endDate);
   const filteredTxs = selectedLocationIds.length ? activeTxs.filter((t) => selectedLocationIds.includes(t.location_id)) : activeTxs;
 
+  // Same date-range filtering as activeTxs/filteredTxs above, applied to
+  // the "expense"-type rows already sitting in the payments ledger (see
+  // Expenses.jsx) — kept period-scoped for the same reason Sales/Purchases
+  // are, per computeFinancials' comment.
+  const activeExpenses = payments
+    .filter((p) => p.type === "expense")
+    .filter((p) => !startDate || p.pay_date >= startDate)
+    .filter((p) => !endDate || p.pay_date <= endDate);
+  const filteredExpenses = selectedLocationIds.length ? activeExpenses.filter((p) => selectedLocationIds.includes(p.location_id)) : activeExpenses;
+
   const calc = useMemo(
-    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries, payments),
-    [filteredTxs, filteredStations, capitalEntries, loanEntries, payments]
+    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries, payments, filteredExpenses),
+    [filteredTxs, filteredStations, capitalEntries, loanEntries, payments, filteredExpenses]
   );
 
   const byLocation = useMemo(() => {
     return filteredStations.map((s) => {
       const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments);
+      const stationExpenses = activeExpenses.filter((p) => p.location_id === s.id);
+      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments, stationExpenses);
       return { station: s, ...c };
     });
-  }, [activeTxs, filteredStations, capitalEntries, loanEntries, payments]);
+  }, [activeTxs, activeExpenses, filteredStations, capitalEntries, loanEntries, payments]);
 
   const totalTx = filteredTxs.length;
   const buyTx = filteredTxs.filter((t) => t.type === "BUY").length;
@@ -149,6 +171,8 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
           <Row label="Total Sales (Revenue)" value={`${fmt(calc.totalSell)} ៛`} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
           <Row label="Total Purchases (COGS)" value={`${fmt(-calc.totalBuy)} ៛`} onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
           <TotalBox><Row label="Gross Profit" value={`${fmt(calc.grossProfit)} ៛`} bold tone={calc.grossProfit >= 0 ? "pos" : "neg"} /></TotalBox>
+          <Row label="Operating Expenses" value={`${fmt(-calc.totalExpenses)} ៛`} />
+          <TotalBox><Row label="Net Profit" value={`${fmt(calc.netProfit)} ៛`} bold tone={calc.netProfit >= 0 ? "pos" : "neg"} /></TotalBox>
         </ReportCard>
         <ReportCard
           title="Balance Sheet"

@@ -7,7 +7,7 @@ import { paidStatusMap } from "./ReportOverview.jsx";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty, onRegister }) {
+export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty, onRegister, onSwitchKind }) {
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
 
@@ -100,6 +100,27 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={title} />
       <main className="flex-1 overflow-y-auto p-6">
+        {/* [2026-09-01] Farmers and Buyers used to be two separate sidebar
+            items; they're now one "Farmers & Buyers" entry with this small
+            toggle switching which list is shown — same two pages/routes as
+            before under the hood (onSwitchKind just navigates between
+            them), just one entry point in the nav instead of two. */}
+        {onSwitchKind && (kind === "suppliers" || kind === "buyers") && (
+          <div className="mb-4 inline-flex rounded-lg border border-slate-200 bg-white p-1">
+            <button
+              onClick={() => onSwitchKind("suppliers")}
+              className={`rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-colors ${kind === "suppliers" ? "bg-brand-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Farmers
+            </button>
+            <button
+              onClick={() => onSwitchKind("buyers")}
+              className={`rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-colors ${kind === "buyers" ? "bg-brand-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              Buyers
+            </button>
+          </div>
+        )}
         {kind !== "stations" && (
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="relative w-full max-w-xs">

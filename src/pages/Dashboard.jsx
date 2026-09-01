@@ -69,18 +69,28 @@ const PERIODS = [
 
 export default function Dashboard({ setPage, setSelectedLocationId }) {
   const { t } = useLanguage();
-  const { profile } = useAuth();
+  const { profile, session, loading: authLoading } = useAuth();
   const isAdmin = profile?.role === "admin";
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
-  async function load() {
+  async function load({ isRetry = false } = {}) {
     setLoading(true);
     setLoadError("");
     try {
       const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      // A request that raced ahead of the auth session fully attaching
+      // (weak station WiFi, right after login/reload) can come back
+      // empty — RLS quietly filters everything out instead of erroring —
+      // which is indistinguishable on screen from "this account really
+      // has zero locations". If that happens once while a real login is
+      // in hand, quietly retry a single time before showing anything; a
+      // genuinely empty account just looks the same on the retry.
+      if (locs.length === 0 && session?.user?.id && !isRetry) {
+        return load({ isRetry: true });
+      }
       setLocations(locs);
       setTxs(transactions.filter((x) => (x.hq_status || "processing") !== "cancelled"));
     } catch (err) {
@@ -92,7 +102,17 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    // Wait for AuthContext's own startup check to finish and a real
+    // session to actually be attached before firing Dashboard's own
+    // fetch. App.jsx already blocks rendering until authLoading is
+    // false, but a cached-profile fallback (AuthContext's
+    // PROFILE_TIMEOUT_MS path, for a slow connection) can let that
+    // happen slightly before the Supabase client's own session is fully
+    // attached — this re-fires load() once session actually shows up.
+    if (authLoading || !session?.user?.id) return;
+    load();
+  }, [authLoading, session?.user?.id]);
 
   const todayStr = cambodiaDateStr();
   const [period, setPeriod] = useState("today");
