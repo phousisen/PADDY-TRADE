@@ -3,11 +3,13 @@ import { Search, PlusCircle, UserPlus } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
+import { useLanguage } from "../i18n.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
 export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty, onRegister, onSwitchKind }) {
+  const { t } = useLanguage();
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
 
@@ -68,32 +70,32 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
   const columns =
     kind === "stations"
       ? [
-          { key: "name", label: "Name" },
-          { key: "name_kh", label: "Khmer" },
-          { key: "current_stock_kg", label: "Stock (kg)" },
-          { key: "capacity_kg", label: "Capacity (kg)" },
+          { key: "name", label: t("col_name") },
+          { key: "name_kh", label: t("col_khmer") },
+          { key: "current_stock_kg", label: t("col_stock_kg") },
+          { key: "capacity_kg", label: t("col_capacity_kg") },
         ]
       : kind === "suppliers"
       ? [
-          { key: "name", label: "Name" },
-          { key: "phone", label: "Phone" },
-          { key: "id_number", label: "ID" },
-          { key: "bank_name", label: "Bank" },
-          { key: "bank_account", label: "Account No." },
-          { key: "bank_qr_url", label: "QR Code", render: (v) => v ? <a href={v} target="_blank" rel="noreferrer" className="text-brand-600 underline decoration-dotted hover:text-brand-700">View</a> : "—" },
-          { key: "count", label: "Transactions" },
-          { key: "qty", label: "Total Bought (kg)", render: (v) => fmt2(v) },
-          { key: "paid", label: "Amount Paid", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
-          { key: "remaining", label: "Amount Unpaid", render: (v) => (v > 0.01 ? <span className="font-medium text-rose-500">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
+          { key: "name", label: t("col_name") },
+          { key: "phone", label: t("col_phone") },
+          { key: "id_number", label: t("col_id_number") },
+          { key: "bank_name", label: t("card_bank") },
+          { key: "bank_account", label: t("col_account_no") },
+          { key: "bank_qr_url", label: t("col_qr"), render: (v) => v ? <a href={v} target="_blank" rel="noreferrer" className="text-brand-600 underline decoration-dotted hover:text-brand-700">{t("view_link")}</a> : "—" },
+          { key: "count", label: t("col_tx_count") },
+          { key: "qty", label: t("col_total_bought"), render: (v) => fmt2(v) },
+          { key: "paid", label: t("col_amount_paid"), render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
+          { key: "remaining", label: t("col_amount_unpaid"), render: (v) => (v > 0.01 ? <span className="font-medium text-rose-500">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
         ]
       : [
-          { key: "name", label: "Name" },
-          { key: "phone", label: "Phone" },
-          { key: "company", label: "Company" },
-          { key: "count", label: "Transactions" },
-          { key: "qty", label: "Total Sold (kg)", render: (v) => fmt2(v) },
-          { key: "paid", label: "Amount Received", render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
-          { key: "remaining", label: "Amount Not Received", render: (v) => (v > 0.01 ? <span className="font-medium text-amber-600">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
+          { key: "name", label: t("col_name") },
+          { key: "phone", label: t("col_phone") },
+          { key: "company", label: t("col_company") },
+          { key: "count", label: t("col_tx_count") },
+          { key: "qty", label: t("col_total_sold"), render: (v) => fmt2(v) },
+          { key: "paid", label: t("col_amount_received"), render: (v) => <span className="text-emerald-600">{fmtRiel(v)}</span> },
+          { key: "remaining", label: t("col_amount_not_received"), render: (v) => (v > 0.01 ? <span className="font-medium text-amber-600">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
         ];
 
   return (
@@ -111,13 +113,13 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
               onClick={() => onSwitchKind("suppliers")}
               className={`rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-colors ${kind === "suppliers" ? "bg-brand-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
             >
-              Farmers
+              {t("nav_suppliers")}
             </button>
             <button
               onClick={() => onSwitchKind("buyers")}
               className={`rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-colors ${kind === "buyers" ? "bg-brand-600 text-white" : "text-slate-500 hover:text-slate-700"}`}
             >
-              Buyers
+              {t("nav_buyers")}
             </button>
           </div>
         )}
@@ -129,7 +131,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name or phone…"
+                placeholder={t("search_name_phone_placeholder")}
                 className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
               />
             </div>
@@ -142,7 +144,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
                 onClick={onRegister}
                 className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-xs font-medium text-white hover:bg-brand-700"
               >
-                <UserPlus size={14} /> Register {kind === "suppliers" ? "Farmer" : "Buyer"}
+                <UserPlus size={14} /> {kind === "suppliers" ? t("register_farmer_btn") : t("register_buyer_btn")}
               </button>
             )}
           </div>
@@ -167,31 +169,31 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
                     ) : (
                       <p className="truncate text-sm font-semibold text-slate-800">{r.name || "—"}</p>
                     )}
-                    <p className="mt-0.5 truncate text-xs text-slate-400">{r.phone || "No phone on file"}</p>
+                    <p className="mt-0.5 truncate text-xs text-slate-400">{r.phone || t("no_phone")}</p>
                   </div>
                   {(onBuyFor || onSellFor) && (
                     <button
                       onClick={() => (onBuyFor ? onBuyFor(r) : onSellFor(r))}
                       className="flex shrink-0 items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white"
                     >
-                      <PlusCircle size={13} /> {onBuyFor ? "Buy" : "Sell"}
+                      <PlusCircle size={13} /> {onBuyFor ? t("word_buy") : t("word_sell")}
                     </button>
                   )}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-slate-100 pt-2.5 text-xs">
                   {kind === "suppliers" ? (
                     <>
-                      <div><span className="text-slate-400">Bank</span><p className="font-medium text-slate-700">{r.bank_name || "—"}</p></div>
-                      <div><span className="text-slate-400">Total Bought</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
-                      <div><span className="text-slate-400">Paid</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
-                      <div><span className="text-slate-400">Unpaid</span><p className={`font-medium ${r.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                      <div><span className="text-slate-400">{t("card_bank")}</span><p className="font-medium text-slate-700">{r.bank_name || "—"}</p></div>
+                      <div><span className="text-slate-400">{t("card_total_bought")}</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
+                      <div><span className="text-slate-400">{t("card_paid")}</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
+                      <div><span className="text-slate-400">{t("card_unpaid")}</span><p className={`font-medium ${r.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
                     </>
                   ) : (
                     <>
-                      <div><span className="text-slate-400">Company</span><p className="font-medium text-slate-700">{r.company || "—"}</p></div>
-                      <div><span className="text-slate-400">Total Sold</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
-                      <div><span className="text-slate-400">Received</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
-                      <div><span className="text-slate-400">Not Received</span><p className={`font-medium ${r.remaining > 0.01 ? "text-amber-600" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                      <div><span className="text-slate-400">{t("card_company")}</span><p className="font-medium text-slate-700">{r.company || "—"}</p></div>
+                      <div><span className="text-slate-400">{t("card_total_sold")}</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
+                      <div><span className="text-slate-400">{t("card_received")}</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
+                      <div><span className="text-slate-400">{t("card_not_received")}</span><p className={`font-medium ${r.remaining > 0.01 ? "text-amber-600" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
                     </>
                   )}
                 </div>
@@ -199,7 +201,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
             ))}
             {filteredRows.length === 0 && (
               <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-                {rows.length === 0 ? "No records visible to your account." : "No matches for your search."}
+                {rows.length === 0 ? t("no_records_visible") : t("no_search_matches")}
               </div>
             )}
           </div>
@@ -209,7 +211,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
                 {columns.map((c) => <th key={c.key} className="px-5 py-3 font-medium whitespace-nowrap">{c.label}</th>)}
-                {(onBuyFor || onSellFor) && <th className="px-5 py-3 font-medium whitespace-nowrap">Action</th>}
+                {(onBuyFor || onSellFor) && <th className="px-5 py-3 font-medium whitespace-nowrap">{t("col_action")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -234,7 +236,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
                         onClick={() => (onBuyFor ? onBuyFor(r) : onSellFor(r))}
                         className="flex items-center gap-1 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-brand-700"
                       >
-                        <PlusCircle size={13} /> {onBuyFor ? "New Buy" : "New Sell"}
+                        <PlusCircle size={13} /> {onBuyFor ? t("new_buy") : t("new_sell")}
                       </button>
                     </td>
                   )}
@@ -243,7 +245,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
               {filteredRows.length === 0 && (
                 <tr>
                   <td colSpan={columns.length + ((onBuyFor || onSellFor) ? 1 : 0)} className="px-5 py-10 text-center text-sm text-slate-400">
-                    {rows.length === 0 ? "No records visible to your account." : "No matches for your search."}
+                    {rows.length === 0 ? t("no_records_visible") : t("no_search_matches")}
                   </td>
                 </tr>
               )}
