@@ -348,6 +348,41 @@ export const api = {
     return { id: userId, emailConfirmed: !!data.user?.confirmed_at, session: data.session };
   },
 
+  // [2026-09-01] "Email Invite" -- creates the account exactly like
+  // createUserAccount() above (same throwaway client, same profile patch),
+  // but instead of an Admin typing a password for them, this makes up a
+  // random one that's never shown to anyone and never usable, then sends
+  // the new user Supabase's standard password-recovery email so THEY pick
+  // their own password. Deliberately reuses resetPasswordForEmail() rather
+  // than a real "invite" API, because a real invite (auth.admin.
+  // inviteUserByEmail) needs a service-role key, which can't safely live in
+  // this client-side app -- see SetPassword.jsx for where the emailed link
+  // lands. Does not touch createUserAccount() or the admin-users Edge
+  // Function at all, so the existing "type a password" flow and the
+  // existing Users page (list emails / reset password) are unaffected.
+  async inviteUserAccount({ email, fullName, roleId, locationId }) {
+    const { createClient } = await import("@supabase/supabase-js");
+    const tempClient = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const throwawayPassword = crypto.randomUUID() + crypto.randomUUID();
+    const { data, error } = await tempClient.auth.signUp({ email, password: throwawayPassword, options: { data: { full_name: fullName } } });
+    if (error) throw error;
+    const userId = data.user?.id;
+    if (!userId) throw new Error("Account created, but no user id was returned.");
+    const patch = { full_name: fullName };
+    if (roleId) patch.role_id = roleId;
+    if (locationId !== undefined) patch.location_id = locationId || null;
+    await new Promise((r) => setTimeout(r, 700));
+    const { error: updateError } = await supabase.from("profiles").update(patch).eq("id", userId);
+    if (updateError) throw updateError;
+    const { error: resetError } = await tempClient.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/?setpassword=1`,
+    });
+    if (resetError) throw new Error("Account was created, but the invite email couldn't be sent: " + resetError.message);
+    return { id: userId };
+  },
+
   async getProducts() {
     const { data, error } = await supabase.from("products").select("*").order("name");
     if (error) throw error;
@@ -999,7 +1034,7 @@ export const api = {
     const { data, error } = await supabase
       .from("change_requests")
       .select(
-        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
+        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, paper_ticket_no, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
       )
       .order("created_at", { ascending: false });
     if (error) throw error;
