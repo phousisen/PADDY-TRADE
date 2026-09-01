@@ -26,18 +26,24 @@ export const ADJUSTMENT_REASONS = [
 // Weighing Tickets board: this is a periodic reconciliation step done at
 // a normal moment, not something that has to survive a truck arriving
 // mid-storm with no signal.
-// `todayAvgBuyPrice`: that station's weighted-average Buy price for today
-// (total riel paid ÷ total kg bought today — same two numbers already on
-// the Dashboard's "Total Buy (Today)" card), or null when nothing's been
-// bought there yet today. Only ever used to prefill the price field below,
-// which stays editable either way.
+// `priceSuggestion`: either null (nothing bought at this station recently
+// enough to base a price on) or `{ price, source }` where `source` is
+// "today" (that station's weighted-average Buy price for today — same two
+// numbers already on the Dashboard's "Total Buy (Today)" card) or "recent"
+// (no Buy there yet today, so this is the weighted average over its last
+// 30 days instead — see StockInventory.jsx/LocationDetail.jsx). [2026-09-01]
+// Before "recent" existed, a station with no Buy yet today got no
+// suggestion at all — a reset done before that day's first Buy would
+// silently save with no price and no value unless someone typed one in by
+// hand. Only ever used to prefill the price field below, which stays
+// editable either way.
 // `isAdmin`: passed straight through to WeightField below — same
 // anti-fraud rule as every other weight capture in the app (Weighing
 // Tickets, TransactionForm): staff can't type a weight in at all, only
 // press "Capture This Weight" while the scale is live. Admin/Owner logins
 // still get a small emergency "Enter manually" override if the scale
 // itself is down.
-export function AdjustStockModal({ station, todayAvgBuyPrice, t, isAdmin, onClose, onSubmit }) {
+export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, onClose, onSubmit }) {
   const previous = Number(station.current_stock_kg) || 0;
   // [2026-09-01] Starts blank, not prefilled with the old stock number —
   // this has to be a fresh reading someone actually captured off the
@@ -52,10 +58,12 @@ export function AdjustStockModal({ station, todayAvgBuyPrice, t, isAdmin, onClos
   // "recount", or "other".
   const [reason, setReason] = useState("moisture");
   const [note, setNote] = useState("");
-  // Blank by default (per the standing decision: never guess a price when
-  // there's nothing to base it on) — prefilled only when this station
-  // actually had a Buy today, still editable regardless.
-  const [priceInput, setPriceInput] = useState(todayAvgBuyPrice != null ? String(Math.round(todayAvgBuyPrice)) : "");
+  // Blank only when there's truly nothing recent to base a price on (per
+  // the standing decision: never guess a price when there's nothing real
+  // behind it) — prefilled from today's Buy average when this station
+  // bought something today, or its last-30-days average otherwise, still
+  // editable either way.
+  const [priceInput, setPriceInput] = useState(priceSuggestion != null ? String(Math.round(priceSuggestion.price)) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -126,12 +134,14 @@ export function AdjustStockModal({ station, todayAvgBuyPrice, t, isAdmin, onClos
           <>
             <label className="mb-1 block text-xs text-slate-500">Price per kg (Riel) — for valuing this loss</label>
             <input type="number" min="0" step="1" value={priceInput} onChange={(e) => setPriceInput(e.target.value)}
-              placeholder={todayAvgBuyPrice == null ? "No Buy today yet — type in a price" : ""}
+              placeholder={priceSuggestion == null ? "Nothing bought here recently — type in a price" : ""}
               className="mb-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             <p className="mb-3 text-[11px] text-slate-400">
-              {todayAvgBuyPrice != null
+              {priceSuggestion?.source === "today"
                 ? "Auto-filled from today's average Buy price at this station — editable."
-                : "Nothing bought here yet today to average — type a price in, or leave blank to skip valuing this loss."}
+                : priceSuggestion?.source === "recent"
+                ? "No Buy here yet today — auto-filled from this station's average Buy price over the last 30 days instead — editable."
+                : "Nothing bought here in the last 30 days to average — type a price in, or leave blank to skip valuing this loss."}
             </p>
             {valueLost != null && (
               <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm">
