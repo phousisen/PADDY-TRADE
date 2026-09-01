@@ -1245,7 +1245,12 @@ export default function Transactions({ setPage }) {
       ]);
       const settingsMap = settings || {};
       const companyName = settingsMap.company_name_kh || settingsMap.company_name || "PaddyTrade";
-      downloadLedgerWorkbook(
+      // Now async (ExcelJS's write step is a Promise, unlike the old
+      // SheetJS XLSX.writeFile which was synchronous) — awaited so a
+      // failure here lands in the catch below instead of an unhandled
+      // rejection, and so the "Exporting…" spinner doesn't stop before
+      // the file's actually finished generating.
+      await downloadLedgerWorkbook(
         { txs: allTxs, selectedLocationIds, startDate, endDate, companyName },
         `PaddyTrade_Ledger_${cambodiaTimestamp()}.xlsx`
       );
