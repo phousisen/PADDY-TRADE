@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { TrendingUp, Scale, Wallet, MapPin } from "lucide-react";
+import { Wallet } from "lucide-react";
 import { api } from "../api.js";
+import { SummaryStrip, SummaryCell, ReportCard, SectionLabel, Row, TotalBox, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 
@@ -117,90 +118,87 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     });
   }, [activeTxs, filteredStations, capitalEntries, loanEntries, payments]);
 
-  const Row = ({ label, value, bold, indent, onClick }) => (
-    <div
-      onClick={onClick}
-      role={onClick ? "button" : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onKeyDown={onClick ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
-      title={onClick ? "Click to view details" : undefined}
-      className={`group flex items-center justify-between border-b border-slate-50 py-2.5 text-sm last:border-0 ${indent ? "pl-4" : ""} ${onClick ? "cursor-pointer rounded-md px-1.5 -mx-1.5 hover:bg-brand-50" : ""}`}
-    >
-      <span className={`${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${onClick ? "group-hover:text-brand-700 group-hover:underline" : ""}`}>{label}</span>
-      <span className={bold ? "font-semibold text-slate-800" : "text-slate-700"}>{fmt(value)} ៛</span>
-    </div>
-  );
+  const totalTx = filteredTxs.length;
+  const buyTx = filteredTxs.filter((t) => t.type === "BUY").length;
+  const sellTx = filteredTxs.filter((t) => t.type === "SELL").length;
 
   return (
     <div>
+      <SummaryStrip>
+        <SummaryCell label="Total Sales" value={`${fmt(calc.totalSell)} ៛`} sub={`${sellTx} transaction${sellTx === 1 ? "" : "s"}`} />
+        <SummaryCell label="Total Purchases" value={`${fmt(calc.totalBuy)} ៛`} sub={`${buyTx} transaction${buyTx === 1 ? "" : "s"}`} />
+        <SummaryCell
+          label="Gross Profit"
+          value={`${fmt(calc.grossProfit)} ៛`}
+          sub={calc.grossProfit >= 0 ? "above purchase cost this range" : "below purchase cost this range"}
+          tone={calc.grossProfit >= 0 ? "pos" : "neg"}
+        />
+        <SummaryCell
+          label="Net Worth (Equity)"
+          value={`${fmt(calc.equity)} ៛`}
+          sub={calc.equity >= 0 ? "assets exceed liabilities" : "liabilities exceed assets"}
+          tone={calc.equity >= 0 ? "pos" : "neg"}
+        />
+      </SummaryStrip>
+
       {/* [2026-08-31] grid-cols-1 md:grid-cols-2 instead of a flat
           grid-cols-2 — these two panels used to squeeze side by side on a
           phone screen; now stack full-width below the md breakpoint. */}
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-3 flex items-center gap-2 font-semibold text-slate-700"><TrendingUp size={16} className="text-brand-600" /> Profit &amp; Loss</h3>
-          <Row label="Total Sales (Revenue)" value={calc.totalSell} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
-          <Row label="Total Purchases (COGS)" value={-calc.totalBuy} onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
-          <Row label="Gross Profit" value={calc.grossProfit} bold />
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Balance Sheet</h3>
-            {onNavigate && (
-              <button onClick={() => onNavigate("balancesheet")} className="text-xs font-medium text-brand-600 hover:underline">Full statement →</button>
-            )}
-          </div>
-          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Assets</p>
-          <Row label="Inventory on hand" value={calc.inventoryValue} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
-          <Row label="Accounts Receivable" value={calc.accountsReceivable} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
-          <Row label="Cash (estimate)" value={Math.max(0, calc.cashEstimate)} indent onClick={onNavigate ? () => onNavigate("cashflow") : undefined} />
-          <Row label="Total Assets" value={calc.totalAssets} bold />
-          <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Liabilities</p>
-          <Row label="Accounts Payable" value={calc.accountsPayable} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
-          <Row label="Bank Loans" value={calc.bankLoansOutstanding} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
-          <Row label="Total Liabilities" value={calc.totalLiabilities} bold />
-          <p className="mb-1 mt-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Equity</p>
-          <Row label="Partner Capital" value={calc.partnerCapital} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
-          <Row label="Retained Earnings" value={calc.retainedEarnings} indent />
-          <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5"><Row label="Equity (net worth)" value={calc.equity} bold /></div>
-        </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <ReportCard title="Profit & Loss" subtitle={`${totalTx} transactions this range`}>
+          <Row label="Total Sales (Revenue)" value={`${fmt(calc.totalSell)} ៛`} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
+          <Row label="Total Purchases (COGS)" value={`${fmt(-calc.totalBuy)} ៛`} onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
+          <TotalBox><Row label="Gross Profit" value={`${fmt(calc.grossProfit)} ៛`} bold tone={calc.grossProfit >= 0 ? "pos" : "neg"} /></TotalBox>
+        </ReportCard>
+        <ReportCard
+          title="Balance Sheet"
+          subtitle="As of today"
+        >
+          {onNavigate && (
+            <button onClick={() => onNavigate("balancesheet")} className="float-right -mt-8 text-[11.5px] font-medium text-brand-600 hover:underline">Full statement →</button>
+          )}
+          <SectionLabel>Assets</SectionLabel>
+          <Row label="Inventory on hand" value={`${fmt(calc.inventoryValue)} ៛`} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
+          <Row label="Accounts Receivable" value={`${fmt(calc.accountsReceivable)} ៛`} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
+          <Row label="Cash (estimate)" value={`${fmt(Math.max(0, calc.cashEstimate))} ៛`} indent onClick={onNavigate ? () => onNavigate("cashflow") : undefined} />
+          <Row label="Total Assets" value={`${fmt(calc.totalAssets)} ៛`} bold />
+          <SectionLabel>Liabilities</SectionLabel>
+          <Row label="Accounts Payable" value={`${fmt(calc.accountsPayable)} ៛`} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
+          <Row label="Bank Loans" value={`${fmt(calc.bankLoansOutstanding)} ៛`} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
+          <Row label="Total Liabilities" value={`${fmt(calc.totalLiabilities)} ៛`} bold />
+          <SectionLabel>Equity</SectionLabel>
+          <Row label="Partner Capital" value={`${fmt(calc.partnerCapital)} ៛`} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
+          <Row label="Retained Earnings" value={`${fmt(calc.retainedEarnings)} ៛`} indent />
+          <TotalBox><Row label="Equity (net worth)" value={`${fmt(calc.equity)} ៛`} bold /></TotalBox>
+        </ReportCard>
       </div>
 
       {byLocation.length > 1 && (
-        <div className="mt-5 rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
-            <MapPin size={16} className="text-brand-600" />
-            <h3 className="font-semibold text-slate-700">By Location</h3>
-          </div>
-          <table className="w-full text-sm">
+        <TableCard title="By Location" className="mt-4">
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-2 font-medium">Location</th>
-                <th className="px-5 py-2 font-medium">Sales</th>
-                <th className="px-5 py-2 font-medium">Purchases</th>
-                <th className="px-5 py-2 font-medium">Profit</th>
-                <th className="px-5 py-2 font-medium">Inventory</th>
-                <th className="px-5 py-2 font-medium">Payable</th>
+              <tr>
+                <Th>Location</Th><Th num>Sales</Th><Th num>Purchases</Th><Th num>Profit</Th><Th num>Inventory</Th><Th num>Payable</Th>
               </tr>
             </thead>
             <tbody>
               {byLocation.map((row) => (
-                <tr key={row.station.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 font-medium text-slate-700">{row.station.name}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmt(row.totalSell)}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmt(row.totalBuy)}</td>
-                  <td className={`px-5 py-3 font-medium ${row.grossProfit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{fmt(row.grossProfit)}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmt(row.inventoryValue)}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmt(row.accountsPayable)}</td>
-                </tr>
+                <Tr key={row.station.id}>
+                  <Td name>{row.station.name}</Td>
+                  <Td num>{fmt(row.totalSell)} ៛</Td>
+                  <Td num>{fmt(row.totalBuy)} ៛</Td>
+                  <Td num className={row.grossProfit >= 0 ? "!text-brand-700 !font-semibold" : "!text-rose-600 !font-semibold"}>{fmt(row.grossProfit)} ៛</Td>
+                  <Td num>{fmt(row.inventoryValue)} ៛</Td>
+                  <Td num>{fmt(row.accountsPayable)} ៛</Td>
+                </Tr>
               ))}
             </tbody>
-          </table>
-        </div>
+          </Table>
+        </TableCard>
       )}
 
-      <div className="mt-5 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-        <Wallet size={14} className="mt-0.5 shrink-0" />
+      <div className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
+        <Wallet size={13} className="mt-0.5 shrink-0" />
         Simplified model: inventory is valued at average purchase cost, and cost of goods sold is approximated from total purchases rather than matched item-by-item.
         {onNavigate && <span className="ml-1">Tip: click any Sales, Purchases, or Balance Sheet line above to jump straight to its detail report.</span>}
       </div>
