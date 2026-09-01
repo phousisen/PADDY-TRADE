@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { getAccurateNow } from "../supabaseClient.js";
+import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr, AgeBadge } from "../components/ReportUI.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -96,117 +97,106 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
   return (
     <div>
       {loadError && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] text-rose-600">
           <span>{loadError}</span>
           <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <p className="text-xs text-slate-400">Total Outstanding</p>
-          <p className="text-2xl font-bold text-rose-600">{fmtRiel(totalOutstanding)}</p>
-        </div>
-        <div className="flex gap-2">
-          {[{ v: "aging", l: "Aging Summary" }, { v: "party", l: `By ${PARTY_LABEL}` }, { v: "location", l: "By Location" }, { v: "detail", l: "Detail" }].map((o) => (
-            <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-sm ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
-          ))}
-        </div>
+
+      <SummaryStrip>
+        <SummaryCell label="Total Outstanding" value={fmtRiel(totalOutstanding)} tone="neg" />
+      </SummaryStrip>
+
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[{ v: "aging", l: "Aging Summary" }, { v: "party", l: `By ${PARTY_LABEL}` }, { v: "location", l: "By Location" }, { v: "detail", l: "Detail" }].map((o) => (
+          <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-[13.5px] ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
+        ))}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-        {view === "aging" && (
-          <table className="w-full text-sm">
+      {view === "aging" && (
+        <TableCard title="Aging Summary">
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Age</th>
-                <th className="px-5 py-3 font-medium">Transactions</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
-              </tr>
+              <tr><Th>Age</Th><Th num>Transactions</Th><Th num>Amount Owed</Th></tr>
             </thead>
             <tbody>
               {byBucket.map((b) => (
-                <tr key={b.bucket} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className={`px-5 py-3 font-medium ${b.bucket === "90+ days" ? "text-rose-600" : "text-slate-700"}`}>{b.bucket}</td>
-                  <td className="px-5 py-3 text-slate-600">{b.count}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(b.amount)}</td>
-                </tr>
+                <Tr key={b.bucket}>
+                  <Td><AgeBadge bucket={b.bucket} /></Td>
+                  <Td num>{b.count}</Td>
+                  <Td num>{fmtRiel(b.amount)}</Td>
+                </Tr>
               ))}
             </tbody>
-          </table>
-        )}
-        {view === "party" && (
-          <table className="w-full text-sm">
+          </Table>
+        </TableCard>
+      )}
+      {view === "party" && (
+        <TableCard title={`By ${PARTY_LABEL}`}>
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">{PARTY_LABEL}</th>
-                <th className="px-5 py-3 font-medium">Transactions</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
-              </tr>
+              <tr><Th>{PARTY_LABEL}</Th><Th num>Transactions</Th><Th num>Amount Owed</Th></tr>
             </thead>
             <tbody>
               {byParty.map((p) => (
-                <tr key={p.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 font-medium text-slate-700">{p.name}</td>
-                  <td className="px-5 py-3 text-slate-600">{p.count}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
-                </tr>
+                <Tr key={p.name}>
+                  <Td name>{p.name}</Td>
+                  <Td num>{p.count}</Td>
+                  <Td num>{fmtRiel(p.amount)}</Td>
+                </Tr>
               ))}
-              {loading && byParty.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {byParty.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && byParty.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+              {byParty.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Nothing outstanding.</td></Tr>}
             </tbody>
-          </table>
-        )}
-        {view === "location" && (
-          <table className="w-full text-sm">
+          </Table>
+        </TableCard>
+      )}
+      {view === "location" && (
+        <TableCard title="By Location">
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Transactions</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
-              </tr>
+              <tr><Th>Location</Th><Th num>Transactions</Th><Th num>Amount Owed</Th></tr>
             </thead>
             <tbody>
               {byLocation.map((p) => (
-                <tr key={p.name} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 font-medium text-slate-700">{p.name}</td>
-                  <td className="px-5 py-3 text-slate-600">{p.count}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
-                </tr>
+                <Tr key={p.name}>
+                  <Td name>{p.name}</Td>
+                  <Td num>{p.count}</Td>
+                  <Td num>{fmtRiel(p.amount)}</Td>
+                </Tr>
               ))}
-              {loading && byLocation.length === 0 && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {byLocation.length === 0 && !loading && !loadError && <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && byLocation.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+              {byLocation.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Nothing outstanding.</td></Tr>}
             </tbody>
-          </table>
-        )}
-        {view === "detail" && (
-          <table className="w-full text-sm">
+          </Table>
+        </TableCard>
+      )}
+      {view === "detail" && (
+        <TableCard title="Detail">
+          <Table>
             <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Receipt</th>
-                <th className="px-5 py-3 font-medium">{PARTY_LABEL}</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Age</th>
-                <th className="px-5 py-3 font-medium">Amount Owed</th>
-              </tr>
+              <tr><Th>Date</Th><Th>Receipt</Th><Th>{PARTY_LABEL}</Th><Th>Location</Th><Th>Age</Th><Th num>Amount Owed</Th></tr>
             </thead>
             <tbody>
               {outstanding.map((r) => (
-                <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
-                  <td className="px-5 py-3 font-medium text-slate-700">{r.code}</td>
-                  <td className="px-5 py-3 text-slate-700">{r.partyName}</td>
-                  <td className="px-5 py-3 text-slate-600">{r.stationName}</td>
-                  <td className={`px-5 py-3 ${r.days > 90 ? "text-rose-600 font-medium" : "text-slate-600"}`}>{r.days} days</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.remaining)}</td>
-                </tr>
+                <Tr key={r.id}>
+                  <Td>{r.tx_date}</Td>
+                  <Td name>{r.code}</Td>
+                  <Td>{r.partyName}</Td>
+                  <Td>{r.stationName}</Td>
+                  <Td>
+                    <AgeBadge bucket={r.bucket} />
+                    <span className="ml-1.5 text-[11.5px] text-slate-400">{r.days}d</span>
+                  </Td>
+                  <Td num>{fmtRiel(r.remaining)}</Td>
+                </Tr>
               ))}
-              {loading && outstanding.length === 0 && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {outstanding.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-slate-400">Nothing outstanding.</td></tr>}
+              {loading && outstanding.length === 0 && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+              {outstanding.length === 0 && !loading && !loadError && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Nothing outstanding.</td></Tr>}
             </tbody>
-          </table>
-        )}
-      </div>
+          </Table>
+        </TableCard>
+      )}
     </div>
   );
 }
