@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   LayoutGrid, Scale, Receipt, Users, Menu, X, Warehouse, ShoppingCart,
   MapPin, BarChart3, Settings, Languages, ClipboardList, LogOut, UserCog,
-  ShieldCheck, Wallet,
+  ShieldCheck, Wallet, Activity,
 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -47,6 +47,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
   const systemItems = isAdmin
     ? [
         { id: "stations", label: t("nav_stations"), icon: MapPin },
+        { id: "station-health", label: "Station Health", icon: Activity },
         { id: "users", label: "Users", icon: UserCog },
         { id: "roles", label: "Roles", icon: ShieldCheck },
         { id: "settings", label: t("nav_settings"), icon: Settings },
