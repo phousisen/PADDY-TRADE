@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Scale, RotateCcw } from "lucide-react";
+import WeightField from "./WeightField.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -30,9 +31,20 @@ export const ADJUSTMENT_REASONS = [
 // the Dashboard's "Total Buy (Today)" card), or null when nothing's been
 // bought there yet today. Only ever used to prefill the price field below,
 // which stays editable either way.
-export function AdjustStockModal({ station, todayAvgBuyPrice, t, onClose, onSubmit }) {
+// `isAdmin`: passed straight through to WeightField below — same
+// anti-fraud rule as every other weight capture in the app (Weighing
+// Tickets, TransactionForm): staff can't type a weight in at all, only
+// press "Capture This Weight" while the scale is live. Admin/Owner logins
+// still get a small emergency "Enter manually" override if the scale
+// itself is down.
+export function AdjustStockModal({ station, todayAvgBuyPrice, t, isAdmin, onClose, onSubmit }) {
   const previous = Number(station.current_stock_kg) || 0;
-  const [newStockKg, setNewStockKg] = useState(String(previous));
+  // [2026-09-01] Starts blank, not prefilled with the old stock number —
+  // this has to be a fresh reading someone actually captured off the
+  // scale, not a number that happens to already be sitting in the box.
+  // "Reset to 0" below still sets it directly, since there's nothing to
+  // weigh in that case.
+  const [newStockKg, setNewStockKg] = useState("");
   // Defaults to "moisture" — this is the overnight-drying case (paddy left
   // in stock overnight loses weight before it's re-weighed the next
   // morning), still fully editable to "reset" (nothing physically left —
@@ -93,9 +105,16 @@ export function AdjustStockModal({ station, todayAvgBuyPrice, t, onClose, onSubm
           )}
         </div>
 
-        <label className="mb-1 block text-xs text-slate-500">Actual weighed amount now (kg)</label>
-        <input type="number" min="0" step="0.01" value={newStockKg} onChange={(e) => setNewStockKg(e.target.value)} autoFocus
-          className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+        <div className="mb-3">
+          <WeightField
+            locationId={station.id}
+            label="Actual weighed amount now (kg)"
+            scaleLabel="Live Scale Weight"
+            value={newStockKg}
+            onChange={setNewStockKg}
+            isAdmin={isAdmin}
+          />
+        </div>
 
         {hasValidNext && (
           <div className={`mb-3 rounded-lg px-3 py-2.5 text-sm ${delta < -0.005 ? "bg-rose-50 text-rose-700" : delta > 0.005 ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
