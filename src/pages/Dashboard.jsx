@@ -9,17 +9,23 @@ import { getAccurateNow } from "../supabaseClient.js";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmtRiel(n) { return `${fmt(n)} ៛`; }
-function timeAgo(dateStr, timeStr) {
+// [2026-09-01] Takes `t` directly (rather than going through a shared
+// helper) since English needs singular/plural word choice ("1 min ago" vs
+// "2 mins ago") that Khmer doesn't — Khmer uses the same phrase either way,
+// so this picks the right translation key per language instead of trying
+// to force one template to cover both.
+function timeAgo(dateStr, timeStr, t) {
   // dateStr/timeStr are Cambodia wall-clock values — parse them as such
   // explicitly (+07:00) so this is correct no matter what timezone the
   // viewing device itself is set to.
   const then = new Date(`${dateStr}T${timeStr || "00:00:00"}+07:00`);
   const diffMin = Math.round((Date.now() - then.getTime()) / 60000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin} min${diffMin === 1 ? "" : "s"} ago`;
+  if (diffMin < 1) return t("time_just_now");
+  if (diffMin < 60) return t(diffMin === 1 ? "time_min_ago" : "time_mins_ago", { n: diffMin });
   const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr} hr${diffHr === 1 ? "" : "s"} ago`;
-  return `${Math.round(diffHr / 24)} day(s) ago`;
+  if (diffHr < 24) return t(diffHr === 1 ? "time_hr_ago" : "time_hrs_ago", { n: diffHr });
+  const diffDay = Math.round(diffHr / 24);
+  return t(diffDay === 1 ? "time_day_ago" : "time_days_ago", { n: diffDay });
 }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
 // viewing device's own timezone/clock setting.
@@ -59,12 +65,14 @@ function startOfMonthStr(dateStr) {
   return `${dateStr.slice(0, 7)}-01`;
 }
 
-const PERIODS = [
-  { id: "today", label: "Today" },
-  { id: "yesterday", label: "Yesterday" },
-  { id: "week", label: "This Week" },
-  { id: "month", label: "This Month" },
-  { id: "custom", label: "Custom" },
+// Labels are resolved per-render inside the component now (needs `t`), not
+// as a module-level constant — see PERIODS usage below.
+const PERIOD_IDS = [
+  { id: "today", key: "period_today" },
+  { id: "yesterday", key: "period_yesterday" },
+  { id: "week", key: "period_week" },
+  { id: "month", key: "period_month" },
+  { id: "custom", key: "period_custom" },
 ];
 
 export default function Dashboard({ setPage, setSelectedLocationId }) {
@@ -97,7 +105,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       // Without this, a failed/dropped request left the dashboard — the
       // first thing anyone sees when they open PaddyTrade — stuck showing
       // nothing, with no indication of why or how to retry.
-      setLoadError(err.message || "Couldn't load the dashboard — check your connection and try again.");
+      setLoadError(err.message || t("dash_load_error"));
     } finally {
       setLoading(false);
     }
@@ -118,6 +126,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   const [period, setPeriod] = useState("today");
   const [customStart, setCustomStart] = useState(todayStr);
   const [customEnd, setCustomEnd] = useState(todayStr);
+  const PERIODS = PERIOD_IDS.map((p) => ({ ...p, label: t(p.key) }));
 
   // Every card/table below reads from this one range — switching the
   // period control re-slices the same transaction list instead of
@@ -126,23 +135,24 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     switch (period) {
       case "yesterday": {
         const y = addDays(todayStr, -1);
-        return { rangeStart: y, rangeEnd: y, rangeLabel: "Yesterday" };
+        return { rangeStart: y, rangeEnd: y, rangeLabel: t("period_yesterday") };
       }
       case "week":
-        return { rangeStart: startOfWeekStr(todayStr), rangeEnd: todayStr, rangeLabel: "This Week" };
+        return { rangeStart: startOfWeekStr(todayStr), rangeEnd: todayStr, rangeLabel: t("period_week") };
       case "month":
-        return { rangeStart: startOfMonthStr(todayStr), rangeEnd: todayStr, rangeLabel: "This Month" };
+        return { rangeStart: startOfMonthStr(todayStr), rangeEnd: todayStr, rangeLabel: t("period_month") };
       case "custom": {
         // Guard against the end date being typed before the start date —
         // swap rather than silently returning an empty/backwards range.
         const s = customStart || todayStr;
         const e = customEnd || todayStr;
-        return { rangeStart: s <= e ? s : e, rangeEnd: s <= e ? e : s, rangeLabel: "Selected Period" };
+        return { rangeStart: s <= e ? s : e, rangeEnd: s <= e ? e : s, rangeLabel: t("period_custom") };
       }
       default:
-        return { rangeStart: todayStr, rangeEnd: todayStr, rangeLabel: "Today" };
+        return { rangeStart: todayStr, rangeEnd: todayStr, rangeLabel: t("period_today") };
     }
-  }, [period, todayStr, customStart, customEnd]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, todayStr, customStart, customEnd, t]);
 
   const periodTxs = useMemo(
     () => txs.filter((t) => t.tx_date >= rangeStart && t.tx_date <= rangeEnd),
@@ -185,12 +195,12 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title={isAdmin ? "HQ Overview" : "Location Overview"} subtitle="Operations Summary" />
+      <Topbar title={isAdmin ? t("dash_hq_overview") : t("dash_location_overview")} subtitle={t("dash_ops_summary")} />
       <main className="flex-1 overflow-y-auto p-6">
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_btn")}</button>
           </div>
         )}
 
@@ -217,7 +227,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                 onChange={(e) => setCustomStart(e.target.value)}
                 className="rounded-md border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-brand-400"
               />
-              <span>to</span>
+              <span>{t("word_to")}</span>
               <input
                 type="date"
                 value={customEnd}
@@ -242,24 +252,24 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
         <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-brand-100 text-brand-600 lg:mb-3.5 lg:h-9 lg:w-9"><TrendingUp size={15} /></div>
-            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Total Buy ({rangeLabel})</p>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_total_buy", { range: rangeLabel })}</p>
             <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(totalBuyKg)} kg</p>
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalBuyAmt)} paid out</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalBuyAmt)} {t("dash_paid_out")}</p>
             {avgBuyPrice != null && (
               <div className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[9.5px] font-semibold text-brand-700 lg:mt-2 lg:px-2.5 lg:py-1 lg:text-[11px]">
-                ⚖ Avg {fmtRiel(avgBuyPrice)}/kg
+                ⚖ {t("dash_avg_price", { price: fmtRiel(avgBuyPrice) })}
               </div>
             )}
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-rose-100 text-rose-600 lg:mb-3.5 lg:h-9 lg:w-9"><TrendingDown size={15} /></div>
-            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Total Sell ({rangeLabel})</p>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_total_sell", { range: rangeLabel })}</p>
             <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(totalSellKg)} kg</p>
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalSellAmt)} received</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalSellAmt)} {t("dash_received")}</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 lg:mb-3.5 lg:h-9 lg:w-9"><Warehouse size={15} /></div>
-            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Current Stock (All-Time)</p>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_current_stock")}</p>
             <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(netStockKg)} kg</p>
             {/* This is deliberately NOT "today's buy minus today's sell" —
                 it's the real running total built up over the location's
@@ -268,13 +278,13 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                 unless the location's stock happened to start today at
                 zero. Spelling that out here so it reads correctly at a
                 glance instead of looking like a math error. */}
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">on hand right now, across {locations.length} location(s) — not just today</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_on_hand", { n: locations.length })}</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-gold-100 text-gold-700 lg:mb-3.5 lg:h-9 lg:w-9"><MapPin size={15} /></div>
-            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">Active Locations</p>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_active_locations")}</p>
             <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{locations.length}</p>
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{periodTxs.length} transaction(s) — {rangeLabel}</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_tx_count", { n: periodTxs.length, range: rangeLabel })}</p>
           </div>
         </div>
 
@@ -286,8 +296,8 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
             <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <h3 className="font-bold text-slate-800">Location Performance ({rangeLabel})</h3>
-              <span className="text-[11px] text-slate-400">{locations.length} location(s)</span>
+              <h3 className="font-bold text-slate-800">{t("dash_location_perf", { range: rangeLabel })}</h3>
+              <span className="text-[11px] text-slate-400">{t("dash_locations_count", { n: locations.length })}</span>
             </div>
             {/* overflow-x-auto: a defensive safety net so the table scrolls
                 sideways on its own if it's ever still too wide for a very
@@ -297,10 +307,10 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
-                  <th className="px-5 py-2.5 font-semibold">Location</th>
-                  <th className="px-3 py-2.5 font-semibold">Buy (kg)</th>
-                  <th className="px-3 py-2.5 font-semibold">Sell (kg)</th>
-                  <th className="px-3 py-2.5 font-semibold">Stock</th>
+                  <th className="px-5 py-2.5 font-semibold">{t("col_location")}</th>
+                  <th className="px-3 py-2.5 font-semibold">{t("col_buy_kg")}</th>
+                  <th className="px-3 py-2.5 font-semibold">{t("col_sell_kg")}</th>
+                  <th className="px-3 py-2.5 font-semibold">{t("col_stock")}</th>
                   {isAdmin && <th className="w-8 px-3 py-2.5"></th>}
                 </tr>
               </thead>
@@ -344,8 +354,8 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                     )}
                   </tr>
                 ))}
-                {loading && locations.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">No locations yet.</td></tr>}
+                {loading && locations.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
+                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">{t("dash_no_locations")}</td></tr>}
               </tbody>
             </table>
             </div>
@@ -354,7 +364,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
               <Activity size={15} className="text-brand-600" />
-              <h3 className="font-bold text-slate-800">Live Feed</h3>
+              <h3 className="font-bold text-slate-800">{t("dash_live_feed")}</h3>
             </div>
             <div className="max-h-96 overflow-y-auto">
               {liveFeed.map((tx) => (
@@ -366,11 +376,11 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                     <p className="truncate text-[13px] font-medium text-slate-700">{tx.partyName} · {fmt2(tx.quantity_kg)} kg</p>
                     <p className="text-[11px] text-slate-400">{tx.stationName}</p>
                   </div>
-                  <p className="shrink-0 whitespace-nowrap text-[10.5px] text-slate-400">{timeAgo(tx.tx_date, tx.tx_time)}</p>
+                  <p className="shrink-0 whitespace-nowrap text-[10.5px] text-slate-400">{timeAgo(tx.tx_date, tx.tx_time, t)}</p>
                 </div>
               ))}
-              {loading && liveFeed.length === 0 && <p className="px-4 py-10 text-center text-sm text-slate-400">Loading…</p>}
-              {liveFeed.length === 0 && !loading && !loadError && <p className="px-4 py-10 text-center text-sm text-slate-400">No activity yet.</p>}
+              {loading && liveFeed.length === 0 && <p className="px-4 py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
+              {liveFeed.length === 0 && !loading && !loadError && <p className="px-4 py-10 text-center text-sm text-slate-400">{t("dash_no_activity")}</p>}
             </div>
           </div>
         </div>
