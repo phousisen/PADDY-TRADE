@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight, ChevronLeft, Ban, Undo2 } from "lucide-react";
+import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight, ChevronLeft, Ban, Undo2, Search, X } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -995,6 +995,13 @@ export default function Transactions({ setPage }) {
   const tableScrollRef = useRef(null);
   const scrollTable = (dir) => tableScrollRef.current?.scrollBy({ left: dir * 420, behavior: "smooth" });
   const [type, setType] = useState("");
+  // [2026-09-01] A real, working search — the header's "Search
+  // transactions..." box was purely decorative (no onChange, wired to
+  // nothing) and got removed; this replaces it with one that actually
+  // filters. Same fields/approach as Weighing Tickets' own search: ticket
+  // code, party name, car plate, and the paper Quality Ticket No. — the
+  // things someone actually has in hand when looking a transaction up.
+  const [search, setSearch] = useState("");
   // Kept as two separate toggles rather than one combined "unpaid" flag —
   // "Unpaid" only ever means money owed to a farmer on a Buy, "Not
   // Received" only ever means money not yet collected from a buyer on a
@@ -1201,8 +1208,17 @@ export default function Transactions({ setPage }) {
     }
     if (startDate) out = out.filter((tx) => tx.tx_date >= startDate);
     if (endDate) out = out.filter((tx) => tx.tx_date <= endDate);
+    const q = search.trim().toLowerCase();
+    if (q) {
+      out = out.filter((tx) =>
+        (tx.code || "").toLowerCase().includes(q) ||
+        (tx.partyName || "").toLowerCase().includes(q) ||
+        (tx.car_plate || "").toLowerCase().includes(q) ||
+        (tx.paper_ticket_no || "").toLowerCase().includes(q)
+      );
+    }
     return out;
-  }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds, startDate, endDate]);
+  }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds, startDate, endDate, search]);
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   // Jump back to page 1 whenever the underlying filter set changes — a
@@ -1210,7 +1226,7 @@ export default function Transactions({ setPage }) {
   // meaningful for the next one.
   useEffect(() => {
     setPageNum(1);
-  }, [type, unpaidBuysOnly, notReceivedOnly, selectedLocationIds, startDate, endDate]);
+  }, [type, unpaidBuysOnly, notReceivedOnly, selectedLocationIds, startDate, endDate, search]);
   // Safety net for the case above missing something (e.g. a background
   // reload after a sync shrinks the list while someone's sitting on the
   // last page) — never leave pageNum pointing past the real last page.
@@ -1476,6 +1492,26 @@ export default function Transactions({ setPage }) {
               {[{ v: "", l: t("all") }, { v: "BUY", l: t("buy") }, { v: "SELL", l: t("sell") }].map((opt) => (
                 <button key={opt.v} onClick={() => setType(opt.v)} className={`rounded-md px-4 py-1.5 text-sm font-medium ${type === opt.v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>{opt.l}</button>
               ))}
+            </div>
+
+            {/* [2026-09-01] Real search — ticket code, party name, car
+                plate, or paper Quality Ticket No. Filters the already-
+                loaded list client-side, same as every other control in
+                this toolbar (Unpaid/Not Received, date range, location). */}
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search ticket #, name, plate..."
+                className="w-56 rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+              {search && (
+                <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500" title="Clear search">
+                  <X size={13} />
+                </button>
+              )}
             </div>
 
             {/* Filters popover now only holds Unpaid (Buys) / Not Received
@@ -1819,7 +1855,7 @@ export default function Transactions({ setPage }) {
                 );
               })}
               {pagedRows.length === 0 && loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
+              {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{search.trim() ? `No matches for "${search.trim()}"` : (unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -1959,7 +1995,7 @@ export default function Transactions({ setPage }) {
             );
           })}
           {pagedRows.length === 0 && loading && <p className="py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
-          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{(unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</p>}
+          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{search.trim() ? `No matches for "${search.trim()}"` : (unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</p>}
         </div>
 
         {visibleRows.length > 0 && (
