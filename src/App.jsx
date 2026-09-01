@@ -13,6 +13,7 @@ import TransactionForm from "./pages/TransactionForm.jsx";
 import WeighingTickets from "./pages/WeighingTickets.jsx";
 import ChangeRequests from "./pages/ChangeRequests.jsx";
 import Reports from "./pages/Reports.jsx";
+import Expenses from "./pages/Expenses.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
 import LocationsPage from "./pages/LocationsPage.jsx";
 import LocationDetail from "./pages/LocationDetail.jsx";
@@ -109,9 +110,17 @@ export default function App() {
 
   const isAdmin = profile.role === "admin";
   const isStaff = profile.role === "staff";
+  // Reports/Payments aren't a blanket Staff deny like the others below —
+  // a Staff account with the "View Financial Reports" permission (granted
+  // via Settings -> Roles) is allowed in, scoped to their own location by
+  // Supabase RLS. See canViewReports below.
+  const canViewReports = !isStaff || hasPermission("view_reports");
 
   function renderPage() {
-    if (isStaff && (page === "reports" || page === "payments" || page === "stations" || page === "station-detail" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
+    if (isStaff && (page === "stations" || page === "station-detail" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
+      return <PermissionDenied />;
+    }
+    if (isStaff && (page === "reports" || page === "payments" || page === "expenses") && !canViewReports) {
       return <PermissionDenied />;
     }
     if (page === "dashboard") return <Dashboard setPage={setPage} setSelectedLocationId={setSelectedLocationId} />;
@@ -123,8 +132,9 @@ export default function App() {
     if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;
     if (page === "stations") return isAdmin ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
     if (page === "station-detail") return isAdmin ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
-    if (page === "reports") return !isStaff ? <Reports /> : <PermissionDenied />;
-    if (page === "payments") return !isStaff ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
+    if (page === "reports") return canViewReports ? <Reports /> : <PermissionDenied />;
+    if (page === "payments") return canViewReports ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
+    if (page === "expenses") return canViewReports ? <Expenses /> : <PermissionDenied />;
     if (page === "users") return isAdmin ? <UsersPage /> : <PermissionDenied />;
     if (page === "roles") return isAdmin ? <RolesPage /> : <PermissionDenied />;
     if (page === "settings") return isAdmin ? <SettingsPage /> : <PermissionDenied />;
@@ -152,8 +162,8 @@ export default function App() {
     // faster, search-first way to reach the same thing, with the
     // identity-photo verification step built in.
     if (page === "register-party") return hasPermission("manage_parties") ? <RegisterPartyStaff /> : <PermissionDenied />;
-    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} />;
-    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} />;
+    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} onSwitchKind={setPage} />;
+    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} onSwitchKind={setPage} />;
     if (page === "party-detail") return <PartyDetail partyId={openParty?.id} kind={openParty?.kind} setPage={setPage} onBuyFor={startBuyFor} onSellFor={startSellFor} />;
     return <Dashboard />;
   }

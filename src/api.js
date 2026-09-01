@@ -1175,7 +1175,11 @@ export const api = {
   // `id` is optional — passed by the offline queue when a payment was
   // already recorded locally (client-generated UUID) while offline, so a
   // retried sync reuses that same id instead of recording it twice.
-  async createPayment({ id, type, transactionId, locationId, amount, method, payDate, memo, userId }) {
+  // `category` is optional and only meaningful for type "expense" (see
+  // Expenses.jsx) — every other caller (Cash Flow's own manual entries,
+  // partner capital/bank loan mirroring) simply omits it, which leaves the
+  // column null exactly as before this was added.
+  async createPayment({ id, type, transactionId, locationId, amount, method, payDate, memo, userId, category }) {
     const row = {
       ...(id ? { id } : {}),
       type,
@@ -1186,6 +1190,7 @@ export const api = {
       pay_date: payDate,
       memo,
       created_by: userId,
+      ...(category !== undefined ? { category } : {}),
     };
     return insertOrFetchExisting("payments", row);
   },

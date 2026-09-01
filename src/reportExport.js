@@ -80,12 +80,22 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
     .filter((e) => !startDate || e.entry_date >= startDate)
     .filter((e) => !endDate || e.entry_date <= endDate);
+  // Same date-range/location filtering as activeTxs above, applied to the
+  // "expense"-type rows in the payments ledger (see Expenses.jsx) — kept in
+  // sync with the on-screen Overview/Balance Sheet so this export never
+  // shows a different Cash/Net Profit figure than the app does.
+  const activeExpenses = payments
+    .filter((p) => p.type === "expense")
+    .filter((p) => !selectedLocationIds.length || selectedLocationIds.includes(p.location_id))
+    .filter((p) => !startDate || p.pay_date >= startDate)
+    .filter((p) => !endDate || p.pay_date <= endDate);
 
   // ---------------- Overview (P&L + Balance Sheet + By Location) ----------------
-  const calc = computeFinancials(activeTxs, filteredStations, capitalEntries, loanEntries, payments);
+  const calc = computeFinancials(activeTxs, filteredStations, capitalEntries, loanEntries, payments, activeExpenses);
   const byLocation = filteredStations.map((s) => {
     const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-    return { station: s, ...computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments) };
+    const stationExpenses = activeExpenses.filter((p) => p.location_id === s.id);
+    return { station: s, ...computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments, stationExpenses) };
   });
   // Buy/Sell counts, kg, and amounts per location for the summary table
   // below. Uses the same activeTxs already filtered to the selected
@@ -123,6 +133,8 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     ["Total Sales (Revenue)", round2(calc.totalSell)],
     ["Total Purchases (COGS)", round2(-calc.totalBuy)],
     ["Gross Profit", round2(calc.grossProfit)],
+    ["Operating Expenses", round2(-calc.totalExpenses)],
+    ["Net Profit", round2(calc.netProfit)],
     [],
     ["Balance Sheet — Assets", "Amount (៛)"],
     ["Inventory on hand", round2(calc.inventoryValue)],
