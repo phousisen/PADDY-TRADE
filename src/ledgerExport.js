@@ -37,7 +37,10 @@
 //     was recorded on that transaction (deduction_kg > 0), show the real
 //     deduction and the true payable weight. Otherwise those columns stay
 //     blank and Actual = Net, matching a transaction with no deduction.
-import ExcelJS from "exceljs";
+//
+// NOTE: no top-of-file "import ExcelJS from 'exceljs'" here on purpose —
+// see the comment on buildLedgerWorkbook() below for why it's loaded
+// dynamically instead.
 
 const UNIT_LABEL = "R"; // Riel — every amount in PaddyTrade is Riel, matches the old format's Unit column
 
@@ -300,7 +303,14 @@ function buildSheet(wb, tabName, sectionLabel, rows, { companyName, singleStatio
   return ws;
 }
 
-export function buildLedgerWorkbook({ txs, selectedLocationIds = [], startDate = null, endDate = null, companyName = "" }) {
+// [2026-09-01] ExcelJS is a big library (it's what pushed the app's main
+// bundle past vite-plugin-pwa's 2 MiB precache limit and broke the build)
+// and it's only ever needed here, the moment someone actually presses
+// Export — so it's loaded lazily, right when it's needed, instead of a
+// static top-of-file import that would bundle it into every page load.
+// This also means buildLedgerWorkbook is now async (it wasn't before).
+export async function buildLedgerWorkbook({ txs, selectedLocationIds = [], startDate = null, endDate = null, companyName = "" }) {
+  const { default: ExcelJS } = await import("exceljs");
   const filtered = activeFilter(txs, selectedLocationIds, startDate, endDate);
   const buyRows = filtered.filter((t) => t.type === "BUY");
   const sellRows = filtered.filter((t) => t.type === "SELL");
@@ -322,7 +332,7 @@ export function buildLedgerWorkbook({ txs, selectedLocationIds = [], startDate =
 }
 
 export async function downloadLedgerWorkbook(data, filename) {
-  const wb = buildLedgerWorkbook(data);
+  const wb = await buildLedgerWorkbook(data);
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const url = URL.createObjectURL(blob);
