@@ -304,6 +304,22 @@ export default function StockInventory() {
   // adjustment lands on the same day, only the last one (by time) is the
   // day's real checkpoint.
   //
+  // [2026-09-02] Bug fix — same-day trading AFTER a reset was being
+  // silently thrown away. The station's daily-reset habit almost always
+  // happens right after midnight (00:55-01:01, per the real timestamps),
+  // meaning a full day of genuine buying/selling then follows it on that
+  // SAME calendar date. The old version summed the whole day's Buy/Sell
+  // first and only THEN overwrote the result with the adjustment's
+  // new_stock_kg — discarding every kg bought or sold after the reset,
+  // even though the database's own running stock total (what the
+  // Dashboard reads) correctly included it the whole time. That's what
+  // produced real, provable gaps between this ledger and the Dashboard
+  // (3,090 kg at one station, 500 kg at another, on the exact days this
+  // happened). Fixed below by replaying each day's Buy/Sell/adjustment
+  // events in the order they actually happened (by real timestamp), so a
+  // reset only ever wipes out what came before it — anything that
+  // happens afterward that same day still counts.
+  //
   // Per-paddy-type breakdown resets to zero on any day that had an
   // adjustment — a manual adjustment only ever corrects the single
   // combined number, never a specific type, so there's no way to know
@@ -318,7 +334,7 @@ export default function StockInventory() {
 
     const byDate = {};
     function bucket(date) {
-      return (byDate[date] = byDate[date] || { date, buyKg: 0, sellKg: 0, buyAmt: 0, sellAmt: 0, adjustments: [], byProduct: {} });
+      return (byDate[date] = byDate[date] || { date, buyKg: 0, sellKg: 0, buyAmt: 0, sellAmt: 0, byProduct: {}, timeline: [] });
     }
     for (const tx of txEvents) {
       const b = bucket(tx.tx_date);
@@ -338,9 +354,14 @@ export default function StockInventory() {
         const p = (b.byProduct[tx.product_id] = b.byProduct[tx.product_id] || { in: 0, out: 0 });
         if (tx.type === "BUY") p.in += kg; else p.out += kg;
       }
+      // Real clock time this transaction was saved — used below to place
+      // it correctly relative to any same-day reset. The Bought/Sold
+      // columns above stay whole-day totals either way; this is only for
+      // getting the running Closing balance's order right.
+      b.timeline.push({ ts: tx.created_at ? new Date(tx.created_at).getTime() : 0, deltaKg: tx.type === "BUY" ? kg : -kg });
     }
     for (const a of adjEvents) {
-      bucket(cambodiaDateStr(new Date(a.created_at))).adjustments.push(a);
+      bucket(cambodiaDateStr(new Date(a.created_at))).timeline.push({ ts: new Date(a.created_at).getTime(), adj: a });
     }
 
     const dates = Object.keys(byDate).sort();
@@ -351,19 +372,30 @@ export default function StockInventory() {
       const b = byDate[date];
       const opening = runningKg;
       const openingByProduct = { ...runningByProduct };
-      let closing = opening + b.buyKg - b.sellKg;
-      let adjustedKg = 0;
-      let adjustmentDetails = [];
-      let resetHappened = false;
 
-      if (b.adjustments.length > 0) {
-        const sorted = [...b.adjustments].sort((x, y) => (x.created_at < y.created_at ? -1 : 1));
-        const last = sorted[sorted.length - 1];
-        adjustedKg = Number(last.new_stock_kg) - closing;
-        closing = Number(last.new_stock_kg);
-        resetHappened = true;
-        adjustmentDetails = sorted.map((a) => {
+      // Walk this day's events in the order they actually happened, so a
+      // reset only ever wipes out what came before it — anything bought
+      // or sold AFTER it that same day still lands on top of the new
+      // balance instead of being discarded. See the fix note above
+      // buildDailyLedger.
+      const timeline = [...b.timeline].sort((x, y) => x.ts - y.ts);
+      let cursor = opening;
+      let adjustedKg = 0;
+      const adjustmentDetails = [];
+      let resetHappened = false;
+      for (const ev of timeline) {
+        if (ev.adj) {
+          const a = ev.adj;
+          // The delta this adjustment actually made, straight from its
+          // own database row — not re-derived from the day's totals, so
+          // it can never drift from what was really submitted (this is
+          // also what "Value Lost" below already did — kg is now
+          // consistent with it, instead of coming from a different,
+          // whole-day calculation).
           const kg = Number(a.adjustment_kg);
+          adjustedKg += kg;
+          cursor = Number(a.new_stock_kg);
+          resetHappened = true;
           const label = ADJUSTMENT_REASONS.find((r) => r.value === a.reason)?.label ?? a.reason;
           // [2026-09-01] Every ADJUSTMENT_REASONS label is written for the
           // normal case — stock coming in LOWER than the book expected
@@ -378,9 +410,12 @@ export default function StockInventory() {
           const displayReason = kg >= 0
             ? (a.reason === "recount" ? "Recount — more than expected" : "Corrected up")
             : label;
-          return { kg, reason: label, displayReason, note: a.note, valueLost: a.value_lost };
-        });
+          adjustmentDetails.push({ kg, reason: label, displayReason, note: a.note, valueLost: a.value_lost });
+        } else {
+          cursor += ev.deltaKg;
+        }
       }
+      const closing = cursor;
       // Valued at cost (what was paid to acquire it), not resale price —
       // the standard write-off convention, and the same price the Adjust
       // modal already suggests when a loss is entered. Sums every
