@@ -19,6 +19,29 @@ function cambodiaDateStr(d = getAccurateNow()) {
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
+// [2026-09-02] The hour of day (0-23), Cambodia time — used below to tell
+// a "just after midnight" reset apart from one that genuinely happened
+// during the day. See the comment above buildDailyLedger's adjustment
+// bucketing for why that distinction matters.
+function cambodiaHour(d) {
+  return Number(new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "2-digit", hour12: false }).format(d));
+}
+// [2026-09-02] The calendar date a stock adjustment counts against. Same
+// day its created_at falls on, EXCEPT a "Daily reset" done in the first
+// few hours after midnight — the normal closing-out-the-night habit —
+// which counts against the day before instead (see the comment above
+// buildDailyLedger's adjustment-bucketing loop for why). Shared by every
+// place on this page that shows an adjustment by date — the Daily Stock
+// Ledger, the Stock Loss Log table, and the Lost Today/This Month
+// figures — so the same reset never shows a different date in one place
+// than another.
+function effectiveAdjDateStr(a) {
+  const at = new Date(a.created_at);
+  if (a.reason === "reset" && cambodiaHour(at) < 4) {
+    return cambodiaDateStr(new Date(at.getTime() - 24 * 60 * 60 * 1000));
+  }
+  return cambodiaDateStr(at);
+}
 
 export default function StockInventory() {
   const { t } = useLanguage();
@@ -181,8 +204,8 @@ export default function StockInventory() {
   // own calendar date before comparing, rather than string-matching the raw
   // ISO value, so a loss recorded late at night doesn't get mis-bucketed
   // against UTC's date boundary instead of the station's real one.
-  const lostToday = lossRows.filter((a) => a.created_at && cambodiaDateStr(new Date(a.created_at)) === todayStr);
-  const lostThisMonth = lossRows.filter((a) => a.created_at && cambodiaDateStr(new Date(a.created_at)).startsWith(lossMonthStr));
+  const lostToday = lossRows.filter((a) => a.created_at && effectiveAdjDateStr(a) === todayStr);
+  const lostThisMonth = lossRows.filter((a) => a.created_at && effectiveAdjDateStr(a).startsWith(lossMonthStr));
   const lostTodayKg = lostToday.reduce((s, a) => s + Math.abs(Number(a.adjustment_kg)), 0);
   const lostMonthKg = lostThisMonth.reduce((s, a) => s + Math.abs(Number(a.adjustment_kg)), 0);
   const lostMonthValue = lostThisMonth.reduce((s, a) => s + Number(a.value_lost || 0), 0);
@@ -320,6 +343,15 @@ export default function StockInventory() {
   // reset only ever wipes out what came before it — anything that
   // happens afterward that same day still counts.
   //
+  // [2026-09-02] Second fix, same root cause — WHICH day a reset counts
+  // against. A reset done right after midnight (the normal habit) is, by
+  // the clock, already the new calendar day — but it's meant to close out
+  // the night before. An early-morning reset (before 4 AM) is now counted
+  // as the last event of the PREVIOUS day instead, so that day's row ends
+  // at a clean 0.00 kg and the new day opens fresh with only its own real
+  // activity, instead of the two being shown mixed together in one row.
+  // See cambodiaHour() above and the bucketing loop below.
+  //
   // Per-paddy-type breakdown resets to zero on any day that had an
   // adjustment — a manual adjustment only ever corrects the single
   // combined number, never a specific type, so there's no way to know
@@ -361,7 +393,12 @@ export default function StockInventory() {
       b.timeline.push({ ts: tx.created_at ? new Date(tx.created_at).getTime() : 0, deltaKg: tx.type === "BUY" ? kg : -kg });
     }
     for (const a of adjEvents) {
-      bucket(cambodiaDateStr(new Date(a.created_at))).timeline.push({ ts: new Date(a.created_at).getTime(), adj: a });
+      // [2026-09-02] Which day this lands in — see effectiveAdjDateStr
+      // above for the "reset near midnight counts as the day before"
+      // rule, and why it has to be the SAME rule everywhere on this page
+      // (this table, the Stock Loss Log, and the Lost Today/This Month
+      // figures) rather than just here.
+      bucket(effectiveAdjDateStr(a)).timeline.push({ ts: new Date(a.created_at).getTime(), adj: a });
     }
 
     const dates = Object.keys(byDate).sort();
@@ -710,7 +747,7 @@ export default function StockInventory() {
             <tbody>
               {lossRows.map((a) => (
                 <tr key={a.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 text-slate-500">{a.created_at ? cambodiaDateStr(new Date(a.created_at)) : "—"}</td>
+                  <td className="px-5 py-3 text-slate-500">{a.created_at ? effectiveAdjDateStr(a) : "—"}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{a.stationName}</td>
                   <td className="px-5 py-3 font-medium text-rose-600">{fmt2(Math.abs(a.adjustment_kg))} kg</td>
                   <td className="px-5 py-3 text-slate-600">{a.price_per_kg != null ? fmtRiel(a.price_per_kg) : <span className="text-slate-300">—</span>}</td>
