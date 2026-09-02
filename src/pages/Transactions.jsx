@@ -399,6 +399,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
+  const [paperTicketNo, setPaperTicketNo] = useState(tx.paper_ticket_no || "");
   const [recordedByName, setRecordedByName] = useState(tx.recorded_by_name || "");
   const [note, setNote] = useState(tx.note || "");
   const [txDate, setTxDate] = useState(tx.tx_date || cambodiaDateStr());
@@ -448,6 +449,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
         staffFee: isBuy ? (parseFloat(staffFee) || 0) : 0,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
+        paperTicketNo: paperTicketNo.trim() || null,
         recordedByName: recordedByName.trim() || null,
         note: note.trim() || null,
         txDate,
@@ -462,6 +464,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           amount: tx.amount, payment_status: tx.payment_status, quality_grade: tx.quality_grade, tax_applicable: tx.tax_applicable,
           tax_rate: tx.tax_rate, moisture_pct: tx.moisture_pct, mixture_pct: tx.mixture_pct, outthrow_pct: tx.outthrow_pct,
           deduction_kg: tx.deduction_kg, staff_fee: tx.staff_fee, car_plate: tx.car_plate, driver_name: tx.driver_name,
+          paper_ticket_no: tx.paper_ticket_no,
           recorded_by_name: tx.recorded_by_name, note: tx.note, tx_date: tx.tx_date,
           gross_kg: tx.gross_kg, gross_at: tx.gross_at, tare_kg: tx.tare_kg, tare_at: tx.tare_at,
         },
@@ -519,6 +522,13 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
                 )}
               </div>
             )}
+
+            <div className="col-span-2 rounded-lg border border-dashed border-brand-300 bg-brand-50/50 p-2.5">
+              <label className="mb-1 block text-xs text-slate-500">Paper Ticket Number</label>
+              <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} placeholder="e.g. CN000157"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              <p className="mt-1 text-[11px] text-slate-500">The number printed on the physical quality ticket booklet. Leave blank if this transaction never had one.</p>
+            </div>
 
             <div>
               <label className="mb-1 block text-xs text-slate-500">Quantity (kg)</label>
@@ -1431,7 +1441,8 @@ export default function Transactions({ setPage }) {
         party_id: updated.party_id, product_id: updated.product_id, quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount,
         payment_status: updated.payment_status, quality_grade: updated.quality_grade, tax_applicable: updated.tax_applicable,
         tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,
-        deduction_kg: updated.deduction_kg, staff_fee: updated.staff_fee, car_plate: updated.car_plate, driver_name: updated.driver_name, note: updated.note, tx_date: updated.tx_date,
+        deduction_kg: updated.deduction_kg, staff_fee: updated.staff_fee, car_plate: updated.car_plate, driver_name: updated.driver_name,
+        paper_ticket_no: updated.paper_ticket_no, note: updated.note, tx_date: updated.tx_date,
       },
       userId: session.user.id,
     });
