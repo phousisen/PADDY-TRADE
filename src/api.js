@@ -1131,7 +1131,7 @@ const rawApi = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, productId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, productId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt, paperTicketNo }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     const { data, error } = await supabase
@@ -1164,6 +1164,15 @@ const rawApi = {
         ...(grossAt !== undefined ? { gross_at: grossAt } : {}),
         ...(tareKg !== undefined ? { tare_kg: tareKg } : {}),
         ...(tareAt !== undefined ? { tare_at: tareAt } : {}),
+        // The physical paper quality-ticket booklet number. Editable here
+        // for the first time — previously this was only ever set/fixed on
+        // the Weighing Tickets board (New Buy/Sell, or Edit Ticket while
+        // still open), so a transaction that finalized with the wrong
+        // number, or none at all, had no way to be corrected. No
+        // uniqueness check here (unlike the Weighing Tickets board's
+        // duplicate warning) — this is a deliberate manual fix, not
+        // day-to-day entry.
+        ...(paperTicketNo !== undefined ? { paper_ticket_no: paperTicketNo || null } : {}),
       })
       .eq("id", id)
       .select()
