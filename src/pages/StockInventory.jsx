@@ -908,6 +908,7 @@ export default function StockInventory() {
           priceSuggestion={priceSuggestionByLocation[adjustStation.id] ?? null}
           t={t}
           isAdmin={isAdmin}
+          userEmail={session.user.email}
           onClose={() => setAdjustStation(null)}
           onSubmit={submitAdjustment}
         />
