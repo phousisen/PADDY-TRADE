@@ -356,6 +356,7 @@ export default function LocationDetail({ locationId, setPage }) {
           priceSuggestion={priceSuggestion}
           t={t}
           isAdmin={isAdmin}
+          userEmail={session.user.email}
           onClose={() => setAdjustOpen(false)}
           onSubmit={submitAdjustment}
         />
