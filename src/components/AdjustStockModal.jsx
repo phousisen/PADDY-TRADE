@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Scale, RotateCcw } from "lucide-react";
+import { Scale, RotateCcw, AlertTriangle } from "lucide-react";
 import WeightField from "./WeightField.jsx";
+import { supabase } from "../supabaseClient.js";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -43,7 +44,7 @@ export const ADJUSTMENT_REASONS = [
 // press "Capture This Weight" while the scale is live. Admin/Owner logins
 // still get a small emergency "Enter manually" override if the scale
 // itself is down.
-export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, onClose, onSubmit }) {
+export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEmail, onClose, onSubmit }) {
   const previous = Number(station.current_stock_kg) || 0;
   // [2026-09-01] Starts blank, not prefilled with the old stock number —
   // this has to be a fresh reading someone actually captured off the
@@ -66,6 +67,14 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, onClose
   const [priceInput, setPriceInput] = useState(priceSuggestion != null ? String(Math.round(priceSuggestion.price)) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // [2026-09-02] "Daily reset" specifically — the one reason that can wipe
+  // out the most value in a single click, and the one that generated real
+  // confusion about whether it could ever happen without someone meaning
+  // it. Every OTHER reason (moisture/spillage/recount/other) still saves
+  // exactly as before, one click plus this same button — this only adds a
+  // second, deliberate step in front of "reset".
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [password, setPassword] = useState("");
 
   const next = parseFloat(newStockKg);
   const hasValidNext = newStockKg.trim() !== "" && Number.isFinite(next) && next >= 0;
@@ -84,7 +93,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, onClose
     setReason("reset");
   }
 
-  async function submit() {
+  async function actuallySubmit() {
     setError("");
     setSaving(true);
     try {
@@ -96,6 +105,73 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, onClose
       setError(err.message || "Couldn't save this adjustment — check your connection and try again.");
       setSaving(false);
     }
+  }
+
+  // Reset asks for a password first, same pattern as Edit Transaction —
+  // proves someone deliberately meant it, every time, no matter who's
+  // logged in.
+  function submit() {
+    if (reason === "reset") {
+      setError("");
+      setConfirmingReset(true);
+      return;
+    }
+    actuallySubmit();
+  }
+
+  async function confirmResetWithPassword(e) {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
+    if (authError) {
+      setError(authError.message || "Incorrect password.");
+      setSaving(false);
+      return;
+    }
+    await actuallySubmit();
+  }
+
+  if (confirmingReset) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+          <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Adjust Stock — {station.name}</h3>
+          <p className="mb-4 text-xs text-slate-400">Reason: {ADJUSTMENT_REASONS.find((r) => r.value === "reset")?.label}</p>
+
+          <div className="mb-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
+            <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">System currently shows</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
+            <div className="flex justify-between pt-2"><span className="text-slate-500">Setting to</span><span className="font-medium text-slate-700">{fmt2(next)} kg</span></div>
+          </div>
+
+          <div className="mb-3 flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-700">
+            <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="block font-semibold">
+                This will log {fmt2(Math.abs(delta))} kg{valueLost != null ? ` (≈${fmtRiel(valueLost)})` : ""} as lost, right now.
+              </span>
+              This can't be quietly undone later — it's a permanent entry in the stock ledger, same as every other adjustment.
+            </span>
+          </div>
+
+          <form onSubmit={confirmResetWithPassword}>
+            <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm this reset</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              autoComplete="off" name="confirm-own-password-not-autofillable"
+              className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => { setConfirmingReset(false); setPassword(""); setError(""); }} disabled={saving}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
+              <button type="submit" disabled={saving || !password} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
+                {saving ? "Saving..." : "Confirm Reset"}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
   }
 
   return (
