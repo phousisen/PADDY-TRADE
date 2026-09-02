@@ -10,13 +10,22 @@ function fmtRiel(n) { return `${fmt(n)} ៛`; }
 // [2026-08-31] Pulled out of StockInventory.jsx (unchanged behavior) so
 // LocationDetail.jsx can reuse the exact same modal instead of duplicating
 // ~110 lines of it — same component, two callers now.
+// [2026-09-02] `label` replaced with `labelKey` so these can be translated —
+// this is a module-level constant with no access to `t()`, so callers look
+// the text up themselves via `reasonLabel(t, value)` below instead of
+// reading `.label` directly.
 export const ADJUSTMENT_REASONS = [
-  { value: "reset", label: "Daily reset — remaining treated as lost" },
-  { value: "moisture", label: "Moisture loss (dried out)" },
-  { value: "spillage", label: "Spillage / handling loss" },
-  { value: "recount", label: "Recount correction" },
-  { value: "other", label: "Other" },
+  { value: "reset", labelKey: "adj_reason_reset" },
+  { value: "moisture", labelKey: "adj_reason_moisture" },
+  { value: "spillage", labelKey: "adj_reason_spillage" },
+  { value: "recount", labelKey: "adj_reason_recount" },
+  { value: "other", labelKey: "adj_reason_other" },
 ];
+
+export function reasonLabel(t, value) {
+  const r = ADJUSTMENT_REASONS.find((x) => x.value === value);
+  return r ? t(r.labelKey) : value;
+}
 
 // Recording what's actually on the scale right now for a location, when
 // it no longer matches the running total the system has been keeping.
@@ -102,7 +111,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
       // Same reasoning as every other save-with-a-modal in this app: if it
       // fails (dropped connection, permissions gap), say so instead of
       // leaving the button stuck on "Saving..." with no explanation.
-      setError(err.message || "Couldn't save this adjustment — check your connection and try again.");
+      setError(err.message || t("adj_save_error_default"));
       setSaving(false);
     }
   }
@@ -125,7 +134,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
     setSaving(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     if (authError) {
-      setError(authError.message || "Incorrect password.");
+      setError(authError.message || t("adj_incorrect_password"));
       setSaving(false);
       return;
     }
@@ -136,26 +145,26 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-          <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Adjust Stock — {station.name}</h3>
-          <p className="mb-4 text-xs text-slate-400">Reason: {ADJUSTMENT_REASONS.find((r) => r.value === "reset")?.label}</p>
+          <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> {t("adj_title", { station: station.name })}</h3>
+          <p className="mb-4 text-xs text-slate-400">{t("adj_reason_prefix", { reason: reasonLabel(t, "reset") })}</p>
 
           <div className="mb-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
-            <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">System currently shows</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
-            <div className="flex justify-between pt-2"><span className="text-slate-500">Setting to</span><span className="font-medium text-slate-700">{fmt2(next)} kg</span></div>
+            <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">{t("adj_system_shows")}</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
+            <div className="flex justify-between pt-2"><span className="text-slate-500">{t("adj_setting_to")}</span><span className="font-medium text-slate-700">{fmt2(next)} kg</span></div>
           </div>
 
           <div className="mb-3 flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-700">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             <span>
               <span className="block font-semibold">
-                This will log {fmt2(Math.abs(delta))} kg{valueLost != null ? ` (≈${fmtRiel(valueLost)})` : ""} as lost, right now.
+                {t("adj_confirm_will_log", { kg: fmt2(Math.abs(delta)), valuePart: valueLost != null ? ` (≈${fmtRiel(valueLost)})` : "" })}
               </span>
-              This can't be quietly undone later — it's a permanent entry in the stock ledger, same as every other adjustment.
+              {t("adj_confirm_warning_body")}
             </span>
           </div>
 
           <form onSubmit={confirmResetWithPassword}>
-            <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm this reset</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("adj_confirm_password_label")}</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
               autoComplete="off" name="confirm-own-password-not-autofillable"
               className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
@@ -165,7 +174,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
               <button type="button" onClick={() => { setConfirmingReset(false); setPassword(""); setError(""); }} disabled={saving}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
               <button type="submit" disabled={saving || !password} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
-                {saving ? "Saving..." : "Confirm Reset"}
+                {saving ? t("saving_label") : t("adj_confirm_btn")}
               </button>
             </div>
           </form>
@@ -177,14 +186,14 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> Adjust Stock — {station.name}</h3>
-        <p className="mb-4 text-xs text-slate-400">Use this when what's actually on the scale doesn't match what the system shows — paddy naturally loses some weight over time from moisture drying out, spillage, or handling.</p>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> {t("adj_title", { station: station.name })}</h3>
+        <p className="mb-4 text-xs text-slate-400">{t("adj_subtitle")}</p>
 
         <div className="mb-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-          <div><span className="text-slate-500">System currently shows</span> <span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
+          <div><span className="text-slate-500">{t("adj_system_shows")}</span> <span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
           {previous > 0 && (
             <button type="button" onClick={useResetToZero} className="flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">
-              <RotateCcw size={11} /> Reset to 0
+              <RotateCcw size={11} /> {t("adj_reset_to_zero")}
             </button>
           )}
         </div>
@@ -192,8 +201,8 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
         <div className="mb-3">
           <WeightField
             locationId={station.id}
-            label="Actual weighed amount now (kg)"
-            scaleLabel="Live Scale Weight"
+            label={t("adj_weight_label")}
+            scaleLabel={t("adj_scale_label")}
             value={newStockKg}
             onChange={setNewStockKg}
             isAdmin={isAdmin}
@@ -202,40 +211,40 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
 
         {hasValidNext && (
           <div className={`mb-3 rounded-lg px-3 py-2.5 text-sm ${delta < -0.005 ? "bg-rose-50 text-rose-700" : delta > 0.005 ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
-            {Math.abs(delta) < 0.005 ? "No change from what the system already shows." : `${delta < 0 ? "Loss" : "Gain"} of ${fmt2(Math.abs(delta))} kg will be recorded.`}
+            {Math.abs(delta) < 0.005 ? t("adj_no_change") : t(delta < 0 ? "adj_loss_of" : "adj_gain_of", { kg: fmt2(Math.abs(delta)) })}
           </div>
         )}
 
         {isLoss && (
           <>
-            <label className="mb-1 block text-xs text-slate-500">Price per kg (Riel) — for valuing this loss</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("adj_price_label")}</label>
             <input type="number" min="0" step="1" value={priceInput} onChange={(e) => setPriceInput(e.target.value)}
-              placeholder={priceSuggestion == null ? "Nothing bought here recently — type in a price" : ""}
+              placeholder={priceSuggestion == null ? t("adj_price_placeholder_none") : ""}
               className="mb-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             <p className="mb-3 text-[11px] text-slate-400">
               {priceSuggestion?.source === "today"
-                ? "Auto-filled from today's average Buy price at this station — editable."
+                ? t("adj_price_hint_today")
                 : priceSuggestion?.source === "recent"
-                ? "No Buy here yet today — auto-filled from this station's average Buy price over the last 30 days instead — editable."
-                : "Nothing bought here in the last 30 days to average — type a price in, or leave blank to skip valuing this loss."}
+                ? t("adj_price_hint_recent")
+                : t("adj_price_hint_none")}
             </p>
             {valueLost != null && (
               <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm">
-                <span className="font-medium text-amber-700">Estimated Value Lost</span>
+                <span className="font-medium text-amber-700">{t("adj_est_value_lost")}</span>
                 <span className="font-bold text-amber-700">{fmtRiel(valueLost)}</span>
               </div>
             )}
           </>
         )}
 
-        <label className="mb-1 block text-xs text-slate-500">Reason</label>
+        <label className="mb-1 block text-xs text-slate-500">{t("adj_reason_label")}</label>
         <select value={reason} onChange={(e) => setReason(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-          {ADJUSTMENT_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          {ADJUSTMENT_REASONS.map((r) => <option key={r.value} value={r.value}>{t(r.labelKey)}</option>)}
         </select>
 
-        <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
-        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Any extra detail worth recording"
+        <label className="mb-1 block text-xs text-slate-500">{t("adj_note_label")}</label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("adj_note_placeholder")}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
@@ -243,7 +252,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
         <div className="flex justify-end gap-2">
           <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
           <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
-            {saving ? "Saving…" : "Record Adjustment"}
+            {saving ? t("saving_label") : t("adj_record_btn")}
           </button>
         </div>
       </div>
