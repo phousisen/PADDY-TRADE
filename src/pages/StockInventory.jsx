@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers, Scale, RotateCcw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
-import { AdjustStockModal, ADJUSTMENT_REASONS } from "../components/AdjustStockModal.jsx";
+import { AdjustStockModal, reasonLabel } from "../components/AdjustStockModal.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -396,7 +396,7 @@ export default function StockInventory() {
           adjustedKg += kg;
           cursor = Number(a.new_stock_kg);
           resetHappened = true;
-          const label = ADJUSTMENT_REASONS.find((r) => r.value === a.reason)?.label ?? a.reason;
+          const label = reasonLabel(t, a.reason);
           // [2026-09-01] Every ADJUSTMENT_REASONS label is written for the
           // normal case — stock coming in LOWER than the book expected
           // ("...remaining treated as lost", "Moisture loss (dried out)",
@@ -408,7 +408,7 @@ export default function StockInventory() {
           // kg figure is a straight contradiction, so a gain gets its own,
           // honest phrasing instead of the reason's canned sentence.
           const displayReason = kg >= 0
-            ? (a.reason === "recount" ? "Recount — more than expected" : "Corrected up")
+            ? (a.reason === "recount" ? t("adj_recount_gain") : t("adj_corrected_up"))
             : label;
           adjustmentDetails.push({ kg, reason: label, displayReason, note: a.note, valueLost: a.value_lost });
         } else {
@@ -476,8 +476,8 @@ export default function StockInventory() {
   function balanceCell(kg, boldClass) {
     if (kg < -0.005) {
       return (
-        <span className="font-medium text-amber-600" title="Negative running balance — this station's records show more paddy sold than was ever recorded bought up to this point. Worth checking for a missing Buy ticket earlier in its history.">
-          {fmt2(kg)} kg <span className="rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">Check records</span>
+        <span className="font-medium text-amber-600" title={t("negative_balance_tooltip")}>
+          {fmt2(kg)} kg <span className="rounded bg-amber-50 px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-600">{t("check_records_tag")}</span>
         </span>
       );
     }
@@ -535,7 +535,7 @@ export default function StockInventory() {
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_btn")}</button>
           </div>
         )}
         <div className="mb-4 flex items-start justify-between">
@@ -555,7 +555,7 @@ export default function StockInventory() {
           </div>
           <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center gap-2 text-xs text-slate-400"><Gauge size={14} /><span>{t("est_value")}</span></div>
-            <p className="text-3xl font-bold text-slate-800">{(estimatedValue / 1_000_000_000).toFixed(2)}<span className="ml-1 text-base font-medium text-slate-400">Billion Riel</span></p>
+            <p className="text-3xl font-bold text-slate-800">{(estimatedValue / 1_000_000_000).toFixed(2)}<span className="ml-1 text-base font-medium text-slate-400">{t("unit_billion_riel")}</span></p>
             <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-brand-500" style={{ width: `${Math.min(capacityPct, 100)}%` }} /></div>
             <p className="mt-1 text-xs text-slate-400">{capacityPct}% {t("of_capacity")}</p>
           </div>
@@ -569,7 +569,7 @@ export default function StockInventory() {
         <div className="mb-6 rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <h3 className="font-semibold text-slate-700">{t("stock_by_station")}</h3>
-            <p className="text-xs text-slate-400">Click a location to see its paddy type breakdown</p>
+            <p className="text-xs text-slate-400">{t("stock_click_hint")}</p>
           </div>
           <table className="w-full text-sm">
             <thead>
@@ -578,7 +578,7 @@ export default function StockInventory() {
                 <th className="px-5 py-2 font-medium">{t("quantity_kg")}</th>
                 <th className="px-5 py-2 font-medium">{t("stock_value_col")}</th>
                 <th className="px-5 py-2 font-medium">{t("updated")}</th>
-                {canAdjustStock && <th className="px-5 py-2 font-medium">Adjust</th>}
+                {canAdjustStock && <th className="px-5 py-2 font-medium">{t("col_adjust")}</th>}
                 <th className="px-5 py-2"></th>
               </tr>
             </thead>
@@ -600,7 +600,7 @@ export default function StockInventory() {
                             onClick={(e) => { e.stopPropagation(); setAdjustStation(s); }}
                             className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700"
                           >
-                            <Scale size={12} /> Adjust
+                            <Scale size={12} /> {t("col_adjust")}
                           </button>
                         </td>
                       )}
@@ -612,12 +612,12 @@ export default function StockInventory() {
                       <tr className="border-b border-slate-50 bg-slate-50/60 last:border-0">
                         <td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-3">
                           {rows.length === 0 ? (
-                            <p className="py-2 text-center text-xs text-slate-400">No paddy type breakdown yet for this location.</p>
+                            <p className="py-2 text-center text-xs text-slate-400">{t("no_paddy_breakdown")}</p>
                           ) : (
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-left text-xs text-slate-400">
-                                  <th className="py-1.5 pl-2 font-medium">Paddy Type</th>
+                                  <th className="py-1.5 pl-2 font-medium">{t("paddy_type_col")}</th>
                                   <th className="py-1.5 font-medium">{t("quantity_kg")}</th>
                                   <th className="py-1.5 font-medium">{t("stock_value_col")}</th>
                                 </tr>
@@ -640,10 +640,10 @@ export default function StockInventory() {
                 );
               })}
               {loading && stations.length === 0 && (
-                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>
+                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>
               )}
               {stations.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">No locations visible to your account.</td></tr>
+                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_locations_visible")}</td></tr>
               )}
             </tbody>
           </table>
@@ -651,12 +651,12 @@ export default function StockInventory() {
 
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Layers size={16} className="text-brand-600" /> Stock by Paddy Type — All Locations Combined</h3>
+            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Layers size={16} className="text-brand-600" /> {t("combined_stock_title")}</h3>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-2 font-medium">Paddy Type</th>
+                <th className="px-5 py-2 font-medium">{t("paddy_type_col")}</th>
                 <th className="px-5 py-2 font-medium">{t("quantity_kg")}</th>
                 <th className="px-5 py-2 font-medium">{t("stock_value_col")}</th>
               </tr>
@@ -670,7 +670,7 @@ export default function StockInventory() {
                 </tr>
               ))}
               {combinedRows.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">No stock recorded yet.</td></tr>
+                <tr><td colSpan={3} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_stock_recorded")}</td></tr>
               )}
             </tbody>
           </table>
@@ -678,33 +678,33 @@ export default function StockInventory() {
 
         <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-5 py-4">
-            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-rose-500" /> Stock Loss Log</h3>
-            <p className="mt-0.5 text-xs text-slate-400">Every stock adjustment that reduced what's on hand — moisture, spillage, or a daily reset — with what it was worth at the time.</p>
+            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-rose-500" /> {t("loss_log_title")}</h3>
+            <p className="mt-0.5 text-xs text-slate-400">{t("loss_log_subtitle")}</p>
           </div>
           <div className="grid grid-cols-1 divide-y divide-slate-100 border-b border-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <div className="px-5 py-3.5">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">Lost Today</p>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("lost_today_label")}</p>
               <p className="mt-0.5 text-lg font-bold text-rose-600">{fmt2(lostTodayKg)} kg</p>
             </div>
             <div className="px-5 py-3.5">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">Lost This Month</p>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("lost_month_label")}</p>
               <p className="mt-0.5 text-lg font-bold text-rose-600">{fmt2(lostMonthKg)} kg</p>
             </div>
             <div className="px-5 py-3.5">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">Est. Value Lost This Month</p>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("est_value_lost_month_label")}</p>
               <p className="mt-0.5 text-lg font-bold text-rose-600">{fmtRiel(lostMonthValue)}</p>
             </div>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-2 font-medium">Date</th>
+                <th className="px-5 py-2 font-medium">{t("col_date")}</th>
                 <th className="px-5 py-2 font-medium">{t("station")}</th>
-                <th className="px-5 py-2 font-medium">Weight Lost</th>
-                <th className="px-5 py-2 font-medium">Price/kg Used</th>
-                <th className="px-5 py-2 font-medium">Value Lost</th>
-                <th className="px-5 py-2 font-medium">Recorded By</th>
-                <th className="px-5 py-2 font-medium">Note</th>
+                <th className="px-5 py-2 font-medium">{t("col_weight_lost")}</th>
+                <th className="px-5 py-2 font-medium">{t("col_price_used")}</th>
+                <th className="px-5 py-2 font-medium">{t("col_value_lost")}</th>
+                <th className="px-5 py-2 font-medium">{t("col_recorded_by")}</th>
+                <th className="px-5 py-2 font-medium">{t("col_note")}</th>
               </tr>
             </thead>
             <tbody>
@@ -714,13 +714,13 @@ export default function StockInventory() {
                   <td className="px-5 py-3 font-medium text-slate-700">{a.stationName}</td>
                   <td className="px-5 py-3 font-medium text-rose-600">{fmt2(Math.abs(a.adjustment_kg))} kg</td>
                   <td className="px-5 py-3 text-slate-600">{a.price_per_kg != null ? fmtRiel(a.price_per_kg) : <span className="text-slate-300">—</span>}</td>
-                  <td className="px-5 py-3 font-medium text-rose-600">{a.value_lost != null ? fmtRiel(a.value_lost) : <span className="font-normal text-slate-300">not valued</span>}</td>
+                  <td className="px-5 py-3 font-medium text-rose-600">{a.value_lost != null ? fmtRiel(a.value_lost) : <span className="font-normal text-slate-300">{t("not_valued_label")}</span>}</td>
                   <td className="px-5 py-3 text-slate-500">{a.adjustedByName}</td>
-                  <td className="px-5 py-3 text-slate-400">{a.note || (ADJUSTMENT_REASONS.find((r) => r.value === a.reason)?.label ?? a.reason)}</td>
+                  <td className="px-5 py-3 text-slate-400">{a.note || reasonLabel(t, a.reason)}</td>
                 </tr>
               ))}
               {lossRows.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">No stock loss recorded yet.</td></tr>
+                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_stock_loss")}</td></tr>
               )}
             </tbody>
           </table>
@@ -741,8 +741,8 @@ export default function StockInventory() {
         <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
             <div>
-              <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Layers size={16} className="text-brand-600" /> Daily Stock Ledger</h3>
-              <p className="mt-0.5 text-xs text-slate-400">What each station spent, earned, lost, and closed with — day by day.</p>
+              <h3 className="flex items-center gap-2 font-semibold text-slate-700"><Layers size={16} className="text-brand-600" /> {t("ledger_title")}</h3>
+              <p className="mt-0.5 text-xs text-slate-400">{t("ledger_subtitle")}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <select
@@ -753,7 +753,7 @@ export default function StockInventory() {
                 {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               <div className="flex overflow-hidden rounded-lg border border-slate-200">
-                {[["7d", "7 Days"], ["30d", "30 Days"], ["month", "This Month"], ["all", "All Time"]].map(([val, label]) => (
+                {[["7d", t("period_7d")], ["30d", t("period_30d")], ["month", t("period_month")], ["all", t("period_all_time")]].map(([val, label]) => (
                   <button
                     key={val}
                     onClick={() => setLedgerPeriod(val)}
@@ -769,15 +769,15 @@ export default function StockInventory() {
           <table className="w-full text-[13px]" style={{ fontVariantNumeric: "tabular-nums" }}>
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-right text-[10.5px] uppercase tracking-wide text-slate-400">
-                <th className="px-4 py-2.5 text-left font-semibold">Date</th>
-                <th className="px-4 py-2.5 font-semibold">Opening</th>
-                <th className="px-4 py-2.5 font-semibold">Bought In</th>
-                <th className="px-4 py-2.5 font-semibold">Spent</th>
-                <th className="px-4 py-2.5 font-semibold">Sold Out</th>
-                <th className="px-4 py-2.5 font-semibold">Earned</th>
-                <th className="px-4 py-2.5 font-semibold">Lost</th>
-                <th className="px-4 py-2.5 font-semibold">Value Lost</th>
-                <th className="px-4 py-2.5 font-semibold">Closing</th>
+                <th className="px-4 py-2.5 text-left font-semibold">{t("col_date")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_opening")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_bought_in")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_spent")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_sold_out")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_earned")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_lost")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_value_lost")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_closing")}</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
             </thead>
@@ -815,15 +815,15 @@ export default function StockInventory() {
                       <tr className="border-b border-slate-50 bg-slate-50/60 last:border-0">
                         <td colSpan={10} className="px-5 py-3">
                           {r.byProduct.length === 0 ? (
-                            <p className="py-2 text-center text-xs text-slate-400">No paddy-type activity this day.</p>
+                            <p className="py-2 text-center text-xs text-slate-400">{t("no_paddy_activity_day")}</p>
                           ) : (
                             <table className="w-full text-sm">
                               <thead>
                                 <tr className="text-left text-xs text-slate-400">
-                                  <th className="py-1.5 pl-2 font-medium">Paddy Type</th>
-                                  <th className="py-1.5 font-medium">Bought In</th>
-                                  <th className="py-1.5 font-medium">Sold Out</th>
-                                  <th className="py-1.5 font-medium">Closing</th>
+                                  <th className="py-1.5 pl-2 font-medium">{t("paddy_type_col")}</th>
+                                  <th className="py-1.5 font-medium">{t("col_bought_in")}</th>
+                                  <th className="py-1.5 font-medium">{t("col_sold_out")}</th>
+                                  <th className="py-1.5 font-medium">{t("col_closing")}</th>
                                   <th className="py-1.5 font-medium">{t("stock_value_col")}</th>
                                 </tr>
                               </thead>
@@ -860,14 +860,14 @@ export default function StockInventory() {
                 );
               })}
               {ledgerRows.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-slate-400">No activity recorded for this station in this period.</td></tr>
+                <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_activity_period")}</td></tr>
               )}
             </tbody>
             {ledgerRows.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-brand-600 bg-brand-50/60 text-right">
                   <td className="px-4 py-3 text-left font-bold text-brand-900">
-                    {ledgerPeriod === "7d" ? "7-Day" : ledgerPeriod === "30d" ? "30-Day" : ledgerPeriod === "month" ? "This Month's" : "All-Time"} Total
+                    {t(ledgerPeriod === "7d" ? "ledger_total_7d" : ledgerPeriod === "30d" ? "ledger_total_30d" : ledgerPeriod === "month" ? "ledger_total_month" : "ledger_total_all")}
                   </td>
                   <td className="px-4 py-3"></td>
                   <td className="px-4 py-3 font-bold text-brand-700">+{fmt2(ledgerTotals.boughtKg)} kg</td>
@@ -880,7 +880,7 @@ export default function StockInventory() {
                   <td className="px-4 py-3"></td>
                 </tr>
                 <tr className="bg-brand-50/60 text-right">
-                  <td className="px-4 pb-3 text-left text-xs font-semibold text-brand-800">Gross Margin (Earned − Spent)</td>
+                  <td className="px-4 pb-3 text-left text-xs font-semibold text-brand-800">{t("gross_margin_label")}</td>
                   <td colSpan={5}></td>
                   <td colSpan={2} className="px-4 pb-3">
                     <span className={ledgerTotals.marginAmt >= 0 ? "font-bold text-brand-700" : "font-bold text-rose-600"}>{ledgerTotals.marginAmt >= 0 ? "+" : ""}{fmtRiel(ledgerTotals.marginAmt)}</span>
@@ -888,7 +888,7 @@ export default function StockInventory() {
                   <td className="px-4 pb-3"></td>
                 </tr>
                 <tr className="bg-brand-50/60 text-right">
-                  <td className="px-4 pb-4 text-left text-xs font-semibold text-brand-800">Net Result (Margin − Value Lost)</td>
+                  <td className="px-4 pb-4 text-left text-xs font-semibold text-brand-800">{t("net_result_label")}</td>
                   <td colSpan={5}></td>
                   <td colSpan={2} className="px-4 pb-4">
                     <span className={ledgerTotals.netAmt >= 0 ? "font-bold text-brand-700" : "font-bold text-rose-600"}>{ledgerTotals.netAmt >= 0 ? "+" : ""}{fmtRiel(ledgerTotals.netAmt)}</span>
