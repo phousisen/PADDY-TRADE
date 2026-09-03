@@ -463,6 +463,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
         partyId,
         productId,
         locationId,
+        type: tx.type,
         quantityKg: parseFloat(quantityKg) || 0,
         pricePerKg: parseFloat(pricePerKg) || 0,
         paymentStatus,
