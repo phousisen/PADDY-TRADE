@@ -28,7 +28,7 @@ import RegisterPartyStaff from "./pages/RegisterPartyStaff.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
 
 export default function App() {
-  const { session, profile, loading, hasPermission } = useAuth();
+  const { session, profile, loading, hasPermission, isViewOnly } = useAuth();
   const { t } = useLanguage();
   const [page, setPage] = useState("dashboard");
   const [selectedLocationId, setSelectedLocationId] = useState(null);
@@ -129,7 +129,13 @@ export default function App() {
   const canViewReports = !isStaff || hasPermission("view_reports");
 
   function renderPage() {
-    if (isStaff && (page === "stations" || page === "station-detail" || page === "station-health" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
+    // [2026-09-01] `&& !isViewOnly` — a view-only account (see
+    // viewOnlyGuard.js) is still a plain "staff" account underneath (it
+    // gets full visibility through its own custom role's "All Locations" +
+    // every-permission-checked setup, not by pretending to be an HQ
+    // Admin), so without this it would get denied here before ever
+    // reaching the isAdmin-or-isViewOnly checks below.
+    if (isStaff && !isViewOnly && (page === "stations" || page === "station-detail" || page === "station-health" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
       return <PermissionDenied />;
     }
     if (isStaff && (page === "reports" || page === "payments" || page === "expenses") && !canViewReports) {
@@ -139,18 +145,23 @@ export default function App() {
     if (page === "stock") return <StockInventory />;
     if (page === "transactions") return <Transactions setPage={setPage} />;
     if (page === "tickets") return <WeighingTickets />;
-    if (page === "new-buy") return <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} />;
-    if (page === "new-sell") return <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} />;
-    if (page === "requests") return isAdmin ? <ChangeRequests /> : <PermissionDenied />;
-    if (page === "stations") return isAdmin ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
-    if (page === "station-detail") return isAdmin ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
-    if (page === "station-health") return isAdmin ? <StationHealth /> : <PermissionDenied />;
+    if (page === "new-buy") return !isViewOnly ? <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
+    if (page === "new-sell") return !isViewOnly ? <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
+    // `isAdmin || isViewOnly` on every line below — a view-only account
+    // gets to SEE every one of these pages exactly like an HQ Admin does;
+    // it's the pages themselves (and the api.js/offlineQueue.js backstop
+    // behind them) that keep every actual edit/create/delete control off
+    // limits once it's there. See viewOnlyGuard.js for the full picture.
+    if (page === "requests") return (isAdmin || isViewOnly) ? <ChangeRequests /> : <PermissionDenied />;
+    if (page === "stations") return (isAdmin || isViewOnly) ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
+    if (page === "station-detail") return (isAdmin || isViewOnly) ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
+    if (page === "station-health") return (isAdmin || isViewOnly) ? <StationHealth /> : <PermissionDenied />;
     if (page === "reports") return canViewReports ? <Reports /> : <PermissionDenied />;
     if (page === "payments") return canViewReports ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
     if (page === "expenses") return canViewReports ? <Expenses /> : <PermissionDenied />;
-    if (page === "users") return isAdmin ? <UsersPage /> : <PermissionDenied />;
-    if (page === "roles") return isAdmin ? <RolesPage /> : <PermissionDenied />;
-    if (page === "settings") return isAdmin ? <SettingsPage /> : <PermissionDenied />;
+    if (page === "users") return (isAdmin || isViewOnly) ? <UsersPage /> : <PermissionDenied />;
+    if (page === "roles") return (isAdmin || isViewOnly) ? <RolesPage /> : <PermissionDenied />;
+    if (page === "settings") return (isAdmin || isViewOnly) ? <SettingsPage /> : <PermissionDenied />;
     // Receipt Template Editor retired [2026-08-25]: Receipt.jsx now uses a
     // fixed, verified print design (logo + per-location address/phone,
     // matches the Weigh-In Slip) and no longer reads DEFAULT_RECEIPT_TEMPLATE
@@ -174,10 +185,19 @@ export default function App() {
     // already create/edit a party via Suppliers/Buyers — this is just a
     // faster, search-first way to reach the same thing, with the
     // identity-photo verification step built in.
-    if (page === "register-party") return hasPermission("manage_parties") ? <RegisterPartyStaff /> : <PermissionDenied />;
-    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} onSwitchKind={setPage} />;
-    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} onRegister={hasPermission("manage_parties") ? () => setPage("register-party") : null} onSwitchKind={setPage} />;
-    if (page === "party-detail") return <PartyDetail partyId={openParty?.id} kind={openParty?.kind} setPage={setPage} onBuyFor={startBuyFor} onSellFor={startSellFor} />;
+    // `&& !isViewOnly` on all four of these below — a view-only account
+    // gets every one of hasPermission("manage_parties")'s checks for free
+    // (its custom role has every permission checked, so it can SEE the
+    // Farmers & Buyers pages fully), but none of the actual register/buy/
+    // sell entry points. Passing `null` instead of a real handler is the
+    // SAME pattern SimpleListPage/PartyDetail already use to hide these
+    // buttons for a role that lacks manage_parties — nothing new to teach
+    // those two files, just one more reason to pass null.
+    const canRegisterParty = hasPermission("manage_parties") && !isViewOnly;
+    if (page === "register-party") return canRegisterParty ? <RegisterPartyStaff /> : <PermissionDenied />;
+    if (page === "suppliers") return <SimpleListPage title={t("nav_suppliers")} kind="suppliers" onBuyFor={isViewOnly ? null : startBuyFor} onOpenParty={(p) => viewParty(p, "suppliers")} onRegister={canRegisterParty ? () => setPage("register-party") : null} onSwitchKind={setPage} />;
+    if (page === "buyers") return <SimpleListPage title={t("nav_buyers")} kind="buyers" onSellFor={isViewOnly ? null : startSellFor} onOpenParty={(p) => viewParty(p, "buyers")} onRegister={canRegisterParty ? () => setPage("register-party") : null} onSwitchKind={setPage} />;
+    if (page === "party-detail") return <PartyDetail partyId={openParty?.id} kind={openParty?.kind} setPage={setPage} onBuyFor={isViewOnly ? null : startBuyFor} onSellFor={isViewOnly ? null : startSellFor} />;
     return <Dashboard />;
   }
 

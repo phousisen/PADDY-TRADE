@@ -151,7 +151,7 @@ const rawApi = {
     return data.map((p) => ({ ...p, locationName: p.locations?.name || "—", roleObj: p.roles || null }));
   },
 
-  async updateProfileRole(id, { roleId, locationId, role, fullName }) {
+  async updateProfileRole(id, { roleId, locationId, role, fullName, viewOnly }) {
     const patch = {};
     if (roleId !== undefined) patch.role_id = roleId;
     if (locationId !== undefined) patch.location_id = locationId;
@@ -163,6 +163,11 @@ const rawApi = {
     // the Users page actually takes effect everywhere, not just in that
     // dropdown's own label.
     if (role !== undefined) patch.role = role;
+    // [2026-09-02] The actual on/off switch for viewOnlyGuard.js — this is
+    // the piece that was missing before: the guard logic existed, but
+    // nothing in the app could ever set this column. Lets the Users page
+    // flip an existing account between "can edit" and "view only".
+    if (viewOnly !== undefined) patch.view_only = viewOnly;
     const { data, error } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
     if (error) throw error;
     return data;
@@ -326,7 +331,7 @@ const rawApi = {
     return data;
   },
 
-  async createUserAccount({ email, password, fullName, roleId, locationId }) {
+  async createUserAccount({ email, password, fullName, roleId, locationId, viewOnly }) {
     // Use a separate, throwaway Supabase client for this so it doesn't
     // touch the admin's own logged-in session — signUp() would otherwise
     // switch the current browser session to the newly created user.
@@ -342,6 +347,10 @@ const rawApi = {
     const patch = { full_name: fullName };
     if (roleId) patch.role_id = roleId;
     if (locationId !== undefined) patch.location_id = locationId || null;
+    // [2026-09-02] So an account can be created ALREADY locked to view-only
+    // — no separate "flip it on after" step needed, e.g. for a family
+    // member who should never accidentally be able to save/edit anything.
+    if (viewOnly) patch.view_only = true;
     // Small delay to let the DB trigger finish inserting the profile row first.
     await new Promise((r) => setTimeout(r, 700));
     const { error: updateError } = await supabase.from("profiles").update(patch).eq("id", userId);
@@ -361,7 +370,7 @@ const rawApi = {
   // lands. Does not touch createUserAccount() or the admin-users Edge
   // Function at all, so the existing "type a password" flow and the
   // existing Users page (list emails / reset password) are unaffected.
-  async inviteUserAccount({ email, fullName, roleId, locationId }) {
+  async inviteUserAccount({ email, fullName, roleId, locationId, viewOnly }) {
     const { createClient } = await import("@supabase/supabase-js");
     const tempClient = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
@@ -374,6 +383,7 @@ const rawApi = {
     const patch = { full_name: fullName };
     if (roleId) patch.role_id = roleId;
     if (locationId !== undefined) patch.location_id = locationId || null;
+    if (viewOnly) patch.view_only = true;
     await new Promise((r) => setTimeout(r, 700));
     const { error: updateError } = await supabase.from("profiles").update(patch).eq("id", userId);
     if (updateError) throw updateError;

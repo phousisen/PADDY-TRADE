@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { supabase, getAccurateNow } from "./supabaseClient.js";
+import { setViewOnlyMode } from "./viewOnlyGuard.js";
 
 const AuthContext = createContext(null);
 
@@ -310,6 +311,16 @@ export function AuthProvider({ children }) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [session?.user?.id]);
 
+  // [2026-09-01] Keeps the shared, non-React view-only flag (see
+  // viewOnlyGuard.js) in sync with whatever profile is actually signed in
+  // right now — api.js and offlineQueue.js both read it from there since
+  // neither can use this context directly. Reacts to every profile change,
+  // including profile becoming null on sign-out (view_only on `undefined`
+  // is falsy, so this correctly clears the flag on logout too).
+  useEffect(() => {
+    setViewOnlyMode(!!profile?.view_only);
+  }, [profile?.view_only]);
+
   async function login(email, password) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     return error;
@@ -323,8 +334,10 @@ export function AuthProvider({ children }) {
     return Array.isArray(profile?.permissions) && profile.permissions.includes(key);
   }
 
+  const isViewOnly = !!profile?.view_only;
+
   return (
-    <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission }}>
+    <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission, isViewOnly }}>
       {children}
     </AuthContext.Provider>
   );
