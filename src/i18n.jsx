@@ -134,6 +134,12 @@ export const translations = {
     period_7d: "7 Days", period_30d: "30 Days", period_all_time: "All Time",
     col_opening: "Opening", col_bought_in: "Bought In", col_spent: "Spent", col_sold_out: "Sold Out",
     col_earned: "Earned", col_lost: "Lost", col_closing: "Closing",
+    // [2026-09-03] Added for LocationDetail.jsx's phone-only Daily Stock
+    // Ledger day-cards — every other label on that card already had a key
+    // here (StockInventory.jsx's table just never needed a "Net Change"
+    // column of its own, since Opening/Closing sit right next to each
+    // other in a table row instead of two grid cells on a card).
+    col_net_change: "Net Change",
     no_paddy_activity_day: "No paddy-type activity this day.",
     no_activity_period: "No activity recorded for this station in this period.",
     ledger_total_7d: "7-Day Total", ledger_total_30d: "30-Day Total",
@@ -289,6 +295,7 @@ export const translations = {
     period_7d: "៧ ថ្ងៃ", period_30d: "៣០ ថ្ងៃ", period_all_time: "គ្រប់ពេល",
     col_opening: "ស្តុកដើម", col_bought_in: "ទិញចូល", col_spent: "ចំណាយ", col_sold_out: "លក់ចេញ",
     col_earned: "ចំណូល", col_lost: "បាត់បង់", col_closing: "ស្តុកចុង",
+    col_net_change: "ការផ្លាស់ប្តូរសុទ្ធ",
     no_paddy_activity_day: "គ្មានសកម្មភាពប្រភេទស្រូវនៅថ្ងៃនេះទេ។",
     no_activity_period: "គ្មានសកម្មភាពកត់ត្រាសម្រាប់ទីតាំងនេះក្នុងអំឡុងពេលនេះទេ។",
     ledger_total_7d: "សរុប ៧ ថ្ងៃ", ledger_total_30d: "សរុប ៣០ ថ្ងៃ",
