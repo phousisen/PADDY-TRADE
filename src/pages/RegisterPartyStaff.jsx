@@ -27,6 +27,26 @@ const inputCls = "w-full rounded-lg border border-slate-300 px-4 py-3 text-base 
 const labelCls = "mb-1.5 block text-sm font-medium text-slate-600";
 const looksLikePhone = (s) => /^[\d+\s-]+$/.test(s.trim());
 
+// [2026-09-03] Same bank list already offered on the Buy/Sell transaction
+// forms (TransactionForm.jsx / WeighingTickets.jsx each keep their own copy
+// of this same list — no shared constants file exists yet, so this follows
+// that same pattern rather than introducing a new one) — picking a name
+// already on this list here means it also matches what shows up as a
+// quick-pick later when someone buys from or sells to this person.
+// "Other..." still falls through to a free-text field for a bank not on it.
+const BANK_OPTIONS = [
+  "Cash",
+  "ABA Bank",
+  "ACLEDA Bank",
+  "Canadia Bank",
+  "Sathapana Bank",
+  "Wing Bank",
+  "KB Prasac Bank",
+  "FTB Bank",
+  "Phillip Bank",
+  "Chipmong Bank",
+];
+
 function blankForm() {
   return { name: "", phone: "", type: "supplier", idNumber: "", bankName: "", bankAccount: "", bankQrUrl: null, idPhotoUrl: null };
 }
@@ -47,6 +67,11 @@ export default function RegisterPartyStaff() {
 
   const [editingId, setEditingId] = useState(null); // an existing party's id, or null when adding someone new
   const [form, setForm] = useState(null); // null = search screen is shown; an object = the profile form is open
+  // Whether the bank field is showing its free-text fallback — true when the
+  // profile's current bank name isn't one of BANK_OPTIONS (an existing
+  // profile with a bank picked before this dropdown existed, or someone
+  // deliberately typing one that's genuinely not on the list).
+  const [bankIsOther, setBankIsOther] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -129,6 +154,7 @@ export default function RegisterPartyStaff() {
       bankQrUrl: party.bank_qr_url || null,
       idPhotoUrl: party.id_photo_url || null,
     });
+    setBankIsOther(!!party.bank_name && !BANK_OPTIONS.includes(party.bank_name));
     setSaveError("");
     setSaved(false);
   }
@@ -140,6 +166,7 @@ export default function RegisterPartyStaff() {
       name: query && !looksLikePhone(query) ? query : "",
       phone: query && looksLikePhone(query) ? query : "",
     });
+    setBankIsOther(false);
     setSaveError("");
     setSaved(false);
   }
@@ -263,7 +290,26 @@ export default function RegisterPartyStaff() {
             <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{t("reg_bank_details")}</p>
             <div>
               <label className={labelCls}>{t("bank_name")}</label>
-              <input className={inputCls} value={form.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder={t("reg_bank_placeholder")} />
+              <select
+                className={inputCls}
+                value={bankIsOther ? "__other__" : form.bankName}
+                onChange={(e) => {
+                  if (e.target.value === "__other__") { setBankIsOther(true); set("bankName", ""); }
+                  else { setBankIsOther(false); set("bankName", e.target.value); }
+                }}
+              >
+                <option value="" disabled>{t("reg_bank_select_placeholder")}</option>
+                {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                <option value="__other__">{t("reg_bank_other")}</option>
+              </select>
+              {bankIsOther && (
+                <input
+                  className={`${inputCls} mt-2`}
+                  value={form.bankName}
+                  onChange={(e) => set("bankName", e.target.value)}
+                  placeholder={t("reg_bank_other_placeholder")}
+                />
+              )}
             </div>
             <div>
               <label className={labelCls}>{t("reg_account_number")}</label>
