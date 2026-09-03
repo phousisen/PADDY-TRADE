@@ -75,6 +75,27 @@ async function insertWithFreshCodeOnCollision(table, row, regenerateCode) {
   }
 }
 
+// [2026-09-03] Turns the raw Postgres error from
+// add_paper_ticket_no_unique_constraint.sql's unique index into something
+// a station can actually read and act on, instead of the default
+// "duplicate key value violates unique constraint ..." text — which, for
+// this one specifically, is exactly what a station would otherwise see
+// sitting in the "stuck" sync banner (Topbar.jsx) with no idea what it
+// means. Matched by index name rather than just error.code === "23505" so
+// this never misfires on some other constraint's collision (like the
+// `code`-collision retry above, which is checked and handled first
+// anyway) — returns null for anything else so the caller just re-throws
+// the original error unchanged.
+function friendlyPaperTicketNoError(error, paperTicketNo) {
+  if (error?.code === "23505" && /paper_ticket_no_per_location/.test(String(error?.message || ""))) {
+    const trimmed = (paperTicketNo || "").trim();
+    return new Error(
+      `Paper ticket No.${trimmed ? ` "${trimmed}"` : ""} is already recorded for this station — it can't be used twice. Check the number on the paper slip.`
+    );
+  }
+  return null;
+}
+
 // The database server's clock defaults to UTC, not Cambodia time — so we
 // stamp every transaction with Cambodia's actual wall-clock date/time here
 // instead of relying on a DB-side default, regardless of what timezone the
@@ -738,7 +759,16 @@ const rawApi = {
     // `id` is optional — passed by finalizeTicket when a weighing ticket
     // is finalized offline, so a retried sync reuses the same id instead
     // of creating a second transaction.
-    return insertWithFreshCodeOnCollision("transactions", row, () => genCode(type));
+    try {
+      return await insertWithFreshCodeOnCollision("transactions", row, () => genCode(type));
+    } catch (error) {
+      // In practice this should be rare here specifically — finalizeTicket
+      // only ever copies over a paper_ticket_no that already passed this
+      // same check on the weighing_tickets table — but a manual Buy/Sell
+      // never goes through a ticket at all, so it's worth the same
+      // friendly message rather than a raw Postgres one.
+      throw friendlyPaperTicketNoError(error, paperTicketNo) || error;
+    }
   },
 
   // Weighing Tickets — the digital version of the paper ticket that
@@ -771,6 +801,38 @@ const rawApi = {
       tareByName: t.tare_profile?.full_name,
       createdByName: t.created_profile?.full_name,
     }));
+  },
+
+  // [2026-09-03] A live, server-side check for the Entry Sanity Check on
+  // New Ticket / Edit Ticket (see WeighingTickets.jsx) — deliberately its
+  // own small targeted query rather than reusing getTickets, since this
+  // runs on every submit and only ever needs "does one row already exist",
+  // not the whole board. Added after a real duplicate (PONG RO, paper
+  // ticket PR000127, used on two separate tickets) got through the
+  // old check, which only ever looked at this device's own local cache —
+  // two different devices, neither yet synced with the other, each
+  // thought the number was free. Checking the server directly closes that
+  // gap; the database's own constraint (see
+  // add_paper_ticket_no_unique_constraint.sql) is what makes it a real
+  // guarantee rather than just a better-informed warning.
+  async findTicketByPaperTicketNo({ locationId, paperTicketNo, excludeId }) {
+    const trimmed = (paperTicketNo || "").trim();
+    if (!locationId || !trimmed) return null;
+    // ilike does a case-insensitive match, but % and _ are wildcards to
+    // it — escape them so a paper ticket number that happens to contain
+    // one (unlikely, but it's free-typed text) is matched literally
+    // instead of as a pattern.
+    const escaped = trimmed.replace(/[%_\\]/g, (c) => `\\${c}`);
+    let query = supabase
+      .from("weighing_tickets")
+      .select("id, code, party_name, created_at")
+      .eq("location_id", locationId)
+      .ilike("paper_ticket_no", escaped)
+      .limit(1);
+    if (excludeId) query = query.neq("id", excludeId);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data && data[0]) || null;
   },
 
   // `id` is optional — passed by the offline queue when a ticket was
@@ -814,7 +876,11 @@ const rawApi = {
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
     };
-    return insertWithFreshCodeOnCollision("weighing_tickets", row, genTicketCode);
+    try {
+      return await insertWithFreshCodeOnCollision("weighing_tickets", row, genTicketCode);
+    } catch (error) {
+      throw friendlyPaperTicketNoError(error, paperTicketNo) || error;
+    }
   },
 
   async setTicketGross(id, { grossKg, userId }) {
@@ -868,7 +934,7 @@ const rawApi = {
       // Same reasoning as setTicketGross above: the ticket is gone, not a
       // real failure — nothing to retry.
       if (error.code === "PGRST116") return null;
-      throw error;
+      throw friendlyPaperTicketNoError(error, paperTicketNo) || error;
     }
     return data;
   },
@@ -1141,7 +1207,26 @@ const rawApi = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, productId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt, paperTicketNo }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, productId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt, paperTicketNo, type }) {
+    // [2026-09-03] Defense-in-depth for the Weigh-In/Weigh-Out <-> Net
+    // Weight desync bug (full story: EditTransactionModal's own useEffect
+    // in Transactions.jsx, added the same day this was found from a real
+    // printed receipt with a wrong total). That fix keeps quantityKg in
+    // sync with grossKg/tareKg, but only inside that one screen's React
+    // state -- nothing stopped a *different* caller of this function from
+    // passing a stale quantityKg alongside a corrected gross/tare pair.
+    // This repeats the same recalculation here too, at the one place
+    // every save of a transaction actually goes through, so that class of
+    // bug can't quietly come back through a different screen later.
+    // Only kicks in when BOTH weights AND the transaction's type are
+    // present in this same call -- a caller that never touches gross/tare
+    // (e.g. Change Requests approval, which doesn't pass any of these
+    // three) or clears one of them back to blank leaves quantityKg
+    // exactly as given, same as before this change.
+    if (type && grossKg != null && tareKg != null) {
+      const isBuy = type === "BUY";
+      quantityKg = Math.max(0, isBuy ? grossKg - tareKg : tareKg - grossKg);
+    }
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
     const { data, error } = await supabase
@@ -1178,16 +1263,22 @@ const rawApi = {
         // for the first time — previously this was only ever set/fixed on
         // the Weighing Tickets board (New Buy/Sell, or Edit Ticket while
         // still open), so a transaction that finalized with the wrong
-        // number, or none at all, had no way to be corrected. No
-        // uniqueness check here (unlike the Weighing Tickets board's
-        // duplicate warning) — this is a deliberate manual fix, not
-        // day-to-day entry.
+        // number, or none at all, had no way to be corrected. [2026-09-03]
+        // Used to have no uniqueness check at all here (this comment used
+        // to say so, reasoning it was "a deliberate manual fix, not
+        // day-to-day entry") — but it's the exact same field, on the exact
+        // same screen that showed the real PR000127 duplicate, so it gets
+        // the same database-level guarantee now (see
+        // add_paper_ticket_no_unique_constraint.sql); no separate live
+        // pre-check UI here since a mis-typed correction on an already-old
+        // transaction is rare enough that a clear error after Save is
+        // proportionate, not a New-Ticket-style warning screen.
         ...(paperTicketNo !== undefined ? { paper_ticket_no: paperTicketNo || null } : {}),
       })
       .eq("id", id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw friendlyPaperTicketNoError(error, paperTicketNo) || error;
     return data;
   },
 
