@@ -10,6 +10,12 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
   const [password, setPassword] = useState("");
   const [roleId, setRoleId] = useState(pickableRoles[0]?.id || "");
   const [locationId, setLocationId] = useState("");
+  // [2026-09-02] The actual switch for viewOnlyGuard.js — previously there
+  // was no way anywhere in the app to turn this on for anyone. Checked
+  // here at creation time so an account can be born already locked to
+  // "look but don't touch" (e.g. a family member's account), with no
+  // separate step needed afterward.
+  const [viewOnly, setViewOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -34,14 +40,14 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
         // Reuses the exact same account-creation path as "Set a password
         // now" below, just with a made-up password nobody uses -- see
         // api.inviteUserAccount for the full explanation.
-        await api.inviteUserAccount({ email: email.trim(), fullName: fullName.trim(), roleId, locationId: locationForRole });
+        await api.inviteUserAccount({ email: email.trim(), fullName: fullName.trim(), roleId, locationId: locationForRole, viewOnly });
         setNotice(`Invite sent to ${email.trim()}. They'll get an email with a link to set their own password and sign in.`);
         setTimeout(() => onCreated(), 3500);
         return;
       }
       const result = await api.createUserAccount({
         email: email.trim(), password, fullName: fullName.trim(), roleId,
-        locationId: locationForRole,
+        locationId: locationForRole, viewOnly,
       });
       if (!result.emailConfirmed) {
         setNotice("Account created. Since this project may require email confirmation, if they can't log in right away, check Supabase → Authentication → Settings and turn off \"Confirm email\", or manually confirm them from Authentication → Users.");
@@ -114,6 +120,20 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
                 </select>
               </>
             )}
+
+            <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-dashed border-brand-300 bg-brand-50/50 p-2.5">
+              <input
+                type="checkbox"
+                id="add-user-view-only"
+                checked={viewOnly}
+                onChange={(e) => setViewOnly(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600"
+              />
+              <label htmlFor="add-user-view-only" className="cursor-pointer text-xs text-slate-600">
+                <span className="font-semibold text-brand-700">View only</span>
+                <span className="block text-slate-500">They can see everything, but can't change anything.</span>
+              </label>
+            </div>
 
             {error && <p className="mb-3 text-sm text-rose-500">{error}</p>}
 
