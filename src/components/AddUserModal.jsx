@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, Eye } from "lucide-react";
 import { api } from "../api.js";
 
 export default function AddUserModal({ roles, locations, isOwner, onClose, onCreated }) {
@@ -21,6 +21,24 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
   const [notice, setNotice] = useState("");
 
   const selectedRole = roles.find((r) => r.id === roleId);
+  // [2026-09-03] View only only ever makes sense for an all-locations
+  // (Admin/Owner-tier) account — the whole point is HQ-wide visibility
+  // with no edit rights, e.g. a family member checking in on the
+  // business. A location-scoped Manager/Staff role already can't touch
+  // anything outside its own station; layering "view only" on top of
+  // that isn't a real use case and just adds a control that means
+  // nothing. See the matching restriction on UsersPage.jsx's toggle for
+  // an existing account.
+  const isAllScopeRole = selectedRole?.scope === "all";
+
+  // If someone checks View only, then changes their mind and picks a
+  // location-scoped role instead, the checkbox disappears — make sure
+  // its value goes back to false with it, so switching roles back to an
+  // all-scope one later doesn't silently re-enable a checkbox nobody
+  // consciously checked this time.
+  useEffect(() => {
+    if (!isAllScopeRole && viewOnly) setViewOnly(false);
+  }, [isAllScopeRole, viewOnly]);
 
   async function submit(e) {
     e.preventDefault();
@@ -121,19 +139,26 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
               </>
             )}
 
-            <div className="mb-3 flex items-start gap-2.5 rounded-lg border border-dashed border-brand-300 bg-brand-50/50 p-2.5">
-              <input
-                type="checkbox"
-                id="add-user-view-only"
-                checked={viewOnly}
-                onChange={(e) => setViewOnly(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 accent-brand-600"
-              />
-              <label htmlFor="add-user-view-only" className="cursor-pointer text-xs text-slate-600">
-                <span className="font-semibold text-brand-700">View only</span>
-                <span className="block text-slate-500">They can see everything, but can't change anything.</span>
-              </label>
-            </div>
+            {isAllScopeRole && (
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <div className="flex items-center gap-2 text-xs text-slate-600">
+                  <Eye size={14} className="shrink-0 text-slate-400" />
+                  <div>
+                    <p className="font-medium text-slate-700">View only</p>
+                    <p className="text-slate-400">Sees everything, can't change anything</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={viewOnly}
+                  onClick={() => setViewOnly((v) => !v)}
+                  className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${viewOnly ? "bg-brand-600" : "bg-slate-300"}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${viewOnly ? "translate-x-4" : "translate-x-0.5"}`} />
+                </button>
+              </div>
+            )}
 
             {error && <p className="mb-3 text-sm text-rose-500">{error}</p>}
 
