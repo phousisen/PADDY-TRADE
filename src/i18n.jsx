@@ -217,6 +217,10 @@ export const translations = {
     reg_save_profile: "Save Profile",
     reg_err_required: "Name and phone number are required.",
     reg_err_save_failed: "Could not save — check your connection and try again.",
+    // [2026-09-03] Bank name dropdown — same BANK_OPTIONS list already used
+    // on the Buy/Sell transaction forms (TransactionForm.jsx/WeighingTickets.jsx),
+    // now offered here too instead of a bare free-text field.
+    reg_bank_select_placeholder: "Select a bank", reg_bank_other: "Other...", reg_bank_other_placeholder: "Type bank name",
   },
   km: {
     appName: "PADDYTRADE",
@@ -415,6 +419,7 @@ export const translations = {
     reg_save_profile: "រក្សាទុកប្រវត្តិរូប",
     reg_err_required: "ត្រូវការឈ្មោះ និងលេខទូរស័ព្ទ។",
     reg_err_save_failed: "មិនអាចរក្សាទុកបានទេ — សូមពិនិត្យការតភ្ជាប់ហើយសាកម្តងទៀត។",
+    reg_bank_select_placeholder: "ជ្រើសរើសធនាគារ", reg_bank_other: "ផ្សេងទៀត...", reg_bank_other_placeholder: "វាយបញ្ចូលឈ្មោះធនាគារ",
   },
 };
 
