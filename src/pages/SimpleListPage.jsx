@@ -8,7 +8,14 @@ import { useLanguage } from "../i18n.jsx";
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
-export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty, onRegister, onSwitchKind }) {
+// [2026-09-03] `hideAmounts` — the Registrar role (RegistrarShell.jsx) can
+// see the same Farmers/Buyers directory as Staff/Admin, minus every money
+// figure: no Paid/Unpaid columns on the table, no Paid/Unpaid cells on the
+// phone cards. Registering and looking someone up needs their identity and
+// how much has moved through them, not what's owed — see PartyDetail.jsx's
+// matching prop for the profile page this links out to. Defaults to false
+// so every existing call site (Staff/Admin via App.jsx) is unaffected.
+export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpenParty, onRegister, onSwitchKind, hideAmounts = false }) {
   const { t } = useLanguage();
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
@@ -98,6 +105,11 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
           { key: "remaining", label: t("col_amount_not_received"), render: (v) => (v > 0.01 ? <span className="font-medium text-amber-600">{fmtRiel(v)}</span> : <span className="text-slate-400">{fmtRiel(0)}</span>) },
         ];
 
+  // Strip the two money columns after the fact rather than threading
+  // `hideAmounts` through both branches above — same list either way,
+  // just filtered down.
+  const visibleColumns = hideAmounts ? columns.filter((c) => c.key !== "paid" && c.key !== "remaining") : columns;
+
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={title} />
@@ -185,15 +197,23 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
                     <>
                       <div><span className="text-slate-400">{t("card_bank")}</span><p className="font-medium text-slate-700">{r.bank_name || "—"}</p></div>
                       <div><span className="text-slate-400">{t("card_total_bought")}</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
-                      <div><span className="text-slate-400">{t("card_paid")}</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
-                      <div><span className="text-slate-400">{t("card_unpaid")}</span><p className={`font-medium ${r.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                      {!hideAmounts && (
+                        <>
+                          <div><span className="text-slate-400">{t("card_paid")}</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
+                          <div><span className="text-slate-400">{t("card_unpaid")}</span><p className={`font-medium ${r.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                        </>
+                      )}
                     </>
                   ) : (
                     <>
                       <div><span className="text-slate-400">{t("card_company")}</span><p className="font-medium text-slate-700">{r.company || "—"}</p></div>
                       <div><span className="text-slate-400">{t("card_total_sold")}</span><p className="font-medium text-slate-700">{fmt2(r.qty)} kg</p></div>
-                      <div><span className="text-slate-400">{t("card_received")}</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
-                      <div><span className="text-slate-400">{t("card_not_received")}</span><p className={`font-medium ${r.remaining > 0.01 ? "text-amber-600" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                      {!hideAmounts && (
+                        <>
+                          <div><span className="text-slate-400">{t("card_received")}</span><p className="font-medium text-emerald-600">{fmtRiel(r.paid)}</p></div>
+                          <div><span className="text-slate-400">{t("card_not_received")}</span><p className={`font-medium ${r.remaining > 0.01 ? "text-amber-600" : "text-slate-400"}`}>{fmtRiel(r.remaining)}</p></div>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -210,14 +230,14 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                {columns.map((c) => <th key={c.key} className="px-5 py-3 font-medium whitespace-nowrap">{c.label}</th>)}
+                {visibleColumns.map((c) => <th key={c.key} className="px-5 py-3 font-medium whitespace-nowrap">{c.label}</th>)}
                 {(onBuyFor || onSellFor) && <th className="px-5 py-3 font-medium whitespace-nowrap">{t("col_action")}</th>}
               </tr>
             </thead>
             <tbody>
               {filteredRows.map((r) => (
                 <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  {columns.map((c) => (
+                  {visibleColumns.map((c) => (
                     <td key={c.key} className="px-5 py-3 text-slate-700 whitespace-nowrap">
                       {c.key === "name" && onOpenParty ? (
                         <button onClick={() => onOpenParty(r)} className="font-medium text-brand-700 underline decoration-dotted hover:text-brand-800">
@@ -244,7 +264,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
               ))}
               {filteredRows.length === 0 && (
                 <tr>
-                  <td colSpan={columns.length + ((onBuyFor || onSellFor) ? 1 : 0)} className="px-5 py-10 text-center text-sm text-slate-400">
+                  <td colSpan={visibleColumns.length + ((onBuyFor || onSellFor) ? 1 : 0)} className="px-5 py-10 text-center text-sm text-slate-400">
                     {rows.length === 0 ? t("no_records_visible") : t("no_search_matches")}
                   </td>
                 </tr>

@@ -12,7 +12,14 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 // place: their contact/bank info, running totals, and a complete history
 // of every truckload bought from (or sold to) them, with real paid/unpaid
 // status per bill (not the static payment_status field — see paidStatusMap).
-export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFor }) {
+//
+// [2026-09-03] `hideAmounts` — set by RegistrarShell.jsx for the Registrar
+// role: they can see that transactions happened (dates, bill #s, locations,
+// paddy types, quantities) without seeing any money — no bill amount, no
+// paid/partial/unpaid status, and the row-click-for-receipt behavior is
+// switched off too (a receipt is exactly the amount they shouldn't see).
+// Defaults to false so Staff/Admin (via App.jsx) see the page unchanged.
+export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFor, hideAmounts = false }) {
   const isSupplier = kind === "suppliers";
   const [party, setParty] = useState(null);
   const [rows, setRows] = useState([]);
@@ -182,26 +189,32 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
           )}
         </div>
 
-        {/* Running totals */}
-        <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+        {/* Running totals — Registrar (hideAmounts) gets just the two
+            quantity-only tiles below, no paid/partial/unpaid breakdown and
+            no money tiles at all. */}
+        <div className={`mb-5 grid grid-cols-2 gap-4 ${hideAmounts ? "" : "md:grid-cols-4"}`}>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs text-slate-400">Transactions</p>
             <p className="text-xl font-bold text-slate-800">{stats.count}</p>
-            <p className="mt-1 text-xs text-slate-400">{stats.completedCount} complete · {stats.partialCount} partial · {stats.unpaidCount} unpaid</p>
+            {!hideAmounts && <p className="mt-1 text-xs text-slate-400">{stats.completedCount} complete · {stats.partialCount} partial · {stats.unpaidCount} unpaid</p>}
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs text-slate-400">{isSupplier ? "Total Bought" : "Total Sold"}</p>
             <p className="text-xl font-bold text-slate-800">{fmt2(stats.qty)} kg</p>
-            <p className="mt-1 text-xs text-slate-400">{fmtRiel(stats.amount)}</p>
+            {!hideAmounts && <p className="mt-1 text-xs text-slate-400">{fmtRiel(stats.amount)}</p>}
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">{isSupplier ? "Amount Paid" : "Amount Received"}</p>
-            <p className="text-xl font-bold text-emerald-600">{fmtRiel(stats.paid)}</p>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">{isSupplier ? "Amount Unpaid" : "Amount Not Received"}</p>
-            <p className={`text-xl font-bold ${stats.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(stats.remaining)}</p>
-          </div>
+          {!hideAmounts && (
+            <>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs text-slate-400">{isSupplier ? "Amount Paid" : "Amount Received"}</p>
+                <p className="text-xl font-bold text-emerald-600">{fmtRiel(stats.paid)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs text-slate-400">{isSupplier ? "Amount Unpaid" : "Amount Not Received"}</p>
+                <p className={`text-xl font-bold ${stats.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(stats.remaining)}</p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Transaction history */}
@@ -218,29 +231,36 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                 <th className="px-5 py-3 font-medium">Paddy Type</th>
                 <th className="px-5 py-3 font-medium">Truck/Driver</th>
                 <th className="px-5 py-3 font-medium">Qty (kg)</th>
-                <th className="px-5 py-3 font-medium">Amount</th>
-                <th className="px-5 py-3 font-medium">Status</th>
+                {!hideAmounts && <th className="px-5 py-3 font-medium">Amount</th>}
+                {!hideAmounts && <th className="px-5 py-3 font-medium">Status</th>}
               </tr>
             </thead>
             <tbody>
               {history.map((r) => (
-                <tr key={r.id} onClick={() => setViewingTx(r)} title="Click to view receipt" className={`cursor-pointer border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${r.isCancelled ? "opacity-50" : ""}`}>
+                <tr
+                  key={r.id}
+                  onClick={hideAmounts ? undefined : () => setViewingTx(r)}
+                  title={hideAmounts ? undefined : "Click to view receipt"}
+                  className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${hideAmounts ? "" : "cursor-pointer"} ${r.isCancelled ? "opacity-50" : ""}`}
+                >
                   <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{r.code}</td>
                   <td className="px-5 py-3 text-slate-600">{r.stationName}</td>
                   <td className="px-5 py-3 text-slate-600">{r.productName}</td>
                   <td className="px-5 py-3 text-slate-500">{r.driver_name || "—"}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(r.quantity_kg)}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>
-                  <td className={`px-5 py-3 font-medium ${r.payStatus === "cancelled" ? "text-slate-400 line-through" : r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
-                    {r.payStatus === "cancelled" ? "Cancelled" : r.payStatus === "paid" ? (isSupplier ? "Paid" : "Received") : r.payStatus === "partial" ? "Partial" : (isSupplier ? "Unpaid" : "Not Received")}
-                    {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">Not counted above</div>}
-                    {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} of {fmtRiel(r.amount)}</div>}
-                    {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
-                  </td>
+                  {!hideAmounts && <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>}
+                  {!hideAmounts && (
+                    <td className={`px-5 py-3 font-medium ${r.payStatus === "cancelled" ? "text-slate-400 line-through" : r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
+                      {r.payStatus === "cancelled" ? "Cancelled" : r.payStatus === "paid" ? (isSupplier ? "Paid" : "Received") : r.payStatus === "partial" ? "Partial" : (isSupplier ? "Unpaid" : "Not Received")}
+                      {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">Not counted above</div>}
+                      {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} of {fmtRiel(r.amount)}</div>}
+                      {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
+                    </td>
+                  )}
                 </tr>
               ))}
-              {history.length === 0 && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-slate-400">No transactions with {party.name} yet.</td></tr>}
+              {history.length === 0 && <tr><td colSpan={hideAmounts ? 6 : 8} className="px-5 py-10 text-center text-sm text-slate-400">No transactions with {party.name} yet.</td></tr>}
             </tbody>
           </table>
         </div>
