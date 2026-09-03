@@ -25,6 +25,7 @@ import SettingsPage from "./pages/SettingsPage.jsx";
 import ReceiptTemplateEditor from "./pages/ReceiptTemplateEditor.jsx";
 import RegisterFarmer from "./pages/RegisterFarmer.jsx";
 import RegisterPartyStaff from "./pages/RegisterPartyStaff.jsx";
+import RegistrarShell from "./pages/RegistrarShell.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
 
 export default function App() {
@@ -103,8 +104,8 @@ export default function App() {
   // [2026-08-31] A deliberately narrow, self-contained restriction: an
   // account whose permission set is EXACTLY ["manage_parties"] and nothing
   // else — no create_transactions, no view_dashboard, nothing — is treated
-  // as registration-only and dropped straight onto that one screen, no
-  // sidebar, no other page reachable at all. This is what the new
+  // as registration-only and dropped straight onto RegistrarShell, no real
+  // Sidebar, no other page reachable at all. This is what the new
   // "Registrar" role (created from the Roles page: Own Location, only
   // "View & edit farmers/buyers" checked) resolves to.
   //
@@ -114,10 +115,17 @@ export default function App() {
   // condition. This can only ever affect a role someone deliberately
   // creates with exactly this one narrow permission and nothing more —
   // existing accounts behave exactly as they did before this change.
+  //
+  // [2026-09-03] Was a bare <RegisterPartyStaff /> (register-only, full
+  // screen, nothing else reachable). Now RegistrarShell — its own tiny nav
+  // between Register and a view-only, amounts-hidden Farmers/Buyers
+  // directory (see RegistrarShell.jsx). Same permission gate, same "no
+  // other page in the app is reachable" guarantee; just more than one
+  // screen behind it now.
   const permissions = Array.isArray(profile.permissions) ? profile.permissions : [];
   const isRegistrationOnly = permissions.length > 0 && permissions.every((p) => p === "manage_parties");
   if (isRegistrationOnly) {
-    return <RegisterPartyStaff />;
+    return <RegistrarShell />;
   }
 
   const isAdmin = profile.role === "admin";
