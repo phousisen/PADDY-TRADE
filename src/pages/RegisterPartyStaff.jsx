@@ -323,8 +323,8 @@ export default function RegisterPartyStaff() {
               </div>
             )}
             <div className="flex flex-wrap gap-4 pt-1">
-              <PhotoUpload label={t("reg_photo1_label")} kind="party-bank-qr" required url={form.bankQrUrl} onUploaded={(url) => set("bankQrUrl", url)} hint={t("reg_photo1_hint")} />
-              <PhotoUpload label={t("reg_photo2_label", { name: form.name || t("reg_them") })} kind="party-id-photo" required url={form.idPhotoUrl} onUploaded={(url) => set("idPhotoUrl", url)} hint={t("reg_photo2_hint")} />
+              <PhotoUpload label={`${t("reg_photo1_label")} ${t("reg_optional")}`} kind="party-bank-qr" url={form.bankQrUrl} onUploaded={(url) => set("bankQrUrl", url)} hint={t("reg_photo1_hint")} />
+              <PhotoUpload label={`${t("reg_photo2_label", { name: form.name || t("reg_them") })} ${t("reg_optional")}`} kind="party-id-photo" url={form.idPhotoUrl} onUploaded={(url) => set("idPhotoUrl", url)} hint={t("reg_photo2_hint")} />
             </div>
 
             {form.bankQrUrl && !form.idPhotoUrl && (
