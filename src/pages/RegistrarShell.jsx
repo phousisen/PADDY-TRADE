@@ -57,7 +57,7 @@ export default function RegistrarShell() {
   const detailKind = openParty?.kind;
 
   const tabs = [
-    { id: "register", label: "Register", icon: UserPlus },
+    { id: "register", label: t("nav_register"), icon: UserPlus },
     { id: "suppliers", label: t("nav_suppliers"), icon: Users },
     { id: "buyers", label: t("nav_buyers"), icon: Users },
   ];

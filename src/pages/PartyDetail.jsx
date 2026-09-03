@@ -4,6 +4,7 @@ import Topbar from "../components/Topbar.jsx";
 import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
+import { useLanguage } from "../i18n.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -20,6 +21,7 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 // switched off too (a receipt is exactly the amount they shouldn't see).
 // Defaults to false so Staff/Admin (via App.jsx) see the page unchanged.
 export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFor, hideAmounts = false }) {
+  const { t } = useLanguage();
   const isSupplier = kind === "suppliers";
   const [party, setParty] = useState(null);
   const [rows, setRows] = useState([]);
@@ -95,8 +97,8 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
   if (loading) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <Topbar title={isSupplier ? "Farmer" : "Buyer"} />
-        <main className="flex flex-1 items-center justify-center text-sm text-slate-400">Loading…</main>
+        <Topbar title={isSupplier ? t("party_farmer") : t("party_buyer")} />
+        <main className="flex flex-1 items-center justify-center text-sm text-slate-400">{t("loading_label")}</main>
       </div>
     );
   }
@@ -104,12 +106,12 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
   if (!party) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <Topbar title={isSupplier ? "Farmer" : "Buyer"} />
+        <Topbar title={isSupplier ? t("party_farmer") : t("party_buyer")} />
         <main className="flex-1 overflow-y-auto p-6">
           <button onClick={() => setPage(kind)} className="mb-4 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-            <ArrowLeft size={15} /> Back to {isSupplier ? "Farmers" : "Buyers"}
+            <ArrowLeft size={15} /> {t("party_back_to", { name: isSupplier ? t("nav_suppliers") : t("nav_buyers") })}
           </button>
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">Couldn't find this {isSupplier ? "farmer" : "buyer"} — they may have been removed.</div>
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400 shadow-sm">{isSupplier ? t("party_not_found_supplier") : t("party_not_found_buyer")}</div>
         </main>
       </div>
     );
@@ -139,18 +141,18 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title={party.name} subtitle={isSupplier ? "Farmer Profile" : "Buyer Profile"} />
+      <Topbar title={party.name} subtitle={isSupplier ? t("party_farmer_profile") : t("party_buyer_profile")} />
       <main className="flex-1 overflow-y-auto p-6">
         <div className="mb-4 flex items-center justify-between">
           <button onClick={() => setPage(kind)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-            <ArrowLeft size={15} /> Back to {isSupplier ? "Farmers" : "Buyers"}
+            <ArrowLeft size={15} /> {t("party_back_to", { name: isSupplier ? t("nav_suppliers") : t("nav_buyers") })}
           </button>
           {(isSupplier ? onBuyFor : onSellFor) && (
             <button
               onClick={() => (isSupplier ? onBuyFor(party) : onSellFor(party))}
               className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700"
             >
-              <PlusCircle size={14} /> {isSupplier ? "New Buy" : "New Sell"} for {party.name}
+              <PlusCircle size={14} /> {isSupplier ? t("party_new_buy_for", { name: party.name }) : t("party_new_sell_for", { name: party.name })}
             </button>
           )}
         </div>
@@ -158,24 +160,24 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
         {/* Contact & bank info */}
         <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Phone size={13} /> Phone</div>
+            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Phone size={13} /> {t("col_phone")}</div>
             <p className="text-sm font-medium text-slate-800">{party.phone || "—"}</p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><IdCard size={13} /> ID Number</div>
+            <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><IdCard size={13} /> {t("id_number")}</div>
             <p className="text-sm font-medium text-slate-800">{party.id_number || "—"}</p>
           </div>
           {isSupplier ? (
             <>
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Landmark size={13} /> Bank</div>
+                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Landmark size={13} /> {t("card_bank")}</div>
                 <p className="text-sm font-medium text-slate-800">{party.bank_name || "—"}</p>
                 <p className="text-xs text-slate-400">{party.bank_account || "—"}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><QrCode size={13} /> QR Code</div>
+                <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><QrCode size={13} /> {t("col_qr")}</div>
                 {party.bank_qr_url ? (
-                  <a href={party.bank_qr_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-600 underline decoration-dotted hover:text-brand-700">View QR</a>
+                  <a href={party.bank_qr_url} target="_blank" rel="noreferrer" className="text-sm font-medium text-brand-600 underline decoration-dotted hover:text-brand-700">{t("party_view_qr")}</a>
                 ) : (
                   <p className="text-sm text-slate-400">—</p>
                 )}
@@ -183,7 +185,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
             </>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:col-span-2">
-              <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Building2 size={13} /> Company</div>
+              <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-400"><Building2 size={13} /> {t("col_company")}</div>
               <p className="text-sm font-medium text-slate-800">{party.company || "—"}</p>
             </div>
           )}
@@ -194,23 +196,23 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
             no money tiles at all. */}
         <div className={`mb-5 grid grid-cols-2 gap-4 ${hideAmounts ? "" : "md:grid-cols-4"}`}>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">Transactions</p>
+            <p className="text-xs text-slate-400">{t("col_tx_count")}</p>
             <p className="text-xl font-bold text-slate-800">{stats.count}</p>
-            {!hideAmounts && <p className="mt-1 text-xs text-slate-400">{stats.completedCount} complete · {stats.partialCount} partial · {stats.unpaidCount} unpaid</p>}
+            {!hideAmounts && <p className="mt-1 text-xs text-slate-400">{t("party_tx_breakdown", { completed: stats.completedCount, partial: stats.partialCount, unpaid: stats.unpaidCount })}</p>}
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs text-slate-400">{isSupplier ? "Total Bought" : "Total Sold"}</p>
+            <p className="text-xs text-slate-400">{isSupplier ? t("card_total_bought") : t("card_total_sold")}</p>
             <p className="text-xl font-bold text-slate-800">{fmt2(stats.qty)} kg</p>
             {!hideAmounts && <p className="mt-1 text-xs text-slate-400">{fmtRiel(stats.amount)}</p>}
           </div>
           {!hideAmounts && (
             <>
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-400">{isSupplier ? "Amount Paid" : "Amount Received"}</p>
+                <p className="text-xs text-slate-400">{isSupplier ? t("col_amount_paid") : t("col_amount_received")}</p>
                 <p className="text-xl font-bold text-emerald-600">{fmtRiel(stats.paid)}</p>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-xs text-slate-400">{isSupplier ? "Amount Unpaid" : "Amount Not Received"}</p>
+                <p className="text-xs text-slate-400">{isSupplier ? t("col_amount_unpaid") : t("col_amount_not_received")}</p>
                 <p className={`text-xl font-bold ${stats.remaining > 0.01 ? "text-rose-500" : "text-slate-400"}`}>{fmtRiel(stats.remaining)}</p>
               </div>
             </>
@@ -220,19 +222,19 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
         {/* Transaction history */}
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
           <div className="border-b border-slate-100 px-5 py-4">
-            <h3 className="font-semibold text-slate-700">Transaction History</h3>
+            <h3 className="font-semibold text-slate-700">{t("party_tx_history")}</h3>
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Bill #</th>
-                <th className="px-5 py-3 font-medium">Location</th>
-                <th className="px-5 py-3 font-medium">Paddy Type</th>
-                <th className="px-5 py-3 font-medium">Truck/Driver</th>
-                <th className="px-5 py-3 font-medium">Qty (kg)</th>
-                {!hideAmounts && <th className="px-5 py-3 font-medium">Amount</th>}
-                {!hideAmounts && <th className="px-5 py-3 font-medium">Status</th>}
+                <th className="px-5 py-3 font-medium">{t("col_date")}</th>
+                <th className="px-5 py-3 font-medium">{t("party_bill_no")}</th>
+                <th className="px-5 py-3 font-medium">{t("col_station")}</th>
+                <th className="px-5 py-3 font-medium">{t("paddy_type_col")}</th>
+                <th className="px-5 py-3 font-medium">{t("driver_name")}</th>
+                <th className="px-5 py-3 font-medium">{t("col_qty")}</th>
+                {!hideAmounts && <th className="px-5 py-3 font-medium">{t("party_amount")}</th>}
+                {!hideAmounts && <th className="px-5 py-3 font-medium">{t("col_status")}</th>}
               </tr>
             </thead>
             <tbody>
@@ -240,7 +242,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                 <tr
                   key={r.id}
                   onClick={hideAmounts ? undefined : () => setViewingTx(r)}
-                  title={hideAmounts ? undefined : "Click to view receipt"}
+                  title={hideAmounts ? undefined : t("party_click_receipt")}
                   className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${hideAmounts ? "" : "cursor-pointer"} ${r.isCancelled ? "opacity-50" : ""}`}
                 >
                   <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
@@ -252,15 +254,15 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                   {!hideAmounts && <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>}
                   {!hideAmounts && (
                     <td className={`px-5 py-3 font-medium ${r.payStatus === "cancelled" ? "text-slate-400 line-through" : r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
-                      {r.payStatus === "cancelled" ? "Cancelled" : r.payStatus === "paid" ? (isSupplier ? "Paid" : "Received") : r.payStatus === "partial" ? "Partial" : (isSupplier ? "Unpaid" : "Not Received")}
-                      {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">Not counted above</div>}
-                      {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{fmtRiel(r.paidSoFar)} of {fmtRiel(r.amount)}</div>}
+                      {r.payStatus === "cancelled" ? t("hq_cancelled") : r.payStatus === "paid" ? (isSupplier ? t("paid") : t("card_received")) : r.payStatus === "partial" ? t("party_partial") : (isSupplier ? t("card_unpaid") : t("card_not_received"))}
+                      {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">{t("party_not_counted")}</div>}
+                      {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{t("party_of_amount", { paid: fmtRiel(r.paidSoFar), total: fmtRiel(r.amount) })}</div>}
                       {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
                     </td>
                   )}
                 </tr>
               ))}
-              {history.length === 0 && <tr><td colSpan={hideAmounts ? 6 : 8} className="px-5 py-10 text-center text-sm text-slate-400">No transactions with {party.name} yet.</td></tr>}
+              {history.length === 0 && <tr><td colSpan={hideAmounts ? 6 : 8} className="px-5 py-10 text-center text-sm text-slate-400">{t("party_no_tx", { name: party.name })}</td></tr>}
             </tbody>
           </table>
         </div>

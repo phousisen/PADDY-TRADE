@@ -21,6 +21,7 @@ import PhotoUpload from "../components/PhotoUpload.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
 import { getCachedParties, addCachedParty, setCachedParties, enqueue, trySync, newId } from "../offlineQueue.js";
+import { useLanguage } from "../i18n.jsx";
 
 const inputCls = "w-full rounded-lg border border-slate-300 px-4 py-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1.5 block text-sm font-medium text-slate-600";
@@ -32,6 +33,7 @@ function blankForm() {
 
 export default function RegisterPartyStaff() {
   const { profile } = useAuth();
+  const { t } = useLanguage();
   // Owner/HQ Admin (scope "all") search/create across every station; an
   // own_location role (including the new Registrar) stays scoped to their
   // own station, same restriction already used everywhere else in the app.
@@ -86,8 +88,8 @@ export default function RegisterPartyStaff() {
     if (!navigator.onLine) {
       setResults(cacheMatches);
       setSearchError(cacheMatches.length === 0
-        ? "No connection — only records already saved on this device can be found right now."
-        : "No connection — showing matches already saved on this device.");
+        ? t("reg_err_offline_none")
+        : t("reg_err_offline_some"));
       setSearching(false);
       return;
     }
@@ -108,8 +110,8 @@ export default function RegisterPartyStaff() {
       // says true — same graceful fallback as a clean offline state.
       setResults(cacheMatches);
       setSearchError(cacheMatches.length > 0
-        ? "Couldn't reach the server — showing matches already saved on this device."
-        : (err.message || "Search failed — check your connection and try again."));
+        ? t("reg_err_serverfail_some")
+        : (err.message || t("reg_err_search_failed")));
     } finally {
       setSearching(false);
     }
@@ -156,7 +158,7 @@ export default function RegisterPartyStaff() {
 
   async function save() {
     if (!form.name.trim() || !form.phone.trim()) {
-      setSaveError("Name and phone number are required.");
+      setSaveError(t("reg_err_required"));
       return;
     }
     setSaving(true);
@@ -221,7 +223,7 @@ export default function RegisterPartyStaff() {
       setResults([]);
       setSearched(false);
     } catch (err) {
-      setSaveError(err.message || "Could not save — check your connection and try again.");
+      setSaveError(err.message || t("reg_err_save_failed"));
     } finally {
       setSaving(false);
     }
@@ -231,12 +233,12 @@ export default function RegisterPartyStaff() {
   if (form) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <Topbar title={editingId ? "Complete Profile" : "New Profile"} subtitle={editingId ? form.name : "Register a new farmer or buyer"} />
+        <Topbar title={editingId ? t("reg_complete_profile_title") : t("reg_new_profile_title")} subtitle={editingId ? form.name : t("reg_new_profile_subtitle")} />
         <main className="flex-1 overflow-y-auto bg-slate-50 p-4">
           <div className="mx-auto max-w-sm space-y-4 pb-6">
             {!editingId && (
               <div className="flex rounded-lg border border-slate-200 bg-white p-1">
-                {[["supplier", "Farmer (Seller)"], ["buyer", "Buyer"]].map(([val, label]) => (
+                {[["supplier", t("reg_type_farmer")], ["buyer", t("party_buyer")]].map(([val, label]) => (
                   <button key={val} type="button" onClick={() => set("type", val)}
                     className={`flex-1 rounded-md py-2 text-sm font-medium ${form.type === val ? "bg-brand-600 text-white" : "text-slate-500"}`}>
                     {label}
@@ -246,48 +248,48 @@ export default function RegisterPartyStaff() {
             )}
 
             <div>
-              <label className={labelCls}>Full name</label>
-              <input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Sok Dara" />
+              <label className={labelCls}>{t("reg_full_name")}</label>
+              <input className={inputCls} value={form.name} onChange={(e) => set("name", e.target.value)} placeholder={t("reg_name_placeholder")} />
             </div>
             <div>
-              <label className={labelCls}>Phone number</label>
-              <input className={inputCls} value={form.phone} onChange={(e) => set("phone", e.target.value)} type="tel" placeholder="0XX XXX XXX" />
+              <label className={labelCls}>{t("reg_phone_number")}</label>
+              <input className={inputCls} value={form.phone} onChange={(e) => set("phone", e.target.value)} type="tel" placeholder={t("reg_phone_placeholder")} />
             </div>
             <div>
-              <label className={labelCls}>ID number <span className="text-slate-400">(optional)</span></label>
+              <label className={labelCls}>{t("reg_id_number")} <span className="text-slate-400">{t("reg_optional")}</span></label>
               <input className={inputCls} value={form.idNumber} onChange={(e) => set("idNumber", e.target.value)} />
             </div>
 
-            <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Bank details</p>
+            <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{t("reg_bank_details")}</p>
             <div>
-              <label className={labelCls}>Bank name</label>
-              <input className={inputCls} value={form.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder="e.g. ABA Bank" />
+              <label className={labelCls}>{t("bank_name")}</label>
+              <input className={inputCls} value={form.bankName} onChange={(e) => set("bankName", e.target.value)} placeholder={t("reg_bank_placeholder")} />
             </div>
             <div>
-              <label className={labelCls}>Account number</label>
-              <input className={inputCls} value={form.bankAccount} onChange={(e) => set("bankAccount", e.target.value)} placeholder="e.g. 000 123 456" />
+              <label className={labelCls}>{t("reg_account_number")}</label>
+              <input className={inputCls} value={form.bankAccount} onChange={(e) => set("bankAccount", e.target.value)} placeholder={t("reg_account_placeholder")} />
             </div>
 
             {!online && (
               <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2.5 text-xs text-slate-500">
                 <WifiOff size={14} className="mt-0.5 shrink-0" />
-                No connection right now — photos can't be added until you're back online. The rest of this profile will still save and sync automatically.
+                {t("reg_offline_warning")}
               </div>
             )}
             <div className="flex flex-wrap gap-4 pt-1">
-              <PhotoUpload label="1. Photo of the QR code" kind="party-bank-qr" required url={form.bankQrUrl} onUploaded={(url) => set("bankQrUrl", url)} hint="Clear, close-up shot" />
-              <PhotoUpload label={`2. Photo of ${form.name || "them"} holding this QR`} kind="party-id-photo" required url={form.idPhotoUrl} onUploaded={(url) => set("idPhotoUrl", url)} hint="Face & QR both visible" />
+              <PhotoUpload label={t("reg_photo1_label")} kind="party-bank-qr" required url={form.bankQrUrl} onUploaded={(url) => set("bankQrUrl", url)} hint={t("reg_photo1_hint")} />
+              <PhotoUpload label={t("reg_photo2_label", { name: form.name || t("reg_them") })} kind="party-id-photo" required url={form.idPhotoUrl} onUploaded={(url) => set("idPhotoUrl", url)} hint={t("reg_photo2_hint")} />
             </div>
 
             {form.bankQrUrl && !form.idPhotoUrl && (
               <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                A QR photo alone doesn't prove whose it is — add the second photo to mark this profile verified.
+                {t("reg_qr_warning")}
               </div>
             )}
             {isVerifiable && (
               <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-xs font-medium text-brand-700">
-                <CheckCircle2 size={14} className="shrink-0" /> Both photos in — this profile will be marked verified when saved.
+                <CheckCircle2 size={14} className="shrink-0" /> {t("reg_verified_notice")}
               </div>
             )}
 
@@ -295,9 +297,9 @@ export default function RegisterPartyStaff() {
           </div>
         </main>
         <div className="flex gap-3 border-t border-slate-200 bg-white p-4">
-          <button onClick={closeForm} className="flex-1 rounded-lg border border-slate-200 py-3 text-sm font-medium text-slate-600">Cancel</button>
+          <button onClick={closeForm} className="flex-1 rounded-lg border border-slate-200 py-3 text-sm font-medium text-slate-600">{t("cancel")}</button>
           <button onClick={save} disabled={saving} className="flex-[2] rounded-lg bg-brand-600 py-3 text-sm font-semibold text-white disabled:opacity-50">
-            {saving ? "Saving…" : "Save Profile"}
+            {saving ? t("saving_label") : t("reg_save_profile")}
           </button>
         </div>
       </div>
@@ -307,17 +309,17 @@ export default function RegisterPartyStaff() {
   // ---- Search screen ----
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Register Farmer / Buyer" subtitle="Search first — before adding anyone new" />
+      <Topbar title={t("reg_title")} subtitle={t("reg_subtitle")} />
       <main className="flex-1 overflow-y-auto bg-slate-50 p-4">
         <div className="mx-auto max-w-sm space-y-3">
           {saved && (
             <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-sm font-medium text-brand-700">
-              <CheckCircle2 size={15} className="shrink-0" /> Profile saved.
+              <CheckCircle2 size={15} className="shrink-0" /> {t("reg_saved")}
             </div>
           )}
 
           <form onSubmit={runSearch} className="flex gap-2">
-            <input value={query} onChange={(e) => setQuery(e.target.value)} className={inputCls} placeholder="Search by phone or name" />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} className={inputCls} placeholder={t("reg_search_placeholder")} />
             <button type="submit" disabled={searching} className="shrink-0 rounded-lg bg-brand-600 px-4 text-white disabled:opacity-50">
               <Search size={18} />
             </button>
@@ -329,7 +331,7 @@ export default function RegisterPartyStaff() {
             <>
               {results.length > 0 && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
-                  ⚠️ Found {results.length === 1 ? "an existing profile" : `${results.length} existing profiles`} — complete one below instead of adding new, if it's the same person.
+                  {results.length === 1 ? t("reg_found_one") : t("reg_found_many", { n: results.length })}
                 </div>
               )}
               {results.map((p) => {
@@ -338,18 +340,18 @@ export default function RegisterPartyStaff() {
                   <button key={p.id} onClick={() => openExisting(p)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-brand-300 bg-brand-50 p-3 text-left">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-800">{p.name}</p>
-                      <p className="text-xs text-slate-400">{p.phone || "—"} · {p.type === "supplier" ? "Farmer" : "Buyer"}</p>
+                      <p className="text-xs text-slate-400">{p.phone || "—"} · {p.type === "supplier" ? t("party_farmer") : t("party_buyer")}</p>
                       {missingBank
-                        ? <p className="mt-1 text-[11px] font-semibold text-rose-600">⚠ Profile incomplete</p>
-                        : <p className="mt-1 text-[11px] font-semibold text-brand-600">✓ Verified</p>}
+                        ? <p className="mt-1 text-[11px] font-semibold text-rose-600">{t("reg_incomplete")}</p>
+                        : <p className="mt-1 text-[11px] font-semibold text-brand-600">{t("reg_verified")}</p>}
                     </div>
-                    <span className="shrink-0 text-xs font-semibold text-brand-700">Complete →</span>
+                    <span className="shrink-0 text-xs font-semibold text-brand-700">{t("reg_complete_arrow")}</span>
                   </button>
                 );
               })}
 
               <button onClick={openNew} className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-300 bg-white py-3 text-sm font-medium text-brand-700">
-                <UserPlus size={16} /> {results.length === 0 ? "No match — Create New Profile" : "Not them — Create New Profile"}
+                <UserPlus size={16} /> {results.length === 0 ? t("reg_create_new_none") : t("reg_create_new_notthem")}
               </button>
             </>
           )}
