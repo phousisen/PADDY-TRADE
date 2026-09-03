@@ -416,6 +416,33 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const [tareOutDate, setTareOutDate] = useState(tareSplit.date);
   const [tareOutTime, setTareOutTime] = useState(tareSplit.time);
 
+  // [2026-09-03] Weigh-In/Weigh-Out (grossKg/tareKg — added earlier so a
+  // manually-entered transaction's receipt could show real scale numbers)
+  // and Quantity/Net Weight (quantityKg — what the Total Amount is
+  // actually computed from) used to be two completely independent
+  // fields, edited separately, with nothing keeping them in sync.
+  // Correcting a mis-typed Weigh-Out here silently left Quantity (and the
+  // Total Amount computed from it) stale — exactly the bug reported live:
+  // editing Weigh-Out from 7070 to 7030 changed what the receipt's
+  // Weigh-Out row shows, but Net Weight/Total Amount kept using the old
+  // 7070 figure since nothing ever told them to recompute.
+  // Net weight is always the truck's loaded weight minus its empty
+  // weight (direction depends on Buy vs Sell, same as WeighingTickets.jsx's
+  // own live net-weight calc) — so whenever both are filled in, Quantity
+  // is now derived from them automatically instead of being a second,
+  // separately-typed number that can drift out of step. It stays freely
+  // editable, as before, whenever either one is left blank (a fully
+  // manual entry with no real scale data at all).
+  useEffect(() => {
+    const g = parseFloat(grossKg);
+    const w = parseFloat(tareKg);
+    if (grossKg.trim() === "" || tareKg.trim() === "" || isNaN(g) || isNaN(w)) return;
+    const net = Math.max(0, isBuy ? g - w : w - g);
+    setQuantityKg(net.toFixed(2));
+  }, [grossKg, tareKg, isBuy]);
+
+  const netIsDerived = grossKg.trim() !== "" && tareKg.trim() !== "" && !isNaN(parseFloat(grossKg)) && !isNaN(parseFloat(tareKg));
+
   const newAmount = Math.max(0, Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
   const canSubmit = !saving && password && partyQuery.trim() && productQuery.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0;
 
@@ -531,9 +558,17 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Quantity (kg)</label>
+              <label className="mb-1 block text-xs text-slate-500">
+                Quantity (kg) / Net Weight
+                {netIsDerived && <span className="ml-1 font-normal text-brand-600">(from Weigh In/Out below)</span>}
+              </label>
               <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                readOnly={netIsDerived}
+                title={netIsDerived ? "Calculated from Weigh-In and Weigh-Out below. Edit those two fields to change this, or clear one of them to type this in manually." : undefined}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${netIsDerived ? "border-slate-200 bg-slate-50 text-slate-600" : "border-slate-200"}`} />
+              {netIsDerived && (
+                <p className="mt-1 text-[11px] text-slate-400">Calculated automatically from Weigh-In and Weigh-Out below (Net Weight = {isBuy ? "Weigh-In − Weigh-Out" : "Weigh-Out − Weigh-In"}). Clear either weight field below to type this in manually instead.</p>
+              )}
             </div>
             <div>
               <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
@@ -587,7 +622,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
 
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
             <p className="mb-2 text-xs font-medium text-slate-500">Weigh In / Weigh Out (optional — for the printed receipt)</p>
-            <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is.</p>
+            <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is. Whenever both are filled in, Quantity/Net Weight above is calculated from them automatically — edit the weights here rather than Quantity directly, so they never disagree.</p>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="mb-1 block text-[11px] text-slate-400">Weigh-In (kg)</label>
