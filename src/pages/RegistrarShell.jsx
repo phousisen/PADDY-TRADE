@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { UserPlus, Users } from "lucide-react";
+import { UserPlus, Users, Languages } from "lucide-react";
 import RegisterPartyStaff from "./RegisterPartyStaff.jsx";
 import SimpleListPage from "./SimpleListPage.jsx";
 import PartyDetail from "./PartyDetail.jsx";
@@ -41,7 +41,7 @@ import { useLanguage } from "../i18n.jsx";
 // field, so this needs to be as easy to reach one-handed as every other
 // phone screen in the app, not just usable.
 export default function RegistrarShell() {
-  const { t } = useLanguage();
+  const { t, lang, setLang } = useLanguage();
   const [page, setPage] = useState("register"); // "register" | "suppliers" | "buyers" | "party-detail"
   const [openParty, setOpenParty] = useState(null); // { id, kind } while viewing one profile
 
@@ -62,25 +62,53 @@ export default function RegistrarShell() {
     { id: "buyers", label: t("nav_buyers"), icon: Users },
   ];
 
+  // [2026-09-03] Every other account gets this from Sidebar.jsx (desktop)
+  // or MobileNav.jsx's "More" sheet (phone) — Registrar has neither, so
+  // without its own copy here there was no way to switch to Khmer at all
+  // from this shell. Same toggle, same behavior, just placed in this
+  // shell's own bars instead.
+  function LanguageToggle({ className = "" }) {
+    return (
+      <button
+        onClick={() => setLang(lang === "en" ? "km" : "en")}
+        title={lang === "en" ? "Switch to Khmer" : "Switch to English"}
+        className={`flex shrink-0 items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700 ${className}`}
+      >
+        <Languages size={12} /> {lang === "en" ? "EN" : "ខ្មែរ"}
+      </button>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
+      {/* Phone: the language toggle needs somewhere to live even though the
+          tab strip below is desktop-only — a slim bar of its own, above
+          each page's own Topbar. */}
+      <div className="flex shrink-0 items-center justify-end border-b border-slate-200 bg-white px-4 py-1.5 md:hidden">
+        <LanguageToggle />
+      </div>
+
       {/* Desktop: slim top tab strip, same row every real page's Topbar
-          would sit in — hidden below `md`, where the bottom bar takes over. */}
-      <div className="hidden shrink-0 items-center gap-1 border-b border-slate-200 bg-white px-6 py-2 md:flex">
-        {tabs.map((tab) => {
-          const active = page === tab.id || (page === "party-detail" && detailKind === tab.id);
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setPage(tab.id)}
-              className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-                active ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
-              }`}
-            >
-              <tab.icon size={15} /> {tab.label}
-            </button>
-          );
-        })}
+          would sit in — hidden below `md`, where the bottom bar (plus the
+          phone language bar above) takes over. */}
+      <div className="hidden shrink-0 items-center justify-between gap-1 border-b border-slate-200 bg-white px-6 py-2 md:flex">
+        <div className="flex items-center gap-1">
+          {tabs.map((tab) => {
+            const active = page === tab.id || (page === "party-detail" && detailKind === tab.id);
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setPage(tab.id)}
+                className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                  active ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                }`}
+              >
+                <tab.icon size={15} /> {tab.label}
+              </button>
+            );
+          })}
+        </div>
+        <LanguageToggle />
       </div>
 
       {/*
