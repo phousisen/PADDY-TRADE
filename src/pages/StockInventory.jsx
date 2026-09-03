@@ -45,12 +45,17 @@ function effectiveAdjDateStr(a) {
 
 export default function StockInventory() {
   const { t } = useLanguage();
-  const { profile, session, hasPermission } = useAuth();
+  const { profile, session, hasPermission, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   // Defaults to HQ Admin/Owner only until a custom role is explicitly
   // granted "adjust_stock" from the Roles page — no code change needed to
   // open this up to station staff later, just a checkbox there.
-  const canAdjustStock = isAdmin || hasPermission("adjust_stock");
+  // [2026-09-03] `&& !isViewOnly` — isAdmin is true for the view-only
+  // "boss" login too (it needs read access to every admin-tier page), so
+  // without this it could see and open the Adjust Stock button/modal on
+  // the one other page that already showed it that way (see the matching
+  // fix + comment on LocationDetail.jsx's own canAdjustStock).
+  const canAdjustStock = (isAdmin || hasPermission("adjust_stock")) && !isViewOnly;
   const [stations, setStations] = useState([]);
   const [products, setProducts] = useState([]);
   const [txs, setTxs] = useState([]);

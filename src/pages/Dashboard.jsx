@@ -77,8 +77,16 @@ const PERIOD_IDS = [
 
 export default function Dashboard({ setPage, setSelectedLocationId }) {
   const { t } = useLanguage();
-  const { profile, session, loading: authLoading } = useAuth();
+  const { profile, session, loading: authLoading, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
+  // [2026-09-03] A view-only account can already reach LocationDetail
+  // directly (App.jsx gates "station-detail" on `isAdmin || isViewOnly`,
+  // same as every other admin-tier read page it can see) — this table's
+  // own row click just hadn't been updated to match, so tapping a location
+  // here silently did nothing for that account type even though the page
+  // it would open was already allowed. `canOpenLocation` is this table's
+  // one gate for both the row's click handler and its chevron affordance.
+  const canOpenLocation = isAdmin || isViewOnly;
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -311,7 +319,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                   <th className="px-3 py-2.5 font-semibold">{t("col_buy_kg")}</th>
                   <th className="px-3 py-2.5 font-semibold">{t("col_sell_kg")}</th>
                   <th className="px-3 py-2.5 font-semibold">{t("col_stock")}</th>
-                  {isAdmin && <th className="w-8 px-3 py-2.5"></th>}
+                  {canOpenLocation && <th className="w-8 px-3 py-2.5"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -321,14 +329,18 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                     location" is one click away instead of only reachable
                     via Settings > Locations. Sample-approved: same table,
                     same columns, just a hover highlight + chevron added.
-                    Not clickable for non-admin roles since station-detail
-                    is gated to isAdmin in App.jsx — clicking would only
-                    hit a permission-denied screen for them. */}
+                    [2026-09-03] `canOpenLocation` (isAdmin || isViewOnly) —
+                    a view-only account reaches the exact same read-only
+                    LocationDetail page an HQ Admin does, so it gets the
+                    same tap-through here too. Still not clickable for any
+                    other role, since station-detail stays gated to
+                    isAdmin/isViewOnly in App.jsx — clicking would only hit
+                    a permission-denied screen for them. */}
                 {locationPerformance.map(({ loc, buyKg, sellKg, pct }) => (
                   <tr
                     key={loc.id}
-                    onClick={isAdmin ? () => { setSelectedLocationId(loc.id); setPage("station-detail"); } : undefined}
-                    className={`border-b border-slate-50 last:border-0 ${isAdmin ? "cursor-pointer hover:bg-brand-50" : "hover:bg-slate-50/60"}`}
+                    onClick={canOpenLocation ? () => { setSelectedLocationId(loc.id); setPage("station-detail"); } : undefined}
+                    className={`border-b border-slate-50 last:border-0 ${canOpenLocation ? "cursor-pointer hover:bg-brand-50" : "hover:bg-slate-50/60"}`}
                   >
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-2">
@@ -347,7 +359,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                         <span className="text-[11px] text-slate-400">{pct}%</span>
                       </div>
                     </td>
-                    {isAdmin && (
+                    {canOpenLocation && (
                       <td className="px-3 py-3.5 text-slate-300">
                         <ChevronRight size={15} />
                       </td>

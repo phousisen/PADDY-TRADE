@@ -127,7 +127,7 @@ function AddExpenseForm({ locations, isAdmin, defaultLocationId, categories, onA
 }
 
 export default function Expenses({ selectedLocationIds = [], startDate = null, endDate = null }) {
-  const { profile, session } = useAuth();
+  const { profile, session, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   const [locations, setLocations] = useState([]);
   const [allExpenses, setAllExpenses] = useState([]);
@@ -240,15 +240,25 @@ export default function Expenses({ selectedLocationIds = [], startDate = null, e
           <SummaryCell label="Avg per Day (this month)" value={fmtRiel(monthTotal / daysSoFarThisMonth)} />
         </SummaryStrip>
 
-        <div className="mb-4 flex justify-end">
-          <AddExpenseForm
-            locations={locations}
-            isAdmin={isAdmin}
-            defaultLocationId={profile?.location_id}
-            categories={categories}
-            onAdd={addExpense}
-          />
-        </div>
+        {/* [2026-09-03] `!isViewOnly` — this had no permission gate at all
+            before (the "Add Expense" button/form was reachable by anyone
+            who could open this page). Now that a view-only account can
+            reach Expenses too (see Sidebar.jsx/MobileNav.jsx), it needs to
+            be hidden here — same reasoning as every other write control in
+            the app: api.js's Proxy backstop would reject the actual save,
+            but only after someone filled out the whole form, so hiding the
+            button is what actually makes this read-only in the UI. */}
+        {!isViewOnly && (
+          <div className="mb-4 flex justify-end">
+            <AddExpenseForm
+              locations={locations}
+              isAdmin={isAdmin}
+              defaultLocationId={profile?.location_id}
+              categories={categories}
+              onAdd={addExpense}
+            />
+          </div>
+        )}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
           <TableCard

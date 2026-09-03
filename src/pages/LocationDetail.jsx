@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Pencil, TrendingUp, Warehouse, MapPin, Wallet, Receipt, Scale } from "lucide-react";
+import { ArrowLeft, Pencil, TrendingUp, Warehouse, MapPin, Wallet, Receipt, Scale, CalendarDays } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
@@ -7,6 +7,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import { buildDailyLedgerRows } from "../dailyLedger.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -21,16 +22,21 @@ function cambodiaDateStr(d = getAccurateNow()) {
 
 export default function LocationDetail({ locationId, setPage }) {
   const { t } = useLanguage();
-  const { profile, session, hasPermission } = useAuth();
+  const { profile, session, hasPermission, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   // Same gate as Stock & Inventory's "Adjust Stock" button — HQ Admin/Owner
-  // by default, or any custom role explicitly granted "adjust_stock" from
-  // the Roles page.
-  const canAdjustStock = isAdmin || hasPermission("adjust_stock");
+  // or any custom role explicitly granted "adjust_stock" from the Roles
+  // page, but never a view-only account (isAdmin is true for the view-only
+  // "boss" login too, since it needs read access to every admin-tier page —
+  // `&& !isViewOnly` is what actually keeps this write control out of its
+  // hands, matching every other write entry point in the app, see
+  // App.jsx's `isViewOnly` comments).
+  const canAdjustStock = (isAdmin || hasPermission("adjust_stock")) && !isViewOnly;
   const isCombined = locationId === "all";
   const [allLocations, setAllLocations] = useState([]);
   const [location, setLocation] = useState(null);
   const [txs, setTxs] = useState([]);
+  const [adjustments, setAdjustments] = useState([]);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -49,8 +55,20 @@ export default function LocationDetail({ locationId, setPage }) {
     setLoading(true);
     setLoadError("");
     try {
-      const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      // Stock adjustments are only fetched for a single real location — the
+      // Daily Stock Ledger below is a per-station report (same as
+      // StockInventory.jsx's own version), not something that makes sense
+      // combined across every station at once. `.catch(() => [])` so a
+      // problem loading adjustments alone (a bad join, a network blip)
+      // only leaves the ledger's "Lost" figures blank, never blocks the
+      // rest of this page from loading.
+      const [locs, transactions, adjustmentRows] = await Promise.all([
+        api.getLocations(),
+        api.getTransactions(),
+        isCombined ? Promise.resolve([]) : api.getStockAdjustments({ locationId }).catch(() => []),
+      ]);
       setAllLocations(locs);
+      setAdjustments(adjustmentRows);
       if (isCombined) {
         setLocation(null);
         setTxs(transactions);
@@ -81,6 +99,39 @@ export default function LocationDetail({ locationId, setPage }) {
       txCount: active.length,
     };
   }, [txs]);
+
+  // [2026-09-03] Daily Stock Ledger — phone-only (see the section below),
+  // matching the day-card design approved in the Claude Design canvas after
+  // the desktop-report screenshot comparison (mobile's original horizontal-
+  // scroll table showed far less than the PC report, and swiping a data
+  // table wasn't a great mobile pattern either). Built from the exact same
+  // shared math StockInventory.jsx's own "Daily Stock Ledger" table already
+  // uses — see dailyLedger.js — just windowed to the last 30 days and shown
+  // newest-first here, one card per day, instead of a table.
+  const ledgerRows = useMemo(() => {
+    if (isCombined) return [];
+    const all = buildDailyLedgerRows({ txs: [...txs], adjustments, locationId });
+    const cutoff = (() => {
+      const d = new Date(getAccurateNow());
+      d.setDate(d.getDate() - 30);
+      return cambodiaDateStr(d);
+    })();
+    return all.filter((r) => r.date >= cutoff).slice().reverse();
+  }, [txs, adjustments, locationId, isCombined]);
+
+  const ledgerTotals = useMemo(() => {
+    const totals = { boughtKg: 0, spentAmt: 0, soldKg: 0, earnedAmt: 0, adjustedKg: 0, valueLostToday: 0 };
+    for (const r of ledgerRows) {
+      totals.boughtKg += r.boughtKg;
+      totals.spentAmt += r.spentAmt;
+      totals.soldKg += r.soldKg;
+      totals.earnedAmt += r.earnedAmt;
+      totals.adjustedKg += r.adjustedKg;
+      totals.valueLostToday += r.valueLostToday;
+    }
+    totals.marginAmt = totals.earnedAmt - totals.spentAmt;
+    return totals;
+  }, [ledgerRows]);
 
   const combinedStock = useMemo(() => allLocations.reduce((s, l) => s + Number(l.current_stock_kg), 0), [allLocations]);
   const combinedCapacity = useMemo(() => allLocations.reduce((s, l) => s + Number(l.capacity_kg), 0), [allLocations]);
@@ -210,7 +261,13 @@ export default function LocationDetail({ locationId, setPage }) {
               <Scale size={13} /> Adjust Stock
             </button>
           )}
-          {!isCombined && (
+          {/* [2026-09-03] `&& !isViewOnly` — this had no permission gate at
+              all before; the only reason it never let a view-only account
+              actually rename anything is api.js's Proxy backstop rejecting
+              the write at submit time. Hiding it here matches every other
+              write control in the app instead of showing a form that can
+              only ever fail. */}
+          {!isCombined && !isViewOnly && (
             <button onClick={() => setEditing(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700">
               <Pencil size={13} /> Rename
             </button>
@@ -275,6 +332,129 @@ export default function LocationDetail({ locationId, setPage }) {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* [2026-09-03] Daily Stock Ledger — phone-only (md:hidden), one
+            card per day instead of StockInventory.jsx's wide table, so the
+            same report reads cleanly on a phone screen with no horizontal
+            scrolling at all (sample-approved design, after a swipeable
+            table version was tried and set aside). Placed above Transaction
+            History per explicit request. Desktop/tablet already has this
+            exact report — with full period controls and the paddy-type
+            breakdown — on the Stock & Inventory page, so it isn't
+            duplicated here above the `md` breakpoint. */}
+        {!isCombined && (
+          <div className="mb-5 md:hidden">
+            <div className="mb-3 flex items-center gap-2">
+              <CalendarDays size={15} className="text-brand-600" />
+              <div>
+                <h3 className="font-bold text-slate-800">{t("ledger_title")}</h3>
+                <p className="text-[11px] text-slate-400">{t("ledger_subtitle")}</p>
+              </div>
+            </div>
+
+            {ledgerRows.length === 0 ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-400 shadow-sm">
+                {t("no_activity_period")}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {ledgerRows.map((r) => {
+                  const netChange = r.closing - r.opening;
+                  const isLossDay = r.adjustedKg < -0.005;
+                  return (
+                    <div key={r.date} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                      <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/60 px-4 py-3">
+                        <span className="text-[13px] font-semibold text-slate-700">{r.date}</span>
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase tracking-wide text-slate-400">{t("col_closing")}</p>
+                          <p className="text-base font-extrabold text-slate-800">{fmt2(r.closing)} kg</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 px-4 py-3.5 text-[12.5px]">
+                        <div>
+                          <p className="text-[10.5px] text-slate-400">{t("col_opening")}</p>
+                          <p className="font-semibold text-slate-700">{fmt2(r.opening)} kg</p>
+                        </div>
+                        <div>
+                          <p className="text-[10.5px] text-slate-400">{t("col_net_change")}</p>
+                          <p className={`font-semibold ${netChange >= 0 ? "text-brand-700" : "text-rose-600"}`}>{netChange >= 0 ? "+" : ""}{fmt2(netChange)} kg</p>
+                        </div>
+                        <div>
+                          <p className="text-[10.5px] text-slate-400">{t("col_bought_in")}</p>
+                          <p className="font-semibold text-brand-700">{r.boughtKg > 0 ? `+${fmt2(r.boughtKg)}` : "—"} kg</p>
+                        </div>
+                        <div>
+                          <p className="text-[10.5px] text-slate-400">{t("col_spent")}</p>
+                          <p className="font-semibold text-slate-700">{r.spentAmt > 0 ? fmtRiel(r.spentAmt) : "—"}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10.5px] text-slate-400">{t("col_sold_out")}</p>
+                          <p className="font-semibold text-rose-600">{r.soldKg > 0 ? `-${fmt2(r.soldKg)}` : "—"} kg</p>
+                        </div>
+                        <div>
+                          <p className="text-[10.5px] text-slate-400">{t("col_earned")}</p>
+                          <p className="font-semibold text-slate-700">{r.earnedAmt > 0 ? fmtRiel(r.earnedAmt) : "—"}</p>
+                        </div>
+                        {isLossDay && (
+                          <>
+                            <div>
+                              <p className="text-[10.5px] text-slate-400">{t("col_lost")}</p>
+                              <p className="font-semibold text-rose-600">{fmt2(r.adjustedKg)} kg</p>
+                            </div>
+                            <div>
+                              <p className="text-[10.5px] text-slate-400">{t("col_value_lost")}</p>
+                              <p className="font-semibold text-rose-600">{fmtRiel(r.valueLostToday)}</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div className="overflow-hidden rounded-2xl border border-brand-200 bg-brand-50/60 shadow-sm">
+                  <div className="border-b border-brand-100 px-4 py-2.5">
+                    <span className="text-[12.5px] font-bold text-brand-800">{t("ledger_total_30d")}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2.5 px-4 py-3.5 text-[12.5px]">
+                    <div>
+                      <p className="text-[10.5px] text-brand-600/80">{t("col_bought_in")}</p>
+                      <p className="font-semibold text-brand-800">+{fmt2(ledgerTotals.boughtKg)} kg</p>
+                    </div>
+                    <div>
+                      <p className="text-[10.5px] text-brand-600/80">{t("col_spent")}</p>
+                      <p className="font-semibold text-brand-800">{fmtRiel(ledgerTotals.spentAmt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10.5px] text-brand-600/80">{t("col_sold_out")}</p>
+                      <p className="font-semibold text-brand-800">-{fmt2(ledgerTotals.soldKg)} kg</p>
+                    </div>
+                    <div>
+                      <p className="text-[10.5px] text-brand-600/80">{t("col_earned")}</p>
+                      <p className="font-semibold text-brand-800">{fmtRiel(ledgerTotals.earnedAmt)}</p>
+                    </div>
+                    {ledgerTotals.adjustedKg < -0.005 && (
+                      <>
+                        <div>
+                          <p className="text-[10.5px] text-brand-600/80">{t("col_lost")}</p>
+                          <p className="font-semibold text-rose-600">{fmt2(ledgerTotals.adjustedKg)} kg</p>
+                        </div>
+                        <div>
+                          <p className="text-[10.5px] text-brand-600/80">{t("col_value_lost")}</p>
+                          <p className="font-semibold text-rose-600">{fmtRiel(ledgerTotals.valueLostToday)}</p>
+                        </div>
+                      </>
+                    )}
+                    <div className="col-span-2 border-t border-brand-200/70 pt-2.5">
+                      <p className="text-[10.5px] text-brand-600/80">{t("gross_margin_label")}</p>
+                      <p className={`text-[15px] font-extrabold ${ledgerTotals.marginAmt >= 0 ? "text-brand-800" : "text-rose-600"}`}>{fmtRiel(ledgerTotals.marginAmt)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
