@@ -20,7 +20,7 @@ import { useAuth } from "../AuthContext.jsx";
 export default function MobileNav({ page, setPage, pendingRequests }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { lang, setLang, t } = useLanguage();
-  const { profile, hasPermission, logout } = useAuth();
+  const { profile, hasPermission, logout, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isStaff = profile?.role === "staff";
   const isOwner = !!profile?.isOwner;
@@ -28,23 +28,53 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
   // granted "View Financial Reports" via Settings -> Roles should see
   // Reports/Expenses here too, not just on desktop.
   const canViewReports = !isStaff || hasPermission("view_reports");
+  // [2026-09-02] A view-only account now gets its own simplified menu —
+  // see Sidebar.jsx's matching comment for the full reasoning. It no
+  // longer counts as "admin nav" here either.
+  const canSeeAdminNav = isAdmin && !isViewOnly;
 
-  const primaryTabs = [
-    { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
-    { id: "tickets", label: t("nav_tickets"), icon: Scale },
-    { id: "transactions", label: t("nav_transactions"), icon: Receipt },
-    { id: "suppliers", label: t("nav_suppliers"), icon: Users },
-  ];
+  // [2026-09-03] For a view-only account, only the 3 screens used most
+  // constantly get their own primary tab — Dashboard/Stock/Transactions —
+  // with "More" as the 4th slot instead of a 5th tab bolted on next to a
+  // full set of primary ones (was: 4 primary tabs + More = 5 total,
+  // trimmed to 4 total per explicit request after reviewing the bottom
+  // bar). Financial Reports and Expenses move into the More sheet below,
+  // same as every other page this account can reach that isn't one of
+  // its 3 constant-use tabs. Sample-approved design (the Claude Design
+  // canvas's "Phone 6 — More" artboard).
+  const primaryTabs = isViewOnly
+    ? [
+        { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
+        { id: "stock", label: t("nav_stock"), icon: Warehouse },
+        { id: "transactions", label: t("nav_transactions"), icon: Receipt },
+      ]
+    : [
+        { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
+        { id: "tickets", label: t("nav_tickets"), icon: Scale },
+        { id: "transactions", label: t("nav_transactions"), icon: Receipt },
+        { id: "suppliers", label: t("nav_suppliers"), icon: Users },
+      ];
 
-  const moreItems = [
-    { id: "buyers", label: t("nav_buyers"), icon: ShoppingCart },
-    ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
-    { id: "stock", label: t("nav_stock"), icon: Warehouse },
-    ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
-    ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet }] : []),
-  ];
+  // [2026-09-03] Reports + Expenses — the same "Same 5 pages on both [phone
+  // and desktop]" scope confirmed for this account type (see Sidebar.jsx's
+  // matching comment), just reached through More instead of a primary tab
+  // now that Reports no longer has one of its own. `label: "Expenses"`
+  // literal (not t()) matches Sidebar.jsx's own Expenses entry — that page
+  // was added without its own i18n key either.
+  const moreItems = isViewOnly
+    ? [
+        { id: "reports", label: t("nav_reports"), icon: BarChart3 },
+        { id: "expenses", label: "Expenses", icon: Wallet },
+      ]
+    : [
+        { id: "buyers", label: t("nav_buyers"), icon: ShoppingCart },
+        ...(canSeeAdminNav ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
+        { id: "stock", label: t("nav_stock"), icon: Warehouse },
+        ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
+        ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet }] : []),
+      ];
 
-  const systemItems = isAdmin
+  const systemItems = canSeeAdminNav
     ? [
         { id: "stations", label: t("nav_stations"), icon: MapPin },
         { id: "station-health", label: t("nav_station_health"), icon: Activity },
@@ -133,6 +163,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
                 <p className="flex items-center gap-1 text-xs text-brand-300">
                   {isOwner && <ShieldCheck size={11} className="text-gold-300" />}
                   {profile.roleName || t(`role_${profile.role}`)}
+                  {isViewOnly && <span className="ml-0.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-200">View Only</span>}
                 </p>
               </div>
             </div>

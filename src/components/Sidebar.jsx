@@ -12,10 +12,26 @@ import { useAuth } from "../AuthContext.jsx";
 // feature existed.
 export default function Sidebar({ page, setPage, pendingRequests }) {
   const { lang, setLang, t } = useLanguage();
-  const { profile, hasPermission, logout } = useAuth();
+  const { profile, hasPermission, logout, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isStaff = profile?.role === "staff";
   const isOwner = !!profile?.isOwner;
+  // [2026-09-02] A view-only account now gets its OWN simplified menu,
+  // built separately below — no Weighing Tickets workflow, no Change
+  // Requests queue, no Farmers & Buyers directory, and no System group
+  // (Users/Roles/Station Health/Settings). Just the pages someone checking
+  // in on the business actually needs. Previously it got the exact same
+  // menu as HQ Admin, with everything just disabled — sample-approved
+  // change (mockups/view_only_account_sample.html) after the user asked
+  // what a view-only account should actually see.
+  //
+  // [2026-09-03] Expenses added — the confirmed scope for this account is
+  // "the same 5 pages on both [phone and desktop]: Dashboard, Stock
+  // Inventory, Transactions, Financial Reports, Expenses" (Claude Design
+  // canvas brief), which this group had missed. Still read-only: Expenses
+  // itself hides its "Add Expense" button for `isViewOnly` (see
+  // Expenses.jsx), same as every other write control in the app.
+  const canSeeAdminNav = isAdmin && !isViewOnly;
   // A Staff account with "View Financial Reports" granted via Settings ->
   // Roles gets the Reports link too, same rule as App.jsx's canViewReports.
   const canViewReports = !isStaff || hasPermission("view_reports");
@@ -25,61 +41,74 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
   // sidebar reads like an organized product's nav rather than a dumped
   // list of every page in the order they were built. No page, permission
   // check, or route changed — only grouping/order/labels.
-  const navGroups = [
-    { label: null, items: [{ id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid }] },
-    {
-      label: "Operations",
-      items: [
-        { id: "tickets", label: "Weighing Tickets", icon: Scale },
-        { id: "transactions", label: t("nav_transactions"), icon: Receipt },
-        ...(isAdmin ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
-      ],
-    },
-    {
-      label: "Directory",
-      // Farmers and Buyers used to be two separate nav items pointing at
-      // two separate pages. They're still two separate pages/routes under
-      // the hood (nothing about party detail / register / navigation logic
-      // changed) — but they now share one nav entry, with a Farmers/Buyers
-      // toggle living inside the page itself (SimpleListPage.jsx). This
-      // link always opens on Farmers; it stays highlighted on either tab.
-      items: [{ id: "suppliers", label: "Farmers & Buyers", icon: Users }],
-    },
-    {
-      label: "Inventory & Reports",
-      items: [
-        { id: "stock", label: t("nav_stock"), icon: Warehouse },
-        ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
-        // Its own sidebar item rather than a tab inside Financial Reports —
-        // staff who log daily expenses shouldn't have to go through the
-        // Reports section to reach it. Gated by the same canViewReports
-        // permission as Financial Reports, since it's still financial data.
-        ...(canViewReports ? [{ id: "expenses", label: "Expenses", icon: Wallet }] : []),
-      ],
-    },
-    ...(isAdmin
-      ? [{
-          label: "System",
+  const navGroups = isViewOnly
+    ? [
+        { label: null, items: [{ id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid }] },
+        {
+          label: "Overview",
           items: [
-            { id: "stations", label: t("nav_stations"), icon: MapPin },
-            // [2026-09-01] One glance at all 5 stations' recent-activity
-            // status instead of finding out something's gone quiet from a
-            // phone call or a missing-receipt investigation days later —
-            // see StationHealth.jsx for exactly what it does and doesn't
-            // measure (recent transactions, not a live scale connection).
-            { id: "station-health", label: "Station Health", icon: Activity },
-            { id: "users", label: "Users", icon: UserCog },
-            { id: "roles", label: "Roles", icon: ShieldCheck },
-            { id: "settings", label: t("nav_settings"), icon: Settings },
-            // "Receipt Template" nav entry removed [2026-08-25] — that page
-            // no longer affects the printed receipt/slip design (see
-            // App.jsx), so it's no longer linked from here. The route
-            // itself still exists and shows a plain notice if anyone has
-            // it bookmarked.
+            { id: "stock", label: t("nav_stock"), icon: Warehouse },
+            { id: "transactions", label: t("nav_transactions"), icon: Receipt },
+            { id: "reports", label: t("nav_reports"), icon: BarChart3 },
+            { id: "expenses", label: "Expenses", icon: Wallet },
           ],
-        }]
-      : []),
-  ];
+        },
+      ]
+    : [
+        { label: null, items: [{ id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid }] },
+        {
+          label: "Operations",
+          items: [
+            { id: "tickets", label: "Weighing Tickets", icon: Scale },
+            { id: "transactions", label: t("nav_transactions"), icon: Receipt },
+            ...(canSeeAdminNav ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
+          ],
+        },
+        {
+          label: "Directory",
+          // Farmers and Buyers used to be two separate nav items pointing at
+          // two separate pages. They're still two separate pages/routes under
+          // the hood (nothing about party detail / register / navigation logic
+          // changed) — but they now share one nav entry, with a Farmers/Buyers
+          // toggle living inside the page itself (SimpleListPage.jsx). This
+          // link always opens on Farmers; it stays highlighted on either tab.
+          items: [{ id: "suppliers", label: "Farmers & Buyers", icon: Users }],
+        },
+        {
+          label: "Inventory & Reports",
+          items: [
+            { id: "stock", label: t("nav_stock"), icon: Warehouse },
+            ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
+            // Its own sidebar item rather than a tab inside Financial Reports —
+            // staff who log daily expenses shouldn't have to go through the
+            // Reports section to reach it. Gated by the same canViewReports
+            // permission as Financial Reports, since it's still financial data.
+            ...(canViewReports ? [{ id: "expenses", label: "Expenses", icon: Wallet }] : []),
+          ],
+        },
+        ...(canSeeAdminNav
+          ? [{
+              label: "System",
+              items: [
+                { id: "stations", label: t("nav_stations"), icon: MapPin },
+                // [2026-09-01] One glance at all 5 stations' recent-activity
+                // status instead of finding out something's gone quiet from a
+                // phone call or a missing-receipt investigation days later —
+                // see StationHealth.jsx for exactly what it does and doesn't
+                // measure (recent transactions, not a live scale connection).
+                { id: "station-health", label: "Station Health", icon: Activity },
+                { id: "users", label: "Users", icon: UserCog },
+                { id: "roles", label: "Roles", icon: ShieldCheck },
+                { id: "settings", label: t("nav_settings"), icon: Settings },
+                // "Receipt Template" nav entry removed [2026-08-25] — that page
+                // no longer affects the printed receipt/slip design (see
+                // App.jsx), so it's no longer linked from here. The route
+                // itself still exists and shows a plain notice if anyone has
+                // it bookmarked.
+              ],
+            }]
+          : []),
+      ];
 
   const isActive = (id) =>
     page === id ||
@@ -128,6 +157,10 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
             <p className="flex items-center gap-1 text-[10.5px] text-brand-300">
               {isOwner && <ShieldCheck size={11} className="text-gold-300" />}
               {profile.roleName || t(`role_${profile.role}`)}
+              {/* [2026-09-01] So nobody on a shared device mistakes this
+                  for a normal account that just happens to have nothing to
+                  do right now — see viewOnlyGuard.js. */}
+              {isViewOnly && <span className="ml-0.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-200">View Only</span>}
             </p>
           </div>
           <button
