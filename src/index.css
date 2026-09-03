@@ -74,7 +74,12 @@ input[type="number"] {
   border: 1.3px solid #000; border-radius: 4px; padding: 2px 7px; display: inline-block;
 }
 #receipt-root .doc-no, #ticket-slip-root .doc-no { font-size: 13px; font-weight: 800; margin-top: 3px; }
-#receipt-root .doc-sub, #ticket-slip-root .doc-sub { font-size: 9px; color: #374151; margin-top: 1px; }
+/* [2026-09-03] Truck/plate number line — was 9px/#374151 (light gray),
+   by far the smallest, faintest text on the whole slip, next to a doc-no
+   that's 13-14px bold black. Reported as unreadable/pixelated once
+   printed — bumped to match doc-no's weight, since staff match this
+   number against the physical truck the same way they match the ticket #. */
+#receipt-root .doc-sub, #ticket-slip-root .doc-sub { font-size: 13px; font-weight: 800; color: #000; margin-top: 2px; }
 
 #receipt-root .fields, #ticket-slip-root .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; margin-top: 8px; }
 #receipt-root .field, #ticket-slip-root .field {
@@ -289,7 +294,9 @@ input[type="number"] {
   #ticket-slip-root .doc-type { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
     border: 1.3px solid #000; border-radius: 1mm; padding: 0.6mm 2.5mm; display: inline-block; }
   #ticket-slip-root .doc-no { font-size: 14px; font-weight: 800; margin-top: 0.8mm; }
-  #ticket-slip-root .doc-sub { font-size: 9.5px; color: #374151; margin-top: 0.3mm; }
+  /* [2026-09-03] See the matching comment on the non-print rule above —
+     same fix, sized for this print block's mm-based layout. */
+  #ticket-slip-root .doc-sub { font-size: 13px; font-weight: 800; color: #000; margin-top: 0.4mm; }
 
   #ticket-slip-root .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6mm; margin-top: 1mm; }
   #ticket-slip-root .field { display: flex; justify-content: space-between; align-items: baseline;
@@ -377,7 +384,9 @@ input[type="number"] {
   #receipt-root .doc-type { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
     border: 1.3px solid #000; border-radius: 1mm; padding: 0.6mm 2.5mm; display: inline-block; }
   #receipt-root .doc-no { font-size: 14px; font-weight: 800; margin-top: 0.8mm; }
-  #receipt-root .doc-sub { font-size: 9.5px; color: #374151; margin-top: 0.3mm; }
+  /* [2026-09-03] Same fix as the shared non-print rule above — plate
+     number was 9.5px light gray, reported unreadable once printed. */
+  #receipt-root .doc-sub { font-size: 13px; font-weight: 800; color: #000; margin-top: 0.4mm; }
 
   #receipt-root .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 6mm; margin-top: 1mm; }
   #receipt-root .field { display: flex; justify-content: space-between; align-items: baseline;
