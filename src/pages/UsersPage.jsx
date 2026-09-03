@@ -228,6 +228,21 @@ export default function UsersPage() {
     }
   }
 
+  // [2026-09-02] The actual on/off switch for an EXISTING account —
+  // previously the only way to change this was a direct SQL update, since
+  // no UI anywhere exposed it. Same pattern as changeRole/changeLocation
+  // above: optimistic-ish (button disables via savingId, then reloads).
+  async function toggleViewOnly(u) {
+    setSavingId(u.id);
+    try {
+      await api.updateProfileRole(u.id, { viewOnly: !u.view_only });
+      load();
+    } catch (err) {
+      setActionMessage({ type: "error", text: err.message || "Couldn't change this person's view-only setting — check your connection and try again." });
+      setSavingId(null);
+    }
+  }
+
   const suspendedRole = roles.find((r) => r.name === "Suspended");
 
   async function suspend(u) {
@@ -361,7 +376,40 @@ export default function UsersPage() {
                         <span className="text-slate-600">{scope === "all" ? "All Locations" : u.locationName}</span>
                       )}
                     </td>
-                    <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[scope]}`}>{scope === "all" ? "All Locations" : "Own Location"}</span></td>
+                    <td className="px-3 py-3">
+                      {/* [2026-09-02] Access (scope) and the view-only
+                          switch used to be two separate columns — folded
+                          into one cell so the table doesn't grow every time
+                          a new per-account setting shows up. The toggle
+                          button below is the actual switch for
+                          viewOnlyGuard.js on an EXISTING account — see
+                          toggleViewOnly above. Only shown where this admin
+                          could otherwise edit the row at all (same
+                          canEdit() rule as Role/Location), so it's not a
+                          dead control someone can click but nothing
+                          happens. Excludes your own row, same as Suspend/
+                          Log Out below — flipping yourself to view-only
+                          would lock out every write your own account can
+                          make, including undoing it. */}
+                      <div className="flex flex-col items-start gap-1">
+                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[scope]}`}>{scope === "all" ? "All Locations" : "Own Location"}</span>
+                        {editable && u.id !== me.id ? (
+                          <button
+                            onClick={() => toggleViewOnly(u)}
+                            disabled={savingId === u.id}
+                            title={u.view_only ? "Can only look — click to allow editing again" : "Can edit — click to make view-only"}
+                            className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium disabled:opacity-50 ${
+                              u.view_only ? "border-brand-300 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-400 hover:bg-slate-50"
+                            }`}
+                          >
+                            <span className={`h-1.5 w-1.5 rounded-full ${u.view_only ? "bg-brand-600" : "bg-slate-300"}`} />
+                            {u.view_only ? "View only" : "Can edit"}
+                          </button>
+                        ) : (
+                          u.view_only && <span className="text-[11px] text-slate-400">View only</span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-3">
                       <span className={`flex items-center gap-1.5 text-xs ${online ? "text-emerald-600" : "text-slate-400"}`}>
                         <Circle size={8} className={online ? "fill-emerald-500 text-emerald-500" : "fill-slate-300 text-slate-300"} />
