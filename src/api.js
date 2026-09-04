@@ -1,6 +1,32 @@
 import { supabase, getAccurateNow } from "./supabaseClient.js";
 import { isViewOnlyMode, ViewOnlyError } from "./viewOnlyGuard.js";
 
+// [2026-09-04] THAPEDEY had two different transactions both showing paper
+// ticket number "TD 000678" — even though add_paper_ticket_no_unique_
+// constraint.sql (2026-09-03) already made this "impossible" after the
+// PONG RO / PR000127 incident. Root cause: every duplicate check in the
+// app — this one included, before this fix — only trims the ends of what
+// staff typed and lowercases it, exactly matching the database rule's own
+// lower(trim(...)) comparison. Neither one collapses extra SPACES TYPED IN
+// THE MIDDLE. A browser always visually collapses "TD 000678" and
+// "TD  000678" (two spaces) down to looking identical, so a number typed
+// with one extra/missing space in the middle sails straight past both the
+// on-screen warning and the database rule, which see them as two
+// completely different pieces of text.
+//
+// Fix: every place that saves a paper ticket number now runs it through
+// this first, so the exact same "TD 000678" (however many spaces were
+// actually typed) always ends up stored as the exact same characters —
+// closing the gap at its source instead of trying to special-case every
+// comparison that reads it back. Squeezes to a single space rather than
+// removing spaces entirely, so a genuinely-typed "TD 000678" still reads
+// the same way on screen and on the printed receipt — this only removes
+// the invisible, accidental duplication of a space, not a real one.
+export function normalizePaperTicketNo(raw) {
+  const squeezed = (raw || "").trim().replace(/\s+/g, " ");
+  return squeezed || null;
+}
+
 // Widened from a 4-digit (1000-9999, ~9,000 possible values) space to
 // 6-digit (~900,000) — the 4-digit space was small enough that, across two
 // stations' worth of tickets over time, random collisions had become a
@@ -752,7 +778,7 @@ const rawApi = {
       tare_at: tareAt || null,
       payment_proof_url: paymentProofUrl || null,
       staff_fee: staffFee || 0,
-      paper_ticket_no: paperTicketNo || null,
+      paper_ticket_no: normalizePaperTicketNo(paperTicketNo),
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
     };
@@ -816,7 +842,12 @@ const rawApi = {
   // add_paper_ticket_no_unique_constraint.sql) is what makes it a real
   // guarantee rather than just a better-informed warning.
   async findTicketByPaperTicketNo({ locationId, paperTicketNo, excludeId }) {
-    const trimmed = (paperTicketNo || "").trim();
+    // [2026-09-04] Normalized the same way it'll be stored (see
+    // normalizePaperTicketNo above) — comparing the raw, un-squeezed input
+    // against already-normalized stored values is exactly what let
+    // "TD 000678" / "TD  000678" (an extra space, invisible on screen)
+    // through as if they were different numbers.
+    const trimmed = normalizePaperTicketNo(paperTicketNo) || "";
     if (!locationId || !trimmed) return null;
     // ilike does a case-insensitive match, but % and _ are wildcards to
     // it — escape them so a paper ticket number that happens to contain
@@ -872,7 +903,7 @@ const rawApi = {
       gross_at: hasGross ? getAccurateNow().toISOString() : null,
       gross_by: hasGross ? userId : null,
       created_by: userId,
-      paper_ticket_no: paperTicketNo || null,
+      paper_ticket_no: normalizePaperTicketNo(paperTicketNo),
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
     };
@@ -918,7 +949,7 @@ const rawApi = {
     if (driverName !== undefined) patch.driver_name = driverName || null;
     if (productId !== undefined) patch.product_id = productId || null;
     if (productName !== undefined) patch.product_name = productName;
-    if (paperTicketNo !== undefined) patch.paper_ticket_no = paperTicketNo || null;
+    if (paperTicketNo !== undefined) patch.paper_ticket_no = normalizePaperTicketNo(paperTicketNo);
     if (grossKg !== undefined) {
       patch.gross_kg = grossKg;
       patch.gross_at = getAccurateNow().toISOString();
@@ -1273,7 +1304,7 @@ const rawApi = {
         // pre-check UI here since a mis-typed correction on an already-old
         // transaction is rare enough that a clear error after Save is
         // proportionate, not a New-Ticket-style warning screen.
-        ...(paperTicketNo !== undefined ? { paper_ticket_no: paperTicketNo || null } : {}),
+        ...(paperTicketNo !== undefined ? { paper_ticket_no: normalizePaperTicketNo(paperTicketNo) } : {}),
       })
       .eq("id", id)
       .select()
