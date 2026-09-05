@@ -4,7 +4,7 @@ import { useLanguage } from "../i18n.jsx";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
-import { api } from "../api.js";
+import { api, normalizePaperTicketNo } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import {
@@ -285,25 +285,59 @@ function NewTicketSectionHead({ label, dotClass, textClass }) {
 
 // [2026-09-01] Entry Sanity Check — a plain, non-blocking "are you sure?"
 // shown at the moment a paper ticket number that's already on file for this
-// station is about to be saved again. Never blocks staff from continuing —
-// "Use it anyway" always works — this only exists to put a second look in
-// front of a reused ticket number, the kind of mistake that's turned into
-// real Change Requests this year. (An earlier version of this also flagged
-// unusually high weights — dropped per explicit feedback that the weight
-// check wasn't wanted; only the duplicate-ticket check remains.)
-function SanityWarningModal({ warning, onBack, onProceed }) {
+// station is about to be saved again. (An earlier version of this also
+// flagged unusually high weights — dropped per explicit feedback that the
+// weight check wasn't wanted; only the duplicate-ticket check remains.)
+// [2026-09-03] Briefly became a hard block with no override at all (see
+// add_paper_ticket_no_unique_constraint.sql) — but that's exactly what
+// left PONG RO's ticket "PR000209" stuck in the sync queue over a number
+// SISEN wasn't convinced was a real duplicate.
+// [2026-09-04] Back to non-blocking, per SISEN's explicit call: "just
+// allow it but alert them". Saving now always works — the number just
+// gets flagged (paper_ticket_dup_flag) so an admin can see it in the list
+// later (see checkAndFlagPaperTicketDuplicate in api.js) — this screen is
+// only the staff-facing half of that, a chance to catch it before saving
+// at all.
+// [2026-09-05] Shared by New Ticket and Edit Ticket's live "already used"
+// checks (see the debounced useEffect in each below) and their own
+// submit()-time checks — one place for the "ask the server first, fall
+// back to whatever's cached on this device if it's offline or slow" rule,
+// instead of three near-identical copies that could quietly drift apart.
+async function checkTicketNoDuplicate({ locationId, paperTicketNo, excludeId }) {
+  const trimmedTicketNo = normalizePaperTicketNo(paperTicketNo) || "";
+  if (!trimmedTicketNo || !locationId) return null;
+  let dupMatch = null;
+  try {
+    dupMatch = await withTimeout(
+      api.findTicketByPaperTicketNo({ locationId, paperTicketNo: trimmedTicketNo, excludeId }),
+      3500,
+      null
+    );
+  } catch {
+    dupMatch = null;
+  }
+  if (!dupMatch) {
+    dupMatch = getCachedTickets().find(
+      (t) => t.id !== excludeId && t.location_id === locationId &&
+        (normalizePaperTicketNo(t.paper_ticket_no) || "").toLowerCase() === trimmedTicketNo.toLowerCase()
+    );
+  }
+  return dupMatch || null;
+}
+
+function SanityWarningModal({ warning, onBack, onConfirm, confirming }) {
   return (
-    <Modal title={`Ticket #${warning.ticketNo} already used`} onClose={onBack}>
+    <Modal title={`Heads up — Ticket #${warning.ticketNo} already used`} onClose={onBack}>
       <p className="mb-4 text-sm text-slate-500">
-        This Quality Ticket No. was already recorded here{warning.match?.party_name ? ` for ${warning.match.party_name}` : ""}
-        {warning.match?.created_at ? ` on ${new Date(warning.match.created_at).toLocaleDateString()}` : ""}. Double-check the number on the paper slip before continuing.
+        This Quality Ticket No. is already recorded here{warning.match?.party_name ? ` for ${warning.match.party_name}` : ""}
+        {warning.match?.created_at ? ` on ${new Date(warning.match.created_at).toLocaleDateString()}` : ""}. Double-check the number on the paper slip. If it really is the same number used twice, you can still save — it'll be flagged for an admin to look into.
       </p>
       <div className="flex justify-end gap-2">
-        <button onClick={onBack} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
+        <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
           Go back and check
         </button>
-        <button onClick={onProceed} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700">
-          Use it anyway
+        <button disabled={confirming} onClick={onConfirm} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60">
+          {confirming ? "Saving…" : "Save anyway"}
         </button>
       </div>
     </Modal>
@@ -339,16 +373,20 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [grossWeight, setGrossWeight] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  // [2026-09-01] Entry Sanity Check — a non-blocking "are you sure?" for a
-  // paper ticket number reused by accident, the mistake that's turned into
-  // real Change Requests this year. `activeWarning` holds it when submit()
-  // finds one (null the rest of the time); dupWarningShown remembers the
-  // exact ticket number staff already said was correct, so re-submitting
-  // with that same number doesn't ask again — changing the field re-arms
-  // the check. (A weight-based version of this check was tried too and
-  // dropped per explicit feedback — ticket-number duplicates only.)
+  // [2026-09-01] Entry Sanity Check for a paper ticket number reused by
+  // accident, the mistake that's turned into real Change Requests this
+  // year. `activeWarning` holds it when submit() finds one (null the rest
+  // of the time). [2026-09-03] Was a non-blocking "are you sure?" — now
+  // the number is genuinely blocked (database-enforced, see
+  // add_paper_ticket_no_unique_constraint.sql), so there's no more "use it
+  // anyway" to remember past; every submit re-checks fresh.
   const [activeWarning, setActiveWarning] = useState(null);
-  const [dupWarningShown, setDupWarningShown] = useState(null);
+  // [2026-09-05] The same duplicate check submit() runs, but live — fires
+  // ~500ms after staff stop typing the ticket number, so the "already
+  // used" heads-up shows right under the field while they're still filling
+  // in the rest of the ticket, instead of only after they press Save. Pure
+  // information, same as the modal below — doesn't block anything.
+  const [liveDupHint, setLiveDupHint] = useState(null);
   const [phoneLookupMsg, setPhoneLookupMsg] = useState("");
   // Whatever bank name/account/QR photo this person already has on file
   // (if any) — captured the moment their phone number matches someone, so
@@ -537,6 +575,22 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, type]);
 
+  // [2026-09-05] Live "already used" check for the ticket number — see
+  // liveDupHint above. Re-checks the server (falling back to this device's
+  // cache) 500ms after the last keystroke; `cancelled` guards against a
+  // slow check for an earlier number landing after a newer one's already
+  // been typed.
+  useEffect(() => {
+    const normalized = normalizePaperTicketNo(paperTicketNo);
+    if (!normalized || !locationId) { setLiveDupHint(null); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const match = await checkTicketNoDuplicate({ locationId, paperTicketNo: normalized });
+      if (!cancelled) setLiveDupHint(match ? { ticketNo: normalized, match } : null);
+    }, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [paperTicketNo, locationId]);
+
   // Looks up a farmer/buyer that already self-registered (via the QR
   // registration page) or has been entered before, by phone number, and
   // fills in their saved name so staff don't retype it. Their saved bank
@@ -614,23 +668,42 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setError("Please enter the truck's gross (loaded) weight.");
       return;
     }
-    // Entry sanity check — reads from the already-loaded local ticket cache
-    // (the same one "Use previous Seller/Buyer" above reads from), so it
-    // adds no network round-trip and can't block a genuinely offline
-    // station. Skipped once staff have already said this exact ticket
-    // number is correct (see dupWarningShown above); firing it returns
-    // early instead of saving.
-    const trimmedTicketNo = paperTicketNo.trim();
-    if (trimmedTicketNo && trimmedTicketNo !== dupWarningShown) {
-      const dupMatch = getCachedTickets().find(
-        (t) => t.location_id === locationId &&
-          (t.paper_ticket_no || "").trim().toLowerCase() === trimmedTicketNo.toLowerCase()
-      );
+    // Entry sanity check. [2026-09-03] Used to only read this device's
+    // local ticket cache — which is exactly how a real duplicate (PONG RO,
+    // paper ticket PR000127, used on two separate tickets) slipped past it:
+    // two different devices each created a ticket before either had synced
+    // the other's, so neither one's cache knew about the other. Now checks
+    // the live server first (bounded by a short timeout so a bad
+    // connection can't hang ticket creation — see withTimeout), which
+    // catches almost every real case since it asks the database directly
+    // instead of a snapshot that might be minutes old. Falls back to the
+    // local cache when offline or the live check times out, same as
+    // before — either way, the actual guarantee is the database's own
+    // constraint (add_paper_ticket_no_unique_constraint.sql), this is just
+    // about catching it here instead of later.
+    const trimmedTicketNo = normalizePaperTicketNo(paperTicketNo) || "";
+    if (trimmedTicketNo) {
+      // Reuse the live check's own answer for this exact number if it's
+      // already run (the common case — staff typed it, saw the heads-up
+      // or didn't, and is now pressing Save) instead of asking again;
+      // otherwise (very fast typing, or Save pressed inside the 500ms
+      // debounce window) fall back to asking directly here.
+      const dupMatch = liveDupHint && liveDupHint.ticketNo === trimmedTicketNo
+        ? liveDupHint.match
+        : await checkTicketNoDuplicate({ locationId, paperTicketNo: trimmedTicketNo });
       if (dupMatch) {
         setActiveWarning({ kind: "duplicate", ticketNo: trimmedTicketNo, match: dupMatch });
         return;
       }
     }
+    await doSave(kg);
+  }
+
+  // [2026-09-04] Split out of submit() so "Save anyway" on the warning
+  // modal below can call straight into the actual save, skipping the
+  // duplicate check that already ran once and found the match the staff
+  // member is choosing to save over anyway (see SanityWarningModal).
+  async function doSave(kg) {
     setSaving(true);
     setError("");
     try {
@@ -666,6 +739,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         bankQrUrl: savedBank?.bankQrUrl || undefined,
         grossKg: kg,
       });
+      setActiveWarning(null);
       onCreated(ticket);
     } catch (err) {
       setError(err.message || "Something went wrong.");
@@ -712,6 +786,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         <div>
           <NewTicketFieldLabel icon="🎫" en="Ticket #" km="លេខសំបុត្រ" lang={lang} />
           <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={fieldCls} placeholder="e.g. 092152" />
+          {liveDupHint && (
+            <p className="mt-1 text-xs font-semibold text-amber-600">
+              ⚠ Already used{liveDupHint.match?.party_name ? ` — ${liveDupHint.match.party_name}` : ""}
+              {liveDupHint.match?.created_at ? `, ${new Date(liveDupHint.match.created_at).toLocaleDateString()}` : ""}
+            </p>
+          )}
         </div>
         <div>
           <NewTicketFieldLabel icon="🚚" en="Vehicle" km="យានយន្ត" lang={lang} />
@@ -912,14 +992,8 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       <SanityWarningModal
         warning={activeWarning}
         onBack={() => setActiveWarning(null)}
-        onProceed={() => {
-          setDupWarningShown(activeWarning.ticketNo);
-          setActiveWarning(null);
-          // Re-run submit() now that this specific value is remembered as
-          // already-confirmed — it'll pass straight through this check and
-          // either hit the other one or go ahead and save.
-          submit();
-        }}
+        onConfirm={() => doSave(parseFloat(grossWeight))}
+        confirming={saving}
       />
     )}
     </>
@@ -945,6 +1019,17 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
   const [grossWeight, setGrossWeight] = useState(ticket.gross_kg != null ? String(ticket.gross_kg) : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // [2026-09-03] Same Entry Sanity Check as New Ticket (see there for the
+  // full story) — this screen never had one at all before, which is a
+  // second, quieter way the exact same mistake (a paper ticket number
+  // reused by accident) could happen: nothing stopped staff from editing
+  // an open ticket's number into one already used by a different ticket.
+  const [activeWarning, setActiveWarning] = useState(null);
+  // [2026-09-05] Same live "already used" heads-up as New Ticket — see
+  // there for why. Skips the original number this ticket already had
+  // (nothing to warn about until they actually change it), same rule
+  // submit() below already used.
+  const [liveDupHint, setLiveDupHint] = useState(null);
   const { session } = useAuth();
 
   // Same seed-list + "whatever's been typed on this device before" approach
@@ -975,12 +1060,31 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const normalized = normalizePaperTicketNo(paperTicketNo);
+    const original = normalizePaperTicketNo(ticket.paper_ticket_no) || "";
+    if (!normalized || !ticket.location_id || normalized.toLowerCase() === original.toLowerCase()) {
+      setLiveDupHint(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const match = await checkTicketNoDuplicate({ locationId: ticket.location_id, paperTicketNo: normalized, excludeId: ticket.id });
+      if (!cancelled) setLiveDupHint(match ? { ticketNo: normalized, match } : null);
+    }, 500);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [paperTicketNo, ticket.location_id, ticket.id, ticket.paper_ticket_no]);
+
   async function submit() {
     if (!partyName.trim() || !productName.trim() || !carPlate.trim()) {
       setError("Please fill in party name, product, and plate number.");
       return;
     }
-    if (isBuy && !paperTicketNo.trim()) {
+    // [2026-09-05] Required on both Buy and Sell here too now, matching
+    // New Ticket (which has asked for it on both since [2026-09-04]) — the
+    // field above used to only exist for Buy, so this used to only ever
+    // check Buy tickets.
+    if (!paperTicketNo.trim()) {
       setError("Please enter the number printed on the paper quality ticket.");
       return;
     }
@@ -989,6 +1093,27 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
       setError("Gross weight must be a positive number.");
       return;
     }
+    // Same live-server-first, cache-fallback check as New Ticket — see the
+    // comment there. `excludeId` keeps this ticket's own unchanged number
+    // from flagging itself as a duplicate of itself.
+    const trimmedTicketNo = normalizePaperTicketNo(paperTicketNo) || "";
+    if (trimmedTicketNo && trimmedTicketNo.toLowerCase() !== (normalizePaperTicketNo(ticket.paper_ticket_no) || "").toLowerCase()) {
+      // Reuse the live check's own answer if it already ran for this exact
+      // number — see NewTicketModal's submit() for why.
+      const dupMatch = liveDupHint && liveDupHint.ticketNo === trimmedTicketNo
+        ? liveDupHint.match
+        : await checkTicketNoDuplicate({ locationId: ticket.location_id, paperTicketNo: trimmedTicketNo, excludeId: ticket.id });
+      if (dupMatch) {
+        setActiveWarning({ kind: "duplicate", ticketNo: trimmedTicketNo, match: dupMatch });
+        return;
+      }
+    }
+    await doSave(kg);
+  }
+
+  // [2026-09-04] Split out of submit() — see the same change on New Ticket's
+  // submit()/doSave() above for why.
+  async function doSave(kg) {
     setSaving(true);
     setError("");
     try {
@@ -1002,6 +1127,7 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
         grossKg: kg,
         userId: session.user.id,
       });
+      setActiveWarning(null);
       onSaved(updated);
     } catch (err) {
       setError(err.message || "Something went wrong.");
@@ -1011,19 +1137,30 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
   }
 
   return (
+    <>
     <Modal
       title={<>Edit Ticket {ticket.code}<span className="font-khmer block text-sm font-normal text-slate-500">កែសម្រួលសំបុត្រ {ticket.code}</span></>}
       subtitle={<>Fix a mistake before Finish Ticket — this doesn't move the ticket forward<span className="font-khmer block">កែកំហុសមុននឹងបញ្ចប់សំបុត្រ — វាមិនផ្លាស់ប្តូរដំណាក់កាលសំបុត្រទេ</span></>}
       onClose={onClose} wide
     >
       <div className="grid grid-cols-2 gap-3">
-        {isBuy && (
-          <div>
-            <label className={labelCls}>Quality Ticket No.<span className="font-khmer block text-brand-600">លេខសំបុត្រគុណភាព</span></label>
-            <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
-          </div>
-        )}
-        <div className={isBuy ? "" : "col-span-2"}><label className={labelCls}>Vehicle Plate Number<span className="font-khmer block text-brand-600">លេខផ្លាកយានយន្ត</span></label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
+        {/* [2026-09-05] Used to only show for Buy tickets (isBuy && …) —
+            left over from before the paper ticket number was required on
+            Sell tickets too (see the comment on New Ticket's own field
+            above). That's exactly why a Sell ticket's number couldn't be
+            fixed from here even though New Ticket asks for one on every
+            Sell ticket too, and the list badge shows it right there. */}
+        <div>
+          <label className={labelCls}>Quality Ticket No.<span className="font-khmer block text-brand-600">លេខសំបុត្រគុណភាព</span></label>
+          <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} className={inputCls} placeholder="e.g. 092152" />
+          {liveDupHint && (
+            <p className="mt-1 text-xs font-semibold text-amber-600">
+              ⚠ Already used{liveDupHint.match?.party_name ? ` — ${liveDupHint.match.party_name}` : ""}
+              {liveDupHint.match?.created_at ? `, ${new Date(liveDupHint.match.created_at).toLocaleDateString()}` : ""}
+            </p>
+          )}
+        </div>
+        <div><label className={labelCls}>Vehicle Plate Number<span className="font-khmer block text-brand-600">លេខផ្លាកយានយន្ត</span></label><input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} className={inputCls} /></div>
         <div className="col-span-2">
           <label className={labelCls}>Phone<span className="font-khmer block text-brand-600">លេខទូរស័ព្ទ</span></label>
           <input value={phone} onChange={(e) => setPhone(e.target.value)} className={inputCls} />
@@ -1083,6 +1220,15 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
         </button>
       </div>
     </Modal>
+    {activeWarning && (
+      <SanityWarningModal
+        warning={activeWarning}
+        onBack={() => setActiveWarning(null)}
+        onConfirm={() => doSave(grossWeight === "" ? null : parseFloat(grossWeight))}
+        confirming={saving}
+      />
+    )}
+    </>
   );
 }
 
@@ -2161,7 +2307,19 @@ export default function WeighingTickets() {
                     </div>
                     <div className="rounded-lg bg-amber-50 px-3 py-2">
                       <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700">{tr("wt_ticket_no_label")}</p>
-                      <p className="text-xl font-extrabold text-amber-700">{t.paper_ticket_no || "—"}</p>
+                      <p className="flex items-center gap-1.5 text-xl font-extrabold text-amber-700">
+                        {t.paper_ticket_no || "—"}
+                        {/* [2026-09-04] Set by checkAndFlagPaperTicketDuplicate
+                            (api.js) when this number is already on file for
+                            this station — saving isn't blocked anymore, so
+                            this badge is how an admin actually finds one to
+                            look into. */}
+                        {t.paper_ticket_dup_flag && (
+                          <span title="This ticket number is also used on another ticket/transaction at this station — worth double-checking against the paper slip." className="inline-flex items-center gap-0.5 rounded-full border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                            ⚠ Dup #
+                          </span>
+                        )}
+                      </p>
                     </div>
                   </div>
 
