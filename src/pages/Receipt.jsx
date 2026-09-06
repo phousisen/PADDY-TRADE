@@ -6,11 +6,27 @@ import { isTransactionPendingSync, onSyncStatusChange } from "../offlineQueue.js
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
+// [2026-09-06] Used to only compute `time`, never `date` — which is
+// exactly why the IN/OUT rows below both fell back to tx.tx_date (the
+// single date the whole transaction was finalized on) instead of each
+// row's own real date. Harmless when Finish Ticket happens the same day
+// as weigh-in, but a ticket weighed in one day and only finished the
+// next (confirmed live on a Jomnoum ticket, weighed in on the 5th,
+// finished on the 6th) printed an IN row with the correct time but the
+// WRONG date — today's, not the 5th's. Now returns both, matching the
+// same-named function in WeighingTickets.jsx (the Weigh-In Slip, which
+// never had this bug), so each row can use its own timestamp's actual
+// date instead of borrowing the transaction's.
 function splitCambodiaTimestamp(iso) {
-  if (!iso) return { time: "—" };
+  if (!iso) return { date: "—", time: "—" };
   const d = new Date(iso);
   const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
-  return { time };
+  const parts = {};
+  new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "2-digit", year: "numeric" })
+    .formatToParts(d)
+    .forEach((p) => { parts[p.type] = p.value; });
+  const date = `${parts.day}-${parts.month}-${parts.year}`;
+  return { date, time };
 }
 function ddmmyyyy(dateStr) {
   if (!dateStr) return "—";
@@ -113,13 +129,13 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
         <tbody>
           <tr>
             <td>ចូល IN</td>
-            <td>{hasWeighInOut ? ddmmyyyy(tx.tx_date) : "—"}</td>
+            <td>{hasWeighInOut ? inStamp.date : "—"}</td>
             <td>{hasWeighInOut ? inStamp.time : "—"}</td>
             <td className="num">{hasWeighInOut ? `${fmt2(tx.gross_kg)} kg` : "—"}</td>
           </tr>
           <tr>
             <td>ចេញ OUT</td>
-            <td>{hasWeighInOut ? ddmmyyyy(tx.tx_date) : "—"}</td>
+            <td>{hasWeighInOut ? outStamp.date : "—"}</td>
             <td>{hasWeighInOut ? outStamp.time : "—"}</td>
             <td className="num">{hasWeighInOut ? `${fmt2(tx.tare_kg)} kg` : "—"}</td>
           </tr>
