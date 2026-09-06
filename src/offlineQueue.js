@@ -27,6 +27,7 @@
 
 import { api } from "./api.js";
 import { ensureFreshSession, getAccurateNow } from "./supabaseClient.js";
+import { assertNotViewOnly } from "./viewOnlyGuard.js";
 
 const CACHE_KEY = "ptw_ticket_cache_v1";
 const QUEUE_KEY = "ptw_ticket_queue_v1";
@@ -88,7 +89,39 @@ const ONLINE_LOOKUP_TIMEOUT_MS = 1200;
 // later. Giving the save up to this long, only while online, to actually
 // land before the receipt prints closes almost all of that window, while
 // never blocking a genuinely offline station — see the call sites.
-const FINISH_SYNC_TIMEOUT_MS = 7000;
+// [2026-09-06] Raised from 7s to 15s at the same time printing went from
+// "flag if unconfirmed" back to "refuse if unconfirmed" (see the call
+// sites) — a slow-but-working station connection now gets a fair chance
+// to land the save before the receipt is refused, instead of tripping
+// the refusal on an ordinary slow round-trip.
+const FINISH_SYNC_TIMEOUT_MS = 15000;
+
+// [2026-09-06] Shared wording for the one case that is now hard-blocked:
+// this device says it's online, the save is safely queued here, but the
+// shared database did not confirm it within FINISH_SYNC_TIMEOUT_MS. Per
+// direction after Jomnoum's TKT-521806/TKT-872042 (receipt printed,
+// transaction never landed / landed twice): a receipt must never come out
+// of an online station for a transaction the server has not confirmed.
+// The queued save is NOT dropped by this — it keeps retrying on its own
+// every ~15s and on reconnect, exactly as before — only the receipt is
+// held back until it actually lands.
+//
+// `retrySafe` matters: Finish Ticket dedupes by ticket id (a second press
+// reuses the same queued op), so "press again" is safe there. A manual
+// New Buy/Sell entry has no such key — pressing Save again would queue a
+// SECOND copy and both would eventually land — so for that path the
+// message must say the opposite: don't re-enter it, it will appear by
+// itself once the queued save lands.
+export function unconfirmedSaveMessage(what, retrySafe) {
+  const head = `NOT SAVED YET — do NOT print. This device is online but PaddyTrade's database did not confirm this ${what} within ${Math.round(FINISH_SYNC_TIMEOUT_MS / 1000)} seconds (slow or unstable connection). It is safely queued on this device and will keep retrying automatically. `;
+  const tail = retrySafe
+    ? "Wait a moment and press Finish Ticket again — that is safe, it will NOT create a duplicate. If the ticket disappears from this board in the meantime, it already saved: print its receipt from the Transactions page instead."
+    : "Do NOT enter it again — that would create a duplicate. It will appear on the Transactions page by itself once it lands (watch the sync banner at the top); print its receipt from there.";
+  return head + tail;
+}
+function unconfirmedSaveError(what, retrySafe) {
+  return new Error(unconfirmedSaveMessage(what, retrySafe));
+}
 
 export function withTimeout(promise, ms, fallbackValue) {
   return new Promise((resolve) => {
@@ -125,9 +158,11 @@ function readLastPaperTicketMap() {
   return readJSON(PAPER_TICKET_KEY, {});
 }
 
-export function suggestNextPaperTicketNo(locationId) {
-  const map = readLastPaperTicketMap();
-  const last = map[locationId || "_default"];
+// [2026-09-05] The actual "add one" rule, pulled out on its own so the
+// live, cross-device suggestion (api.getLatestPaperTicketNo, used from
+// WeighingTickets.jsx) can reuse the exact same increment logic instead
+// of a second copy that could drift from this one.
+export function incrementTicketNo(last) {
   if (!last) return "";
   const digitMatch = last.match(/\d+$/);
   if (!digitMatch) return "";
@@ -135,6 +170,11 @@ export function suggestNextPaperTicketNo(locationId) {
   const prefix = last.slice(0, last.length - numPart.length);
   const incremented = String(Number(numPart) + 1).padStart(numPart.length, "0");
   return prefix + incremented;
+}
+
+export function suggestNextPaperTicketNo(locationId) {
+  const map = readLastPaperTicketMap();
+  return incrementTicketNo(map[locationId || "_default"]);
 }
 
 export function recordPaperTicketNo(locationId, paperTicketNo) {
@@ -1259,6 +1299,7 @@ function genLocalTxCode(type) {
 // — checks the local cache first (works with zero network), then a live
 // lookup if we're online and the cache might be stale.
 export async function resolvePartyIdOffline(typedName, type, locationId, extra = {}) {
+  assertNotViewOnly();
   const trimmed = (typedName || "").trim();
   if (!trimmed) return null;
 
@@ -1302,6 +1343,7 @@ export async function resolvePartyIdOffline(typedName, type, locationId, extra =
 // already on file, so the next truckload from this same farmer has it
 // ready to prefill.
 export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl }) {
+  assertNotViewOnly();
   if (!partyId) return;
   const list = getCachedParties();
   const idx = list.findIndex((p) => p.id === partyId);
@@ -1319,6 +1361,7 @@ export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl }
 
 // Same idea for the paddy/product type field.
 export async function resolveProductIdOffline(typedName) {
+  assertNotViewOnly();
   const trimmed = (typedName || "").trim();
   if (!trimmed) return null;
 
@@ -1359,6 +1402,7 @@ export async function resolveProductIdOffline(typedName) {
 // ever one save, so a ticket either exists with its weight already on it,
 // or it doesn't exist yet at all.
 export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg }) {
+  assertNotViewOnly();
   const id = newId();
   const code = genLocalTicketCode();
   const hasGross = grossKg != null;
@@ -1407,6 +1451,7 @@ function patchCachedTicket(id, patch) {
 }
 
 export function setTicketGrossOffline(id, { grossKg, userId }) {
+  assertNotViewOnly();
   const updated = patchCachedTicket(id, { gross_kg: grossKg, gross_at: getAccurateNow().toISOString(), gross_by: userId, stage: "weighed_in" });
   enqueue({ type: "setTicketGross", ticketId: id, payload: { grossKg, userId } });
   trySync();
@@ -1422,6 +1467,7 @@ export function setTicketGrossOffline(id, { grossKg, userId }) {
 // were actually passed in get patched — a caller that only changed the
 // plate number, say, doesn't need to also resend everything else.
 export function editTicketOffline(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId }) {
+  assertNotViewOnly();
   const patch = {};
   if (partyId !== undefined) patch.party_id = partyId || null;
   if (partyName !== undefined) patch.party_name = partyName;
@@ -1448,6 +1494,7 @@ export function editTicketOffline(id, { partyId, partyName, phone, carPlate, dri
 }
 
 export function setTicketPriceOffline(id, opts) {
+  assertNotViewOnly();
   const { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline, bankName, bankAccount, bankQrUrl } = opts;
   const patch = {
     quality_grade: qualityGrade || null,
@@ -1478,6 +1525,7 @@ export function setTicketPriceOffline(id, opts) {
 }
 
 export function setTicketTareOffline(id, { tareKg, userId }) {
+  assertNotViewOnly();
   const updated = patchCachedTicket(id, { tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" });
   enqueue({ type: "setTicketTare", ticketId: id, payload: { tareKg, userId } });
   trySync();
@@ -1490,6 +1538,7 @@ export function setTicketTareOffline(id, { tareKg, userId }) {
 // the real save for later. Once synced, the permanent server copy has
 // this same id, so nothing about the receipt has to change.
 export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl }) {
+  assertNotViewOnly();
   const transactionId = newId();
   const transactionCode = genLocalTxCode(ticket.type);
   // Same fix as api.js's finalizeTicket (kept in sync with it on purpose):
@@ -1562,6 +1611,21 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   // "Needs Attention" panel (Topbar.jsx / NeedsAttentionModal.jsx) until
   // it actually syncs, instead of disappearing the moment the receipt
   // prints. Nothing about the automatic retrying below changes.
+  //
+  // [2026-09-06] Reversed again, per direction after Jomnoum's TKT-521806 /
+  // TKT-872042: while ONLINE, an unconfirmed save no longer prints-and-
+  // flags — it throws (see unconfirmedSaveError), so no receipt exists for
+  // a transaction the server hasn't confirmed. Nothing is lost by this:
+  // the op stays queued and keeps retrying on its own; the ticket's cached
+  // stage is deliberately NOT marked finalized here on that path, so it
+  // stays on the board for staff to press Finish Ticket again (safe — the
+  // existingOp reuse above plus the atomic finalize_weighing_ticket
+  // function on the server both guarantee no duplicate). If the queued
+  // save lands in the background first, trySync()'s own success handler
+  // marks the ticket finalized and it leaves the board on its own — the
+  // receipt is then printed from Transactions. A genuinely OFFLINE station
+  // is untouched: it still prints immediately, with the on-screen
+  // "not yet synced" warning, and syncs when the connection returns.
   let needsVerification = false;
   if (navigator.onLine) {
     const deadline = Date.now() + FINISH_SYNC_TIMEOUT_MS;
@@ -1570,7 +1634,7 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
       await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
       confirmed = !isOpQueued(opId);
     }
-    needsVerification = !confirmed;
+    if (!confirmed) throw unconfirmedSaveError("Finish Ticket", true);
   } else {
     trySync();
   }
@@ -1664,6 +1728,7 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
 // would have nothing to show in its Party/Station columns until the real
 // sync completes, same gap this whole change exists to close.
 export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
+  assertNotViewOnly();
   const id = newId();
   const code = genLocalTxCode(type);
   const payableKg = Math.max(0, (quantityKg || 0) - (deductionKg || 0));
@@ -1692,7 +1757,15 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
     throw new Error("Could not save this entry on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Save again in a moment, or free up space on this device if it keeps happening.");
   }
   // Same reasoning as finalizeTicketOffline above — see FINISH_SYNC_TIMEOUT_MS
-  // and the 2026-08-30 comment there on why this flags instead of blocking.
+  // and the 2026-09-06 comment there. This path deliberately does NOT
+  // throw like finalizeTicketOffline now does: the caller
+  // (TransactionForm.jsx) still has the "already paid" cash payment and
+  // the audit entries to queue right after this returns, and those must
+  // be queued alongside the transaction so the whole entry lands together
+  // — throwing here would land a "paid" transaction with no payment row.
+  // So this keeps returning `needs_verification: true`, and
+  // TransactionForm.jsx is what refuses the receipt (it queues the rest,
+  // then shows unconfirmedSaveMessage() instead of the print screen).
   let needsVerification = false;
   if (navigator.onLine) {
     const deadline = Date.now() + FINISH_SYNC_TIMEOUT_MS;
@@ -1756,6 +1829,7 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
 // saved (the "already Paid" case) — same client-generated-id pattern, so
 // it lands on the server as the exact same record whenever it syncs.
 export function createPaymentOffline({ type, transactionId, locationId, amount, method, payDate, memo, userId }) {
+  assertNotViewOnly();
   const id = newId();
   enqueue({ type: "createPayment", payload: { id, type, transactionId, locationId, amount, method, payDate, memo, userId } });
   trySync();
@@ -1768,6 +1842,7 @@ export function createPaymentOffline({ type, transactionId, locationId, amount, 
 // alongside createTransactionOffline/createPaymentOffline so a new
 // manual entry is traceable later even if it was saved while offline.
 export function logAuditOffline(payload) {
+  assertNotViewOnly();
   enqueue({ type: "logAudit", payload });
   trySync();
 }
