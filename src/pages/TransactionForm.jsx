@@ -10,7 +10,7 @@ import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import {
   withTimeout, resolvePartyIdOffline, resolveProductIdOffline, updatePartyOffline,
-  createTransactionOffline, createPaymentOffline, logAuditOffline,
+  createTransactionOffline, createPaymentOffline, logAuditOffline, unconfirmedSaveMessage,
 } from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -340,6 +340,16 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         });
       }
 
+      // [2026-09-06] Online but the server did not confirm the save in
+      // time: everything above (transaction, payment, audit entries) is
+      // safely queued and will land on its own — but NO receipt is shown
+      // or printed for it, per direction after Jomnoum's TKT-521806 /
+      // TKT-872042. Throwing here (after the payment/audit are queued, on
+      // purpose — see createTransactionOffline's comment) shows the
+      // message in the form's existing error slot; the Save button is
+      // re-enabled by `finally`, but the message tells staff NOT to
+      // re-enter it (a second Save would queue a duplicate).
+      if (tx.needs_verification) throw new Error(unconfirmedSaveMessage("Save", false));
       setSavedTx({
         ...tx,
         partyName, partyIdNumber: partyPhone || partyIdNumber || "",
