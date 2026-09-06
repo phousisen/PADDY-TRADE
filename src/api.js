@@ -113,6 +113,12 @@ async function insertWithFreshCodeOnCollision(table, row, regenerateCode) {
 // anyway) — returns null for anything else so the caller just re-throws
 // the original error unchanged.
 function friendlyPaperTicketNoError(error, paperTicketNo) {
+  // [2026-09-04] The unique index this used to translate an error for
+  // (add_paper_ticket_no_unique_constraint.sql) was removed — see
+  // allow_paper_ticket_no_duplicates_with_alert.sql and
+  // checkAndFlagPaperTicketDuplicate below. Left in place as a harmless
+  // fallback (it simply never matches anymore) rather than ripped out,
+  // in case any environment still has an older version of that index.
   if (error?.code === "23505" && /paper_ticket_no_per_location/.test(String(error?.message || ""))) {
     const trimmed = (paperTicketNo || "").trim();
     return new Error(
@@ -120,6 +126,43 @@ function friendlyPaperTicketNoError(error, paperTicketNo) {
     );
   }
   return null;
+}
+
+// [2026-09-04] Replaces the hard block above. A reused paper ticket number
+// is no longer rejected — SISEN's call, after PONG RO's "PR000209" got
+// stuck in the sync queue over a number that turned out to not clearly be
+// a real duplicate. Instead, every save now checks first (against the
+// generated `paper_ticket_no_normalized` column — see
+// allow_paper_ticket_no_duplicates_with_alert.sql — which is normalized
+// the exact same way normalizePaperTicketNo above stores it), and if the
+// number is already on file for this station, flags BOTH the new row and
+// whatever existing row(s) it matches (paper_ticket_dup_flag = true) —
+// that's what lights up the small warning badge in the Tickets/
+// Transactions list for an admin to look into. The save itself always
+// still goes through; this only ever adds a flag, never blocks anything.
+async function checkAndFlagPaperTicketDuplicate(table, locationId, paperTicketNo, excludeId) {
+  const normalized = normalizePaperTicketNo(paperTicketNo);
+  if (!normalized || !locationId) return false;
+  let query = supabase
+    .from(table)
+    .select("id")
+    .eq("location_id", locationId)
+    .eq("paper_ticket_no_normalized", normalized);
+  if (excludeId) query = query.neq("id", excludeId);
+  const { data, error } = await query;
+  if (error) {
+    // A failed CHECK should never hold up the actual save — worst case
+    // here is a missed badge, not a stuck ticket (which is the exact
+    // problem this whole change exists to get away from).
+    console.warn("paper ticket duplicate check failed:", error);
+    return false;
+  }
+  const matches = data || [];
+  if (matches.length === 0) return false;
+  const ids = matches.map((m) => m.id);
+  const { error: flagError } = await supabase.from(table).update({ paper_ticket_dup_flag: true }).in("id", ids);
+  if (flagError) console.warn("failed to flag existing paper ticket duplicate:", flagError);
+  return true;
 }
 
 // The database server's clock defaults to UTC, not Cambodia time — so we
@@ -722,7 +765,13 @@ const rawApi = {
     }));
   },
 
-  async createTransaction({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
+  // [2026-09-06] Pulled out of createTransaction below so finalizeTicket
+  // can build the exact same row — every field, every computed amount,
+  // the same duplicate-ticket-number flag — WITHOUT going through a
+  // separate insert of its own. Pure aside from the one await (the
+  // duplicate check needs to read the table first); nothing here touches
+  // the database.
+  async buildTransactionRow({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -779,21 +828,27 @@ const rawApi = {
       payment_proof_url: paymentProofUrl || null,
       staff_fee: staffFee || 0,
       paper_ticket_no: normalizePaperTicketNo(paperTicketNo),
+      // [2026-09-04] See checkAndFlagPaperTicketDuplicate above — checked
+      // before the insert so the flag lands in this SAME row the moment
+      // it's created, not as a separate update right after.
+      paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("transactions", locationId, paperTicketNo),
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
     };
-    // `id` is optional — passed by finalizeTicket when a weighing ticket
-    // is finalized offline, so a retried sync reuses the same id instead
-    // of creating a second transaction.
+    return row;
+  },
+
+  // `id` is optional — passed by finalizeTicket when a weighing ticket
+  // is finalized offline, so a retried sync reuses the same id instead
+  // of creating a second transaction.
+  async createTransaction(fields) {
+    const row = await this.buildTransactionRow(fields);
     try {
-      return await insertWithFreshCodeOnCollision("transactions", row, () => genCode(type));
+      return await insertWithFreshCodeOnCollision("transactions", row, () => genCode(fields.type));
     } catch (error) {
-      // In practice this should be rare here specifically — finalizeTicket
-      // only ever copies over a paper_ticket_no that already passed this
-      // same check on the weighing_tickets table — but a manual Buy/Sell
-      // never goes through a ticket at all, so it's worth the same
-      // friendly message rather than a raw Postgres one.
-      throw friendlyPaperTicketNoError(error, paperTicketNo) || error;
+      // friendlyPaperTicketNoError is now dead code in practice (see its
+      // own comment above) — left as a harmless fallback.
+      throw friendlyPaperTicketNoError(error, fields.paperTicketNo) || error;
     }
   },
 
@@ -866,6 +921,57 @@ const rawApi = {
     return (data && data[0]) || null;
   },
 
+  // [2026-09-05] The real "what's the last ticket number used at this
+  // location" — across BOTH Buy and Sell (one shared paper booklet, used
+  // in order regardless of type) and every device, not just whatever this
+  // one browser happens to remember (see suggestNextPaperTicketNo in
+  // offlineQueue.js, which only knows what THIS device last typed in).
+  // Without this, two staff on two different phones/tablets at the same
+  // station could each get told to use the same "next" number — one
+  // making a Buy ticket, the other a Sell — since neither device's local
+  // memory knew what the other had just entered. Used to suggest the next
+  // number in New Ticket; never blocks anything by itself.
+  async getLatestPaperTicketNo(locationId) {
+    if (!locationId) return null;
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .select("paper_ticket_no, created_at")
+      .eq("location_id", locationId)
+      .not("paper_ticket_no", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) throw error;
+    return (data && data[0]?.paper_ticket_no) || null;
+  },
+
+  // [2026-09-04] Same idea as findTicketByPaperTicketNo above, but against
+  // the transactions table — used by EditTransactionModal (Transactions.jsx)
+  // to show the same kind of "heads up, already used" warning BEFORE
+  // saving, instead of only finding out from the paper_ticket_dup_flag
+  // badge afterward. This is the one screen that's actually produced a
+  // real duplicate before (PONG RO/PR000127, PONG RO/PR000209), since it's
+  // the only place a paper ticket number can be typed in with no
+  // connection at all to the weighing ticket board.
+  async findTransactionByPaperTicketNo({ locationId, paperTicketNo, excludeId }) {
+    const trimmed = normalizePaperTicketNo(paperTicketNo) || "";
+    if (!locationId || !trimmed) return null;
+    const escaped = trimmed.replace(/[%_\\]/g, (c) => `\\${c}`);
+    let query = supabase
+      .from("transactions")
+      .select("id, code, created_at, parties(name)")
+      .eq("location_id", locationId)
+      .ilike("paper_ticket_no", escaped)
+      .limit(1);
+    if (excludeId) query = query.neq("id", excludeId);
+    const { data, error } = await query;
+    if (error) throw error;
+    const row = (data && data[0]) || null;
+    if (!row) return null;
+    // Flatten the joined party name so callers can read match.party_name
+    // the same way findTicketByPaperTicketNo's result already works.
+    return { id: row.id, code: row.code, created_at: row.created_at, party_name: row.parties?.name || null };
+  },
+
   // `id` is optional — passed by the offline queue when a ticket was
   // already opened locally (client-generated UUID) while offline, so a
   // retried sync reuses that same id instead of opening a second ticket.
@@ -904,6 +1010,7 @@ const rawApi = {
       gross_by: hasGross ? userId : null,
       created_by: userId,
       paper_ticket_no: normalizePaperTicketNo(paperTicketNo),
+      paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("weighing_tickets", locationId, paperTicketNo),
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
     };
@@ -949,7 +1056,17 @@ const rawApi = {
     if (driverName !== undefined) patch.driver_name = driverName || null;
     if (productId !== undefined) patch.product_id = productId || null;
     if (productName !== undefined) patch.product_name = productName;
-    if (paperTicketNo !== undefined) patch.paper_ticket_no = normalizePaperTicketNo(paperTicketNo);
+    if (paperTicketNo !== undefined) {
+      patch.paper_ticket_no = normalizePaperTicketNo(paperTicketNo);
+      // This function isn't given the ticket's location_id directly (its
+      // callers only ever pass the fields actually being changed) — fetched
+      // fresh here rather than widening every caller's payload just for
+      // this one check.
+      const { data: existingTicket } = await supabase.from("weighing_tickets").select("location_id").eq("id", id).single();
+      if (existingTicket?.location_id) {
+        patch.paper_ticket_dup_flag = await checkAndFlagPaperTicketDuplicate("weighing_tickets", existingTicket.location_id, paperTicketNo, id);
+      }
+    }
     if (grossKg !== undefined) {
       patch.gross_kg = grossKg;
       patch.gross_at = getAccurateNow().toISOString();
@@ -1055,7 +1172,7 @@ const rawApi = {
     const netKg = Math.max(0, ticket.type === "BUY"
       ? (ticket.gross_kg || 0) - (ticket.tare_kg || 0)
       : (ticket.tare_kg || 0) - (ticket.gross_kg || 0));
-    const tx = await this.createTransaction({
+    const row = await this.buildTransactionRow({
       id: transactionId,
       code: transactionCode,
       type: ticket.type,
@@ -1093,11 +1210,27 @@ const rawApi = {
       tareAt: ticket.tare_at,
       recordedByName: ticket.recorded_by_name,
     });
-    const { error: updateErr } = await supabase
-      .from("weighing_tickets")
-      .update({ stage: "finalized", transaction_id: tx.id })
-      .eq("id", id);
-    if (updateErr) throw updateErr;
+    // [2026-09-06] The two writes this used to do one after another —
+    // insert the transaction, THEN mark this ticket "finalized" — now
+    // happen inside ONE database function call instead (see
+    // finalize_weighing_ticket_atomic.sql). A dropped connection in the
+    // gap between two separate requests could let the first succeed while
+    // the second never happened: the receipt printed with genuinely
+    // correct numbers, but the ticket itself never learned it was done,
+    // so it sat there showing "Finish Ticket" forever — inviting staff to
+    // press it again and create a real second transaction for the same
+    // truckload (confirmed live at Jomnoum, TKT-521806 and TKT-872042, on
+    // 2026-09-06). A single function call is one atomic unit in Postgres:
+    // if anything inside it fails, everything it did is rolled back
+    // together, so this can no longer end up half-done. The function
+    // itself also re-checks "already finalized?" the same way this
+    // function used to above, but INSIDE that same atomic step and with
+    // the ticket row locked — so two Finish Ticket presses landing at
+    // almost the same moment can't both slip past that check either.
+    const { data: tx, error } = await supabase
+      .rpc("finalize_weighing_ticket", { p_ticket_id: id, p_transaction: row })
+      .single();
+    if (error) throw error;
     return tx;
   },
 
@@ -1260,6 +1393,21 @@ const rawApi = {
     }
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     const amount = Math.round(Math.max(0, payableKg * pricePerKg - (staffFee || 0)) * 100) / 100;
+    // [2026-09-04] This is the exact screen (Edit Transaction's Paper
+    // Ticket Number field) that produced the real PONG RO/PR000127 and
+    // PONG RO/PR000209 duplicates — see the comment below on
+    // paper_ticket_no. locationId is usually passed in already by the
+    // caller; fetched fresh only if not, so the check is always scoped to
+    // the right station.
+    let paperTicketDupFlag;
+    if (paperTicketNo !== undefined) {
+      let scopeLocationId = locationId;
+      if (!scopeLocationId) {
+        const { data: existingTx } = await supabase.from("transactions").select("location_id").eq("id", id).single();
+        scopeLocationId = existingTx?.location_id;
+      }
+      paperTicketDupFlag = await checkAndFlagPaperTicketDuplicate("transactions", scopeLocationId, paperTicketNo, id);
+    }
     const { data, error } = await supabase
       .from("transactions")
       .update({
@@ -1297,14 +1445,18 @@ const rawApi = {
         // number, or none at all, had no way to be corrected. [2026-09-03]
         // Used to have no uniqueness check at all here (this comment used
         // to say so, reasoning it was "a deliberate manual fix, not
-        // day-to-day entry") — but it's the exact same field, on the exact
-        // same screen that showed the real PR000127 duplicate, so it gets
-        // the same database-level guarantee now (see
-        // add_paper_ticket_no_unique_constraint.sql); no separate live
-        // pre-check UI here since a mis-typed correction on an already-old
-        // transaction is rare enough that a clear error after Save is
-        // proportionate, not a New-Ticket-style warning screen.
-        ...(paperTicketNo !== undefined ? { paper_ticket_no: normalizePaperTicketNo(paperTicketNo) } : {}),
+        // day-to-day entry") — then got a hard database-level block after
+        // the real PR000127 duplicate (add_paper_ticket_no_unique_
+        // constraint.sql), which is what then stuck PR000209 in the sync
+        // queue and turned out to be exactly the kind of case that
+        // shouldn't be blocked outright. [2026-09-04] Switched from
+        // blocking to flag-and-allow (see checkAndFlagPaperTicketDuplicate
+        // above) — a reused number now saves, but shows the warning badge
+        // in the Transactions list. EditTransactionModal in Transactions.jsx
+        // also runs its own live pre-save check now, the same "double-check
+        // before saving" pattern the ticket screens already had, rather than
+        // only finding out here after the fact.
+        ...(paperTicketNo !== undefined ? { paper_ticket_no: normalizePaperTicketNo(paperTicketNo), paper_ticket_dup_flag: paperTicketDupFlag } : {}),
       })
       .eq("id", id)
       .select()
