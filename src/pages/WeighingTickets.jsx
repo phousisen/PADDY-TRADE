@@ -12,7 +12,7 @@ import {
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
   setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
-  suggestNextPaperTicketNo, withTimeout, logAuditOffline,
+  suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline,
 } from "../offlineQueue.js";
 
 // Same reasoning as the offline queue's own lookups: don't let a slow/no
@@ -560,20 +560,54 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 
   // Baitang's paper tickets come from a pre-numbered booklet, used in
   // order — so as soon as a location is known, suggest the next number
-  // after whatever was last typed in for that location. Staff can still
-  // edit it (a spoiled ticket, a different booklet, etc.) — this only
-  // fills it in when it's still blank, so it never overwrites something
-  // they already typed. Now asked on both Buy and Sell (per explicit
-  // request), and the shared per-location counter (suggestNextPaperTicketNo)
-  // is already keyed by location only, not type, so this needed no change
-  // beyond dropping the old Buy-only guard.
+  // after whatever was last used there. Staff can still edit it (a
+  // spoiled ticket, a different booklet, etc.) — this never overwrites
+  // something they've actually typed themselves.
+  //
+  // [2026-09-05] Used to ONLY look at suggestNextPaperTicketNo — this
+  // device's own local memory of the last number IT typed in. That's
+  // exactly why Buy and Sell could drift out of step with each other:
+  // one booklet is shared by whoever's on shift, often across more than
+  // one phone/tablet, and each device only ever knew about its own
+  // entries, Buy or Sell. Now shows that local guess immediately (so the
+  // field is never sitting empty), then corrects it the moment the real
+  // cross-device, cross-type latest comes back from the server —
+  // whichever of the two suggests the higher number wins, so a ticket
+  // this device already created offline (and so already knows about
+  // locally) can't get second-guessed back down by a server that just
+  // hasn't caught up on the sync yet.
   useEffect(() => {
-    if (locationId && !paperTicketNo) {
-      const suggested = suggestNextPaperTicketNo(locationId);
-      if (suggested) setPaperTicketNo(suggested);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locationId, type]);
+    if (!locationId) return;
+    let cancelled = false;
+    let autoValue = "";
+
+    const applyIfUntouched = (candidate) => {
+      if (!candidate || cancelled) return;
+      setPaperTicketNo((current) => {
+        if (current && current !== autoValue) return current; // staff typed their own
+        autoValue = candidate;
+        return candidate;
+      });
+    };
+
+    applyIfUntouched(suggestNextPaperTicketNo(locationId));
+
+    (async () => {
+      const latest = await withTimeout(
+        api.getLatestPaperTicketNo(locationId).catch(() => null),
+        PHONE_LOOKUP_TIMEOUT_MS,
+        null
+      );
+      if (cancelled || !latest) return;
+      const liveGuess = incrementTicketNo(latest);
+      if (!liveGuess) return;
+      const liveNum = parseInt(liveGuess.match(/\d+$/)?.[0] || "0", 10);
+      const localNum = parseInt((autoValue || "").match(/\d+$/)?.[0] || "0", 10);
+      applyIfUntouched(liveNum >= localNum ? liveGuess : autoValue);
+    })();
+
+    return () => { cancelled = true; };
+  }, [locationId]);
 
   // [2026-09-05] Live "already used" check for the ticket number — see
   // liveDupHint above. Re-checks the server (falling back to this device's
