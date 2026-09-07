@@ -94,7 +94,11 @@ const ONLINE_LOOKUP_TIMEOUT_MS = 1200;
 // sites) — a slow-but-working station connection now gets a fair chance
 // to land the save before the receipt is refused, instead of tripping
 // the refusal on an ordinary slow round-trip.
-const FINISH_SYNC_TIMEOUT_MS = 15000;
+// [2026-09-07] 15s → 30s: the finalize RPC itself is now allowed up to
+// 28s on the wire (api.js finalizeTicket passes its own abort signal,
+// bypassing supabaseClient's 8s cutoff), so the wait has to be at least
+// that long or a slow-but-working station would be refused every time.
+const FINISH_SYNC_TIMEOUT_MS = 30000;
 
 // [2026-09-06] Shared wording for the one case that is now hard-blocked:
 // this device says it's online, the save is safely queued here, but the
@@ -121,6 +125,42 @@ export function unconfirmedSaveMessage(what, retrySafe) {
 }
 function unconfirmedSaveError(what, retrySafe) {
   return new Error(unconfirmedSaveMessage(what, retrySafe));
+}
+
+// ---------------------------------------------------------------------
+// [2026-09-07] Station relay — a second, disk-backed copy of every finished
+// ticket / manual entry, held by the scale program (bridge.js) on the
+// station PC, which forwards it to the server on its own until confirmed.
+// The browser queue below still does the same in parallel; the server
+// accepts whichever arrives first and hands the other the same row (see
+// finalize_weighing_ticket in platform_hardening_2026-09-07.sql — one live
+// transaction per ticket, enforced by the database). This exists so a
+// wiped browser, a different browser, or a PC that resets on restart can
+// no longer lose a save that already printed a receipt.
+//
+// Fire-and-forget on purpose: a laptop or phone has no bridge, and a
+// station whose bridge is down must not be slowed by it — the browser
+// queue is still there. 1.5s cap; any failure is silently ignored.
+const LOCAL_RELAY_URL = "http://127.0.0.1:8787/relay";
+export function relayToStation(kind, body) {
+  // Off the save's own critical path (a save must stay instant even
+  // offline); the POST still leaves within milliseconds — long before any
+  // receipt could be printed.
+  setTimeout(() => relayNow(kind, body), 0);
+}
+function relayNow(kind, body) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 1500);
+    fetch(`${LOCAL_RELAY_URL}/${kind}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    }).catch(() => {}).finally(() => clearTimeout(timer));
+  } catch {
+    /* no bridge here — fine */
+  }
 }
 
 export function withTimeout(promise, ms, fallbackValue) {
@@ -719,6 +759,9 @@ export function discardStuckFinalize(opId) {
   const txId = op.payload?.transactionId;
   removeOp(opId);
   if (txId) removeCachedTransaction(txId);
+  // pending_tx_id / pending_tx_code are deliberately LEFT on the cached
+  // ticket, so a later Finish re-sends the same transaction id — the
+  // server then returns the row it already has instead of a twin.
   if (op.ticketId) patchCachedTicket(op.ticketId, { stage: "weighed_out", transaction_id: null });
   return true;
 }
@@ -804,6 +847,14 @@ function isConnectivityError(err) {
   if (text.includes("networkerror")) return true;
   if (text.includes("load failed")) return true;
   if (text.includes("timed out waiting for a response")) return true;
+  // [2026-09-07] Jomnoum: "AbortError: signal is aborted without reason"
+  // — supabaseClient.js's own per-request cutoff (FETCH_TIMEOUT_MS)
+  // firing on a slow link. The request may well have COMPLETED on the
+  // server; the browser just stopped waiting. That is a slow connection,
+  // not bad data — it must never count as "stuck, call an admin", which
+  // is what pushed staff into "Send back to Waiting board" + re-finish
+  // and produced tonight's duplicate transactions.
+  if (text.includes("abort")) return true;
   return false;
 }
 
@@ -971,7 +1022,12 @@ async function runOp(op) {
 // error would, and — this is the important part — it stops blocking
 // every OTHER op from getting its own chance to go through in the
 // meantime.
-const SYNC_OP_TIMEOUT_MS = 20000;
+// [2026-09-07] 20s → 30s, to sit above the finalize RPC's own 28s abort
+// signal (api.js) — otherwise this timer fires first, the op is marked
+// failed, and the still-running request lands on the server anyway,
+// which is exactly the "server saved it but the app thinks it failed"
+// state behind Jomnoum's duplicates.
+const SYNC_OP_TIMEOUT_MS = 30000;
 function runOpWithTimeout(op) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -1524,6 +1580,17 @@ export function setTicketPriceOffline(id, opts) {
   return updated;
 }
 
+// [2026-09-07] After an HQ Reopen (api.reopenTicket) the old transaction is
+// cancelled, so the next Finish must mint a NEW id/code — otherwise the
+// remembered pair (see finalizeTicketOffline) would be re-sent and the
+// server would hand back the cancelled row. Called from ReopenTicketModal.
+export function forgetPendingTransaction(ticketId) {
+  // Only if the ticket is actually in the cache — patchCachedTicket would
+  // otherwise create a bare stub that could show up as a phantom card.
+  if (!getCachedTickets().some((t) => t.id === ticketId)) return;
+  patchCachedTicket(ticketId, { pending_tx_id: null, pending_tx_code: null });
+}
+
 export function setTicketTareOffline(id, { tareKg, userId }) {
   assertNotViewOnly();
   const updated = patchCachedTicket(id, { tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" });
@@ -1539,8 +1606,20 @@ export function setTicketTareOffline(id, { tareKg, userId }) {
 // this same id, so nothing about the receipt has to change.
 export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl }) {
   assertNotViewOnly();
-  const transactionId = newId();
-  const transactionCode = genLocalTxCode(ticket.type);
+  // [2026-09-07] ONE transaction id/code per ticket, for life — remembered
+  // on the cached ticket the first time Finish is pressed, and reused by
+  // every later press on this device, whatever happened to the queue in
+  // between ("Send back to Waiting" used to throw it away and mint a new
+  // one, which is how tonight's Jomnoum receipts ended up carrying a code
+  // the database never stored). The server is idempotent on this id, so
+  // re-sending it is always safe. A ticket the HQ admin Reopened gets a
+  // fresh pair (see reopenTicket in api.js / the cache patch there).
+  const remembered = getCachedTickets().find((t) => t.id === ticket.id);
+  const transactionId = remembered?.pending_tx_id || newId();
+  const transactionCode = remembered?.pending_tx_code || genLocalTxCode(ticket.type || remembered?.type);
+  if (!remembered?.pending_tx_id || !remembered?.pending_tx_code) {
+    patchCachedTicket(ticket.id, { pending_tx_id: transactionId, pending_tx_code: transactionCode });
+  }
   // Same fix as api.js's finalizeTicket (kept in sync with it on purpose):
   // Buy is In minus Out (arrives loaded, leaves empty); Sell is the other
   // way, Out minus In (arrives empty, leaves loaded for delivery).
@@ -1596,6 +1675,18 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
     throw new Error("Could not save this ticket on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Finish Ticket again in a moment, or free up space on this device if it keeps happening.");
   }
 
+  // [2026-09-07] Second copy to the station PC's disk (see relayToStation).
+  // Sent BEFORE the wait/print below so the disk copy exists by the time
+  // the receipt comes out. The ticket snapshot carries everything Finish
+  // set (price, quality, bank, product, tare) under the server's own
+  // column names; the transaction row is the same one the receipt shows.
+  relayToStation("finalize", {
+    ticketId: ticket.id,
+    ticket,
+    transaction: buildLocalTransactionRow(),
+    userId,
+  });
+
   // See FINISH_SYNC_TIMEOUT_MS above for why this waits, bounded, instead
   // of firing and forgetting like every other offline write in this file.
   // Genuinely offline stays exactly as fast as before — nothing to wait on.
@@ -1634,16 +1725,48 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
       await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
       confirmed = !isOpQueued(opId);
     }
-    if (!confirmed) throw unconfirmedSaveError("Finish Ticket", true);
+    // [2026-09-07] Print ALWAYS — offline, slow, or unconfirmed. Refusing
+    // the receipt on a slow connection (the 2026-09-06 rule) just moved the
+    // problem to the person at the scale; the real protection is now in
+    // the database (one live transaction per ticket, idempotent finalize)
+    // plus the station relay above, so printing first is safe. An
+    // unconfirmed save is flagged on screen (needs_verification) and keeps
+    // retrying from both the browser queue and the station PC.
+    needsVerification = !confirmed;
+    // Confirmed — but the server may have answered with a
+    // transaction that ALREADY existed for this ticket (an earlier
+    // attempt that the browser gave up on but the server completed; see
+    // finalize_weighing_ticket's idempotent return). trySync's success
+    // handler has already written that server row into the transaction
+    // cache and pointed the cached ticket at it. Use THAT for the
+    // receipt, never the locally-built copy with a code the server never
+    // stored — otherwise the paper shows one code and the database
+    // another. Display-only names (party/station/product) stay from the
+    // local copy below since the raw server row doesn't carry them.
+    const syncedTicket = getCachedTickets().find((t) => t.id === ticket.id);
+    const serverTxId = syncedTicket?.transaction_id || finalTransactionId;
+    const serverTx = confirmed ? getCachedTransactions().find((t) => t.id === serverTxId) : null;
+    if (serverTx) {
+      finalTransactionId = serverTx.id;
+      finalTransactionCode = serverTx.code || finalTransactionCode;
+    }
   } else {
     trySync();
   }
 
   patchCachedTicket(ticket.id, { stage: "finalized", transaction_id: finalTransactionId });
 
+  const tx = buildLocalTransactionRow();
+  tx.needs_verification = needsVerification;
+  tx.id = finalTransactionId;
+  tx.code = finalTransactionCode;
+  upsertCachedTransaction(tx);
+  return tx;
+
+  function buildLocalTransactionRow() {
   const { date: nowDate, time: nowTime } = cambodiaNow();
-  const tx = {
-    needs_verification: needsVerification,
+  return {
+    needs_verification: false,
     id: finalTransactionId,
     code: finalTransactionCode,
     type: ticket.type,
@@ -1657,7 +1780,9 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
     party_id: ticket.party_id,
     product_id: ticket.product_id,
     partyName: ticket.party_name,
-    partyIdNumber: ticket.phone,
+    // Phone typed on the ticket; if staff left it blank, the phone on the
+    // farmer/buyer's own record (same fallback api.getTransactions uses).
+    partyIdNumber: ticket.phone || getCachedParties().find((p) => p.id === ticket.party_id)?.phone || "",
     bank_name: ticket.bank_name,
     bank_account: ticket.bank_account,
     product_name: ticket.product_name,
@@ -1704,8 +1829,7 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
     status: "confirmed",
     hq_status: "processing",
   };
-  upsertCachedTransaction(tx);
-  return tx;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -1756,6 +1880,20 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
   if (!persisted) {
     throw new Error("Could not save this entry on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Save again in a moment, or free up space on this device if it keeps happening.");
   }
+  // [2026-09-07] Second copy to the station PC's disk — see relayToStation.
+  relayToStation("transaction", {
+    transaction: {
+      id, code, type, tx_date: txDate || nowDate, tx_time: nowTime, location_id: locationId, party_id: partyId,
+      product_id: productId, quantity_kg: quantityKg, price_per_kg: pricePerKg, payment_status: paymentStatus,
+      quality_grade: qualityGrade, tax_applicable: !!taxApplicable, tax_rate: taxApplicable ? (taxRate || 0) : 0,
+      moisture_pct: moisturePct || 0, mixture_pct: mixturePct || 0, outthrow_pct: outthrowPct || 0,
+      deduction_kg: deductionKg || 0, staff_fee: staffFeeAmt, note, car_plate: carPlate, driver_name: driverName,
+      receipt_photo_url: receiptPhotoUrl || null, payment_proof_url: paymentProofUrl || null, amount,
+      station_quantity_kg: type === "SELL" ? quantityKg : null, station_price_per_kg: type === "SELL" ? pricePerKg : null,
+      created_by: userId, status: "confirmed", hq_status: "processing",
+    },
+    userId,
+  });
   // Same reasoning as finalizeTicketOffline above — see FINISH_SYNC_TIMEOUT_MS
   // and the 2026-09-06 comment there. This path deliberately does NOT
   // throw like finalizeTicketOffline now does: the caller

@@ -748,7 +748,7 @@ const rawApi = {
       // address/phone: per-location fields (see add_location_address_phone.sql)
       // used on the printed receipt header — falls back to "—" below if a
       // location hasn't had them filled in yet.
-      .select("*, locations(name, address, phone), parties(name, id_number), products(name)")
+      .select("*, locations(name, address, phone), parties(name, id_number, phone), products(name)")
       .order("created_at", { ascending: false });
     if (type) query = query.eq("type", type);
     if (locationId) query = query.eq("location_id", locationId);
@@ -760,7 +760,12 @@ const rawApi = {
       stationAddress: t.locations?.address || "",
       stationPhone: t.locations?.phone || "",
       partyName: t.parties?.name || "—",
-      partyIdNumber: t.parties?.id_number || "",
+      // [2026-09-07] Shown next to the name on the receipt and the list.
+      // Was id_number only — most farmers have none on file, so a receipt
+      // reprinted from Transactions showed nothing after the name, while
+      // one printed straight after Finish showed the phone typed on the
+      // ticket. Phone first, ID number as the fallback, on both paths.
+      partyIdNumber: t.parties?.phone || t.parties?.id_number || "",
       productName: t.products?.name || "—",
     }));
   },
@@ -1129,6 +1134,16 @@ const rawApi = {
       .from("weighing_tickets")
       .update({ tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" })
       .eq("id", id)
+      // [2026-09-07] Never touch a ticket that is already finalized. A
+      // re-pressed Finish Ticket (after the browser gave up on a save the
+      // server had actually completed) re-queues this tare write first —
+      // and it used to knock the ticket from "finalized" back to
+      // "weighed_out", which blinded finalize_weighing_ticket's
+      // "already finalized?" check and let a second transaction through
+      // (Jomnoum, 2026-09-07). The database has the same guard as a
+      // trigger (see finalize_weighing_ticket_atomic_v3.sql); this just
+      // saves the round-trip. No row matched → PGRST116 → null below.
+      .neq("stage", "finalized")
       .select()
       .single();
     if (error) {
@@ -1227,8 +1242,14 @@ const rawApi = {
     // function used to above, but INSIDE that same atomic step and with
     // the ticket row locked — so two Finish Ticket presses landing at
     // almost the same moment can't both slip past that check either.
+    // [2026-09-07] Own abort signal: supabaseClient.js cuts every request
+    // off at 8s, which on Jomnoum's evening connection was shorter than
+    // this one call takes — the browser gave up while the server went on
+    // to complete the save, and that mismatch is what produced the
+    // duplicate transactions. 28s here, under offlineQueue's 30s op timeout.
     const { data: tx, error } = await supabase
       .rpc("finalize_weighing_ticket", { p_ticket_id: id, p_transaction: row })
+      .abortSignal(AbortSignal.timeout(28000))
       .single();
     if (error) throw error;
     return tx;
