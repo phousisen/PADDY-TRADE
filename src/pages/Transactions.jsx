@@ -3,7 +3,7 @@ import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
-import { api } from "../api.js";
+import { api, normalizePaperTicketNo } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
@@ -406,6 +406,15 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // [2026-09-04] This screen is what actually produced the real PONG RO
+  // duplicates (PR000127, then PR000209) — it's the only place a paper
+  // ticket number gets typed in with no live check at all, unlike the
+  // ticket board (see WeighingTickets.jsx's own Entry Sanity Check). Adds
+  // the same kind of "heads up, already used" warning here, but
+  // non-blocking — saving always still goes through either way (see
+  // checkAndFlagPaperTicketDuplicate in api.js), this is only the chance
+  // to catch it before saving.
+  const [dupWarning, setDupWarning] = useState(null);
 
   const [grossKg, setGrossKg] = useState(String(tx.gross_kg ?? ""));
   const [tareKg, setTareKg] = useState(String(tx.tare_kg ?? ""));
@@ -449,7 +458,39 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   async function submit(e) {
     e.preventDefault();
     setError("");
+    // Live duplicate check — only when the number is actually being
+    // changed to something new (not just re-saving the same number this
+    // transaction already had). Uses the transactions table specifically
+    // (see findTransactionByPaperTicketNo in api.js), since that's the
+    // table this screen actually writes to.
+    const trimmedTicketNo = normalizePaperTicketNo(paperTicketNo) || "";
+    const originalTrimmed = normalizePaperTicketNo(tx.paper_ticket_no) || "";
+    if (trimmedTicketNo && trimmedTicketNo.toLowerCase() !== originalTrimmed.toLowerCase()) {
+      let dupMatch = null;
+      try {
+        dupMatch = await withTimeout(
+          api.findTransactionByPaperTicketNo({ locationId: locationId || tx.location_id, paperTicketNo: trimmedTicketNo, excludeId: tx.id }),
+          3500,
+          null
+        );
+      } catch {
+        dupMatch = null;
+      }
+      if (dupMatch) {
+        setDupWarning({ ticketNo: trimmedTicketNo, match: dupMatch });
+        return;
+      }
+    }
+    await doSave();
+  }
+
+  // [2026-09-04] Split out of submit() so "Save anyway" on the duplicate
+  // warning below can go straight to the actual save (password prompt
+  // included) without re-running the check that already found the match
+  // being saved over.
+  async function doSave() {
     setSaving(true);
+    setError("");
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     if (authError) {
       setError(authError.message || "Incorrect password.");
@@ -497,6 +538,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           gross_kg: tx.gross_kg, gross_at: tx.gross_at, tare_kg: tx.tare_kg, tare_at: tx.tare_at,
         },
       });
+      setDupWarning(null);
     } catch (err) {
       setError(err.message || "Couldn't save these changes. Please try again.");
       setSaving(false);
@@ -553,9 +595,21 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
 
             <div className="col-span-2 rounded-lg border border-dashed border-brand-300 bg-brand-50/50 p-2.5">
               <label className="mb-1 block text-xs text-slate-500">Paper Ticket Number</label>
-              <input value={paperTicketNo} onChange={(e) => setPaperTicketNo(e.target.value)} placeholder="e.g. CN000157"
+              <input value={paperTicketNo} onChange={(e) => { setPaperTicketNo(e.target.value); setDupWarning(null); }} placeholder="e.g. CN000157"
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               <p className="mt-1 text-[11px] text-slate-500">The number printed on the physical quality ticket booklet. Leave blank if this transaction never had one.</p>
+              {dupWarning && (
+                <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
+                  <p className="text-xs text-amber-800">
+                    <strong>Heads up:</strong> "{dupWarning.ticketNo}" is already recorded here{dupWarning.match?.party_name ? ` for ${dupWarning.match.party_name}` : ""}
+                    {dupWarning.match?.created_at ? ` on ${new Date(dupWarning.match.created_at).toLocaleDateString()}` : ""}. Double-check the paper slip — if it's really the same number twice, you can still save; it'll be flagged for an admin to look into.
+                  </p>
+                  <button type="button" disabled={saving} onClick={doSave}
+                    className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60">
+                    {saving ? "Saving…" : "Save anyway"}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div>
@@ -893,6 +947,157 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
   );
 }
 
+// ---- Station check (2026-09-07) --------------------------------------------
+// Every station PC keeps its own daily log of finished tickets, written by
+// the scale program the instant a receipt prints (PaddyTrade_Logs\<date>.csv
+// in the weighbridge folder — see relay.js there). This reads that file and
+// compares it, ticket by ticket, against what the system actually holds:
+//   missing   — on the station's log, not in the system (a lost save)
+//   mismatch  — in both, but kg or amount differ (a mix-up / later edit)
+//   doubled   — the system holds more than one live transaction for the
+//               same paper ticket number at that station (a duplicate)
+// Codes match on the log's transaction_code OR server_code (the server can
+// answer a retry with the row it already had), then on paper number + kg.
+function parseCsv(text) {
+  const src = text.replace(/^\uFEFF/, "");
+  const rows = [];
+  let row = [], cell = "", inQ = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (inQ) {
+      if (c === '"') { if (src[i + 1] === '"') { cell += '"'; i++; } else inQ = false; }
+      else cell += c;
+    } else if (c === '"') inQ = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && src[i + 1] === "\n") i++;
+      row.push(cell); rows.push(row); row = []; cell = "";
+    } else cell += c;
+  }
+  if (cell.length || row.length) { row.push(cell); rows.push(row); }
+  const header = (rows.shift() || []).map((h) => h.trim());
+  return rows.filter((r) => r.some((v) => v !== "")).map((r) => Object.fromEntries(header.map((h, i) => [h, (r[i] ?? "").trim()])));
+}
+
+function StationCheckModal({ allRows, locations, onClose }) {
+  const [result, setResult] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
+  const norm = (v) => normalizePaperTicketNo(v) || "";
+  const num = (v) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return Number.isFinite(n) ? n : null; };
+
+  async function onFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(""); setResult(null); setFileName(file.name);
+    try {
+      const rows = parseCsv(await file.text());
+      if (!rows.length || !("transaction_code" in rows[0])) {
+        setError("This doesn't look like a station log — expected a file from the weighbridge folder's PaddyTrade_Logs, e.g. 2026-09-07.csv.");
+        return;
+      }
+      const live = allRows.filter((tx) => tx.hq_status !== "cancelled");
+      const byCode = new Map(live.map((tx) => [tx.code, tx]));
+      const missing = [], mismatch = [], ok = [];
+      for (const r of rows) {
+        let tx = byCode.get(r.transaction_code) || (r.server_code && byCode.get(r.server_code)) || null;
+        if (!tx && r.paper_ticket_no) {
+          const pn = norm(r.paper_ticket_no), kg = num(r.net_kg);
+          tx = live.find((x) => norm(x.paper_ticket_no) === pn && kg != null && Math.abs((x.quantity_kg || 0) - kg) < 0.01) || null;
+        }
+        if (!tx) { missing.push(r); continue; }
+        const kg = num(r.net_kg), amt = num(r.amount_riel);
+        const kgOff = kg != null && Math.abs((tx.quantity_kg || 0) - kg) >= 0.01;
+        const amtOff = amt != null && Math.abs((tx.amount || 0) - amt) >= 1;
+        if (kgOff || amtOff) mismatch.push({ log: r, tx, kgOff, amtOff }); else ok.push({ log: r, tx });
+      }
+      // Doubled: same station + same paper number, more than one live row.
+      const groups = new Map();
+      for (const tx of live) {
+        if (!tx.paper_ticket_no) continue;
+        const k = `${tx.location_id}|${norm(tx.paper_ticket_no)}`;
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(tx);
+      }
+      const logPapers = new Set(rows.map((r) => norm(r.paper_ticket_no)).filter(Boolean));
+      const doubled = [...groups.values()].filter((g) => g.length > 1 && g.some((tx) => logPapers.has(norm(tx.paper_ticket_no))));
+      setResult({ total: rows.length, missing, mismatch, ok, doubled });
+    } catch (err) {
+      setError(err.message || String(err));
+    }
+  }
+
+  const locName = (id) => locations.find((l) => l.id === id)?.name || "";
+  const fmtKg = (n) => new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0);
+  const fmtR = (n) => `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div>
+            <h3 className="font-bold text-slate-800">Station check</h3>
+            <p className="text-xs text-slate-500">Compare a station PC's daily log against what the system holds.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center hover:border-brand-400 hover:bg-brand-50/40">
+            <span className="text-sm font-semibold text-slate-700">Choose the station's log file</span>
+            <span className="mt-1 text-xs text-slate-500">On the station PC: weighbridge folder → <span className="font-mono">PaddyTrade_Logs</span> → <span className="font-mono">2026-09-07.csv</span> (one file per day)</span>
+            {fileName && <span className="mt-2 rounded bg-white px-2 py-0.5 text-xs font-medium text-brand-700">{fileName}</span>}
+            <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
+          </label>
+          {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+          {result && (
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                <div className="rounded-lg bg-slate-50 p-2"><div className="text-lg font-bold text-slate-800">{result.total}</div>on station log</div>
+                <div className={`rounded-lg p-2 ${result.missing.length ? "bg-rose-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.missing.length ? "text-rose-700" : "text-emerald-700"}`}>{result.missing.length}</div>missing in system</div>
+                <div className={`rounded-lg p-2 ${result.mismatch.length ? "bg-amber-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.mismatch.length ? "text-amber-700" : "text-emerald-700"}`}>{result.mismatch.length}</div>numbers differ</div>
+                <div className={`rounded-lg p-2 ${result.doubled.length ? "bg-rose-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.doubled.length ? "text-rose-700" : "text-emerald-700"}`}>{result.doubled.length}</div>doubled in system</div>
+              </div>
+              {result.missing.length === 0 && result.mismatch.length === 0 && result.doubled.length === 0 && (
+                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">Every ticket on this station's log is in the system with the same weight and amount, and none is doubled.</p>
+              )}
+              {result.missing.length > 0 && (
+                <div>
+                  <h4 className="mb-1 text-sm font-bold text-rose-700">Missing in the system — the receipt printed, the save never arrived</h4>
+                  <table className="w-full text-xs"><thead><tr className="text-left text-slate-400"><th className="py-1">Time</th><th>Paper #</th><th>Code</th><th>Party</th><th className="text-right">Net kg</th><th className="text-right">Amount</th><th>Log says</th></tr></thead><tbody>
+                    {result.missing.map((r, i) => <tr key={i} className="border-t border-slate-100"><td className="py-1">{r.time}</td><td>{r.paper_ticket_no}</td><td className="font-mono">{r.transaction_code}</td><td>{r.party}</td><td className="text-right">{fmtKg(num(r.net_kg))}</td><td className="text-right">{fmtR(num(r.amount_riel))}</td><td>{r.status}</td></tr>)}
+                  </tbody></table>
+                  <p className="mt-1 text-[11px] text-slate-500">If the log says "waiting", the station PC is still trying to send it — check it is on and online. If it says "confirmed", the transaction was later cancelled or edited in the system.</p>
+                </div>
+              )}
+              {result.mismatch.length > 0 && (
+                <div>
+                  <h4 className="mb-1 text-sm font-bold text-amber-700">Numbers differ between the station log and the system</h4>
+                  <table className="w-full text-xs"><thead><tr className="text-left text-slate-400"><th className="py-1">Paper #</th><th>Code</th><th className="text-right">Log kg</th><th className="text-right">System kg</th><th className="text-right">Log amount</th><th className="text-right">System amount</th></tr></thead><tbody>
+                    {result.mismatch.map((m, i) => <tr key={i} className="border-t border-slate-100"><td className="py-1">{m.log.paper_ticket_no}</td><td className="font-mono">{m.tx.code}</td><td className={`text-right ${m.kgOff ? "font-bold text-amber-700" : ""}`}>{fmtKg(num(m.log.net_kg))}</td><td className={`text-right ${m.kgOff ? "font-bold text-amber-700" : ""}`}>{fmtKg(m.tx.quantity_kg)}</td><td className={`text-right ${m.amtOff ? "font-bold text-amber-700" : ""}`}>{fmtR(num(m.log.amount_riel))}</td><td className={`text-right ${m.amtOff ? "font-bold text-amber-700" : ""}`}>{fmtR(m.tx.amount)}</td></tr>)}
+                  </tbody></table>
+                  <p className="mt-1 text-[11px] text-slate-500">A difference is expected if HQ edited the transaction or confirmed the buyer's final numbers after the receipt printed.</p>
+                </div>
+              )}
+              {result.doubled.length > 0 && (
+                <div>
+                  <h4 className="mb-1 text-sm font-bold text-rose-700">Doubled in the system — more than one live transaction for one paper ticket</h4>
+                  {result.doubled.map((g, i) => (
+                    <div key={i} className="mb-2 rounded-lg border border-rose-200 p-2 text-xs">
+                      <div className="font-semibold text-slate-700">{g[0].paper_ticket_no} · {locName(g[0].location_id)} · {g[0].partyName}</div>
+                      {g.map((tx) => <div key={tx.id} className="mt-0.5 font-mono text-slate-600">{tx.code} — {fmtKg(tx.quantity_kg)} kg — {fmtR(tx.amount)} — {tx.tx_date} {tx.tx_time || ""}</div>)}
+                      <div className="mt-1 text-[11px] text-slate-500">Keep the one the receipt shows; Cancel the other from the Transactions list.</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -1063,6 +1268,8 @@ export default function Transactions({ setPage }) {
   const [endDate, setEndDate] = useState(null);
   const [exportingLedger, setExportingLedger] = useState(false);
   const [exportLedgerError, setExportLedgerError] = useState("");
+  const [stationCheckOpen, setStationCheckOpen] = useState(false);
+  const [stationCheckRows, setStationCheckRows] = useState([]);
   // Consolidated "Filters" popover — Unpaid (Buys), Not Received (Sells),
   // Date Range and Location all live inside it now instead of each being
   // its own button in the toolbar. None of the state or logic for any of
@@ -1598,6 +1805,20 @@ export default function Transactions({ setPage }) {
             )}
           </div>
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={async () => {
+                  // All types, all stations, fresh from the server — the
+                  // list on screen may be filtered to one tab/station.
+                  try { setStationCheckRows(await withTimeout(api.getTransactions(), 15000, rows)); } catch { setStationCheckRows(rows); }
+                  setStationCheckOpen(true);
+                }}
+                title="Station check — compare a station PC's daily log with the system"
+                className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <CheckCircle2 size={14} /> Station check
+              </button>
+            )}
             <button onClick={exportLedger} disabled={exportingLedger} title={exportingLedger ? "Exporting..." : t("export_ledger")} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               {exportingLedger ? <Loader2 size={15} className="animate-spin text-slate-400" /> : <Download size={15} />}
             </button>
@@ -1693,7 +1914,19 @@ export default function Transactions({ setPage }) {
                           row saved before paper_ticket_no was captured. */}
                       {tx.paper_ticket_no ? (
                         <>
-                          <div className="font-bold text-slate-800">{tx.paper_ticket_no}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-800">{tx.paper_ticket_no}</span>
+                            {/* [2026-09-04] Set by checkAndFlagPaperTicketDuplicate
+                                (api.js) when this number is also on file
+                                elsewhere at this station — saving isn't
+                                blocked anymore, so this badge is how an
+                                admin actually finds one to look into. */}
+                            {tx.paper_ticket_dup_flag && (
+                              <span title="This paper ticket number is also used on another ticket/transaction at this station — worth double-checking against the paper slip." className="inline-flex items-center gap-0.5 rounded-full border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                                ⚠ Dup #
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-slate-400">{tx.code}</div>
                         </>
                       ) : (
@@ -1932,6 +2165,11 @@ export default function Transactions({ setPage }) {
                           {isBuy ? "▲ BUY" : "▼ SELL"}
                         </span>
                         <span className="font-bold text-slate-800">{tx.paper_ticket_no || tx.code}</span>
+                        {tx.paper_ticket_dup_flag && (
+                          <span title="This paper ticket number is also used on another ticket/transaction at this station — worth double-checking against the paper slip." className="inline-flex items-center gap-0.5 rounded-full border border-rose-300 bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                            ⚠ Dup #
+                          </span>
+                        )}
                         {isTransactionPendingSync(tx.id) && (
                           <span className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
                             <RefreshCw size={9} /> {t("not_synced")}
@@ -2097,6 +2335,9 @@ export default function Transactions({ setPage }) {
         <div className="fixed inset-0 z-50 bg-white">
           <Receipt tx={receiptTx} onDone={() => setReceiptTx(null)} />
         </div>
+      )}
+      {stationCheckOpen && (
+        <StationCheckModal allRows={stationCheckRows} locations={locations} onClose={() => setStationCheckOpen(false)} />
       )}
       {cancelConfirmTx && (
         <ConfirmCancelModal

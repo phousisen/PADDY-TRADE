@@ -5,6 +5,7 @@ import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
+import { getAccurateNow } from "../supabaseClient.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import {
@@ -12,7 +13,7 @@ import {
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
   setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
-  suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline,
+  suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline, forgetPendingTransaction,
 } from "../offlineQueue.js";
 
 // Same reasoning as the offline queue's own lookups: don't let a slow/no
@@ -1415,6 +1416,23 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     // actually finish.
     if (!isBuy && !productName.trim()) { setError("Please select which paddy type is being sold."); return; }
     if (!tareKg || tareKg <= 0) { setError(isBuy ? "Please enter the empty truck's weight." : "Please enter the loaded truck's weight."); return; }
+    // [2026-09-07] Jomnoum CN 000261: a Sell was finished with the "empty"
+    // weigh-in at 53,500 kg and the "loaded" weigh-out at 19,720 kg — the
+    // two weights the wrong way round — and the app quietly saved a
+    // 0.00 kg / ៛0 transaction and marked it Paid. A net weight of zero or
+    // less is never a real load; refuse it here with a message that says
+    // which way round the weights have to be, so it's fixed before a
+    // receipt exists rather than found in the books later.
+    {
+      const grossKgNow = parseFloat(ticket.gross_kg) || 0;
+      const netNow = isBuy ? grossKgNow - tareKg : tareKg - grossKgNow;
+      if (netNow <= 0) {
+        setError(isBuy
+          ? `The empty truck (${tareKg.toLocaleString()} kg) cannot weigh as much as or more than the loaded truck (${grossKgNow.toLocaleString()} kg) — the net weight would be ${netNow.toLocaleString()} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.`
+          : `The loaded truck (${tareKg.toLocaleString()} kg) must weigh more than it did empty (${grossKgNow.toLocaleString()} kg) — the net weight would be ${netNow.toLocaleString()} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.`);
+        return;
+      }
+    }
     // Photo of the paper ticket is off while testing — no camera on this
     // computer yet. Re-add this check once photos are actually possible.
     setError("");
@@ -1758,10 +1776,45 @@ function DeclineModal({ ticket, onClose, onDeclined }) {
 // the wrong card in a busy list. This one glance, big-text check happens
 // BEFORE any weighing/pricing is typed in, right where the wrong pick
 // actually happens, instead of only being discoverable afterward.
+// [2026-09-06] Plain Cambodia-date (YYYY-MM-DD) of a timestamp, for the
+// "weighed in on a different day" check below — compares calendar days in
+// Asia/Phnom_Penh specifically, never the device's own timezone, and uses
+// the server-corrected clock for "today" (see getAccurateNow in
+// supabaseClient.js — a station PC with a wrong date must not trip this).
+function cambodiaDayKey(d) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
+  // [2026-09-06] Jomnoum TKT-872042: the truck was weighed out on the 5th
+  // but nobody pressed Finish Ticket until the next morning, so tare_at
+  // (recorded at the moment the button is pressed) said 10:10 AM on the
+  // 6th while the paper said 7:21 PM on the 5th — caught only after the
+  // receipt was printed and compared against paper. Nothing here blocks
+  // anything: this is just the one moment staff can still notice it.
+  const weighedInDay = ticket.gross_at ? cambodiaDayKey(new Date(ticket.gross_at)) : null;
+  const differentDay = weighedInDay && weighedInDay !== cambodiaDayKey(getAccurateNow());
+  const inStamp = splitCambodiaTimestamp(ticket.gross_at);
   return (
     <Modal title="Confirm the truck" onClose={onClose}>
       <p className="mb-4 text-sm text-slate-500">Double-check this matches the truck on the scale right now before continuing.</p>
+      {differentDay && (
+        <div className="mb-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm font-bold text-amber-800">
+            ⚠ This truck was weighed in on {inStamp.date} at {inStamp.time} — not today.
+            <span className="ml-1 font-khmer font-normal">រថយន្តនេះបានថ្លឹងចូលនៅថ្ងៃផ្សេង មិនមែនថ្ងៃនេះទេ។</span>
+          </p>
+          <p className="mt-1 text-xs text-amber-700">
+            The weigh-out time on the receipt will be recorded as <strong>right now</strong>. If the truck was actually
+            weighed out earlier (e.g. yesterday evening) and this is just being finished late, the receipt's OUT time will
+            be wrong — an admin can correct the Out date/time afterwards in Transactions → Edit. If it's the wrong ticket
+            entirely, press cancel.
+          </p>
+        </div>
+      )}
       <div className="mb-5 rounded-lg border-2 border-brand-200 bg-brand-50 p-4 text-center">
         <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${ticket.type === "BUY" ? "bg-brand-100 text-brand-700" : "bg-rose-100 text-rose-700"}`}>
           {ticket.type === "BUY" ? "▲ BUY" : "▼ SELL"}
@@ -1800,6 +1853,7 @@ function ReopenTicketModal({ ticket, onClose, onReopened }) {
     setSaving(true);
     try {
       await api.reopenTicket(ticket.id, { userId: session.user.id, reason: reason.trim() });
+      forgetPendingTransaction(ticket.id);
       onReopened();
     } catch (e) {
       setError(e.message || "Couldn't reopen this ticket — check the connection and try again.");

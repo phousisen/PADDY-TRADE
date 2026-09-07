@@ -10,7 +10,7 @@ import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import {
   withTimeout, resolvePartyIdOffline, resolveProductIdOffline, updatePartyOffline,
-  createTransactionOffline, createPaymentOffline, logAuditOffline, unconfirmedSaveMessage,
+  createTransactionOffline, createPaymentOffline, logAuditOffline,
 } from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -349,7 +349,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       // message in the form's existing error slot; the Save button is
       // re-enabled by `finally`, but the message tells staff NOT to
       // re-enter it (a second Save would queue a duplicate).
-      if (tx.needs_verification) throw new Error(unconfirmedSaveMessage("Save", false));
+      // [2026-09-07] Print always — an unconfirmed save is flagged on the
+      // receipt screen (needs_verification) and keeps retrying from both
+      // the browser queue and the station PC relay; the database itself
+      // now guarantees it can't be saved twice.
       setSavedTx({
         ...tx,
         partyName, partyIdNumber: partyPhone || partyIdNumber || "",
