@@ -146,7 +146,22 @@ export default function NeedsAttentionModal({ onClose }) {
                       <div><span className="text-slate-400">Recorded By</span><div className="font-semibold text-slate-700">{tx.recorded_by_name || "—"}</div></div>
                     </div>
 
-                    {item.isStuck && (
+                    {/* [2026-09-07] Finish Ticket attempts no longer get a
+                        "Send back to Waiting board" option. At Jomnoum that
+                        button (used after a slow-connection timeout the app
+                        wrongly called "stuck") led straight to re-finishing
+                        a ticket the server had already saved, and to
+                        duplicate transactions. A finalize is now safe to
+                        retry forever: the database returns the same
+                        transaction however many times it is asked. Only a
+                        manual Buy/Sell entry still offers removal, since
+                        there is no ticket to re-finish there. */}
+                    {item.isStuck && item.opType === "finalizeTicket" && (
+                      <div className="mt-3 border-t border-rose-200 pt-2.5 text-xs text-slate-600">
+                        Keep this browser open — it retries on its own every 15 seconds and the station PC is retrying too. Nothing needs to be re-entered. If the reason above is a real data error, tell an admin; do not finish this ticket again.
+                      </div>
+                    )}
+                    {item.isStuck && item.opType !== "finalizeTicket" && (
                       <div className="mt-3 border-t border-rose-200 pt-2.5">
                         {confirmDiscard === item.opId ? (
                           <div className="flex flex-wrap items-center gap-2 text-xs">
