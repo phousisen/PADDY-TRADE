@@ -442,15 +442,20 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
   // separately-typed number that can drift out of step. It stays freely
   // editable, as before, whenever either one is left blank (a fully
   // manual entry with no real scale data at all).
+  // [2026-09-08] Never for a Sell the buyer has already confirmed: its
+  // quantity is the buyer's figure, not the station's weights, and this
+  // effect used to silently snap it back to gross/tare on open (audit #5).
+  const buyerConfirmed = !!tx.buyer_confirmed_at;
   useEffect(() => {
+    if (buyerConfirmed) return;
     const g = parseFloat(grossKg);
     const w = parseFloat(tareKg);
     if (grossKg.trim() === "" || tareKg.trim() === "" || isNaN(g) || isNaN(w)) return;
     const net = Math.max(0, isBuy ? g - w : w - g);
     setQuantityKg(net.toFixed(2));
-  }, [grossKg, tareKg, isBuy]);
+  }, [grossKg, tareKg, isBuy, buyerConfirmed]);
 
-  const netIsDerived = grossKg.trim() !== "" && tareKg.trim() !== "" && !isNaN(parseFloat(grossKg)) && !isNaN(parseFloat(tareKg));
+  const netIsDerived = !buyerConfirmed && grossKg.trim() !== "" && tareKg.trim() !== "" && !isNaN(parseFloat(grossKg)) && !isNaN(parseFloat(tareKg));
 
   const newAmount = Math.max(0, Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
   const canSubmit = !saving && password && partyQuery.trim() && productQuery.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0;
@@ -526,6 +531,9 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
         tareKg: tareKg.trim() !== "" ? (parseFloat(tareKg) || 0) : null,
         grossAt: combineCambodiaToISO(grossInDate, grossInTime),
         tareAt: combineCambodiaToISO(tareOutDate, tareOutTime),
+        // Tells updateTransaction not to re-derive quantity from the
+        // weights for a buyer-confirmed Sell (see the effect above).
+        keepQuantity: buyerConfirmed,
         oldData: {
           location_id: tx.location_id, stationName: tx.stationName,
           party_id: tx.party_id, partyName: tx.partyName, product_id: tx.product_id, productName: tx.productName,
@@ -1230,7 +1238,15 @@ const HQ_STATUS_STYLES = {
   processing: "bg-amber-50 text-amber-600 border-amber-200",
   paid: "bg-emerald-50 text-emerald-600 border-emerald-200",
   cancelled: "bg-rose-50 text-rose-600 border-rose-200",
+  // [2026-09-08] A Sell finished with "price not given yet" has amount 0,
+  // so remaining is 0 — which used to read as Paid/Settled and drop it out
+  // of Receivables entirely (audit #4). It is its own state now.
+  unpriced: "bg-orange-50 text-orange-700 border-orange-300",
 };
+// True for a Sell that has no agreed price yet (amount 0 by construction).
+function isUnpricedTx(tx) {
+  return tx.type === "SELL" && (tx.hq_status || "processing") !== "cancelled" && (tx.price_per_kg == null || Number(tx.amount || 0) === 0);
+}
 
 export default function Transactions({ setPage }) {
   const { t } = useLanguage();
@@ -1642,7 +1658,11 @@ export default function Transactions({ setPage }) {
     // by Item, Accounts Payable/Receivable, the Balance Sheet) in sync with
     // what this Payment Status dropdown says, instead of the two drifting
     // apart.
-    if (updated.payment_status === "paid") {
+    // [2026-09-08] Only when the status actually CHANGED to Paid in this
+    // edit. Sells finished from a ticket used to land as "paid" with no
+    // payment row, so ANY later edit (a plate typo) minted a full cash
+    // receipt dated today (audit #1). An unchanged "paid" is left alone.
+    if (updated.payment_status === "paid" && editTx.payment_status !== "paid") {
       const payType = editTx.type === "BUY" ? "pay_supplier" : "receive_customer";
       const alreadyPaid = payments
         .filter((p) => p.transaction_id === editTx.id && p.type === payType)
@@ -1886,7 +1906,8 @@ export default function Transactions({ setPage }) {
                 // payments table), so this is always correct the moment
                 // the page reloads, with no separate flag that can drift
                 // out of sync with what was actually paid.
-                const hqStatus = isCancelled ? "cancelled" : remaining <= 0.01 ? "paid" : "processing";
+                const isUnpriced = isUnpricedTx(tx);
+                const hqStatus = isCancelled ? "cancelled" : isUnpriced ? "unpriced" : remaining <= 0.01 ? "paid" : "processing";
                 const isBuy = tx.type === "BUY";
                 const isExpanded = expandedTxIds.has(tx.id);
                 // Buy weighs the truck in loaded, out empty; Sell weighs it
@@ -1970,6 +1991,8 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3.5">
                       {isCancelled ? (
                         <span className="text-xs text-slate-400">Excluded from reports</span>
+                      ) : isUnpriced ? (
+                        <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700" title="Finished without an agreed price — set the price in Edit, then the amount owed appears here.">No price yet</span>
                       ) : remaining > 0.01 ? (
                         isAdmin ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
@@ -2149,7 +2172,8 @@ export default function Transactions({ setPage }) {
           {pagedRows.map((tx) => {
             const isCancelled = (tx.hq_status || "processing") === "cancelled";
             const remaining = remainingByTx[tx.id] || 0;
-            const hqStatus = isCancelled ? "cancelled" : remaining <= 0.01 ? "paid" : "processing";
+            const isUnpriced = isUnpricedTx(tx);
+            const hqStatus = isCancelled ? "cancelled" : isUnpriced ? "unpriced" : remaining <= 0.01 ? "paid" : "processing";
             const isBuy = tx.type === "BUY";
             const isExpanded = expandedTxIds.has(tx.id);
             const payableKg = Math.max(0, (tx.quantity_kg || 0) - (tx.deduction_kg || 0));
@@ -2215,6 +2239,8 @@ export default function Transactions({ setPage }) {
                     <div>
                       {isCancelled ? (
                         <span className="text-xs text-slate-400">{t("tx_excluded")}</span>
+                      ) : isUnpriced ? (
+                        <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700">{t("hq_unpriced")}</span>
                       ) : remaining > 0.01 ? (
                         isAdmin ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">

@@ -20,7 +20,7 @@ import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
-import { getCachedParties, addCachedParty, setCachedParties, enqueue, trySync, newId } from "../offlineQueue.js";
+import { getCachedParties, addCachedParty, setCachedParties, enqueue, trySync, newId, logAuditOffline } from "../offlineQueue.js";
 import { useLanguage } from "../i18n.jsx";
 
 const inputCls = "w-full rounded-lg border border-slate-300 px-4 py-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
@@ -142,8 +142,15 @@ export default function RegisterPartyStaff() {
     }
   }
 
+  // [2026-09-08] A bank change submitted through the public QR page is
+  // held here as PENDING until staff who know the farmer apply it — the
+  // QR page can no longer change a bank account on its own (audit #6).
+  const [pendingBank, setPendingBank] = useState(null);
   function openExisting(party) {
     setEditingId(party.id);
+    setPendingBank(party.pending_bank_account || party.pending_bank_name || party.pending_bank_qr_url
+      ? { name: party.pending_bank_name || "", account: party.pending_bank_account || "", qr: party.pending_bank_qr_url || null, at: party.pending_bank_requested_at || null }
+      : null);
     setForm({
       name: party.name || "",
       phone: party.phone || "",
@@ -205,6 +212,9 @@ export default function RegisterPartyStaff() {
         bankQrUrl: form.bankQrUrl,
         idPhotoUrl: form.idPhotoUrl,
         ...verifiedStamp,
+        // Any pending QR-page bank request is resolved by this save —
+        // applied (staff pressed "Use these details") or ignored.
+        ...(pendingBank ? { clearPendingBank: true } : {}),
       };
       // [2026-08-31] Saved through the same offline queue Weighing Tickets
       // already relies on (offlineQueue.js's createParty/updateParty ops —
@@ -220,6 +230,24 @@ export default function RegisterPartyStaff() {
       if (editingId) {
         const list = getCachedParties();
         const idx = list.findIndex((p) => p.id === editingId);
+        // [2026-09-08] A changed bank account/name is the one edit that
+        // redirects money. It is written to the Activity Log with before
+        // and after, and the "Verified" badge is withdrawn unless fresh
+        // ID + QR photos were attached in this same save (audit #26).
+        const orig = idx >= 0 ? list[idx] : null;
+        const bankChanged = !!orig && (
+          (orig.bank_account || "") !== (shared.bankAccount || "") ||
+          (orig.bank_name || "") !== (shared.bankName || "")
+        );
+        if (bankChanged) {
+          if (!isVerifiable) { shared.verifiedAt = null; shared.verifiedBy = null; }
+          logAuditOffline({
+            action: "update_party_bank", tableName: "parties", recordId: editingId,
+            oldData: { name: orig.name, phone: orig.phone, bank_name: orig.bank_name || null, bank_account: orig.bank_account || null },
+            newData: { name: shared.name, phone: shared.phone, bank_name: shared.bankName, bank_account: shared.bankAccount, viaQrRequest: !!(pendingBank && pendingBank.applied) },
+            userId: profile?.id,
+          });
+        }
         if (idx >= 0) {
           list[idx] = {
             ...list[idx],
@@ -227,6 +255,8 @@ export default function RegisterPartyStaff() {
             bank_name: shared.bankName, bank_account: shared.bankAccount, bank_qr_url: shared.bankQrUrl,
             id_photo_url: shared.idPhotoUrl,
             ...(shared.verifiedAt ? { verified_at: shared.verifiedAt, verified_by: shared.verifiedBy } : {}),
+            ...(shared.verifiedAt === null ? { verified_at: null, verified_by: null } : {}),
+            ...(pendingBank ? { pending_bank_name: null, pending_bank_account: null, pending_bank_qr_url: null, pending_bank_requested_at: null } : {}),
           };
           setCachedParties(list);
         }
@@ -315,6 +345,19 @@ export default function RegisterPartyStaff() {
               <label className={labelCls}>{t("reg_account_number")}</label>
               <input className={inputCls} value={form.bankAccount} onChange={(e) => set("bankAccount", e.target.value)} placeholder={t("reg_account_placeholder")} />
             </div>
+            {pendingBank && (
+              <div className="col-span-2 rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-sm">
+                <p className="font-bold text-amber-800">⚠ Bank change requested via QR page — not applied yet</p>
+                <p className="mt-1 text-amber-800">Requested: <span className="font-mono">{pendingBank.name || "—"} · {pendingBank.account || "—"}</span>{pendingBank.at ? ` · ${new Date(pendingBank.at).toLocaleString()}` : ""}</p>
+                <p className="mt-1 text-xs text-amber-700">Only apply this if you have confirmed it with the farmer in person or by calling the number on file. Anyone holding a receipt could have submitted it.</p>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" onClick={() => { set("bankName", pendingBank.name); setBankIsOther(!!pendingBank.name && !BANK_OPTIONS.includes(pendingBank.name)); set("bankAccount", pendingBank.account); if (pendingBank.qr) set("bankQrUrl", pendingBank.qr); setPendingBank({ ...pendingBank, applied: true }); }}
+                    className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Use these details (then Save)</button>
+                  <button type="button" onClick={() => setPendingBank({ ...pendingBank, dismissed: true, name: "", account: "", qr: null })}
+                    className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100">Ignore request</button>
+                </div>
+              </div>
+            )}
 
             {!online && (
               <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2.5 text-xs text-slate-500">

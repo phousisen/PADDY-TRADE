@@ -257,7 +257,8 @@ export default function ChangeRequests() {
     // request that sets Payment Status to "Paid" should also make sure
     // real money is on file for it, so Cash Flow and every payments-based
     // report actually reflect it instead of just this one label.
-    if (updated.payment_status === "paid") {
+    // [2026-09-08] Only when the status CHANGED to Paid (audit #1).
+    if (updated.payment_status === "paid" && tx.payment_status !== "paid") {
       // Deliberately NOT caught here — swallowing this used to let the
       // approval "succeed" (the transaction now says Paid) while the
       // actual payment record silently failed to save, leaving Cash Flow

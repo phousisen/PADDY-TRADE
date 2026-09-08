@@ -13,7 +13,7 @@ import {
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
   setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
-  suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline, forgetPendingTransaction,
+  suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline, forgetPendingTransaction, createPaymentOffline,
 } from "../offlineQueue.js";
 
 // Same reasoning as the offline queue's own lookups: don't let a slow/no
@@ -373,6 +373,10 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [paperTicketNo, setPaperTicketNo] = useState("");
   const [grossWeight, setGrossWeight] = useState("");
   const [saving, setSaving] = useState(false);
+  // [2026-09-08] The duplicate-number check runs before doSave() sets
+  // `saving`, so a second click inside that window used to create a second
+  // ticket (audit #11).
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
   // [2026-09-01] Entry Sanity Check for a paper ticket number reused by
   // accident, the mistake that's turned into real Change Requests this
@@ -672,6 +676,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   }
 
   async function submit() {
+    if (saving || checking) return;
+    setChecking(true);
+    try { await submitInner(); } finally { setChecking(false); }
+  }
+  async function submitInner() {
     const kg = parseFloat(grossWeight);
     // Product is Buy-only here now — a Sell ticket picks its paddy type at
     // Finish Ticket instead, from what's actually in stock at that point
@@ -1018,7 +1027,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
-        <button disabled={saving} onClick={submit} className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${isBuy ? "bg-brand-600 hover:bg-brand-700" : "bg-rose-600 hover:bg-rose-700"}`}>
+        <button disabled={saving || checking} onClick={submit} className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${isBuy ? "bg-brand-600 hover:bg-brand-700" : "bg-rose-600 hover:bg-rose-700"}`}>
           {saving ? "Saving…" : (<>Save & Print Weigh-In Slip<span className="font-khmer block text-xs font-normal text-white/85">រក្សាទុក និង បោះពុម្ពសំបុត្រថ្លឹង</span></>)}
         </button>
       </div>
@@ -1053,6 +1062,10 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
   const [paperTicketNo, setPaperTicketNo] = useState(ticket.paper_ticket_no || "");
   const [grossWeight, setGrossWeight] = useState(ticket.gross_kg != null ? String(ticket.gross_kg) : "");
   const [saving, setSaving] = useState(false);
+  // [2026-09-08] The duplicate-number check runs before doSave() sets
+  // `saving`, so a second click inside that window used to create a second
+  // ticket (audit #11).
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
   // [2026-09-03] Same Entry Sanity Check as New Ticket (see there for the
   // full story) — this screen never had one at all before, which is a
@@ -1111,8 +1124,13 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
   }, [paperTicketNo, ticket.location_id, ticket.id, ticket.paper_ticket_no]);
 
   async function submit() {
-    if (!partyName.trim() || !productName.trim() || !carPlate.trim()) {
-      setError("Please fill in party name, product, and plate number.");
+    if (saving || checking) return;
+    setChecking(true);
+    try { await submitInner(); } finally { setChecking(false); }
+  }
+  async function submitInner() {
+    if (!partyName.trim() || (isBuy && !productName.trim()) || !carPlate.trim()) {
+      setError(isBuy ? "Please fill in party name, product, and plate number." : "Please fill in party name and plate number.");
       return;
     }
     // [2026-09-05] Required on both Buy and Sell here too now, matching
@@ -1250,7 +1268,7 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
       {error && <p className="mt-3 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel<span className="font-khmer block text-xs">បោះបង់</span></button>
-        <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+        <button disabled={saving || checking} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
           {saving ? "Saving…" : (<>Save Changes<span className="font-khmer block text-xs font-normal text-emerald-100">រក្សាទុកការផ្លាស់ប្តូរ</span></>)}
         </button>
       </div>
@@ -1308,7 +1326,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   const [mixturePct, setMixturePct] = useState("");
   const [outthrowPct, setOutthrowPct] = useState("");
   const [deductionKg, setDeductionKg] = useState("");
-  const [pricePerKg, setPricePerKg] = useState("");
+  const [pricePerKg, setPricePerKg] = useState(ticket.price_per_kg != null ? String(ticket.price_per_kg) : "");
   // Sell only — paddy sometimes goes out to Baitang or another outside
   // buyer before a price has been agreed at all (not just "not typed in
   // yet"). Checking this is the explicit way to say that, instead of
@@ -1319,13 +1337,21 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   const [taxApplicable, setTaxApplicable] = useState(false);
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
-  const [tareWeight, setTareWeight] = useState("");
+  const [tareWeight, setTareWeight] = useState(ticket.tare_kg != null ? String(ticket.tare_kg) : "");
   const [bankName, setBankName] = useState("");
+  // [2026-09-08] Sell only: was the buyer's money received right here at
+  // the scale? Default is NO (credit — still owed). Sells used to be saved
+  // as "paid" with no payment behind them (audit #1).
+  const [sellPaidNow, setSellPaidNow] = useState(false);
   const [bankIsOther, setBankIsOther] = useState(false);
   const [bankAccount, setBankAccount] = useState("");
   const [bankQrUrl, setBankQrUrl] = useState(null);
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState(null);
   const [saving, setSaving] = useState(false);
+  // [2026-09-08] The duplicate-number check runs before doSave() sets
+  // `saving`, so a second click inside that window used to create a second
+  // ticket (audit #11).
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
 
@@ -1479,7 +1505,28 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // No date picker here on purpose — this is finalized the moment the
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
-      const tx = await finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl });
+      const sellPaymentStatus = !isBuy && !priceNotGiven && sellPaidNow ? "paid" : undefined;
+      const tx = await finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl, paymentStatus: sellPaymentStatus });
+      // [2026-09-08] Money received at the scale is a real payment row —
+      // the same thing the manual New Sell form does — so Cash Flow and
+      // Receivables see it, not just a label (audit #1).
+      if (sellPaymentStatus === "paid" && Number(tx.amount) > 0) {
+        const paid = createPaymentOffline({
+          type: "receive_customer",
+          transactionId: tx.id,
+          locationId: tx.location_id,
+          amount: Number(tx.total_with_tax ?? tx.amount),
+          method: bankName && bankName !== "Cash" ? "bank" : "cash",
+          payDate: tx.tx_date,
+          memo: "Paid at time of sale (Finish Ticket)",
+          userId: session.user.id,
+        });
+        logAuditOffline({
+          action: "record_payment", tableName: "payments", recordId: paid.id,
+          newData: { amount: Number(tx.total_with_tax ?? tx.amount), method: bankName && bankName !== "Cash" ? "bank" : "cash", memo: "Paid at time of sale (Finish Ticket)", code: tx.code, partyName: tx.partyName, txType: tx.type },
+          userId: session.user.id,
+        });
+      }
       // Same reasoning as the manual Buy/Sell form (TransactionForm.jsx):
       // every new transaction should show up in the Activity Log, including
       // the original entry, not just later edits. This path (finalizing a
@@ -1533,7 +1580,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       icon="🏁"
       title={`Finish Ticket ${ticket.code}`}
       subtitle={`${ticket.party_name} · ${ticket.car_plate} · ${isBuy ? "Gross" : "Weighed in"}: ${fmt2(ticket.gross_kg)} kg (weighed in earlier)`}
-      onClose={onClose} wide
+      onClose={saving ? undefined : onClose} wide
     >
       {/* Reordered per explicit request: Price first, Payment second, the
           Weigh Out/scale step last. Quality and Note & Proof are removed
@@ -1667,6 +1714,20 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
             </div>
             <div><NewTicketFieldLabel icon="🔢" en="Bank Account" km="លេខគណនីធនាគារ" lang={lang} /><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={fieldCls} /></div>
           </div>
+          {!isBuy && !priceNotGiven && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setSellPaidNow(false)}
+                className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm ${!sellPaidNow ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-600"}`}>
+                <div className="font-bold">{lang === "km" ? "នៅជំពាក់ (ឥណទាន)" : "Still owed (credit)"}</div>
+                <div className="text-[11px] opacity-80">{lang === "km" ? "អ្នកទិញមិនទាន់បង់ប្រាក់ទេ — HQ កត់ត្រាការទូទាត់នៅពេលក្រោយ" : "Buyer has not paid yet — HQ records the payment later"}</div>
+              </button>
+              <button type="button" onClick={() => setSellPaidNow(true)}
+                className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm ${sellPaidNow ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600"}`}>
+                <div className="font-bold">{lang === "km" ? "បានបង់ប្រាក់រួចហើយ" : "Paid in full now"}</div>
+                <div className="text-[11px] opacity-80">{lang === "km" ? "ទទួលប្រាក់ពេញនៅទីនេះ — កត់ត្រាជាការទូទាត់" : "Full amount received here — recorded as a payment"}</div>
+              </button>
+            </div>
+          )}
           {isBuy && bankName && bankName !== "Cash" && (
             <div className="mt-3">
               <PhotoUpload
@@ -1742,6 +1803,10 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 function DeclineModal({ ticket, onClose, onDeclined }) {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  // [2026-09-08] The duplicate-number check runs before doSave() sets
+  // `saving`, so a second click inside that window used to create a second
+  // ticket (audit #11).
+  const [checking, setChecking] = useState(false);
   const { session } = useAuth();
 
   async function submit() {
@@ -1844,6 +1909,10 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
 function ReopenTicketModal({ ticket, onClose, onReopened }) {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  // [2026-09-08] The duplicate-number check runs before doSave() sets
+  // `saving`, so a second click inside that window used to create a second
+  // ticket (audit #11).
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
 
@@ -1897,6 +1966,10 @@ function ReopenTicketModal({ ticket, onClose, onReopened }) {
 function RestoreTicketModal({ ticket, onClose, onRestored }) {
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  // [2026-09-08] The duplicate-number check runs before doSave() sets
+  // `saving`, so a second click inside that window used to create a second
+  // ticket (audit #11).
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
   const { session } = useAuth();
 
@@ -2170,8 +2243,10 @@ export default function WeighingTickets() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function load() {
-    setLoading(true);
+  async function load({ silent = false } = {}) {
+    // Only show "Loading…" when there is nothing on screen yet — a refresh
+    // used to blank the whole board for up to 12s (audit #38).
+    if (!silent) setLoading(true);
     // Only pull tickets still in progress — once finalized a ticket has
     // become a normal transaction and belongs in the Transactions list
     // instead, not on this board.
@@ -2218,6 +2293,18 @@ export default function WeighingTickets() {
     if (!syncStatus.syncing && syncStatus.pending === 0) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncStatus.syncing, syncStatus.pending]);
+
+  // [2026-09-08] With an idle queue nothing ever refreshed this board, so a
+  // second device could still show — and re-finish — a ticket the first one
+  // had already finished (audit #10). Quiet refresh every 60s while online
+  // and visible; never shows "Loading…" and never interrupts a modal.
+  useEffect(() => {
+    const tick = () => { if (navigator.onLine && !document.hidden) load({ silent: true }); };
+    const id = setInterval(tick, 60000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", tick); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveLocationId]);
 
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -2462,7 +2549,22 @@ export default function WeighingTickets() {
         <ConfirmFinishModal
           ticket={confirmFinishTicket}
           onClose={() => setConfirmFinishTicket(null)}
-          onConfirm={() => { setFinishTicket(confirmFinishTicket); setConfirmFinishTicket(null); }}
+          onConfirm={async () => {
+            // Another device may have finished this ticket since this board
+            // last refreshed — check before opening the form (audit #10).
+            const fresh = await withTimeout(
+              api.getTickets({ locationId: confirmFinishTicket.location_id, stages: ["finalized"], limit: 50 }).catch(() => null),
+              4000, null
+            );
+            if (fresh && fresh.some((t) => t.id === confirmFinishTicket.id)) {
+              setConfirmFinishTicket(null);
+              load({ silent: true });
+              alert("This ticket has already been finished on another device. Print its receipt from the Transactions page instead.");
+              return;
+            }
+            setFinishTicket(confirmFinishTicket);
+            setConfirmFinishTicket(null);
+          }}
         />
       )}
       {reopenTicketRow && (

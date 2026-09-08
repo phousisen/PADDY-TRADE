@@ -48,7 +48,7 @@ export default function RegisterFarmer({ locationId }) {
         const { data } = supabase.storage.from("transaction-photos").getPublicUrl(path);
         bankQrUrl = data.publicUrl;
       }
-      const { error: rpcErr } = await supabase.rpc("register_farmer", {
+      const { data: rpcData, error: rpcErr } = await supabase.rpc("register_farmer", {
         p_name: name.trim(),
         p_phone: phone.trim(),
         p_bank_name: bankName.trim() || null,
@@ -57,7 +57,9 @@ export default function RegisterFarmer({ locationId }) {
         p_location_id: locationId || null,
       });
       if (rpcErr) throw rpcErr;
-      setDone(true);
+      // [2026-09-08] An existing farmer's bank details are never changed
+      // from this public page — the request is held for staff to confirm.
+      setDone(rpcData?.status === "pending" ? "pending" : true);
     } catch (err) {
       setError(err.message || "Something went wrong. Please try again. / មានបញ្ហា សូមព្យាយាមម្ដងទៀត។");
     } finally {
@@ -71,6 +73,12 @@ export default function RegisterFarmer({ locationId }) {
         <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-600">✓</div>
           <h1 className="mb-2 text-lg font-bold text-slate-800">Thank you! / សូមអរគុណ!</h1>
+          {done === "pending" && (
+            <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-800">
+              This phone number already has bank details on file. Your new bank details were sent to our staff — please confirm them with staff in person before your next payment.
+              <br />លេខទូរស័ព្ទនេះមានព័ត៌មានធនាគាររួចហើយ។ ព័ត៌មានធនាគារថ្មីត្រូវបានផ្ញើទៅបុគ្គលិក — សូមបញ្ជាក់ជាមួយបុគ្គលិកផ្ទាល់មុនការទូទាត់លើកក្រោយ។
+            </p>
+          )}
           <p className="text-sm leading-relaxed text-slate-500">
             Your information has been saved. Please tell our staff your phone number when you arrive.
             <br /><br />
