@@ -3,6 +3,7 @@ import { Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut } from 
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { onSyncStatusChange } from "../offlineQueue.js";
+import NeedsAttentionModal from "./NeedsAttentionModal.jsx";
 import { api } from "../api.js";
 import { getAccurateNow, supabase } from "../supabaseClient.js";
 
@@ -17,6 +18,14 @@ import { getAccurateNow, supabase } from "../supabaseClient.js";
 // without seeing that something hasn't reached the shared database yet.
 function SyncStatusBanner({ onSignInAgain }) {
   const [status, setStatus] = useState({ online: true, syncing: false, pending: 0, stuck: false, sessionExpired: false });
+  // [2026-09-08] The Needs Attention panel existed but nothing ever
+  // opened it (audit #9) — every "check the Needs Attention panel" message
+  // pointed nowhere. This banner is the one place it belongs.
+  const [showAttention, setShowAttention] = useState(false);
+  const viewBtn = (cls) => (
+    <button type="button" onClick={() => setShowAttention(true)} className={`shrink-0 rounded-md px-3 py-1 font-semibold ${cls}`}>View details</button>
+  );
+  const attention = showAttention ? <NeedsAttentionModal onClose={() => setShowAttention(false)} /> : null;
   useEffect(() => onSyncStatusChange(setStatus), []);
 
   if (status.pending === 0 && !status.stuck && !status.sessionExpired) return null;
@@ -58,9 +67,13 @@ function SyncStatusBanner({ onSignInAgain }) {
   if (status.stuck) {
     return (
       <div className="flex flex-col gap-0.5 bg-rose-600 px-6 py-2 text-xs font-semibold text-white">
-        <div className="flex items-center gap-2">
-          <AlertTriangle size={13} />
-          {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
+        {attention}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={13} />
+            {status.pending} change{status.pending === 1 ? "" : "s"} on this device {status.pending === 1 ? "has" : "have"} failed to save to PaddyTrade repeatedly since {status.stuckSince ? new Date(status.stuckSince).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : "earlier"} — this will NOT fix itself. Do not close this browser or clear its data. Tell an admin now.
+          </div>
+          {viewBtn("bg-white/15 hover:bg-white/25")}
         </div>
         {status.lastStuckError && (
           <div className="pl-[21px] font-normal text-rose-100">
@@ -73,17 +86,25 @@ function SyncStatusBanner({ onSignInAgain }) {
 
   if (!status.online) {
     return (
-      <div className="flex items-center gap-2 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-700">
-        <WifiOff size={13} />
-        No internet — working offline. {status.pending > 0 ? `${status.pending} change${status.pending === 1 ? "" : "s"} saved on this device only, waiting to sync once it's back — don't close this browser or clear its data until then.` : "Anything you save is kept on this device until the connection returns."}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-700">
+        {attention}
+        <div className="flex items-center gap-2">
+          <WifiOff size={13} />
+          No internet — working offline. {status.pending > 0 ? `${status.pending} change${status.pending === 1 ? "" : "s"} saved on this device only, waiting to sync once it's back — don't close this browser or clear its data until then.` : "Anything you save is kept on this device until the connection returns."}
+        </div>
+        {status.pending > 0 && viewBtn("border border-amber-300 bg-white hover:bg-amber-100")}
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-2 bg-brand-50 px-6 py-2 text-xs font-medium text-brand-700">
-      <RefreshCw size={13} className={status.syncing ? "animate-spin" : ""} />
-      {status.syncing ? "Connected — syncing to PaddyTrade…" : `Connected — ${status.pending} change${status.pending === 1 ? "" : "s"} waiting to sync…`}
+    <div className="flex flex-wrap items-center justify-between gap-2 bg-brand-50 px-6 py-2 text-xs font-medium text-brand-700">
+      {attention}
+      <div className="flex items-center gap-2">
+        <RefreshCw size={13} className={status.syncing ? "animate-spin" : ""} />
+        {status.syncing ? "Connected — syncing to PaddyTrade…" : `Connected — ${status.pending} change${status.pending === 1 ? "" : "s"} waiting to sync…`}
+      </div>
+      {viewBtn("border border-brand-200 bg-white hover:bg-brand-100")}
     </div>
   );
 }
@@ -229,6 +250,7 @@ function AccountSecurityModal({ onClose }) {
   const [code, setCode] = useState("");
   const [mfaErr, setMfaErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pw0, setPw0] = useState(""); // [2026-09-08] current password — required (audit #7)
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [pwErr, setPwErr] = useState("");
@@ -283,14 +305,23 @@ function AccountSecurityModal({ onClose }) {
 
   async function changePassword() {
     setPwErr(""); setPwMsg("");
+    if (!pw0) { setPwErr("Enter your current password first."); return; }
     if (pw1.length < 6) { setPwErr("Password must be at least 6 characters."); return; }
     if (pw1 !== pw2) { setPwErr("Passwords don't match."); return; }
     setBusy(true);
+    // [2026-09-08] Prove it's really the account holder — on a shared
+    // station PC that stays logged in, anyone at the keyboard could
+    // otherwise change the station's password (audit #7).
+    const { data: sess } = await supabase.auth.getSession();
+    const email = sess?.session?.user?.email;
+    if (!email) { setBusy(false); setPwErr("You need to be signed in online to change your password."); return; }
+    const { error: verifyErr } = await supabase.auth.signInWithPassword({ email, password: pw0 });
+    if (verifyErr) { setBusy(false); setPwErr("Current password is incorrect."); return; }
     const { error } = await supabase.auth.updateUser({ password: pw1 });
     setBusy(false);
     if (error) { setPwErr(error.message || "Couldn't update your password."); return; }
     setPwMsg("Password updated.");
-    setPw1(""); setPw2("");
+    setPw0(""); setPw1(""); setPw2("");
   }
 
   async function signOutEverywhere() {
@@ -364,6 +395,10 @@ function AccountSecurityModal({ onClose }) {
         <div className="rounded-lg border border-slate-200 p-4">
           <p className="mb-2 text-sm font-semibold text-slate-700">Change Password</p>
           <input
+            type="password" value={pw0} onChange={(e) => setPw0(e.target.value)} placeholder="Current password" autoComplete="current-password"
+            className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+          />
+          <input
             type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} placeholder="New password" autoComplete="new-password"
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
           />
@@ -373,7 +408,7 @@ function AccountSecurityModal({ onClose }) {
           />
           {pwErr && <p className="mb-2 text-xs text-rose-600">{pwErr}</p>}
           {pwMsg && <p className="mb-2 text-xs text-brand-700">{pwMsg}</p>}
-          <button onClick={changePassword} disabled={busy || !pw1 || !pw2} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
+          <button onClick={changePassword} disabled={busy || !pw0 || !pw1 || !pw2} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
             {busy ? "Saving…" : "Change Password"}
           </button>
         </div>
