@@ -371,34 +371,25 @@ const rawApi = {
   // price was available/entered — `valueLost` then stays null too rather
   // than silently computing off a missing price.
   async recordStockAdjustment({ locationId, previousStockKg, newStockKg, reason, note, userId, pricePerKg }) {
-    const adjustmentKg = Math.round((newStockKg - previousStockKg) * 100) / 100;
-    const valueLost = adjustmentKg < 0 && pricePerKg != null
-      ? Math.round(Math.abs(adjustmentKg) * pricePerKg * 100) / 100
-      : null;
+    // [2026-09-08] One atomic database call (record_stock_adjustment in
+    // week1_hardening_2026-09-08.sql). It reads the station's CURRENT
+    // stock under lock — not the number this screen loaded minutes ago —
+    // writes the adjustment row, and the recompute trigger sets the total.
+    // The old two-step version (insert, then set current_stock_kg to the
+    // screen's number) could record a wrong loss forever if a sale had
+    // synced in between (audit #15). previousStockKg/userId are no longer
+    // needed but kept in the signature so callers don't change.
+    void previousStockKg; void userId;
     const { data, error } = await supabase
-      .from("stock_adjustments")
-      .insert({
-        location_id: locationId,
-        previous_stock_kg: previousStockKg,
-        new_stock_kg: newStockKg,
-        adjustment_kg: adjustmentKg,
-        reason,
-        note: note || null,
-        adjusted_by: userId,
-        price_per_kg: adjustmentKg < 0 ? (pricePerKg ?? null) : null,
-        value_lost: valueLost,
+      .rpc("record_stock_adjustment", {
+        p_location_id: locationId,
+        p_new_stock_kg: newStockKg,
+        p_reason: reason,
+        p_note: note || null,
+        p_price_per_kg: pricePerKg ?? null,
       })
-      .select()
       .single();
     if (error) throw error;
-    // The only place in the whole app that intentionally SETS a location's
-    // stock to an exact number rather than nudging it by one transaction's
-    // weight — this is what actually makes the adjustment take effect.
-    const { error: updateErr } = await supabase
-      .from("locations")
-      .update({ current_stock_kg: newStockKg, updated_ago: "just now" })
-      .eq("id", locationId);
-    if (updateErr) throw updateErr;
     return data;
   },
 
@@ -702,8 +693,9 @@ const rawApi = {
   // that only ever passed bankName/bankAccount/bankQrUrl keeps working
   // exactly as before — the new fields are only patched when actually
   // provided, same as the original three already worked.
-  async updateParty(id, { name, phone, idNumber, bankName, bankAccount, bankQrUrl, idPhotoUrl, verifiedAt, verifiedBy }) {
+  async updateParty(id, { name, phone, idNumber, bankName, bankAccount, bankQrUrl, idPhotoUrl, verifiedAt, verifiedBy, clearPendingBank }) {
     const patch = {};
+    if (clearPendingBank) { patch.pending_bank_name = null; patch.pending_bank_account = null; patch.pending_bank_qr_url = null; patch.pending_bank_requested_at = null; }
     if (name !== undefined) patch.name = name;
     if (phone !== undefined) patch.phone = phone;
     if (idNumber !== undefined) patch.id_number = idNumber;
@@ -776,7 +768,7 @@ const rawApi = {
   // separate insert of its own. Pure aside from the one await (the
   // duplicate check needs to read the table first); nothing here touches
   // the database.
-  async buildTransactionRow({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
+  async buildTransactionRow({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, txTime, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -785,13 +777,17 @@ const rawApi = {
     // `txDate` lets staff back-date an entry (e.g. logging a truckload the
     // next morning that was actually weighed the day before) — falls back
     // to right now, in Cambodia's timezone, if nothing was picked.
-    const { date: defaultDate, time: txTime } = cambodiaNow();
+    // [2026-09-08] txDate/txTime are what the device stamped at the moment
+    // of the save. Finish Ticket never passed them, so a ticket finished
+    // offline at 23:40 and synced at 07:10 got the NEXT day's date here
+    // (audit #2). "Now" is only the fallback for callers that send none.
+    const { date: defaultDate, time: defaultTime } = cambodiaNow();
     const row = {
       ...(id ? { id } : {}),
       code: code || genCode(type),
       type,
       tx_date: txDate || defaultDate,
-      tx_time: txTime,
+      tx_time: txTime || defaultTime,
       location_id: locationId,
       party_id: partyId,
       product_id: productId,
@@ -1161,7 +1157,7 @@ const rawApi = {
   // Turns a fully weighed-out, priced ticket into a real transaction —
   // reusing createTransaction above so every report/screen that already
   // reads the transactions table works without any changes.
-  async finalizeTicket(id, { userId, txDate, transactionId, transactionCode, receiptPhotoUrl }) {
+  async finalizeTicket(id, { userId, txDate, txTime, paymentStatus, transactionId, transactionCode, receiptPhotoUrl }) {
     const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
     if (fetchErr) {
       // Same reasoning as setTicketGross above: nothing to finalize if
@@ -1202,7 +1198,11 @@ const rawApi = {
       // pay yet. Credit (still owed) is the correct starting state;
       // staff correct it once the price is actually agreed, same as
       // they already do via Edit Transaction.
-      paymentStatus: ticket.type === "BUY" ? "pending" : (ticket.price_per_kg == null ? "credit" : "paid"),
+      // [2026-09-08] A Sell is CREDIT (still owed) unless the station
+      // explicitly recorded it as paid at the scale (paymentStatus from the
+      // Finish form, which then also records the payment). It used to be
+      // "paid" by default with no payment row — audit #1.
+      paymentStatus: ticket.type === "BUY" ? "pending" : (ticket.price_per_kg == null ? "credit" : (paymentStatus === "paid" ? "paid" : "credit")),
       userId,
       qualityGrade: ticket.quality_grade,
       taxApplicable: ticket.tax_applicable,
@@ -1215,6 +1215,7 @@ const rawApi = {
       carPlate: ticket.car_plate,
       driverName: ticket.driver_name,
       txDate,
+      txTime,
       staffFee: ticket.staff_fee,
       paperTicketNo: ticket.paper_ticket_no,
       bankQrUrl: ticket.bank_qr_url,
@@ -1392,7 +1393,7 @@ const rawApi = {
     return data;
   },
 
-  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, productId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt, paperTicketNo, type }) {
+  async updateTransaction(id, { quantityKg, pricePerKg, paymentStatus, qualityGrade, taxApplicable, taxRate, deductionKg, moisturePct, mixturePct, outthrowPct, note, carPlate, driverName, partyId, productId, txDate, staffFee, locationId, recordedByName, grossKg, grossAt, tareKg, tareAt, paperTicketNo, type, keepQuantity }) {
     // [2026-09-03] Defense-in-depth for the Weigh-In/Weigh-Out <-> Net
     // Weight desync bug (full story: EditTransactionModal's own useEffect
     // in Transactions.jsx, added the same day this was found from a real
@@ -1408,7 +1409,9 @@ const rawApi = {
     // (e.g. Change Requests approval, which doesn't pass any of these
     // three) or clears one of them back to blank leaves quantityKg
     // exactly as given, same as before this change.
-    if (type && grossKg != null && tareKg != null) {
+    // [2026-09-08] keepQuantity: a buyer-confirmed Sell keeps the buyer's
+    // quantity — never re-derived from the station's weights (audit #5).
+    if (!keepQuantity && type && grossKg != null && tareKg != null) {
       const isBuy = type === "BUY";
       quantityKg = Math.max(0, isBuy ? grossKg - tareKg : tareKg - grossKg);
     }

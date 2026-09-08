@@ -114,6 +114,12 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  // [2026-09-08] True only after Supabase fired PASSWORD_RECOVERY for this
+  // browser (an invite/reset link was clicked) or the link's hash says so
+  // — the only cases the Set Password page may open (audit #7).
+  const [passwordRecovery, setPasswordRecovery] = useState(() => {
+    try { return /type=recovery|type=invite|type=magiclink/.test(window.location.hash || ""); } catch { return false; }
+  });
   // The moment this browser tab started up. A forced-logout flag only
   // matters if it was set AFTER this — otherwise a leftover flag from a
   // past logout would immediately kick the user again on their next login.
@@ -235,7 +241,11 @@ export function AuthProvider({ children }) {
         // fall back to whatever was saved here the last time someone
         // logged in, so the app still opens instead of showing the login
         // screen for no real reason.
-        const cached = loadCachedProfile();
+        // [2026-09-08] ONLY in the second case. `result === null` means
+        // the check timed out or we were offline; a real answer of "no
+        // session" (someone logged out) must show the login screen, not
+        // reopen the app as the previous user on a shared PC (audit #12).
+        const cached = result === null ? loadCachedProfile() : null;
         if (cached) {
           setProfile(cached);
           // We don't have a real Supabase session object in this case,
@@ -253,6 +263,10 @@ export function AuthProvider({ children }) {
     init();
 
     const { data: listener } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      // [2026-09-08] Only a recovery/invite link may open the Set Password
+      // page (App.jsx) — see audit #7.
+      if (_event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
+      if (_event === "SIGNED_OUT") { try { localStorage.removeItem(CACHED_PROFILE_KEY); } catch { /* ignore */ } }
       setSession(session);
       if (session) {
         await loadProfileWithOfflineFallback(session.user.id);
@@ -327,7 +341,17 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
-    await supabase.auth.signOut();
+    // [2026-09-08] Forget the cached profile FIRST so a reload — even an
+    // offline one — can never reopen the app as this user (audit #12).
+    try { localStorage.removeItem(CACHED_PROFILE_KEY); } catch { /* ignore */ }
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      // Flaky WiFi: the server call failed, so supabase-js kept the local
+      // session. Drop it locally anyway — the person pressed Log out.
+      await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+      setSession(null);
+      setProfile(null);
+    }
   }
 
   function hasPermission(key) {
@@ -337,7 +361,7 @@ export function AuthProvider({ children }) {
   const isViewOnly = !!profile?.view_only;
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission, isViewOnly }}>
+    <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission, isViewOnly, passwordRecovery }}>
       {children}
     </AuthContext.Provider>
   );

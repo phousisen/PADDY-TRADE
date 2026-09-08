@@ -1604,8 +1604,13 @@ export function setTicketTareOffline(id, { tareKg, userId }) {
 // numbers (the exact same math FinalizeModal already previews) and queue
 // the real save for later. Once synced, the permanent server copy has
 // this same id, so nothing about the receipt has to change.
-export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl }) {
+export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPhotoUrl, paymentStatus }) {
   assertNotViewOnly();
+  // [2026-09-08] The date/time of THIS save, fixed now, carried in the op
+  // and used by the server — never "now at sync time" (audit #2).
+  const stampedNow = cambodiaNow();
+  txDate = txDate || stampedNow.date;
+  let txTime = stampedNow.time;
   // [2026-09-07] ONE transaction id/code per ticket, for life — remembered
   // on the cached ticket the first time Finish is pressed, and reused by
   // every later press on this device, whatever happened to the queue in
@@ -1663,10 +1668,14 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
     persisted = true; // it's sitting in getQueue(), which reads straight from disk
     finalTransactionId = existingOp.payload.transactionId;
     finalTransactionCode = existingOp.payload.transactionCode;
+    // Keep the FIRST press's date/time — a re-press minutes (or a day)
+    // later is the same save, not a new one.
+    if (existingOp.payload.txDate) txDate = existingOp.payload.txDate;
+    if (existingOp.payload.txTime) txTime = existingOp.payload.txTime;
   } else {
     finalTransactionId = transactionId;
     finalTransactionCode = transactionCode;
-    const enqueued = enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, transactionId, transactionCode, receiptPhotoUrl } });
+    const enqueued = enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, txTime, paymentStatus: paymentStatus || null, transactionId, transactionCode, receiptPhotoUrl } });
     opId = enqueued.opId;
     persisted = enqueued.persisted;
   }
@@ -1764,14 +1773,16 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   return tx;
 
   function buildLocalTransactionRow() {
-  const { date: nowDate, time: nowTime } = cambodiaNow();
   return {
     needs_verification: false,
     id: finalTransactionId,
     code: finalTransactionCode,
     type: ticket.type,
-    tx_date: txDate || nowDate,
-    tx_time: nowTime,
+    tx_date: txDate,
+    tx_time: txTime,
+    // Mirrors api.finalizeTicket: Buy pending; Sell credit unless the
+    // station recorded it paid at the scale (audit #1).
+    payment_status: ticket.type === "BUY" ? "pending" : (ticket.price_per_kg == null ? "credit" : (paymentStatus === "paid" ? "paid" : "credit")),
     // location_id/party_id/product_id: not needed for the receipt itself,
     // but required for the Transactions list — its location filter and
     // per-transaction payment lookups both key off these, same as every

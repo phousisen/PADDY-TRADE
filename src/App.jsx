@@ -29,7 +29,7 @@ import RegistrarShell from "./pages/RegistrarShell.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
 
 export default function App() {
-  const { session, profile, loading, hasPermission, isViewOnly } = useAuth();
+  const { session, profile, loading, hasPermission, isViewOnly, passwordRecovery } = useAuth();
   const { t } = useLanguage();
   const [page, setPage] = useState("dashboard");
   const [selectedLocationId, setSelectedLocationId] = useState(null);
@@ -89,8 +89,17 @@ export default function App() {
   // this browser into a short-lived recovery session itself, so this has
   // to work whether or not this browser was already signed in as someone
   // else, and without waiting on the normal profile load.
+  // [2026-09-08] Only for a browser that actually arrived via a recovery /
+  // invite link. Before this, typing ?setpassword=1 on a station PC that
+  // stays logged in changed the station account's password with no old
+  // password asked (audit #7).
   if (regParams.get("setpassword") === "1") {
-    return <SetPassword />;
+    if (passwordRecovery) return <SetPassword />;
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50 p-6 text-center text-sm text-slate-500">
+        This link is only valid when opened from a password-reset or invite email. To change your own password, use the account menu at the top right.
+      </div>
+    );
   }
 
   if (loading) {
