@@ -1342,7 +1342,10 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   // [2026-09-08] Sell only: was the buyer's money received right here at
   // the scale? Default is NO (credit — still owed). Sells used to be saved
   // as "paid" with no payment behind them (audit #1).
-  const [sellPaidNow, setSellPaidNow] = useState(false);
+  // [2026-09-08] Sell only. Default YES — the buyer normally pays when the
+  // truck leaves. Staff only touch this on the exception. (Was two equal
+  // buttons defaulting to "credit"; simplified per the station's feedback.)
+  const [sellPaidNow, setSellPaidNow] = useState(true);
   const [bankIsOther, setBankIsOther] = useState(false);
   const [bankAccount, setBankAccount] = useState("");
   const [bankQrUrl, setBankQrUrl] = useState(null);
@@ -1715,17 +1718,26 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
             <div><NewTicketFieldLabel icon="🔢" en="Bank Account" km="លេខគណនីធនាគារ" lang={lang} /><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={fieldCls} /></div>
           </div>
           {!isBuy && !priceNotGiven && (
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setSellPaidNow(false)}
-                className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm ${!sellPaidNow ? "border-amber-400 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-600"}`}>
-                <div className="font-bold">{lang === "km" ? "នៅជំពាក់ (ឥណទាន)" : "Still owed (credit)"}</div>
-                <div className="text-[11px] opacity-80">{lang === "km" ? "អ្នកទិញមិនទាន់បង់ប្រាក់ទេ — HQ កត់ត្រាការទូទាត់នៅពេលក្រោយ" : "Buyer has not paid yet — HQ records the payment later"}</div>
-              </button>
-              <button type="button" onClick={() => setSellPaidNow(true)}
-                className={`rounded-lg border-2 px-3 py-2.5 text-left text-sm ${sellPaidNow ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-600"}`}>
-                <div className="font-bold">{lang === "km" ? "បានបង់ប្រាក់រួចហើយ" : "Paid in full now"}</div>
-                <div className="text-[11px] opacity-80">{lang === "km" ? "ទទួលប្រាក់ពេញនៅទីនេះ — កត់ត្រាជាការទូទាត់" : "Full amount received here — recorded as a payment"}</div>
-              </button>
+            <div className="mt-3 rounded-lg border-2 border-slate-200 bg-slate-50 p-3">
+              <label className="flex cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={sellPaidNow}
+                  onChange={(e) => setSellPaidNow(e.target.checked)}
+                  className="mt-0.5 h-6 w-6 shrink-0 rounded border-slate-400 text-emerald-600 focus:ring-emerald-400"
+                />
+                <span>
+                  <span className="block text-[15px] font-bold text-slate-800">
+                    {lang === "km" ? "អ្នកទិញបានបង់ប្រាក់រួចហើយ" : "Buyer has paid"}
+                    {lang === "km" ? <span className="ml-1 font-normal text-slate-500">Buyer has paid</span> : <span className="ml-1 font-khmer font-normal text-slate-500">អ្នកទិញបានបង់ប្រាក់រួចហើយ</span>}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    {sellPaidNow
+                      ? (lang === "km" ? "បានទទួលប្រាក់ពេញ — នឹងកត់ត្រាការទូទាត់ដោយស្វ័យប្រវត្តិ" : "Money received in full — the payment is recorded automatically.")
+                      : (lang === "km" ? "មិនទាន់បានទទួលប្រាក់ទេ — នឹងបង្ហាញថាអ្នកទិញនៅជំពាក់" : "Not received yet — this sale will show as still owed by the buyer.")}
+                  </span>
+                </span>
+              </label>
             </div>
           )}
           {isBuy && bankName && bankName !== "Cash" && (
