@@ -3,6 +3,9 @@ import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
+// [2026-09-09] Marks a figure that was corrected after the ticket was
+// finished, so it no longer looks identical to one straight off the scale.
+import EditedBadge from "../components/EditedBadge.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -1284,6 +1287,12 @@ export default function Transactions({ setPage }) {
   const isAdmin = profile?.role === "admin";
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
+  // [2026-09-09] { transactionId: { edit_count, last_changed_at } } for the
+  // "edited" badge. Loaded separately from the list and allowed to fail —
+  // api.getTransactionEdits() returns {} rather than throwing, so a station
+  // whose database does not have v_transaction_edits yet simply sees no
+  // badges instead of a broken Transactions screen.
+  const [edits, setEdits] = useState({});
   // Section 37: some station PCs' mouse/trackpad can't scroll the table
   // sideways at all (no horizontal scroll wheel, no two-finger swipe), so
   // there was no way to reach the Print button even though the table is
@@ -1423,6 +1432,10 @@ export default function Transactions({ setPage }) {
       setRows(mergeServerTransactions(txData));
       setPayments(mergeServerPayments(payData));
       setLoadError(false);
+      // Badge data, deliberately AFTER the list is on screen and not inside
+      // the Promise.all above: it is decoration on top of the numbers, and
+      // it must never delay or fail the load of the numbers themselves.
+      api.getTransactionEdits().then(setEdits).catch(() => setEdits({}));
     } catch (err) {
       // Most likely this device has no real internet right now (or has
       // WiFi but can't actually reach the server — same thing from here).
@@ -2015,7 +2028,10 @@ export default function Transactions({ setPage }) {
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
                     <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? "Buyer" : "Seller"}: {tx.recorded_by_name}</p>}</td>
-                    <td className="px-3 py-3 text-slate-700">{fmt2(tx.quantity_kg)}</td>
+                    <td className="px-3 py-3 text-slate-700">
+                      {fmt2(tx.quantity_kg)}
+                      {edits[tx.id] && <EditedBadge transactionId={tx.id} editCount={edits[tx.id].edit_count} />}
+                    </td>
                     <td className="px-3 py-3 font-medium text-slate-800">
                       {fmtRiel(tx.total_with_tax ?? tx.amount)}
                       {tx.tax_applicable && <p className="text-[10px] font-normal text-slate-400">incl. {tx.tax_rate}% VAT</p>}
@@ -2123,7 +2139,10 @@ export default function Transactions({ setPage }) {
                           </div>
                           <div>
                             <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Net Weight</p>
-                            <p className="text-sm font-semibold text-slate-800">{fmt2(tx.quantity_kg)} kg</p>
+                            <p className="text-sm font-semibold text-slate-800">
+                              {fmt2(tx.quantity_kg)} kg
+                              {edits[tx.id] && <EditedBadge transactionId={tx.id} editCount={edits[tx.id].edit_count} />}
+                            </p>
                           </div>
                           {(tx.deduction_kg || 0) > 0 && (
                             <>
@@ -2254,7 +2273,10 @@ export default function Transactions({ setPage }) {
                   <div className="mt-2.5 flex gap-2">
                     <div className="rounded-lg bg-slate-50 px-3 py-1.5">
                       <p className="text-[9.5px] font-bold uppercase tracking-wide text-slate-400">{t("word_weight")}</p>
-                      <p className="text-sm font-bold text-slate-800">{fmt2(tx.quantity_kg)} kg</p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {fmt2(tx.quantity_kg)} kg
+                        {edits[tx.id] && <EditedBadge transactionId={tx.id} editCount={edits[tx.id].edit_count} />}
+                      </p>
                     </div>
                     {tx.price_per_kg != null && (
                       <div className="rounded-lg bg-slate-50 px-3 py-1.5">
