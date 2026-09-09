@@ -4,18 +4,21 @@ import {
   getNeedsAttentionTransactions, discardStuckFinalize, discardStuckManualEntry,
   trySync, onSyncStatusChange,
 } from "../offlineQueue.js";
+import { useLanguage } from "../i18n.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return n == null ? "—" : `${new Intl.NumberFormat("en-US").format(Math.round(n))} ៛`; }
-function timeAgo(iso) {
-  if (!iso) return "a moment ago";
+// [2026-09-09] Takes the translator rather than closing over one, because
+// this is a plain function outside the component.
+function timeAgo(t, iso) {
+  if (!iso) return t("na_just_now");
   const ms = Date.now() - new Date(iso).getTime();
   const mins = Math.round(ms / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1) return t("na_just_now");
+  if (mins < 60) return t("na_min_ago", { n: mins });
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
-  return `${Math.round(hrs / 24)} day(s) ago`;
+  if (hrs < 24) return t("na_hr_ago", { n: hrs });
+  return t("na_days_ago", { n: Math.round(hrs / 24) });
 }
 
 // [2026-08-30] "Needs Attention" — direct answer to: what happens to a
@@ -34,6 +37,7 @@ function timeAgo(iso) {
 // which is rendered on every page, so it's never more than one click away
 // regardless of which screen someone happens to be on when they notice.
 export default function NeedsAttentionModal({ onClose }) {
+  const { t } = useLanguage();
   const [items, setItems] = useState(() => getNeedsAttentionTransactions());
   const [retrying, setRetrying] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(null); // opId awaiting a second tap
@@ -70,9 +74,9 @@ export default function NeedsAttentionModal({ onClose }) {
               <AlertTriangle size={18} />
             </div>
             <div>
-              <h3 className="font-bold">Needs Attention</h3>
+              <h3 className="font-bold">{t("na_title")}</h3>
               <p className="mt-0.5 text-xs opacity-85">
-                {items.length === 0 ? "Nothing waiting right now." : `${items.length} not yet confirmed saved to PaddyTrade's shared database.`}
+                {items.length === 0 ? t("na_nothing") : t("na_subtitle", { n: items.length })}
               </p>
             </div>
           </div>
@@ -80,20 +84,20 @@ export default function NeedsAttentionModal({ onClose }) {
         </div>
 
         <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-5 py-2.5">
-          <p className="text-xs text-slate-500">Every field below is exactly what was saved — nothing here needs to be typed again.</p>
+          <p className="text-xs text-slate-500">{t("na_every_field")}</p>
           <button
             onClick={retryNow}
             disabled={retrying}
             className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
           >
-            <RefreshCw size={12} className={retrying ? "animate-spin" : ""} /> {retrying ? "Retrying…" : "Retry All Now"}
+            <RefreshCw size={12} className={retrying ? "animate-spin" : ""} /> {retrying ? t("na_retrying") : t("na_retry_all")}
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
           {items.length === 0 ? (
             <div className="py-14 text-center text-sm text-slate-400">
-              Nothing on this device is waiting to reach the shared database right now.
+              {t("na_nothing_device")}
             </div>
           ) : (
             <div className="space-y-3">
@@ -115,35 +119,35 @@ export default function NeedsAttentionModal({ onClose }) {
                           {tx.paper_ticket_no && <span className="text-xs text-slate-400">{tx.code}</span>}
                         </div>
                         <div className="mt-1 flex items-center gap-1 text-[11px] text-slate-400">
-                          <Clock size={11} /> queued {timeAgo(item.queuedAt)}
-                          {item.attempts > 0 && ` · tried ${item.attempts} time${item.attempts === 1 ? "" : "s"}`}
+                          <Clock size={11} /> {t("na_queued", { when: timeAgo(t, item.queuedAt) })}
+                          {item.attempts > 0 && ` · ${t("na_tried", { n: item.attempts })}`}
                         </div>
                       </div>
                       {item.isStuck ? (
-                        <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[10.5px] font-bold text-white">STUCK — needs a decision</span>
+                        <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[10.5px] font-bold text-white">{t("na_status_stuck")}</span>
                       ) : (
-                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">Waiting to sync</span>
+                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10.5px] font-bold text-amber-700">{t("na_status_waiting")}</span>
                       )}
                     </div>
 
                     {item.isStuck && item.lastError && (
                       <div className="mt-2 rounded-lg bg-rose-100 px-2.5 py-1.5 text-[11px] font-medium text-rose-700">
-                        Reason from the server: "{item.lastError}"
+                        {t("na_reason_from_server", { msg: item.lastError })}
                       </div>
                     )}
 
                     {/* Full saved detail — this is the part that means nothing
                         ever has to be retyped from a paper copy. */}
                     <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3">
-                      <div><span className="text-slate-400">Party</span><div className="font-semibold text-slate-700">{tx.partyName || "—"}</div></div>
-                      <div><span className="text-slate-400">Product</span><div className="font-semibold text-slate-700">{tx.product_name || "—"}</div></div>
-                      <div><span className="text-slate-400">Station</span><div className="font-semibold text-slate-700">{tx.stationName || "—"}</div></div>
-                      <div><span className="text-slate-400">Net Weight</span><div className="font-semibold text-slate-700">{fmt2(tx.quantity_kg)} kg</div></div>
-                      <div><span className="text-slate-400">Price / kg</span><div className="font-semibold text-slate-700">{tx.price_per_kg != null ? fmtRiel(tx.price_per_kg) : "—"}</div></div>
-                      <div><span className="text-slate-400">Amount</span><div className="font-semibold text-slate-700">{fmtRiel(tx.total_with_tax ?? tx.amount)}</div></div>
-                      <div><span className="text-slate-400">Truck Plate</span><div className="font-semibold text-slate-700">{tx.car_plate || "—"}</div></div>
-                      <div><span className="text-slate-400">Date</span><div className="font-semibold text-slate-700">{tx.tx_date || "—"}</div></div>
-                      <div><span className="text-slate-400">Recorded By</span><div className="font-semibold text-slate-700">{tx.recorded_by_name || "—"}</div></div>
+                      <div><span className="text-slate-400">{t("na_party")}</span><div className="font-semibold text-slate-700">{tx.partyName || "—"}</div></div>
+                      <div><span className="text-slate-400">{t("product")}</span><div className="font-semibold text-slate-700">{tx.product_name || "—"}</div></div>
+                      <div><span className="text-slate-400">{t("na_station")}</span><div className="font-semibold text-slate-700">{tx.stationName || "—"}</div></div>
+                      <div><span className="text-slate-400">{t("net_weight")}</span><div className="font-semibold text-slate-700">{fmt2(tx.quantity_kg)} kg</div></div>
+                      <div><span className="text-slate-400">{t("price_per_kg")}</span><div className="font-semibold text-slate-700">{tx.price_per_kg != null ? fmtRiel(tx.price_per_kg) : "—"}</div></div>
+                      <div><span className="text-slate-400">{t("na_amount")}</span><div className="font-semibold text-slate-700">{fmtRiel(tx.total_with_tax ?? tx.amount)}</div></div>
+                      <div><span className="text-slate-400">{t("na_truck_plate")}</span><div className="font-semibold text-slate-700">{tx.car_plate || "—"}</div></div>
+                      <div><span className="text-slate-400">{t("na_date")}</span><div className="font-semibold text-slate-700">{tx.tx_date || "—"}</div></div>
+                      <div><span className="text-slate-400">{t("recorded_by_label")}</span><div className="font-semibold text-slate-700">{tx.recorded_by_name || "—"}</div></div>
                     </div>
 
                     {/* [2026-09-07] Finish Ticket attempts no longer get a
@@ -158,7 +162,7 @@ export default function NeedsAttentionModal({ onClose }) {
                         there is no ticket to re-finish there. */}
                     {item.isStuck && item.opType === "finalizeTicket" && (
                       <div className="mt-3 border-t border-rose-200 pt-2.5 text-xs text-slate-600">
-                        Keep this browser open — it retries on its own every 15 seconds and the station PC is retrying too. Nothing needs to be re-entered. If the reason above is a real data error, tell an admin; do not finish this ticket again.
+                        {t("na_keep_open")}
                       </div>
                     )}
                     {item.isStuck && item.opType !== "finalizeTicket" && (
@@ -166,13 +170,11 @@ export default function NeedsAttentionModal({ onClose }) {
                         {confirmDiscard === item.opId ? (
                           <div className="flex flex-wrap items-center gap-2 text-xs">
                             <span className="font-medium text-rose-700">
-                              {item.opType === "finalizeTicket"
-                                ? "Send this ticket back to the Waiting board? All its weigh-in and price data above stays exactly as entered — nothing is lost, and this stuck attempt is cancelled so it won't also go through later."
-                                : "Remove this stuck attempt? Copy the details above into a new Buy/Sell entry first if this sale is still real — once removed, this exact attempt is gone for good."}
+                              {t(item.opType === "finalizeTicket" ? "na_send_back_confirm" : "na_remove_confirm")}
                             </span>
                             <div className="flex gap-2">
-                              <button onClick={() => discard(item)} className="rounded-lg bg-rose-600 px-2.5 py-1 font-semibold text-white hover:bg-rose-700">Yes, do it</button>
-                              <button onClick={() => setConfirmDiscard(null)} className="rounded-lg border border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50">Cancel</button>
+                              <button onClick={() => discard(item)} className="rounded-lg bg-rose-600 px-2.5 py-1 font-semibold text-white hover:bg-rose-700">{t("na_yes_do_it")}</button>
+                              <button onClick={() => setConfirmDiscard(null)} className="rounded-lg border border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
                             </div>
                           </div>
                         ) : (
@@ -181,7 +183,7 @@ export default function NeedsAttentionModal({ onClose }) {
                             className="flex items-center gap-1.5 rounded-lg border border-rose-300 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50"
                           >
                             {item.opType === "finalizeTicket" ? <Undo2 size={12} /> : <Trash2 size={12} />}
-                            {item.opType === "finalizeTicket" ? "Send back to Waiting board instead" : "Remove this stuck attempt"}
+                            {t(item.opType === "finalizeTicket" ? "na_send_back_instead" : "na_remove")}
                           </button>
                         )}
                       </div>
