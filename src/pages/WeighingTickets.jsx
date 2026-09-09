@@ -1513,7 +1513,31 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // No date picker here on purpose — this is finalized the moment the
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
-      const sellPaymentStatus = !isBuy && !priceNotGiven && sellPaidNow ? "paid" : undefined;
+      // [2026-09-09] THE BUG THIS FIXES.
+      //
+      // This line used to read `!isBuy && ...`, so the whole payment path
+      // below was for SELLS only. A purchase finished at the weighbridge
+      // printed a receipt, the farmer took the cash, and NOTHING recorded
+      // that the money had left. 1,521 of 2,430 purchases ended up with no
+      // payment row, and ~5.34 billion riel of money already handed over sat
+      // on the dashboard as "owed to farmers".
+      //
+      // It went unnoticed because the manual New Buy form (TransactionForm)
+      // always did write the payment row — so the behaviour differed
+      // depending on which screen the purchase came in through, and only the
+      // busy one was wrong.
+      //
+      // SISEN confirmed on 09/09: a farmer is paid at the station once the
+      // final receipt is printed. So a finished BUY is a paid BUY, and the
+      // payment is recorded here the same way a sell's is. There is no
+      // checkbox for it deliberately — asking staff a question whose answer
+      // is always "yes" is how the answer stops being read.
+      // A BUY cannot reach this line without a price (guarded above), and the
+      // "no price yet" checkbox is a sell-only control — so a finished
+      // purchase is always a paid purchase. The `tx.amount > 0` test below
+      // still guards against writing a zero-riel payment.
+      const isPaidNow = isBuy ? true : (!priceNotGiven && sellPaidNow);
+      const paymentStatusNow = isPaidNow ? "paid" : undefined;
       // [2026-09-09] txDate: the day this load actually belongs to. Normally
       // undefined, and finalizeTicketOffline stamps today as it always has.
       // Set only when staff confirmed on the previous screen that the truck
@@ -1522,26 +1546,27 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       const tx = await finalizeTicketOffline(tareUpdated, {
         userId: session.user.id,
         receiptPhotoUrl,
-        paymentStatus: sellPaymentStatus,
+        paymentStatus: paymentStatusNow,
         ...(ticket.backdatedTo ? { txDate: ticket.backdatedTo } : {}),
       });
       // [2026-09-08] Money received at the scale is a real payment row —
       // the same thing the manual New Sell form does — so Cash Flow and
       // Receivables see it, not just a label (audit #1).
-      if (sellPaymentStatus === "paid" && Number(tx.amount) > 0) {
+      if (paymentStatusNow === "paid" && Number(tx.amount) > 0) {
         const paid = createPaymentOffline({
-          type: "receive_customer",
+          // A purchase pays the farmer; a sale collects from the buyer.
+          type: isBuy ? "pay_supplier" : "receive_customer",
           transactionId: tx.id,
           locationId: tx.location_id,
           amount: Number(tx.total_with_tax ?? tx.amount),
           method: bankName && bankName !== "Cash" ? "bank" : "cash",
           payDate: tx.tx_date,
-          memo: "Paid at time of sale (Finish Ticket)",
+          memo: isBuy ? "Paid at time of purchase (Finish Ticket)" : "Paid at time of sale (Finish Ticket)",
           userId: session.user.id,
         });
         logAuditOffline({
           action: "record_payment", tableName: "payments", recordId: paid.id,
-          newData: { amount: Number(tx.total_with_tax ?? tx.amount), method: bankName && bankName !== "Cash" ? "bank" : "cash", memo: "Paid at time of sale (Finish Ticket)", code: tx.code, partyName: tx.partyName, txType: tx.type },
+          newData: { amount: Number(tx.total_with_tax ?? tx.amount), method: bankName && bankName !== "Cash" ? "bank" : "cash", memo: isBuy ? "Paid at time of purchase (Finish Ticket)" : "Paid at time of sale (Finish Ticket)", code: tx.code, partyName: tx.partyName, txType: tx.type },
           userId: session.user.id,
         });
       }
