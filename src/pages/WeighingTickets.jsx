@@ -347,7 +347,7 @@ function SanityWarningModal({ warning, onBack, onConfirm, confirming }) {
 
 function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated, initialType }) {
   const [type] = useState(initialType || "BUY");
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   const [locationId, setLocationId] = useState(defaultLocationId || "");
   const [partyName, setPartyName] = useState("");
   const [phone, setPhone] = useState("");
@@ -695,7 +695,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     // custom type someone adds later) use a bag count instead, which is
     // optional — a station may just not have counted bags for every load.
     if (vehicleType === "Truck" && !vehicleValue.trim()) {
-      setError("Please enter the truck's plate number.");
+      setError(t("err_need_plate"));
       return;
     }
     if (!recordedByName.trim()) {
@@ -705,11 +705,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     // Now required on both Buy and Sell — the paper quality-ticket booklet
     // number, per explicit request.
     if (!paperTicketNo.trim()) {
-      setError("Please enter the number printed on the paper quality ticket.");
+      setError(t("err_need_paper_ticket"));
       return;
     }
     if (!kg || kg <= 0) {
-      setError("Please enter the truck's gross (loaded) weight.");
+      setError(t("err_need_gross"));
       return;
     }
     // Entry sanity check. [2026-09-03] Used to only read this device's
@@ -1053,6 +1053,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
 // only Admin/Owner can type a weight in by hand; everyone else can only
 // re-capture it live off the scale, exactly like at weigh-in).
 function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
+  const { t } = useLanguage();
   const isBuy = ticket.type === "BUY";
   const [partyName, setPartyName] = useState(ticket.party_name || "");
   const [phone, setPhone] = useState(ticket.phone || "");
@@ -1138,12 +1139,12 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
     // field above used to only exist for Buy, so this used to only ever
     // check Buy tickets.
     if (!paperTicketNo.trim()) {
-      setError("Please enter the number printed on the paper quality ticket.");
+      setError(t("err_need_paper_ticket"));
       return;
     }
     const kg = grossWeight === "" ? null : parseFloat(grossWeight);
     if (grossWeight !== "" && (!kg || kg <= 0)) {
-      setError("Gross weight must be a positive number.");
+      setError(t("err_gross_positive"));
       return;
     }
     // Same live-server-first, cache-fallback check as New Ticket — see the
@@ -1300,7 +1301,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   // keys, and New Ticket's own "ផលិតផល"/"empty truck"/"loaded truck"
   // wording) rather than inventing new ones, so nothing here contradicts
   // what staff already read on the New Ticket form or a printed receipt.
-  const { lang } = useLanguage();
+  const { lang, t } = useLanguage();
   // Sell only — the paddy type being sold is now picked here instead of at
   // New Ticket (see NewTicketModal's own comment on this), since a Sell
   // draws from stock rather than creating it, so it makes more sense to
@@ -1439,12 +1440,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     // isn't settled yet at this point — the ticket can be finished with
     // price left blank (0), and corrected later from the Transactions
     // list once it's actually agreed.
-    if (isBuy && !pricePerKg) { setError("Please enter the price that was agreed on the paper ticket."); return; }
+    if (isBuy && !pricePerKg) { setError(t("err_need_price")); return; }
     // Sell only — New Ticket no longer asks for the paddy type (see
     // NewTicketModal), so it has to be chosen here before a sale can
     // actually finish.
-    if (!isBuy && !productName.trim()) { setError("Please select which paddy type is being sold."); return; }
-    if (!tareKg || tareKg <= 0) { setError(isBuy ? "Please enter the empty truck's weight." : "Please enter the loaded truck's weight."); return; }
+    if (!isBuy && !productName.trim()) { setError(t("err_need_paddy_type")); return; }
+    if (!tareKg || tareKg <= 0) { setError(t(isBuy ? "err_need_tare_buy" : "err_need_tare_sell")); return; }
     // [2026-09-07] Jomnoum CN 000261: a Sell was finished with the "empty"
     // weigh-in at 53,500 kg and the "loaded" weigh-out at 19,720 kg — the
     // two weights the wrong way round — and the app quietly saved a
@@ -1456,9 +1457,11 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       const grossKgNow = parseFloat(ticket.gross_kg) || 0;
       const netNow = isBuy ? grossKgNow - tareKg : tareKg - grossKgNow;
       if (netNow <= 0) {
-        setError(isBuy
-          ? `The empty truck (${tareKg.toLocaleString()} kg) cannot weigh as much as or more than the loaded truck (${grossKgNow.toLocaleString()} kg) — the net weight would be ${netNow.toLocaleString()} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.`
-          : `The loaded truck (${tareKg.toLocaleString()} kg) must weigh more than it did empty (${grossKgNow.toLocaleString()} kg) — the net weight would be ${netNow.toLocaleString()} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.`);
+        setError(t(isBuy ? "err_weight_buy" : "err_weight_sell", {
+          tare: tareKg.toLocaleString(),
+          gross: grossKgNow.toLocaleString(),
+          net: netNow.toLocaleString(),
+        }));
         return;
       }
     }
@@ -1950,6 +1953,7 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
 // keeping only its original weigh-in, so it can be finished again against
 // the right truck. See api.js's reopenTicket for exactly what's reset.
 function ReopenTicketModal({ ticket, onClose, onReopened }) {
+  const { t } = useLanguage();
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   // [2026-09-08] The duplicate-number check runs before doSave() sets
@@ -1960,7 +1964,7 @@ function ReopenTicketModal({ ticket, onClose, onReopened }) {
   const { session } = useAuth();
 
   async function submit() {
-    if (!reason.trim()) { setError("Please note why this ticket is being reopened — it's kept in the audit log."); return; }
+    if (!reason.trim()) { setError(t("err_reopen_reason")); return; }
     setError("");
     setSaving(true);
     try {
@@ -2007,6 +2011,7 @@ function ReopenTicketModal({ ticket, onClose, onReopened }) {
 // waiting board, ready to be priced (or declined again) correctly. See
 // api.js's restoreTicket for exactly what's reset.
 function RestoreTicketModal({ ticket, onClose, onRestored }) {
+  const { t } = useLanguage();
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   // [2026-09-08] The duplicate-number check runs before doSave() sets
@@ -2017,7 +2022,7 @@ function RestoreTicketModal({ ticket, onClose, onRestored }) {
   const { session } = useAuth();
 
   async function submit() {
-    if (!reason.trim()) { setError("Please note why this decline is being reversed — it's kept in the audit log."); return; }
+    if (!reason.trim()) { setError(t("err_restore_reason")); return; }
     setError("");
     setSaving(true);
     try {

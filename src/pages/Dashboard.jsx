@@ -89,6 +89,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   const canOpenLocation = isAdmin || isViewOnly;
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -97,6 +98,10 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     setLoadError("");
     try {
       const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      // [2026-09-09] Payments, for the money position below. Loaded here but
+      // allowed to fail on its own: the dashboard is the first thing anyone
+      // opens, and a missing money tile is far better than a blank page.
+      api.getPayments().then(setPayments).catch(() => setPayments([]));
       // A request that raced ahead of the auth session fully attaching
       // (weak station WiFi, right after login/reload) can come back
       // empty — RLS quietly filters everything out instead of erroring —
@@ -182,6 +187,32 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // This one is deliberately NOT period-filtered — it's the real running
   // total on hand right now, not "how much moved during the period".
   const netStockKg = locations.reduce((s, l) => s + Number(l.current_stock_kg), 0);
+
+  // [2026-09-09] The money position. The dashboard showed rice and activity
+  // but never money — you could see 111 tonnes on hand and have no idea
+  // whether you owed farmers 300 million or were owed it by buyers.
+  //
+  // Deliberately ALL-TIME, not the selected period: a debt does not stop
+  // existing because you changed the date filter to "Today". Same arithmetic
+  // as the Transactions list (remainingByTx), and voided payments are
+  // already excluded by api.getPayments.
+  const moneyPosition = useMemo(() => {
+    const paidFor = {};
+    payments.forEach((p) => {
+      if (!p.transaction_id) return;
+      paidFor[p.transaction_id] = (paidFor[p.transaction_id] || 0) + Number(p.amount || 0);
+    });
+    let owedToFarmers = 0, owedByBuyers = 0;
+    txs.forEach((tx) => {
+      const total = Number(tx.total_with_tax ?? tx.amount ?? 0);
+      if (total <= 0) return;                       // an unpriced sale owes nothing yet
+      const outstanding = total - (paidFor[tx.id] || 0);
+      if (outstanding <= 0.01) return;
+      if (tx.type === "BUY") owedToFarmers += outstanding;
+      else owedByBuyers += outstanding;
+    });
+    return { owedToFarmers, owedByBuyers, net: owedByBuyers - owedToFarmers };
+  }, [txs, payments]);
 
   const locationPerformance = useMemo(() => {
     return locations.map((loc) => {
@@ -295,6 +326,35 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_tx_count", { n: periodTxs.length, range: rangeLabel })}</p>
           </div>
         </div>
+
+        {/* [2026-09-09] Money position — deliberately its own row rather than
+            a fifth KPI tile. The row above is about rice moving; this is
+            about money outstanding, and the two answer different questions.
+            All-time, not period-filtered: a debt does not disappear because
+            the date filter says "Today". */}
+        {(moneyPosition.owedToFarmers > 0.01 || moneyPosition.owedByBuyers > 0.01) && (
+          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:gap-4">
+            <div className="rounded-2xl border border-gold-200 bg-gold-50/60 p-3.5 lg:p-5">
+              <p className="text-[10.5px] font-medium leading-tight text-gold-800 lg:text-xs">{t("dash_owed_to_farmers")}</p>
+              <p className="mt-1 text-lg font-extrabold tracking-tight text-gold-900 lg:mt-1.5 lg:text-2xl">{fmtRiel(moneyPosition.owedToFarmers)}</p>
+              <p className="mt-0.5 text-[9.5px] leading-tight text-gold-700/70 lg:mt-1 lg:text-[11px]">{t("dash_money_all_time")}</p>
+            </div>
+            <div className="rounded-2xl border border-brand-200 bg-brand-50/60 p-3.5 lg:p-5">
+              <p className="text-[10.5px] font-medium leading-tight text-brand-800 lg:text-xs">{t("dash_owed_by_buyers")}</p>
+              <p className="mt-1 text-lg font-extrabold tracking-tight text-brand-900 lg:mt-1.5 lg:text-2xl">{fmtRiel(moneyPosition.owedByBuyers)}</p>
+              <p className="mt-0.5 text-[9.5px] leading-tight text-brand-700/70 lg:mt-1 lg:text-[11px]">{t("dash_money_all_time")}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
+              <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_money_net")}</p>
+              <p className={`mt-1 text-lg font-extrabold tracking-tight lg:mt-1.5 lg:text-2xl ${moneyPosition.net < 0 ? "text-gold-800" : "text-brand-700"}`}>
+                {moneyPosition.net < 0 ? "−" : ""}{fmtRiel(Math.abs(moneyPosition.net))}
+              </p>
+              <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">
+                {moneyPosition.net < 0 ? t("dash_money_net_out") : t("dash_money_net_in")}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* [2026-08-31] Same fix as the KPI row above — grid-cols-1 lg:grid-cols-3
             instead of a flat grid-cols-3, so Location Performance and Live
