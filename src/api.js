@@ -1603,6 +1603,63 @@ const rawApi = {
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
+  // [2026-09-09] Monthly close — the four calls behind the Monthly Close panel
+  // in SettingsPage.jsx. All four are thin wrappers over database functions
+  // (period_lock_COMPLETE_2026-09-09.sql); none of the rules live here, so
+  // closing from this screen and closing from the SQL editor behave
+  // identically and cannot drift apart.
+  //
+  // Note the naming: getPeriodStatus starts with "get" so a view-only account
+  // can still READ which months are closed (api.js's proxy allows get*),
+  // while closePeriod / reopenPeriod do not, so it cannot close or reopen.
+  async getPeriodStatus() {
+    const [{ data: closedThrough, error: e1 }, { data: history, error: e2 }] = await Promise.all([
+      supabase.rpc("current_closed_through"),
+      supabase.from("period_locks").select("*").order("id", { ascending: false }).limit(24),
+    ]);
+    if (e1) throw e1;
+    if (e2) throw e2;
+    // created_by is a bare uuid — period_locks has no foreign key to profiles,
+    // deliberately, so a close survives the deletion of whoever made it.
+    const ids = [...new Set((history || []).map((h) => h.created_by).filter(Boolean))];
+    let names = {};
+    if (ids.length) {
+      const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      names = Object.fromEntries((profs || []).map((p) => [p.id, p.full_name]));
+    }
+    return {
+      closedThrough: closedThrough || null,
+      history: (history || []).map((h) => ({
+        ...h,
+        userName: h.created_by ? (names[h.created_by] || "—") : "SQL editor",
+      })),
+    };
+  },
+
+  // Read-only. Returns the FIX FIRST / HAVE A LOOK / READY rows for a period.
+  async getPeriodCheck(fromDate, toDate) {
+    const { data, error } = await supabase.rpc("period_ready_check", { p_from: fromDate, p_to: toDate });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // The database refuses this if the period still has FIX FIRST problems,
+  // unless force is true — and records what was closed over when it is. That
+  // rule is not repeated here on purpose: one owner for it, in the database.
+  async closePeriod({ through, reason, force = false }) {
+    const { data, error } = await supabase.rpc("close_period", {
+      p_through: through, p_reason: reason || null, p_force: !!force,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async reopenPeriod({ backTo, reason }) {
+    const { data, error } = await supabase.rpc("reopen_period", { p_back_to: backTo, p_reason: reason });
+    if (error) throw error;
+    return data;
+  },
+
   // [2026-09-09] Data Check — the two reads behind DataCheck.jsx.
   //
   // Why this page exists: on 07/09 Jomnoum's CN 000261 finished with the
