@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity, ChevronRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity, ChevronRight, Wallet } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import { cashOnHand } from "../cashDirection.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
@@ -214,6 +215,18 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     return { owedToFarmers, owedByBuyers, net: owedByBuyers - owedToFarmers };
   }, [txs, payments]);
 
+  // [2026-09-09] Cash in hand — what has actually been received minus what
+  // has actually been paid out, from every recorded payment. Computed by the
+  // same shared table the Cash Flow report's running balance uses
+  // (src/cashDirection.js), so the two can never quietly disagree.
+  //
+  // It sits beside the two "owed" figures on purpose: those three numbers are
+  // the whole money question. What we hold, what we owe, what is owed to us.
+  // A big "owed by buyers" next to a small "cash in hand" is exactly the
+  // situation worth seeing at a glance, and nothing on this screen said it
+  // before.
+  const cash = useMemo(() => cashOnHand(payments), [payments]);
+
   const locationPerformance = useMemo(() => {
     return locations.map((loc) => {
       const locPeriod = periodTxs.filter((t) => t.location_id === loc.id);
@@ -332,8 +345,21 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             about money outstanding, and the two answer different questions.
             All-time, not period-filtered: a debt does not disappear because
             the date filter says "Today". */}
-        {(moneyPosition.owedToFarmers > 0.01 || moneyPosition.owedByBuyers > 0.01) && (
-          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3 lg:gap-4">
+        {(moneyPosition.owedToFarmers > 0.01 || moneyPosition.owedByBuyers > 0.01 || Math.abs(cash.net) > 0.01) && (
+          <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
+            {/* Cash first — it is the one figure that answers "can we pay for
+                the next truck?", which is the question the other two only
+                give context to. */}
+            <div className="rounded-2xl border-2 border-slate-300 bg-white p-3.5 shadow-sm lg:p-5">
+              <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-slate-100 text-slate-600 lg:mb-3 lg:h-9 lg:w-9"><Wallet size={15} /></div>
+              <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_cash_in_hand")}</p>
+              <p className={`mt-1 text-lg font-extrabold tracking-tight lg:mt-1.5 lg:text-2xl ${cash.net < 0 ? "text-rose-700" : "text-slate-800"}`}>
+                {cash.net < 0 ? "−" : ""}{fmtRiel(Math.abs(cash.net))}
+              </p>
+              <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">
+                {t("dash_cash_from_payments", { in: fmtRiel(cash.inflow), out: fmtRiel(cash.outflow) })}
+              </p>
+            </div>
             <div className="rounded-2xl border border-gold-200 bg-gold-50/60 p-3.5 lg:p-5">
               <p className="text-[10.5px] font-medium leading-tight text-gold-800 lg:text-xs">{t("dash_owed_to_farmers")}</p>
               <p className="mt-1 text-lg font-extrabold tracking-tight text-gold-900 lg:mt-1.5 lg:text-2xl">{fmtRiel(moneyPosition.owedToFarmers)}</p>

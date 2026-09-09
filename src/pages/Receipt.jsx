@@ -65,6 +65,11 @@ function ddmmyyyy(dateStr) {
 // just prints a blank header.
 // ---------------------------------------------------------------------------
 function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
+  // [2026-09-09] Only the NOT-CONFIRMED band is translated here. The ticket
+  // body itself is a printed legal-ish document with Khmer and English
+  // deliberately side by side on every line; that stays as it is. The band
+  // is the one part that is an instruction to the person holding the paper.
+  const { t } = useLanguage();
   const inStamp = splitCambodiaTimestamp(tx.gross_at);
   const outStamp = splitCambodiaTimestamp(tx.tare_at);
   const hasWeighInOut = tx.gross_kg != null;
@@ -92,7 +97,7 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
       {tx.needs_verification && (
         <div className="verify-band">
           <span className="tri">⚠</span>
-          <span>NOT YET CONFIRMED SAVED — check the Needs Attention panel if this isn't on Transactions soon.</span>
+          <span>{t("sync_not_confirmed")}</span>
         </div>
       )}
       <div className="head">

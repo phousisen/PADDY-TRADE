@@ -6,6 +6,7 @@ import WeightField from "../components/WeightField.jsx";
 import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
+import { errText } from "../errText.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import {
@@ -194,7 +195,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     e.preventDefault();
     setError("");
     const effectiveStationId = isAdmin ? stationId : profile?.location_id;
-    if (!isAdmin && !effectiveStationId) { setError("Your account has no location assigned yet. Ask HQ to assign one to your login."); return; }
+    if (!isAdmin && !effectiveStationId) { setError(t("err_no_location_assigned")); return; }
     // Price is only required for a Buy — it's already agreed with the
     // farmer on the paper ticket by this point. A Sell can be saved with
     // no price yet (the buyer hasn't settled on one), matching Weighing
@@ -202,7 +203,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // Transactions list once it's actually agreed. See finalPricePerKg
     // below for how a blank price is actually stored.
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || (isBuy && !pricePerKg)) { setError(t("required_fields")); return; }
-    if (!txDate) { setError("Please pick a transaction date."); return; }
+    if (!txDate) { setError(t("err_need_tx_date")); return; }
     // Receipt photo is off while testing — no camera on this computer yet.
     // Re-add this check once photos are actually possible.
     setSaving(true);
@@ -361,11 +362,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       });
     } catch (err) {
       const isNetworkError = err.message && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"));
-      setError(
-        isNetworkError
-          ? "Couldn't reach the server — check your connection and try again. Nothing you entered has been lost."
-          : (err.message || String(err))
-      );
+      setError(isNetworkError ? t("err_no_server") : errText(t, err, "err_generic"));
     } finally {
       setSaving(false);
     }

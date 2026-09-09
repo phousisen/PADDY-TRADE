@@ -2,10 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Printer, X, ArrowRight, Ban, Check, Search, Pencil, RotateCcw } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import Topbar from "../components/Topbar.jsx";
+import StationDayClose from "../components/StationDayClose.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
 import { getAccurateNow } from "../supabaseClient.js";
+import { errText } from "../errText.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import {
@@ -688,7 +690,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     // nothing has actually been chosen yet.
     const isBuyTicket = type === "BUY";
     if (!locationId || !partyName.trim() || (isBuyTicket && !productName.trim()) || !vehicleType.trim()) {
-      setError(`Please fill in location, party name, ${isBuyTicket ? "product, " : ""}and vehicle type.`);
+      setError(t(isBuyTicket ? "err_need_ticket_fields_buy" : "err_need_ticket_fields_sell"));
       return;
     }
     // Truck keeps the original required-plate rule. Koyun/Tractor (and any
@@ -699,7 +701,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       return;
     }
     if (!recordedByName.trim()) {
-      setError(`Please enter the name of the ${type === "BUY" ? "buyer" : "seller"} filling in this ticket.`);
+      setError(t(type === "BUY" ? "err_need_recorder_buy" : "err_need_recorder_sell"));
       return;
     }
     // Now required on both Buy and Sell — the paper quality-ticket booklet
@@ -786,7 +788,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setActiveWarning(null);
       onCreated(ticket);
     } catch (err) {
-      setError(err.message || "Something went wrong.");
+      setError(errText(t, err, "err_generic"));
     } finally {
       setSaving(false);
     }
@@ -1131,7 +1133,7 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
   }
   async function submitInner() {
     if (!partyName.trim() || (isBuy && !productName.trim()) || !carPlate.trim()) {
-      setError(isBuy ? "Please fill in party name, product, and plate number." : "Please fill in party name and plate number.");
+      setError(t(isBuy ? "err_need_edit_fields_buy" : "err_need_edit_fields_sell"));
       return;
     }
     // [2026-09-05] Required on both Buy and Sell here too now, matching
@@ -1184,7 +1186,7 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
       setActiveWarning(null);
       onSaved(updated);
     } catch (err) {
-      setError(err.message || "Something went wrong.");
+      setError(errText(t, err, "err_generic"));
     } finally {
       setSaving(false);
     }
@@ -1571,7 +1573,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // Ticket hadn't actually completed. Showing the message here means
       // an ungenerated receipt is now visible and actionable instead of
       // just as though the button never worked.
-      setError(err.message || "Something went wrong finishing this ticket. Please try again.");
+      setError(errText(t, err, "err_finish_failed"));
     } finally {
       setSaving(false);
     }
@@ -1972,7 +1974,7 @@ function ReopenTicketModal({ ticket, onClose, onReopened }) {
       forgetPendingTransaction(ticket.id);
       onReopened();
     } catch (e) {
-      setError(e.message || "Couldn't reopen this ticket — check the connection and try again.");
+      setError(errText(t, e, "err_reopen_failed"));
     } finally {
       setSaving(false);
     }
@@ -2029,7 +2031,7 @@ function RestoreTicketModal({ ticket, onClose, onRestored }) {
       await api.restoreTicket(ticket.id, { userId: session.user.id, reason: reason.trim() });
       onRestored();
     } catch (e) {
-      setError(e.message || "Couldn't restore this ticket — check the connection and try again.");
+      setError(errText(t, e, "err_restore_failed"));
     } finally {
       setSaving(false);
     }
@@ -2445,6 +2447,18 @@ export default function WeighingTickets() {
       </div>
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
+        {/* [2026-09-09] The daily close sits at the top of the board the
+            station already works from, rather than on a screen someone has
+            to remember to visit. Hidden entirely when no single station is
+            selected — "confirm today" has no meaning across five of them at
+            once — and hidden too if the feature is not installed in the
+            database yet. */}
+        {effectiveLocationId && (
+          <StationDayClose
+            locationId={effectiveLocationId}
+            locationName={locations.find((l) => l.id === effectiveLocationId)?.name}
+          />
+        )}
         {tab === "finalized" ? (
           loadingFinalized ? (
             <p className="text-center text-sm text-slate-400">{tr("loading_label")}</p>
@@ -2607,7 +2621,7 @@ export default function WeighingTickets() {
             if (fresh && fresh.some((t) => t.id === confirmFinishTicket.id)) {
               setConfirmFinishTicket(null);
               load({ silent: true });
-              alert("This ticket has already been finished on another device. Print its receipt from the Transactions page instead.");
+              alert(tr("err_already_finished"));
               return;
             }
             // businessDate is set only when staff confirmed this is a late

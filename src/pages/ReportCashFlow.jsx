@@ -5,6 +5,7 @@ import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td } from "../components/ReportUI.jsx";
+import { IS_INFLOW } from "../cashDirection.js";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
@@ -34,17 +35,10 @@ const TYPE_LABELS = {
   loan_out: "Bank loan repaid",
 };
 
-const IS_INFLOW = {
-  pay_supplier: false,
-  receive_customer: true,
-  expense: false,
-  transfer: false,
-  journal: null,
-  capital_in: true,
-  capital_out: false,
-  loan_in: true,
-  loan_out: false,
-};
+// [2026-09-09] Moved to src/cashDirection.js so the dashboard's cash figure
+// and this report's running balance are computed from ONE table. Re-exported
+// under the same name so everything below reads exactly as it did.
+
 
 function AddEntryForm({ profile, onAdd }) {
   const [open, setOpen] = useState(false);
