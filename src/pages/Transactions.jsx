@@ -1106,14 +1106,30 @@ function StationCheckModal({ allRows, locations, onClose }) {
   );
 }
 
+// [2026-09-09] Two changes here, both from the "a cancelled transaction must
+// come to zero in everything" rule:
+//
+//   1. A reason is now required. Cancelling used to leave nothing behind but
+//      a status change — a 30-tonne purchase could disappear from the books
+//      with no record of why or who decided.
+//   2. The warning about already-paid money used to say the opposite of what
+//      now happens. Money against a cancelled transaction is voided
+//      automatically by the database (cancel_to_zero_2026-09-09.sql), so it
+//      leaves Cash Flow with the rice instead of staying behind. It is
+//      voided, never deleted, and comes back if the transaction is restored.
 function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm }) {
   const [password, setPassword] = useState("");
+  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
 
   async function submit(e) {
     e.preventDefault();
     setError("");
+    if (!reason.trim()) {
+      setError("Please say why this is being cancelled — it is kept on the record.");
+      return;
+    }
     setChecking(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     setChecking(false);
@@ -1121,7 +1137,7 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
       setError("Incorrect password.");
       return;
     }
-    onConfirm();
+    onConfirm(reason.trim());
   }
 
   return (
@@ -1132,11 +1148,25 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
 
         {alreadyPaid > 0.01 && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
-            {fmtRiel(alreadyPaid)} has already been recorded as paid against this transaction. Cancelling will NOT remove that from Cash Flow — it stays on record as real cash that moved. You may want to record a matching refund entry separately.
+            {fmtRiel(alreadyPaid)} has already been recorded as paid against this transaction. Cancelling removes it from Cash Flow
+            as well, so this transaction comes to zero everywhere. The payment is not deleted — it stays on record, marked as
+            voided, and comes back if this transaction is ever restored. <b>If the money really did leave the business, get it back
+            or record it as an expense</b> — the books will no longer show it.
           </div>
         )}
 
         <form onSubmit={submit}>
+          <label className="mb-1 block text-xs text-slate-500">
+            Why is this being cancelled? <span className="text-rose-500">*</span>
+          </label>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            autoFocus
+            rows={2}
+            placeholder="e.g. Truck turned back — load never delivered"
+            className="mb-3 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+          />
           <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
@@ -1144,7 +1174,7 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
 
           <div className="mt-3 flex justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
-            <button type="submit" disabled={checking || !password} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
+            <button type="submit" disabled={checking || !password || !reason.trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
               {checking ? "Checking..." : "Confirm Cancellation"}
             </button>
           </div>
@@ -1608,21 +1638,28 @@ export default function Transactions({ setPage }) {
     }
   }
 
-  async function confirmCancel() {
+  // [2026-09-09] Takes the reason the modal now requires. The money side is
+  // not done here — the database voids any payment against a cancelled
+  // transaction (cancel_to_zero_2026-09-09.sql), so it holds for a cancel
+  // made through any route, not just this screen. load() afterwards so the
+  // remaining/paid figures on screen reflect the voided payments.
+  async function confirmCancel(reason) {
     const tx = cancelConfirmTx;
     setCancelConfirmTx(null);
     setRows((prev) => prev.map((r) => (r.id === tx.id ? { ...r, hq_status: "cancelled" } : r)));
     try {
-      await api.updateHqStatus(tx.id, "cancelled");
+      await api.updateHqStatus(tx.id, "cancelled", { cancelReason: reason });
       await api.logAudit({
         action: "cancel_transaction",
         tableName: "transactions",
         recordId: tx.id,
         oldData: { hq_status: tx.hq_status || "processing" },
-        newData: { hq_status: "cancelled", code: tx.code, partyName: tx.partyName, amount: tx.amount },
+        newData: { hq_status: "cancelled", code: tx.code, partyName: tx.partyName, amount: tx.amount, cancel_reason: reason || null },
         userId: session.user.id,
       });
     } catch (err) {
+      // fall through to load() — the row's true state comes from the server
+    } finally {
       load();
     }
   }
