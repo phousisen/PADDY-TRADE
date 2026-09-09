@@ -81,10 +81,20 @@ function fmtTimeHM(value) {
   return p ? `${p.hour}:${p.minute}` : "";
 }
 
+// [2026-09-09] Staff Fee / VAT / Total with VAT added for the accountant,
+// who was recalculating all three by hand from the Amount column.
+//
+// They are inserted immediately AFTER "Amount" rather than appended at the
+// end, and that position is deliberate: writeSummaryRow writes its totals
+// into fixed columns 12, 15 and 17 (Net, Actual, Amount). Inserting after
+// column 17 leaves every one of those indices untouched, so the subtotal
+// and grand-total rows keep landing where they should. Inserting anywhere
+// earlier would have silently moved the totals into the wrong columns.
 const HEADERS = ["Coupon No.", "Ticket #", "Truck", "Date In", "Date Out", "Tm in", "Tm Out", "Seller", "Buyer",
-  "W In", "W Out", "Net", "Tare(%)", "Tare Weight", "Actual", "Price", "Amount", "Unit", "Remarks"];
-const COL_WIDTHS = [14, 12, 20, 12, 12, 8, 8, 16, 14, 10, 10, 10, 9, 11, 10, 10, 14, 6, 18];
-const COL_COUNT = HEADERS.length; // 19
+  "W In", "W Out", "Net", "Tare(%)", "Tare Weight", "Actual", "Price", "Amount",
+  "Staff Fee", "VAT", "Total with VAT", "Unit", "Remarks"];
+const COL_WIDTHS = [14, 12, 20, 12, 12, 8, 8, 16, 14, 10, 10, 10, 9, 11, 10, 10, 14, 11, 12, 15, 6, 18];
+const COL_COUNT = HEADERS.length; // derived — do not hardcode
 // 1-indexed column numbers (matches HEADERS order above).
 const DECIMAL_COLS = new Set([10, 11, 12, 13, 14, 15, 16]); // W In..Price
 const INT_COLS = new Set([17]); // Amount (Riel — no cents anywhere else in the app)
@@ -136,6 +146,13 @@ function buildRow(tx) {
     actual,
     round2(tx.price_per_kg),
     round2(tx.amount),
+    // Blank rather than 0 when they do not apply, so a column of zeros does
+    // not read as "VAT was charged and came to nothing".
+    Number(tx.staff_fee || 0) > 0.001 ? round2(tx.staff_fee) : "",
+    tx.tax_applicable ? round2(tx.tax_amount ?? 0) : "",
+    // total_with_tax is a generated column in the database; fall back to
+    // the plain amount for any older row that predates it.
+    round2(tx.total_with_tax ?? tx.amount),
     UNIT_LABEL,
     tx.note || "",
   ];
