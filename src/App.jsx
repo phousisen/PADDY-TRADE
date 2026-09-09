@@ -17,6 +17,7 @@ import Expenses from "./pages/Expenses.jsx";
 import SimpleListPage from "./pages/SimpleListPage.jsx";
 import LocationsPage from "./pages/LocationsPage.jsx";
 import StationHealth from "./pages/StationHealth.jsx";
+import DataCheck from "./pages/DataCheck.jsx";
 import LocationDetail from "./pages/LocationDetail.jsx";
 import PartyDetail from "./pages/PartyDetail.jsx";
 import UsersPage from "./pages/UsersPage.jsx";
@@ -155,7 +156,7 @@ export default function App() {
     if (isStaff && !isViewOnly && (page === "stations" || page === "station-detail" || page === "station-health" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
       return <PermissionDenied />;
     }
-    if (isStaff && (page === "reports" || page === "payments" || page === "expenses") && !canViewReports) {
+    if (isStaff && (page === "reports" || page === "payments" || page === "expenses" || page === "data-check") && !canViewReports) {
       return <PermissionDenied />;
     }
     if (page === "dashboard") return <Dashboard setPage={setPage} setSelectedLocationId={setSelectedLocationId} />;
@@ -173,6 +174,11 @@ export default function App() {
     if (page === "stations") return (isAdmin || isViewOnly) ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
     if (page === "station-detail") return (isAdmin || isViewOnly) ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
     if (page === "station-health") return (isAdmin || isViewOnly) ? <StationHealth /> : <PermissionDenied />;
+    // [2026-09-09] Data Check — same permission as Financial Reports, since
+    // it is the screen finance uses to trust the stock and weight figures
+    // before anything else is believed. See DataCheck.jsx for the CN 000261
+    // story it exists for.
+    if (page === "data-check") return canViewReports ? <DataCheck /> : <PermissionDenied />;
     if (page === "reports") return canViewReports ? <Reports /> : <PermissionDenied />;
     if (page === "payments") return canViewReports ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
     if (page === "expenses") return canViewReports ? <Expenses /> : <PermissionDenied />;

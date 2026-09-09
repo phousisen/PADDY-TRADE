@@ -1572,6 +1572,92 @@ const rawApi = {
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
+  // [2026-09-09] Data Check — the two reads behind DataCheck.jsx.
+  //
+  // Why this page exists: on 07/09 Jomnoum's CN 000261 finished with the
+  // two scale readings in the wrong boxes (the empty weighing was never
+  // taken, so staff put the loaded weight in the first field). The net
+  // computed as -33,780 kg, got clamped to zero, and the station looked
+  // like it still held 33,780 kg of rice it had already shipped. Nobody
+  // could see it for six days — it was only found because the stock
+  // total looked strange.
+  //
+  // The weighing ticket is the physical record: what the scale read, at
+  // the moment the truck was on the bridge. The transaction is a COPY of
+  // it, and everything downstream (stock, receipts, reports) runs on the
+  // copy. v_ticket_mismatches (ticket_mismatch_view_v2.sql) compares the
+  // two and reports three faults — a copy that no longer matches its
+  // ticket, a station weight of exactly zero against a real load, and a
+  // ticket that is impossible on its face. An empty list is the normal
+  // state, which is the only reason a list like this stays worth reading.
+  async getTicketMismatches() {
+    const { data, error } = await supabase
+      .from("v_ticket_mismatches")
+      .select("*")
+      .order("tx_date", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // row_history (row_history_2026-09-09.sql) is the database's own record
+  // of every insert/update/delete on the 15 tables that hold money, weight,
+  // stock and permissions. It is written by a trigger rather than by this
+  // app, so it also captures changes made in the Supabase editor, and it
+  // cannot be edited or deleted by anyone — including this app.
+  //
+  // audit_logs (getAuditLogs above) is a different thing and stays: it
+  // records INTENT ("someone edited a transaction") in the app's own
+  // words. This records FACT — every column, before and after. The weight
+  // fields are not in audit_logs at all, which is exactly why CN 000261's
+  // correction left no trace anywhere.
+  async getRowHistory({ ticketNo, limit = 100 } = {}) {
+    const base = () => supabase
+      .from("row_history")
+      .select("*")
+      .order("changed_at", { ascending: false })
+      .limit(limit);
+
+    let rows = [];
+    const q = (ticketNo || "").trim();
+    if (q) {
+      // Two passes rather than one `or()` filter: paper ticket numbers
+      // contain spaces ("CN 000261"), which PostgREST's or() syntax does
+      // not survive. A delete only has old_data, an insert only new_data,
+      // so both sides have to be asked.
+      const [newSide, oldSide] = await Promise.all([
+        base().eq("new_data->>paper_ticket_no", q),
+        base().eq("old_data->>paper_ticket_no", q),
+      ]);
+      if (newSide.error) throw newSide.error;
+      if (oldSide.error) throw oldSide.error;
+      const seen = new Set();
+      rows = [...(newSide.data || []), ...(oldSide.data || [])].filter((r) => {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        return true;
+      }).sort((a, b) => new Date(b.changed_at) - new Date(a.changed_at));
+    } else {
+      const { data, error } = await base();
+      if (error) throw error;
+      rows = data || [];
+    }
+
+    // changed_by is a plain uuid — row_history has no foreign key to
+    // profiles (deliberately: a history row must survive the deletion of
+    // the user who made it). Names are looked up separately and a missing
+    // one degrades to the raw id rather than failing the whole read.
+    const ids = [...new Set(rows.map((r) => r.changed_by).filter(Boolean))];
+    let names = {};
+    if (ids.length) {
+      const { data: profs } = await supabase.from("profiles").select("id, full_name").in("id", ids);
+      names = Object.fromEntries((profs || []).map((p) => [p.id, p.full_name]));
+    }
+    return rows.map((r) => ({
+      ...r,
+      userName: r.changed_by ? (names[r.changed_by] || "—") : "Database / SQL editor",
+    }));
+  },
+
   async getPayments({ locationId, type } = {}) {
     let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
     if (locationId) query = query.eq("location_id", locationId);
