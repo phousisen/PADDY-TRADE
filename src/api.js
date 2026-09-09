@@ -1387,8 +1387,33 @@ const rawApi = {
     return data;
   },
 
-  async updateHqStatus(id, hqStatus) {
-    const { data, error } = await supabase.from("transactions").update({ hq_status: hqStatus }).eq("id", id).select().single();
+  // [2026-09-09] cancelReason: cancelling used to leave no record of WHY a
+  // transaction was voided, or who decided — a 30-tonne purchase could
+  // vanish from the books with nothing behind it. The reason is now
+  // required by the screen and stored on the row.
+  //
+  // The money side is handled in the database, not here: trg_void_payments_
+  // with_transaction (cancel_to_zero_2026-09-09.sql) voids any payment
+  // against a cancelled transaction and un-voids it if the transaction is
+  // restored, so a cancelled transaction comes to zero in Cash Flow too.
+  // Doing it in the database rather than in this function means it also
+  // holds for a cancel made through Change Requests or the SQL editor.
+  // Nothing is deleted — a voided payment stays on record, greyed out.
+  async updateHqStatus(id, hqStatus, { cancelReason } = {}) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .update({
+        hq_status: hqStatus,
+        // Only sent on the way in to 'cancelled'. Restoring clears it in
+        // the database (trg_stamp_transaction_cancel), so it is not sent
+        // here — that keeps one owner for the field instead of two.
+        ...(hqStatus === "cancelled" && cancelReason !== undefined
+          ? { cancel_reason: (cancelReason || "").trim() || null }
+          : {}),
+      })
+      .eq("id", id)
+      .select()
+      .single();
     if (error) throw error;
     return data;
   },
@@ -1526,12 +1551,18 @@ const rawApi = {
     return data;
   },
 
-  async getPaymentsForTransaction(transactionId) {
-    const { data, error } = await supabase
+  // [2026-09-09] includeVoided: a payment against a cancelled transaction is
+  // voided rather than deleted (cancel_to_zero_2026-09-09.sql). It must not
+  // count towards anything, but it must still be findable — so it is
+  // excluded here by default and can be asked for explicitly.
+  async getPaymentsForTransaction(transactionId, { includeVoided = false } = {}) {
+    let query = supabase
       .from("payments")
       .select("*, profiles(full_name)")
       .eq("transaction_id", transactionId)
       .order("created_at");
+    if (!includeVoided) query = query.is("voided_at", null);
+    const { data, error } = await query;
     if (error) throw error;
     return data.map((p) => ({ ...p, createdByName: p.profiles?.full_name || "—" }));
   },
@@ -1658,8 +1689,14 @@ const rawApi = {
     }));
   },
 
-  async getPayments({ locationId, type } = {}) {
+  // [2026-09-09] Voided payments are excluded here, which is what makes a
+  // cancelled transaction come to zero in Cash Flow. Before this, cancelling
+  // took the rice off the books and left the cash on them — the one report
+  // that didn't already exclude a cancelled transaction, because it reads
+  // payments rather than transactions and a payment had no idea.
+  async getPayments({ locationId, type, includeVoided = false } = {}) {
     let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
+    if (!includeVoided) query = query.is("voided_at", null);
     if (locationId) query = query.eq("location_id", locationId);
     if (type) query = query.eq("type", type);
     const { data, error } = await query;
