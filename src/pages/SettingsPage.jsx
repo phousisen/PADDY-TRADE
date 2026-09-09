@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { Building2, ReceiptText, Wheat, FileText, Check } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+// [2026-09-09] Monthly Close lives in its own component rather than in the
+// FIELD_GROUPS list below: that list is a uniform "labelled text boxes, one
+// Save button" pattern, and this is a different kind of thing entirely —
+// it reads live status, runs a check, and takes two irreversible-ish actions.
+// Forcing it into that shape would have meant bending both.
+import MonthlyClosePanel from "../components/MonthlyClosePanel.jsx";
 import { api } from "../api.js";
 
 const FIELD_GROUPS = [
@@ -105,6 +111,7 @@ export default function SettingsPage() {
           </div>
         ) : (
           <div className="grid max-w-5xl grid-cols-1 gap-5 md:grid-cols-2">
+            <MonthlyClosePanel />
             {FIELD_GROUPS.map((group) => (
               <div key={group.key} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="mb-1 flex items-center gap-2">
