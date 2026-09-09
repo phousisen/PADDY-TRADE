@@ -28,6 +28,10 @@
 import { api } from "./api.js";
 import { ensureFreshSession, getAccurateNow } from "./supabaseClient.js";
 import { assertNotViewOnly } from "./viewOnlyGuard.js";
+// [2026-09-09] Tags an Error with a translation key. The English text still
+// goes on .message, so nothing that already reads .message changes; a screen
+// that calls errText(t, err) gets Khmer instead. See src/errText.js.
+import { tagError } from "./errText.js";
 
 const CACHE_KEY = "ptw_ticket_cache_v1";
 const QUEUE_KEY = "ptw_ticket_queue_v1";
@@ -124,7 +128,14 @@ export function unconfirmedSaveMessage(what, retrySafe) {
   return head + tail;
 }
 function unconfirmedSaveError(what, retrySafe) {
-  return new Error(unconfirmedSaveMessage(what, retrySafe));
+  // [2026-09-09] The English text stays on .message exactly as before, so
+  // nothing that already reads it changes behaviour. The tag lets a screen
+  // that calls errText(t, err) show the same message in Khmer. See
+  // src/errText.js for why it is done this way round.
+  return tagError(new Error(unconfirmedSaveMessage(what, retrySafe)), "err_unconfirmed_head", {
+    whatKey: what === "ticket" ? "err_what_ticket" : "err_what_entry",
+    secs: Math.round(FINISH_SYNC_TIMEOUT_MS / 1000),
+  }, retrySafe ? "err_unconfirmed_retry_safe" : "err_unconfirmed_no_retry");
 }
 
 // ---------------------------------------------------------------------
@@ -1031,7 +1042,7 @@ const SYNC_OP_TIMEOUT_MS = 30000;
 function runOpWithTimeout(op) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error("Timed out waiting for a response — the connection may be too unstable to complete this save right now."));
+      reject(tagError(new Error("Timed out waiting for a response — the connection may be too unstable to complete this save right now."), "err_request_timeout"));
     }, SYNC_OP_TIMEOUT_MS);
     runOp(op).then(
       (value) => { clearTimeout(timer); resolve(value); },
@@ -1681,7 +1692,7 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   }
 
   if (!persisted) {
-    throw new Error("Could not save this ticket on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Finish Ticket again in a moment, or free up space on this device if it keeps happening.");
+    throw tagError(new Error("Could not save this ticket on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Finish Ticket again in a moment, or free up space on this device if it keeps happening."), "err_storage_ticket");
   }
 
   // [2026-09-07] Second copy to the station PC's disk (see relayToStation).
@@ -1889,7 +1900,7 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
     },
   });
   if (!persisted) {
-    throw new Error("Could not save this entry on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Save again in a moment, or free up space on this device if it keeps happening.");
+    throw tagError(new Error("Could not save this entry on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Save again in a moment, or free up space on this device if it keeps happening."), "err_storage_entry");
   }
   // [2026-09-07] Second copy to the station PC's disk — see relayToStation.
   relayToStation("transaction", {
