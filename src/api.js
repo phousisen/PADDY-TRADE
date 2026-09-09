@@ -1698,7 +1698,31 @@ const rawApi = {
   // words. This records FACT — every column, before and after. The weight
   // fields are not in audit_logs at all, which is exactly why CN 000261's
   // correction left no trace anywhere.
-  async getRowHistory({ ticketNo, limit = 100 } = {}) {
+  // [2026-09-09] Which transactions have been corrected since history
+  // recording began. Reads v_transaction_edits (transaction_edits_view_
+  // 2026-09-09.sql), which counts only changes to weight, money or the
+  // business date — a note or plate correction is not worth a badge, and a
+  // cancellation already shows as Cancelled.
+  //
+  // Returns a plain map so the list can look each row up with no extra
+  // work: { [transactionId]: { edit_count, last_changed_at } }.
+  //
+  // Deliberately NOT fatal: a station that has not had this view created
+  // yet, or an older browser tab, gets an empty map and a list with no
+  // badges — the same list it shows today. A missing badge must never
+  // break the Transactions screen.
+  async getTransactionEdits() {
+    const { data, error } = await supabase
+      .from("v_transaction_edits")
+      .select("transaction_id, edit_count, last_changed_at");
+    if (error) {
+      console.warn("[edits] badge data unavailable:", error.message);
+      return {};
+    }
+    return Object.fromEntries((data || []).map((r) => [r.transaction_id, r]));
+  },
+
+  async getRowHistory({ ticketNo, recordId, limit = 100 } = {}) {
     const base = () => supabase
       .from("row_history")
       .select("*")
@@ -1707,7 +1731,13 @@ const rawApi = {
 
     let rows = [];
     const q = (ticketNo || "").trim();
-    if (q) {
+    // recordId wins when given — that is the badge asking "what changed on
+    // THIS transaction", which is exact, rather than a ticket-number search.
+    if (recordId) {
+      const { data, error } = await base().eq("record_id", recordId);
+      if (error) throw error;
+      rows = data || [];
+    } else if (q) {
       // Two passes rather than one `or()` filter: paper ticket numbers
       // contain spaces ("CN 000261"), which PostgREST's or() syntax does
       // not survive. A delete only has old_data, an insert only new_data,
