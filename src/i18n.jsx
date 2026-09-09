@@ -94,6 +94,10 @@ export const translations = {
     offline_banner_short: "Couldn't reach the server just now — showing the last data loaded. Retrying automatically.",
     tx_confirmed: "Confirmed", tx_pending_confirm: "Pending buyer confirmation", tx_excluded: "Excluded from reports",
     tx_due: "{amount} due", tx_settled: "Settled", tx_incl_vat: "incl. {rate}% VAT",
+    // [2026-09-09] An overpayment used to vanish behind "Settled" — the
+    // remaining balance was clamped at zero, so paying a farmer too much
+    // looked exactly like paying him correctly.
+    tx_overpaid: "Overpaid by {amount}",
     weigh_in_label: "Weigh In", weigh_out_label: "Weigh Out", loaded_suffix: "(loaded)", empty_suffix: "(empty)",
     not_recorded: "Not recorded", deduction_label: "Deduction", payable_weight_label: "Payable Weight", recorded_by_label: "Recorded By",
     btn_receipt: "Receipt", btn_photos: "Photos", btn_payments: "Payments", btn_edit: "Edit",
@@ -309,6 +313,7 @@ export const translations = {
     offline_banner_short: "មិនអាចភ្ជាប់ទៅម៉ាស៊ីនមេបានទេពេលនេះ — កំពុងបង្ហាញទិន្នន័យចុងក្រោយ។ កំពុងព្យាយាមម្តងទៀតដោយស្វ័យប្រវត្តិ។",
     tx_confirmed: "បានបញ្ជាក់", tx_pending_confirm: "រង់ចាំការបញ្ជាក់ពីអ្នកទិញ", tx_excluded: "មិនរាប់បញ្ចូលក្នុងរបាយការណ៍",
     tx_due: "{amount} នៅជំពាក់", tx_settled: "បានទូទាត់រួច", tx_incl_vat: "រួមបញ្ចូល VAT {rate}%",
+    tx_overpaid: "បង់លើសចំនួន {amount}",
     weigh_in_label: "ថ្លឹងចូល", weigh_out_label: "ថ្លឹងចេញ", loaded_suffix: "(ដឹកទំនិញ)", empty_suffix: "(ទទេ)",
     not_recorded: "មិនបានកត់ត្រា", deduction_label: "កាត់បន្ថយ", payable_weight_label: "ទម្ងន់ត្រូវបង់", recorded_by_label: "កត់ត្រាដោយ",
     btn_receipt: "បង្កាន់ដៃ", btn_photos: "រូបថត", btn_payments: "ការទូទាត់", btn_edit: "កែប្រែ",

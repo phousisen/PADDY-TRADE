@@ -1573,6 +1573,58 @@ const rawApi = {
     return data;
   },
 
+  // [2026-09-09] Voiding a payment.
+  //
+  // Until now a payment entered wrong had no clean way back: you could
+  // change the amount, but a payment that should never have existed at all
+  // — recorded twice, or against the wrong transaction — could only be
+  // cancelled by editing it to zero, which leaves a meaningless zero row
+  // and no record of why.
+  //
+  // Voiding uses the same columns the cancel-to-zero rule already added
+  // (cancel_to_zero_2026-09-09.sql), so a voided payment behaves the same
+  // way everywhere: excluded from Cash Flow, from a transaction's paid
+  // total, and from what is owed — but never deleted. It stays visible,
+  // greyed out, with the reason attached, and the whole change is in
+  // row_history.
+  //
+  // Deliberately NOT reused for the automatic case: a payment voided
+  // because its transaction was cancelled carries the exact reason
+  // "Transaction cancelled" and is un-voided if that transaction is
+  // restored. A hand-voided one uses the person's own words, so restoring
+  // the transaction leaves it voided — which is right, because it was
+  // wrong for its own reasons.
+  async voidPayment(id, reason) {
+    const text = (reason || "").trim();
+    if (!text) throw new Error("Please say why this payment is being voided — it is kept on the record.");
+    if (text === "Transaction cancelled") {
+      // Guard the one string the cancel trigger looks for, so a hand-void
+      // can never be un-voided later by restoring a transaction.
+      throw new Error("Please give a specific reason rather than 'Transaction cancelled'.");
+    }
+    const { data, error } = await supabase
+      .from("payments")
+      .update({ voided_at: new Date().toISOString(), voided_reason: text })
+      .eq("id", id)
+      .is("voided_at", null)      // never re-void, so the first reason stands
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async unvoidPayment(id) {
+    const { data, error } = await supabase
+      .from("payments")
+      .update({ voided_at: null, voided_reason: null })
+      .eq("id", id)
+      .neq("voided_reason", "Transaction cancelled")   // that one is the trigger's to own
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   async logAudit({ action, tableName, recordId, oldData, newData, userId }) {
     const { error } = await supabase.from("audit_logs").insert({
       user_id: userId, action, table_name: tableName, record_id: recordId, old_data: oldData, new_data: newData,
