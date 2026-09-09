@@ -3,6 +3,7 @@ import { Lock, LockOpen, CalendarCheck, AlertTriangle, CheckCircle2, Loader2, X 
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import StationDaysReview from "./StationDaysReview.jsx";
 
 // [2026-09-09] Monthly Close — the screen for what used to be two SQL
 // commands typed into Supabase.
@@ -211,6 +212,11 @@ export default function MonthlyClosePanel() {
         backdated. Reading, reports and receipts are unaffected — and so is today's work at every
         station.
       </p>
+
+      {/* The station side of the two signatures, above the month buttons
+          because it answers what you are really asking when you close a
+          month: did every station tell me their days were complete? */}
+      <StationDaysReview />
 
       {loading && <p className="text-sm text-slate-400">Loading…</p>}
 
