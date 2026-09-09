@@ -785,14 +785,33 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editPayment, setEditPayment] = useState(null);
+  const [voidPaymentTx, setVoidPayment] = useState(null);
 
+  // [2026-09-09] includeVoided: a voided payment must not COUNT anywhere,
+  // but it must still be visible here — that is the difference between
+  // voiding and deleting. It shows greyed out with its reason, so the
+  // history reads as what actually happened rather than as if the payment
+  // never existed.
   async function load() {
     setLoading(true);
-    const data = await api.getPaymentsForTransaction(tx.id);
+    const data = await api.getPaymentsForTransaction(tx.id, { includeVoided: true });
     setPayments(data);
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  async function voidPayment(payment, reason) {
+    await api.voidPayment(payment.id, reason);
+    await api.logAudit({
+      action: "void_payment", tableName: "payments", recordId: payment.id,
+      oldData: { amount: payment.amount, voided_at: null },
+      newData: { amount: payment.amount, voided_reason: reason, code: tx.code, partyName: tx.partyName },
+      userId,
+    });
+    setVoidPayment(null);
+    await load();
+    onChanged?.();
+  }
 
   async function saveEdit(newAmount) {
     await api.updatePayment(editPayment.id, newAmount);
@@ -829,23 +848,49 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p) => (
-                  <tr key={p.id} className="border-b border-slate-50 last:border-0">
-                    <td className="px-3 py-2 text-slate-500">
-                      {p.pay_date}
-                      {p.created_at && (
-                        <span className="ml-1 text-slate-400">
-                          {new Date(p.created_at).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 font-medium text-slate-800">{fmtRiel(p.amount)}</td>
-                    <td className="px-3 py-2 text-slate-500">{p.createdByName}</td>
-                    <td className="px-3 py-2 text-right">
-                      <button onClick={() => setEditPayment(p)} className="text-slate-400 hover:text-brand-600"><Pencil size={13} /></button>
-                    </td>
-                  </tr>
-                ))}
+                {payments.map((p) => {
+                  const voided = !!p.voided_at;
+                  // A payment voided because its transaction was cancelled is
+                  // the trigger's to own — it comes back by itself if the
+                  // transaction is restored, so it must not be un-voided by
+                  // hand here.
+                  const byCancel = p.voided_reason === "Transaction cancelled";
+                  return (
+                    <tr key={p.id} className={`border-b border-slate-50 last:border-0 ${voided ? "bg-slate-50/70" : ""}`}>
+                      <td className="px-3 py-2 text-slate-500">
+                        {p.pay_date}
+                        {p.created_at && (
+                          <span className="ml-1 text-slate-400">
+                            {new Date(p.created_at).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}
+                          </span>
+                        )}
+                        {voided && (
+                          <div className="mt-0.5 text-[11px] text-slate-400">
+                            <span className="font-semibold text-slate-500">Voided</span>
+                            {p.voided_reason ? ` — ${p.voided_reason}` : ""}
+                          </div>
+                        )}
+                      </td>
+                      <td className={`px-3 py-2 font-medium ${voided ? "text-slate-400 line-through" : "text-slate-800"}`}>{fmtRiel(p.amount)}</td>
+                      <td className={`px-3 py-2 ${voided ? "text-slate-400" : "text-slate-500"}`}>{p.createdByName}</td>
+                      <td className="px-3 py-2 text-right">
+                        {voided ? (
+                          byCancel ? (
+                            <span className="text-[11px] text-slate-400">comes back if restored</span>
+                          ) : (
+                            <button onClick={() => api.unvoidPayment(p.id).then(() => { load(); onChanged?.(); })}
+                              className="text-[11px] font-medium text-slate-400 hover:text-brand-600">Undo void</button>
+                          )
+                        ) : (
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => setEditPayment(p)} title="Correct the amount" className="text-slate-400 hover:text-brand-600"><Pencil size={13} /></button>
+                            <button onClick={() => setVoidPayment(p)} title="This payment should not exist" className="text-slate-400 hover:text-rose-600"><Ban size={13} /></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -859,6 +904,68 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
       {editPayment && (
         <EditPaymentModal payment={editPayment} userEmail={userEmail} t={t} onClose={() => setEditPayment(null)} onSubmit={saveEdit} />
       )}
+      {voidPaymentTx && (
+        <VoidPaymentModal payment={voidPaymentTx} onClose={() => setVoidPayment(null)} onSubmit={(reason) => voidPayment(voidPaymentTx, reason)} />
+      )}
+    </div>
+  );
+}
+
+// [2026-09-09] Voiding a payment, as opposed to correcting its amount.
+//
+// Two different mistakes, two different fixes:
+//   Edit  — the payment happened, the number is wrong.
+//   Void  — the payment should not exist at all: entered twice, or against
+//           the wrong transaction.
+//
+// Voiding was previously done by editing the amount to zero, which left a
+// meaningless zero row and no record of why. A voided payment now stays
+// visible with its reason, stops counting everywhere, and can be undone.
+function VoidPaymentModal({ payment, onClose, onSubmit }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!reason.trim()) { setError("Please say why — it is kept on the record."); return; }
+    setBusy(true); setError("");
+    try { await onSubmit(reason.trim()); }
+    catch (err) { setError(err.message || "Could not void this payment."); setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
+          <Ban size={16} className="text-rose-500" /> Void this payment
+        </h3>
+        <p className="mb-3 text-xs text-slate-400">
+          {fmtRiel(payment.amount)} · {payment.pay_date}
+        </p>
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+          It stops counting towards what has been paid, and leaves Cash Flow. It is not deleted —
+          it stays here with your reason, and you can undo it.
+          <span className="mt-1.5 block text-slate-500">
+            If the payment did happen and only the amount is wrong, use the pencil to correct it instead.
+          </span>
+        </div>
+        <form onSubmit={submit}>
+          <label className="mb-1 block text-xs text-slate-500">Why? <span className="text-rose-500">*</span></label>
+          <textarea
+            value={reason} onChange={(e) => setReason(e.target.value)} autoFocus rows={2}
+            placeholder="e.g. Entered twice by mistake"
+            className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+          />
+          {error && <p className="mt-2 text-sm text-rose-500">{error}</p>}
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={busy || !reason.trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+              {busy ? "Voiding…" : "Void payment"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
@@ -1492,6 +1599,17 @@ export default function Transactions({ setPage }) {
     if (isAdmin) api.getLocations().then(setLocations).catch(() => {});
   }, [isAdmin]);
 
+  // [2026-09-09] Two maps rather than one.
+  //
+  // remainingByTx keeps its old meaning — never below zero — because the
+  // Unpaid filter, the Record Payment box and the HQ status column are all
+  // built on "how much is still owed", and an overpayment is not a debt.
+  //
+  // overpaidByTx carries what that Math.max(0, …) throws away. Until now an
+  // overpayment simply disappeared: pay a farmer 100,000 too much and the
+  // row read "Settled", exactly like one paid correctly. The money was gone
+  // and nothing on screen said so. (Same shape of bug as CN 000261 — a
+  // clamp hiding a number that mattered.)
   const remainingByTx = useMemo(() => {
     const map = {};
     rows.forEach((tx) => {
@@ -1499,6 +1617,19 @@ export default function Transactions({ setPage }) {
         .filter((p) => p.transaction_id === tx.id && p.type === (tx.type === "BUY" ? "pay_supplier" : "receive_customer"))
         .reduce((s, p) => s + Number(p.amount), 0);
       map[tx.id] = Math.max(0, Number(tx.total_with_tax ?? tx.amount) - paid);
+    });
+    return map;
+  }, [rows, payments]);
+
+  const overpaidByTx = useMemo(() => {
+    const map = {};
+    rows.forEach((tx) => {
+      const paid = payments
+        .filter((p) => p.transaction_id === tx.id && p.type === (tx.type === "BUY" ? "pay_supplier" : "receive_customer"))
+        .reduce((s, p) => s + Number(p.amount), 0);
+      const over = paid - Number(tx.total_with_tax ?? tx.amount);
+      // A riel or two either way is rounding, not an overpayment.
+      if (over > 0.01) map[tx.id] = over;
     });
     return map;
   }, [rows, payments]);
@@ -2056,6 +2187,13 @@ export default function Transactions({ setPage }) {
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </span>
                         )
+                      ) : overpaidByTx[tx.id] ? (
+                        <span
+                          className="flex w-fit items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700"
+                          title={`${fmtRiel(overpaidByTx[tx.id])} more has been paid than this transaction is worth. Correct or void the payment in Payment History, or record the refund.`}
+                        >
+                          <AlertTriangle size={12} /> Overpaid {fmtRiel(overpaidByTx[tx.id])}
+                        </span>
                       ) : (
                         <span className="text-xs font-medium text-brand-600">Settled</span>
                       )}
@@ -2310,6 +2448,10 @@ export default function Transactions({ setPage }) {
                             <Wallet size={12} /> {t("tx_due", { amount: fmtRiel(remaining) })}
                           </span>
                         )
+                      ) : overpaidByTx[tx.id] ? (
+                        <span className="flex w-fit items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
+                          <AlertTriangle size={12} /> {t("tx_overpaid", { amount: fmtRiel(overpaidByTx[tx.id]) })}
+                        </span>
                       ) : (
                         <span className="text-xs font-medium text-brand-600">{t("tx_settled")}</span>
                       )}
