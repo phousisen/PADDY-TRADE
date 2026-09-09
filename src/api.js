@@ -1655,6 +1655,101 @@ const rawApi = {
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
+  // [2026-09-09] Daily close, per station.
+  //
+  // Not a lock — a signature. The monthly close refuses edits; this only
+  // records that the person who was actually at the weighbridge looked at
+  // the day and said it was right. A station that could not fix today's
+  // obvious mistake because it already pressed a button at 5pm would simply
+  // stop pressing the button, and then you lose the signature AND the
+  // correction.
+  //
+  // It exists because the monthly close is only as trustworthy as the days
+  // inside it, and HQ closes a month having never asked the five people who
+  // could actually say whether it was complete.
+  async getStationDay(locationId, businessDate) {
+    const { data, error } = await supabase.rpc("station_day_summary", {
+      p_location: locationId, p_date: businessDate,
+    });
+    if (error) throw error;
+    // A set-returning function comes back as an array of one row.
+    return (Array.isArray(data) ? data[0] : data) || null;
+  },
+
+  // [2026-09-09 v2] The recent days at one station, newest first.
+  //
+  // Confirming only "today" was wrong about how the stations work: buying
+  // runs into the evening and the office staff go home, so a day is often
+  // confirmed the next morning — or later, if the next day is busy too. A
+  // design that only allows today means the day never gets confirmed at
+  // all, and the signature is worthless.
+  //
+  // Days the station had no activity are left out by the database, so
+  // nobody is asked to confirm a day they were closed.
+  async getStationDays(locationId, days = 7) {
+    const { data, error } = await supabase.rpc("station_days_recent", {
+      p_location: locationId, p_days: days,
+    });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // paperCount is the number of ticket stubs in the station's own book for
+  // that day. It is the whole point of the daily close: the system can only
+  // count what ARRIVED, so a ticket whose transaction never landed is not
+  // "missing" from our view — it was never here. The paper in the station's
+  // hand is the only evidence it existed.
+  //
+  // missingTicketNo is optional and only meaningful when the counts differ.
+  // A number turns "something is wrong at Jomnoum" into "find CN 000742".
+  async closeStationDay({ locationId, businessDate, paperCount, missingTicketNo, note }) {
+    const { data, error } = await supabase.rpc("close_station_day", {
+      p_location: locationId,
+      p_date: businessDate,
+      p_paper_count: paperCount,
+      p_missing_ticket_no: missingTicketNo || null,
+      p_note: note || null,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  // The day's paper ticket numbers, in order. Fetched ONLY after the counts
+  // disagree — on an ordinary day the station answers one question and never
+  // sees this list. Books are sequential, so a break in the run is very
+  // likely the missing one; it is a suggestion, never an answer.
+  async getStationDayTickets(locationId, businessDate) {
+    const { data, error } = await supabase.rpc("station_day_tickets", {
+      p_location: locationId, p_date: businessDate,
+    });
+    if (error) throw error;
+    return data || [];
+  },
+
+  // HQ's side: days a station has confirmed that HQ has not accepted, plus
+  // any day accepted while a count gap still stands.
+  async getDaysAwaitingHq(days = 14) {
+    const { data, error } = await supabase.rpc("days_awaiting_hq", { p_days: days });
+    if (error) throw error;
+    return data || [];
+  },
+
+  async hqAcceptDay({ locationId, businessDate, note }) {
+    const { data, error } = await supabase.rpc("hq_accept_day", {
+      p_location: locationId, p_date: businessDate, p_note: note || null,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async reopenStationDay({ locationId, businessDate, reason }) {
+    const { data, error } = await supabase.rpc("reopen_station_day", {
+      p_location: locationId, p_date: businessDate, p_reason: reason,
+    });
+    if (error) throw error;
+    return data;
+  },
+
   // [2026-09-09] Monthly close — the four calls behind the Monthly Close panel
   // in SettingsPage.jsx. All four are thin wrappers over database functions
   // (period_lock_COMPLETE_2026-09-09.sql); none of the rules live here, so
