@@ -2,6 +2,9 @@ import {
   LayoutGrid, Warehouse, Receipt, Users, MapPin, BarChart3,
   Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Wallet, Activity,
 } from "lucide-react";
+// ShieldCheck is used twice: the Roles nav entry (System) and Data Check
+// (Inventory & Reports). Same icon, different rows — deliberate: both mean
+// "this is the screen that guards something".
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 
@@ -84,6 +87,14 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
             // Reports section to reach it. Gated by the same canViewReports
             // permission as Financial Reports, since it's still financial data.
             ...(canViewReports ? [{ id: "expenses", label: "Expenses", icon: Wallet }] : []),
+            // [2026-09-09] Data Check — lists any transaction that no longer
+            // agrees with its own weighing ticket, plus the permanent record
+            // of every change to money, weight, stock and permissions. Sits
+            // here rather than under System because it is a daily finance
+            // check, not an admin tool: the stock and weight figures on every
+            // other page in this group are only as good as this list is empty.
+            // See DataCheck.jsx for the Jomnoum CN 000261 story behind it.
+            ...(canViewReports ? [{ id: "data-check", label: "Data Check", icon: ShieldCheck }] : []),
           ],
         },
         ...(canSeeAdminNav
