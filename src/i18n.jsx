@@ -98,6 +98,34 @@ export const translations = {
     // remaining balance was clamped at zero, so paying a farmer too much
     // looked exactly like paying him correctly.
     tx_overpaid: "Overpaid by {amount}",
+
+    // [2026-09-09] The weighbridge flow's own error messages. Every one of
+    // these appears at the moment a staff member is stopped from saving,
+    // with a truck on the scale — which is exactly when reading it in your
+    // own language matters most. They were all English-only.
+    err_need_plate: "Please enter the truck's plate number.",
+    err_need_paper_ticket: "Please enter the number printed on the paper quality ticket.",
+    err_need_gross: "Please enter the truck's gross (loaded) weight.",
+    err_gross_positive: "Gross weight must be a positive number.",
+    err_need_price: "Please enter the price that was agreed on the paper ticket.",
+    err_need_paddy_type: "Please select which paddy type is being sold.",
+    err_need_tare_buy: "Please enter the empty truck's weight.",
+    err_need_tare_sell: "Please enter the loaded truck's weight.",
+    err_reopen_reason: "Please note why this ticket is being reopened — it's kept in the audit log.",
+    err_restore_reason: "Please note why this decline is being reversed — it's kept in the audit log.",
+    // The impossible-weight guard (Jomnoum CN 000261). {tare}/{gross}/{net}
+    // are filled in with the actual readings so staff can see the numbers
+    // they just typed, not a generic complaint.
+    err_weight_buy: "The empty truck ({tare} kg) cannot weigh as much as or more than the loaded truck ({gross} kg) — the net weight would be {net} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.",
+    err_weight_sell: "The loaded truck ({tare} kg) must weigh more than it did empty ({gross} kg) — the net weight would be {net} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.",
+
+    // [2026-09-09] The money position on the dashboard.
+    dash_owed_to_farmers: "Owed to farmers",
+    dash_owed_by_buyers: "Owed by buyers",
+    dash_money_net: "Net position",
+    dash_money_all_time: "All time, not just this period",
+    dash_money_net_in: "more coming in than going out",
+    dash_money_net_out: "more going out than coming in",
     weigh_in_label: "Weigh In", weigh_out_label: "Weigh Out", loaded_suffix: "(loaded)", empty_suffix: "(empty)",
     not_recorded: "Not recorded", deduction_label: "Deduction", payable_weight_label: "Payable Weight", recorded_by_label: "Recorded By",
     btn_receipt: "Receipt", btn_photos: "Photos", btn_payments: "Payments", btn_edit: "Edit",
@@ -314,6 +342,26 @@ export const translations = {
     tx_confirmed: "បានបញ្ជាក់", tx_pending_confirm: "រង់ចាំការបញ្ជាក់ពីអ្នកទិញ", tx_excluded: "មិនរាប់បញ្ចូលក្នុងរបាយការណ៍",
     tx_due: "{amount} នៅជំពាក់", tx_settled: "បានទូទាត់រួច", tx_incl_vat: "រួមបញ្ចូល VAT {rate}%",
     tx_overpaid: "បង់លើសចំនួន {amount}",
+
+    err_need_plate: "សូមបញ្ចូលលេខស្លាកយានយន្ត។",
+    err_need_paper_ticket: "សូមបញ្ចូលលេខដែលបោះពុម្ពនៅលើសំបុត្រគុណភាព។",
+    err_need_gross: "សូមបញ្ចូលទម្ងន់ឡានពេលផ្ទុក។",
+    err_gross_positive: "ទម្ងន់ត្រូវតែជាលេខធំជាងសូន្យ។",
+    err_need_price: "សូមបញ្ចូលតម្លៃដែលបានព្រមព្រៀងលើសំបុត្រ។",
+    err_need_paddy_type: "សូមជ្រើសរើសប្រភេទស្រូវដែលកំពុងលក់។",
+    err_need_tare_buy: "សូមបញ្ចូលទម្ងន់ឡានទទេ។",
+    err_need_tare_sell: "សូមបញ្ចូលទម្ងន់ឡានពេលផ្ទុក។",
+    err_reopen_reason: "សូមកត់ត្រាមូលហេតុនៃការបើកសំបុត្រនេះឡើងវិញ — វាត្រូវបានរក្សាទុកក្នុងកំណត់ត្រា។",
+    err_restore_reason: "សូមកត់ត្រាមូលហេតុនៃការដកការបដិសេធនេះ — វាត្រូវបានរក្សាទុកក្នុងកំណត់ត្រា។",
+    err_weight_buy: "ឡានទទេ ({tare} គក) មិនអាចធ្ងន់ស្មើ ឬធ្ងន់ជាងឡានពេលផ្ទុក ({gross} គក) បានទេ — ទម្ងន់សុទ្ធនឹងក្លាយជា {net} គក។ សូមពិនិត្យទម្ងន់ម្តងទៀត ឬបើទម្ងន់ចូលខុស សូមកែក្នុង កែសំបុត្រ ជាមុនសិន។",
+    err_weight_sell: "ឡានពេលផ្ទុក ({tare} គក) ត្រូវតែធ្ងន់ជាងពេលទទេ ({gross} គក) — ទម្ងន់សុទ្ធនឹងក្លាយជា {net} គក។ សូមពិនិត្យទម្ងន់ម្តងទៀត ឬបើទម្ងន់ចូលខុស សូមកែក្នុង កែសំបុត្រ ជាមុនសិន។",
+
+    dash_owed_to_farmers: "ជំពាក់កសិករ",
+    dash_owed_by_buyers: "អ្នកទិញជំពាក់យើង",
+    dash_money_net: "ស្ថានភាពសុទ្ធ",
+    dash_money_all_time: "គ្រប់ពេលវេលា មិនត្រឹមតែរយៈពេលនេះទេ",
+    dash_money_net_in: "ចំណូលច្រើនជាងចំណាយ",
+    dash_money_net_out: "ចំណាយច្រើនជាងចំណូល",
     weigh_in_label: "ថ្លឹងចូល", weigh_out_label: "ថ្លឹងចេញ", loaded_suffix: "(ដឹកទំនិញ)", empty_suffix: "(ទទេ)",
     not_recorded: "មិនបានកត់ត្រា", deduction_label: "កាត់បន្ថយ", payable_weight_label: "ទម្ងន់ត្រូវបង់", recorded_by_label: "កត់ត្រាដោយ",
     btn_receipt: "បង្កាន់ដៃ", btn_photos: "រូបថត", btn_payments: "ការទូទាត់", btn_edit: "កែប្រែ",
