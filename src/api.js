@@ -205,11 +205,53 @@ async function extractFnError(error) {
   return error?.message || String(error);
 }
 
+// ===========================================================================
+// [2026-09-09] PAGED FETCH — the fix for the worst defect found so far.
+// ===========================================================================
+// Supabase/PostgREST caps EVERY request at 1,000 rows. It does not error, it
+// does not warn — it just hands back the first 1,000 and the app carries on
+// as if that were everything.
+//
+// Every list fetch in this file was written without paging, so once a table
+// passed 1,000 rows the whole app quietly went wrong: the dashboard showed
+// "993 transactions" for a business with thousands, Jomnoum's page reported
+// 1,014,590 kg bought when the database held 1,951,575, stock read negative,
+// and every financial report — balance sheet, payables, receivables, tax,
+// cash flow — computed its totals from the most recent 1,000 rows only.
+//
+// Nothing about the screen said so. That is what makes it the worst kind of
+// bug: wrong numbers that look exactly like right ones.
+//
+// fetchAll() walks the pages until a short page comes back, so a caller gets
+// every row or an error — never a silent half-answer. `makeQuery` must BUILD
+// a fresh query each call: a Supabase builder is single-use once awaited.
+//
+// HARD_ROW_CAP is a seatbelt, not a limit: at 500,000 rows something is very
+// wrong (a missing filter, a runaway join), and it throws rather than
+// silently returning a partial set, which is the exact failure being fixed.
+const PAGE_SIZE = 1000;
+const HARD_ROW_CAP = 500000;
+
+async function fetchAll(makeQuery) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await makeQuery().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < PAGE_SIZE) return rows;
+    if (rows.length >= HARD_ROW_CAP) {
+      throw new Error(
+        `Refusing to load more than ${HARD_ROW_CAP} rows in one go — this query is missing a filter. ` +
+        "Nothing was shown rather than showing a partial answer."
+      );
+    }
+  }
+}
+
 const rawApi = {
   async getLocations() {
-    const { data, error } = await supabase.from("locations").select("*").order("name");
-    if (error) throw error;
-    return data;
+    return await fetchAll(() => supabase.from("locations").select("*").order("name"));
   },
 
   // Live weighbridge connection — reads the single "current weight" row a
@@ -307,12 +349,12 @@ const rawApi = {
   },
 
   async getRoles() {
-    const { data, error } = await supabase.from("roles").select("*").order("scope").order("name");
-    if (error) {
-      console.warn("Roles table not available yet:", error.message);
+    try {
+      return await fetchAll(() => supabase.from("roles").select("*").order("scope").order("name"));
+    } catch (e) {
+      console.warn("Roles table not available yet:", e.message);
       return [];
     }
-    return data;
   },
 
   async createRole({ name, scope, permissions }) {
@@ -347,6 +389,8 @@ const rawApi = {
   // the difference logged (why, how much, by whom, when) instead of just
   // silently overwritten.
   async getStockAdjustments({ locationId, startDate, endDate } = {}) {
+    // [2026-09-09] Paged — see fetchAll.
+    const makeQuery = () => {
     let query = supabase
       .from("stock_adjustments")
       .select("*, locations(name), profiles(full_name)")
@@ -358,8 +402,9 @@ const rawApi = {
     // with what staff actually mean by "today" at the station.
     if (startDate) query = query.gte("created_at", `${startDate}T00:00:00+07:00`);
     if (endDate) query = query.lte("created_at", `${endDate}T23:59:59+07:00`);
-    const { data, error } = await query;
-    if (error) throw error;
+      return query;
+    };
+    const data = await fetchAll(makeQuery);
     return data.map((a) => ({ ...a, stationName: a.locations?.name || "—", adjustedByName: a.profiles?.full_name || "—" }));
   },
 
@@ -514,10 +559,12 @@ const rawApi = {
   // capital contributions/withdrawals. Admin-only (enforced by RLS) — see
   // migration_partner_capital_bank_loans.sql.
   async getPartners(locationId) {
+    const makeQuery = () => {
     let query = supabase.from("partners").select("*, locations(name)").order("name");
     if (locationId) query = query.eq("location_id", locationId);
-    const { data, error } = await query;
-    if (error) throw error;
+      return query;
+    };
+    const data = await fetchAll(makeQuery);
     return data.map((p) => ({ ...p, locationName: p.locations?.name || "—" }));
   },
 
@@ -573,12 +620,11 @@ const rawApi = {
   // Bank loans (outside lenders) at a location — a flat borrow/repay
   // ledger, the same style as the payments table. Admin-only.
   async getBankLoans() {
-    const { data, error } = await supabase
+    const data = await fetchAll(() => supabase
       .from("bank_loans")
       .select("*, locations(name)")
       .order("entry_date", { ascending: false })
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+      .order("created_at", { ascending: false }));
     return data.map((e) => ({ ...e, stationName: e.locations?.name || "—" }));
   },
 
@@ -621,15 +667,17 @@ const rawApi = {
   // lookup is meant to stay scoped to one station, so a same-named
   // buyer/seller at a different location doesn't get matched instead.
   async getParties({ type, q, qPhone, phone, locationId } = {}) {
+    // [2026-09-09] Paged — see fetchAll.
+    const makeQuery = () => {
     let query = supabase.from("parties").select("*").order("name");
     if (type) query = query.eq("type", type);
     if (q) query = query.ilike("name", `%${q}%`);
     if (qPhone) query = query.ilike("phone", `%${qPhone}%`);
     if (phone) query = query.eq("phone", phone);
     if (locationId) query = query.eq("location_id", locationId);
-    const { data, error } = await query;
-    if (error) throw error;
-    return data;
+      return query;
+    };
+    return await fetchAll(makeQuery);
   },
 
   // `id` is optional — used by the offline queue to replay a party that
@@ -735,6 +783,9 @@ const rawApi = {
   },
 
   async getTransactions({ type, locationId } = {}) {
+    // [2026-09-09] Paged. Before this it returned the newest 1,000 rows and
+    // every all-time total in the app was computed from that slice.
+    const makeQuery = () => {
     let query = supabase
       .from("transactions")
       // address/phone: per-location fields (see add_location_address_phone.sql)
@@ -744,8 +795,9 @@ const rawApi = {
       .order("created_at", { ascending: false });
     if (type) query = query.eq("type", type);
     if (locationId) query = query.eq("location_id", locationId);
-    const { data, error } = await query;
-    if (error) throw error;
+      return query;
+    };
+    const data = await fetchAll(makeQuery);
     return data.map((t) => ({
       ...t,
       stationName: t.locations?.name || "—",
@@ -862,6 +914,7 @@ const rawApi = {
   // everything downstream (reports, stock, AP/AR) is unaffected.
 
   async getTickets({ locationId, stages, limit } = {}) {
+    const makeQuery = () => {
     let query = supabase
       .from("weighing_tickets")
       // address/phone: per-location fields (see add_location_address_phone.sql)
@@ -870,9 +923,19 @@ const rawApi = {
       .order("created_at", { ascending: false });
     if (locationId) query = query.eq("location_id", locationId);
     if (stages && stages.length) query = query.in("stage", stages);
-    if (limit) query = query.limit(limit);
-    const { data, error } = await query;
-    if (error) throw error;
+      return query;
+    };
+    // [2026-09-09] A caller that asked for a limit gets exactly that, one
+    // request. A caller that asked for everything now actually gets
+    // everything instead of the newest 1,000 — see fetchAll.
+    let data;
+    if (limit) {
+      const { data: page, error } = await makeQuery().limit(limit);
+      if (error) throw error;
+      data = page || [];
+    } else {
+      data = await fetchAll(makeQuery);
+    }
     return data.map((t) => ({
       ...t,
       stationName: t.locations?.name || "—",
@@ -1350,13 +1413,12 @@ const rawApi = {
   },
 
   async getChangeRequests() {
-    const { data, error } = await supabase
+    const data = await fetchAll(() => supabase
       .from("change_requests")
       .select(
         "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, paper_ticket_no, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
       )
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+      .order("created_at", { ascending: false }));
     return data.map((r) => ({
       ...r,
       transactionCode: r.transactions?.code || "—",
@@ -1650,8 +1712,10 @@ const rawApi = {
   },
 
   async getAuditLogs() {
-    const { data, error } = await supabase.from("audit_logs").select("*, profiles(full_name)").order("created_at", { ascending: false });
-    if (error) throw error;
+    // [2026-09-09] Paged — see fetchAll. An audit log that silently stops at
+    // 1,000 entries is worse than none: it looks complete.
+    const data = await fetchAll(() =>
+      supabase.from("audit_logs").select("*, profiles(full_name)").order("created_at", { ascending: false }));
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
@@ -1826,11 +1890,12 @@ const rawApi = {
   // ticket that is impossible on its face. An empty list is the normal
   // state, which is the only reason a list like this stays worth reading.
   async getTicketMismatches() {
-    const { data, error } = await supabase
+    // [2026-09-09] Paged — a watchdog that silently stops listing faults at
+    // 1,000 is worse than no watchdog.
+    const data = await fetchAll(() => supabase
       .from("v_ticket_mismatches")
       .select("*")
-      .order("tx_date", { ascending: false });
-    if (error) throw error;
+      .order("tx_date", { ascending: false }));
     return data || [];
   },
 
@@ -1859,11 +1924,15 @@ const rawApi = {
   // badges — the same list it shows today. A missing badge must never
   // break the Transactions screen.
   async getTransactionEdits() {
-    const { data, error } = await supabase
-      .from("v_transaction_edits")
-      .select("transaction_id, edit_count, last_changed_at");
-    if (error) {
-      console.warn("[edits] badge data unavailable:", error.message);
+    // Paged, and still deliberately soft-fail: a missing view must never
+    // break the Transactions screen.
+    let data;
+    try {
+      data = await fetchAll(() => supabase
+        .from("v_transaction_edits")
+        .select("transaction_id, edit_count, last_changed_at"));
+    } catch (e) {
+      console.warn("[edits] badge data unavailable:", e.message);
       return {};
     }
     return Object.fromEntries((data || []).map((r) => [r.transaction_id, r]));
@@ -1929,12 +1998,17 @@ const rawApi = {
   // that didn't already exclude a cancelled transaction, because it reads
   // payments rather than transactions and a payment had no idea.
   async getPayments({ locationId, type, includeVoided = false } = {}) {
-    let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
-    if (!includeVoided) query = query.is("voided_at", null);
-    if (locationId) query = query.eq("location_id", locationId);
-    if (type) query = query.eq("type", type);
-    const { data, error } = await query;
-    if (error) throw error;
+    // [2026-09-09] Paged — see fetchAll. The dashboard's money position and
+    // the Cash Flow report both read every payment; capped at 1,000 they were
+    // simply wrong once the table grew past that.
+    const makeQuery = () => {
+      let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
+      if (!includeVoided) query = query.is("voided_at", null);
+      if (locationId) query = query.eq("location_id", locationId);
+      if (type) query = query.eq("type", type);
+      return query;
+    };
+    const data = await fetchAll(makeQuery);
     return data.map((p) => ({ ...p, createdByName: p.profiles?.full_name || "—" }));
   },
 
