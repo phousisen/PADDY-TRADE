@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Ban } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -134,6 +134,7 @@ export default function Expenses({ selectedLocationIds = [], startDate = null, e
   const [logView, setLogView] = useState("daily"); // "daily" | "monthly"
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [voidExpense, setVoidExpense] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -274,7 +275,7 @@ export default function Expenses({ selectedLocationIds = [], startDate = null, e
               <Table>
                 <thead>
                   <tr>
-                    <Th>Date</Th><Th>Category</Th><Th>Location</Th><Th>Note</Th><Th num>Amount</Th>
+                    <Th>Date</Th><Th>Category</Th><Th>Location</Th><Th>Note</Th><Th num>Amount</Th><Th></Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -290,10 +291,27 @@ export default function Expenses({ selectedLocationIds = [], startDate = null, e
                       <Td>{locationName[p.location_id] || "—"}</Td>
                       <Td>{p.memo || "—"}</Td>
                       <Td num>{fmtRiel(p.amount)}</Td>
+                      <Td>
+                        {/* [2026-09-09] An expense IS a payment with type
+                            "expense" — same table, so the voiding built for
+                            payments works here unchanged. A voided expense
+                            drops out of this list, out of the category
+                            totals and out of Cash Flow, but is never
+                            deleted. */}
+                        {!isViewOnly && (
+                          <button
+                            onClick={() => setVoidExpense(p)}
+                            title="This expense should not exist — void it with a reason"
+                            className="text-slate-300 hover:text-rose-600"
+                          >
+                            <Ban size={13} />
+                          </button>
+                        )}
+                      </Td>
                     </Tr>
                   ))}
-                  {loading && dailyRows.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></tr>}
-                  {dailyRows.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No expenses recorded in this range yet.</td></tr>}
+                  {loading && dailyRows.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></tr>}
+                  {dailyRows.length === 0 && !loading && !loadError && <tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No expenses recorded in this range yet.</td></tr>}
                 </tbody>
                 {dailyRows.length > 0 && (
                   <tfoot>
@@ -348,10 +366,79 @@ export default function Expenses({ selectedLocationIds = [], startDate = null, e
           </TableCard>
         </div>
 
+        {voidExpense && (
+          <VoidExpenseModal
+            expense={voidExpense}
+            onClose={() => setVoidExpense(null)}
+            onDone={() => { setVoidExpense(null); load(); }}
+          />
+        )}
+
         <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
           This total also flows into Cash Flow (money out) and reduces Gross Profit into Net Profit on the Financial Reports Overview tab.
         </div>
       </main>
+    </div>
+  );
+}
+
+// [2026-09-09] Voiding an expense.
+//
+// Expenses had no way back at all: once recorded, a wrong one stayed in the
+// month's total and in Cash Flow forever. Payments gained voiding earlier
+// today, and an expense is simply a payment with type "expense" in the same
+// table — so this reuses that entirely rather than inventing a second
+// mechanism with its own rules to drift apart from the first.
+//
+// Voided, never deleted: it leaves the totals and Cash Flow, and the reason
+// stays on the record in row_history.
+function VoidExpenseModal({ expense, onClose, onDone }) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!reason.trim()) { setError("Please say why — it is kept on the record."); return; }
+    setBusy(true); setError("");
+    try {
+      await api.voidPayment(expense.id, reason.trim());
+      onDone();
+    } catch (err) {
+      setError(err.message || "Could not void this expense.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
+          <Ban size={16} className="text-rose-500" /> Void this expense
+        </h3>
+        <p className="mb-3 text-xs text-slate-400">
+          {expense.category || "Other"} · {expense.pay_date} · {new Intl.NumberFormat("en-US").format(Math.round(expense.amount || 0))} ៛
+        </p>
+        <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+          It leaves this month's total and Cash Flow, and stops reducing profit. It is not deleted —
+          the record of it, and your reason, are kept permanently.
+        </div>
+        <form onSubmit={submit}>
+          <label className="mb-1 block text-xs text-slate-500">Why? <span className="text-rose-500">*</span></label>
+          <textarea
+            value={reason} onChange={(e) => setReason(e.target.value)} autoFocus rows={2}
+            placeholder="e.g. Recorded twice — same fuel receipt"
+            className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
+          />
+          {error && <p className="mt-2 text-sm text-rose-500">{error}</p>}
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+            <button type="submit" disabled={busy || !reason.trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+              {busy ? "Voiding…" : "Void expense"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

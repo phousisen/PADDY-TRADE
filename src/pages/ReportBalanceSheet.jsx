@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Scale, Printer } from "lucide-react";
+import { getAccurateNow } from "../supabaseClient.js";
 import { api } from "../api.js";
 import { computeFinancials } from "./ReportOverview.jsx";
 import { ReportCard, SectionLabel, Row, TotalBox, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
@@ -13,15 +14,57 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
   const [capitalEntries, setCapitalEntries] = useState([]);
   const [loanEntries, setLoanEntries] = useState([]);
   const [payments, setPayments] = useState([]);
+  // [2026-09-09] Needed to value stock AS AT the end date rather than today
+  // — see stationsAsAt below.
+  const [adjustments, setAdjustments] = useState([]);
 
   useEffect(() => {
     Promise.all([api.getTransactions(), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
     api.getPayments().then(setPayments).catch(() => setPayments([]));
     api.getPartnerCapitalEntries().then(setCapitalEntries).catch(() => setCapitalEntries([]));
     api.getBankLoans().then(setLoanEntries).catch(() => setLoanEntries([]));
+    api.getStockAdjustments().then(setAdjustments).catch(() => setAdjustments([]));
   }, []);
 
-  const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
+  const baseStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
+
+  // [2026-09-09] A balance sheet states a position on a DATE. This page
+  // already accepted an end date and filtered the transactions by it — but
+  // the inventory line came from locations.current_stock_kg, which is
+  // always today's stock. So "as at 31 August" showed August's receivables
+  // against today's rice, and the two sides described different days.
+  //
+  // When an end date in the past is set, stock is rebuilt as at that date
+  // from the same facts the database itself uses (recompute_location_stock
+  // in fix_stock_drift_2026-09-07.sql): bought minus what physically left
+  // on a sale, plus stock adjustments, all up to and including that date.
+  // With no end date, or an end date of today, the live figure is used
+  // exactly as before — no behaviour change for the everyday view.
+  const stationsAsAt = useMemo(() => {
+    if (!endDate) return baseStations;
+    const todayKh = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Phnom_Penh" }).format(getAccurateNow());
+    if (endDate >= todayKh) return baseStations;
+
+    return baseStations.map((st) => {
+      const fromTx = txs
+        .filter((t) => (t.hq_status || "processing") !== "cancelled")
+        .filter((t) => t.location_id === st.id)
+        .filter((t) => t.tx_date && t.tx_date <= endDate)
+        .reduce((sum, t) => sum + (t.type === "BUY"
+          ? Number(t.quantity_kg || 0)
+          // What physically left the station, matching the database rule.
+          : -Number(t.station_quantity_kg ?? t.quantity_kg ?? 0)), 0);
+
+      const fromAdj = adjustments
+        .filter((a) => a.location_id === st.id)
+        .filter((a) => (a.created_at || "").slice(0, 10) <= endDate)
+        .reduce((sum, a) => sum + Number(a.adjustment_kg || 0), 0);
+
+      return { ...st, current_stock_kg: fromTx + fromAdj };
+    });
+  }, [baseStations, txs, adjustments, endDate]);
+
+  const filteredStations = stationsAsAt;
   const activeTxs = txs
     .filter((t) => (t.hq_status || "processing") !== "cancelled")
     .filter((t) => !startDate || t.tx_date >= startDate)
@@ -53,6 +96,10 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
   }, [activeTxs, activeExpenses, filteredStations, capitalEntries, loanEntries, payments]);
 
   const rangeLabel = !startDate && !endDate ? "All time" : `${startDate || "…"} to ${endDate || "…"}`;
+  // Is the stock figure a past position or today's? Say so, rather than
+  // leaving the reader to assume.
+  const todayKh = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Phnom_Penh" }).format(getAccurateNow());
+  const isAsAtPast = !!endDate && endDate < todayKh;
   const balances = Math.abs(calc.totalAssets - (calc.totalLiabilities + calc.equity)) < 1;
 
   return (
@@ -60,7 +107,12 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900"><Scale size={16} className="text-brand-600" /> Balance Sheet</h2>
-          <p className="text-[11.5px] text-slate-400">{rangeLabel}</p>
+          <p className="text-[11.5px] text-slate-400">
+            {rangeLabel}
+            {isAsAtPast
+              ? <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-500">Position as at {endDate}</span>
+              : <span className="ml-1.5 text-slate-300">Position as at today</span>}
+          </p>
         </div>
         <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13.5px] text-slate-600 hover:bg-slate-50">
           <Printer size={14} className="text-slate-400" /> Print
@@ -69,7 +121,7 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
 
       <ReportCard className="mx-auto max-w-xl">
         <SectionLabel>Assets</SectionLabel>
-        <Row label="Inventory on hand" value={fmtRiel(calc.inventoryValue)} indent />
+        <Row label={isAsAtPast ? `Inventory on hand (as at ${endDate})` : "Inventory on hand"} value={fmtRiel(calc.inventoryValue)} indent />
         <Row label="Accounts Receivable" value={fmtRiel(calc.accountsReceivable)} indent />
         <Row label="Cash (estimate)" value={fmtRiel(Math.max(0, calc.cashEstimate))} indent />
         <Row label="Total Assets" value={fmtRiel(calc.totalAssets)} bold />

@@ -1509,7 +1509,17 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
       const sellPaymentStatus = !isBuy && !priceNotGiven && sellPaidNow ? "paid" : undefined;
-      const tx = await finalizeTicketOffline(tareUpdated, { userId: session.user.id, receiptPhotoUrl, paymentStatus: sellPaymentStatus });
+      // [2026-09-09] txDate: the day this load actually belongs to. Normally
+      // undefined, and finalizeTicketOffline stamps today as it always has.
+      // Set only when staff confirmed on the previous screen that the truck
+      // came on an earlier day and this is just a late finish — which stops
+      // a load quietly moving itself into the wrong month.
+      const tx = await finalizeTicketOffline(tareUpdated, {
+        userId: session.user.id,
+        receiptPhotoUrl,
+        paymentStatus: sellPaymentStatus,
+        ...(ticket.backdatedTo ? { txDate: ticket.backdatedTo } : {}),
+      });
       // [2026-09-08] Money received at the scale is a real payment row —
       // the same thing the manual New Sell form does — so Cash Flow and
       // Receivables see it, not just a label (audit #1).
@@ -1866,6 +1876,14 @@ function cambodiaDayKey(d) {
 }
 
 function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
+  // [2026-09-09] A ticket finished late used to land on TODAY's books no
+  // matter which day the truck actually came. The warning below has existed
+  // since 06/09 but only told staff to get an admin to fix it afterwards —
+  // and nobody did, so a load weighed on 31 August and finished on
+  // 1 September quietly moved itself into September. That is exactly the
+  // kind of silent drift the monthly close is meant to prevent, so the
+  // choice belongs here, at the one moment somebody knows the answer.
+  const [useWeighInDay, setUseWeighInDay] = useState(true);
   // [2026-09-06] Jomnoum TKT-872042: the truck was weighed out on the 5th
   // but nobody pressed Finish Ticket until the next morning, so tare_at
   // (recorded at the moment the button is pressed) said 10:10 AM on the
@@ -1885,11 +1903,24 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
             <span className="ml-1 font-khmer font-normal">រថយន្តនេះបានថ្លឹងចូលនៅថ្ងៃផ្សេង មិនមែនថ្ងៃនេះទេ។</span>
           </p>
           <p className="mt-1 text-xs text-amber-700">
-            The weigh-out time on the receipt will be recorded as <strong>right now</strong>. If the truck was actually
-            weighed out earlier (e.g. yesterday evening) and this is just being finished late, the receipt's OUT time will
-            be wrong — an admin can correct the Out date/time afterwards in Transactions → Edit. If it's the wrong ticket
-            entirely, press cancel.
+            If it's the wrong ticket entirely, press cancel.
           </p>
+          <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border-2 border-amber-300 bg-white p-2.5">
+            <input
+              type="checkbox"
+              checked={useWeighInDay}
+              onChange={(e) => setUseWeighInDay(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 rounded border-amber-400 text-amber-600 focus:ring-amber-400"
+            />
+            <span className="text-xs text-amber-900">
+              <strong>Record this as {weighedInDay}'s business, not today's.</strong>
+              <span className="ml-1 font-khmer font-normal">កត់ត្រាជាការងាររបស់ថ្ងៃថ្លឹងចូល មិនមែនថ្ងៃនេះទេ។</span>
+              <span className="mt-1 block font-normal text-amber-700">
+                Leave this ticked when the truck came that day and this is just being finished late — the load then counts
+                in the right day, and the right month. Untick it only if the rice genuinely moved today.
+              </span>
+            </span>
+          </label>
         </div>
       )}
       <div className="mb-5 rounded-lg border-2 border-brand-200 bg-brand-50 p-4 text-center">
@@ -1902,7 +1933,7 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
       </div>
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">This isn't it — cancel</button>
-        <button onClick={onConfirm} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        <button onClick={() => onConfirm(differentDay && useWeighInDay ? weighedInDay : null)} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
           Yes, this is the right truck <ArrowRight size={14} />
         </button>
       </div>
@@ -2561,7 +2592,7 @@ export default function WeighingTickets() {
         <ConfirmFinishModal
           ticket={confirmFinishTicket}
           onClose={() => setConfirmFinishTicket(null)}
-          onConfirm={async () => {
+          onConfirm={async (businessDate) => {
             // Another device may have finished this ticket since this board
             // last refreshed — check before opening the form (audit #10).
             const fresh = await withTimeout(
@@ -2574,7 +2605,11 @@ export default function WeighingTickets() {
               alert("This ticket has already been finished on another device. Print its receipt from the Transactions page instead.");
               return;
             }
-            setFinishTicket(confirmFinishTicket);
+            // businessDate is set only when staff confirmed this is a late
+            // finish for an earlier day. It rides on the ticket object into
+            // FinishTicketModal, which hands it to finalizeTicketOffline as
+            // txDate — the same field the offline queue already stamps.
+            setFinishTicket(businessDate ? { ...confirmFinishTicket, backdatedTo: businessDate } : confirmFinishTicket);
             setConfirmFinishTicket(null);
           }}
         />
