@@ -196,7 +196,8 @@ export const translations = {
     // [2026-09-09] The money position on the dashboard.
     // [2026-09-10] Location Performance, rebuilt so the row reconciles.
     dash_location_perf_plain: "Location Performance",
-    col_opening: "Opening",
+    // (col_opening is already defined further down, with the Daily Stock
+    // Ledger's labels — a second copy here would silently lose to it.)
     col_bought: "Bought",
     col_sold: "Sold",
     col_adjusted: "Adjusted",
@@ -209,6 +210,22 @@ export const translations = {
     perf_attn: "Needs attention",
     perf_attn_why: "below zero, or a day not counted",
     perf_formula: "Opening + Bought − Sold + Adjusted = On hand",
+    // [2026-09-10] "What's in the shed" — LocationDetail.jsx, where the
+    // Transaction History table used to be.
+    shed_title: "What's in the shed",
+    shed_meta: "{kg} kg on hand · as at {date}",
+    shed_share: "{pct}% of stock",
+    shed_below_zero: "below zero — sold more than was bought",
+    shed_other: "Other ({n} types)",
+    shed_untyped: "No paddy type",
+    shed_carried: "From last stock count",
+    shed_carried_note: "Counted {date}, paddy type not recorded",
+    shed_empty: "Nothing in stock at this station.",
+    shed_foot: "Each line is the last 14 days of that type's stock here. Rising means buying faster than selling.",
+    shed_recon_bad: "These add up to {computed} kg, but the station's stock says {stock} kg — a difference of {diff} kg. Don't trust the split above until that is explained.",
+    shed_dir_up: "Stock of this type rising over the last 14 days",
+    shed_dir_down: "Stock of this type falling over the last 14 days",
+    shed_dir_flat: "Stock of this type roughly unchanged over the last 14 days",
     dash_cash_in_hand: "Cash in hand",
     dash_cash_from_payments: "{in} received · {out} paid out",
     dash_owed_to_farmers: "Owed to farmers",
@@ -559,7 +576,6 @@ export const translations = {
 
     // [2026-09-10]
     dash_location_perf_plain: "លទ្ធផលតាមទីតាំង",
-    col_opening: "ដើមគ្រា",
     col_bought: "ទិញចូល",
     col_sold: "លក់ចេញ",
     col_adjusted: "កែតម្រូវ",
@@ -572,6 +588,20 @@ export const translations = {
     perf_attn: "ត្រូវការការយកចិត្តទុកដាក់",
     perf_attn_why: "ក្រោមសូន្យ ឬមានថ្ងៃមិនទាន់រាប់",
     perf_formula: "ដើមគ្រា + ទិញចូល − លក់ចេញ + កែតម្រូវ = នៅសល់",
+    shed_title: "អ្វីនៅក្នុងឃ្លាំង",
+    shed_meta: "នៅសល់ {kg} គ.ក · គិតត្រឹមថ្ងៃ {date}",
+    shed_share: "{pct}% នៃស្តុក",
+    shed_below_zero: "ក្រោមសូន្យ — លក់ច្រើនជាងទិញ",
+    shed_other: "ប្រភេទផ្សេងៗ ({n})",
+    shed_untyped: "គ្មានប្រភេទស្រូវ",
+    shed_carried: "ពីការរាប់ស្តុកលើកមុន",
+    shed_carried_note: "រាប់ថ្ងៃ {date} មិនបានកត់ប្រភេទស្រូវ",
+    shed_empty: "គ្មានស្តុកនៅទីតាំងនេះទេ។",
+    shed_foot: "បន្ទាត់នីមួយៗគឺជាស្តុក ១៤ ថ្ងៃចុងក្រោយនៃប្រភេទនោះ។ ឡើង មានន័យថាទិញលឿនជាងលក់។",
+    shed_recon_bad: "បូកបញ្ចូលគ្នាបាន {computed} គ.ក ប៉ុន្តែស្តុករបស់ទីតាំងបង្ហាញ {stock} គ.ក — ខុសគ្នា {diff} គ.ក។ សូមកុំទុកចិត្តតួលេខខាងលើ រហូតដល់រកឃើញមូលហេតុ។",
+    shed_dir_up: "ស្តុកប្រភេទនេះកំពុងឡើងក្នុង ១៤ ថ្ងៃចុងក្រោយ",
+    shed_dir_down: "ស្តុកប្រភេទនេះកំពុងចុះក្នុង ១៤ ថ្ងៃចុងក្រោយ",
+    shed_dir_flat: "ស្តុកប្រភេទនេះមិនសូវប្រែប្រួលក្នុង ១៤ ថ្ងៃចុងក្រោយ",
     dash_cash_in_hand: "សាច់ប្រាក់ក្នុងដៃ",
     dash_cash_from_payments: "ទទួល {in} · ចេញ {out}",
     dash_owed_to_farmers: "ជំពាក់កសិករ",
