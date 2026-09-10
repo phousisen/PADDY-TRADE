@@ -1552,6 +1552,27 @@ const rawApi = {
     return data;
   },
 
+  // [2026-09-10] What every station held at the END OF A GIVEN DAY.
+  //
+  // The dashboard's "On hand" always showed today, whatever period was
+  // selected — so the Yesterday row put yesterday's movements beside
+  // today's balance and described no real moment. The ledger knows the
+  // answer for any day; this asks it, for all stations, in one call.
+  //
+  // Returns a Map of location_id → kg. An empty Map means the function is
+  // not installed yet (stock_at_close_rpc_2026-09-10.sql), and every caller
+  // falls back to the station's current figure — the old behaviour — rather
+  // than showing nothing.
+  async getStockAtClose(date) {
+    if (!date) return new Map();
+    const { data, error } = await supabase.rpc("stock_at_close", { p_date: date });
+    if (error) {
+      console.warn("[getStockAtClose] not available:", error.message);
+      return new Map();
+    }
+    return new Map((data || []).map((r) => [r.location_id, Number(r.kg) || 0]));
+  },
+
   // [2026-09-10] Just the number, for the badge on the bell and in the
   // sidebar. It was being answered by downloading every change request ever
   // made, each joined to its transaction, that transaction's party, and the
