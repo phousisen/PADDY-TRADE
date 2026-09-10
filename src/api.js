@@ -890,7 +890,26 @@ const rawApi = {
     if (error) throw error;
   },
 
-  async getTransactions({ type, locationId } = {}) {
+  // [2026-09-10] `from` / `to` / `partyId` filter in the DATABASE.
+  //
+  // Every report and the dashboard used to download the entire transactions
+  // table and then throw away everything outside the period on screen. At
+  // 2,787 rows that is merely wasteful; at 100,000 the screen stops
+  // loading. The date pickers now change the QUERY, not just what is drawn
+  // afterwards, which is what makes the app survive years of growth.
+  //
+  // `from`/`to` are plain Cambodia calendar dates (YYYY-MM-DD) matched
+  // against tx_date — the day the transaction belongs to, which is the day
+  // Finish was pressed and the receipt printed.
+  //
+  // All four are optional and omitting them behaves exactly as before, so
+  // a caller that genuinely needs everything (the yearly close, a
+  // reconciliation) is unchanged.
+  // `limit` short-circuits the paged walk entirely: "the latest N", newest
+  // first, in one bounded request. That is what the dashboard's live feed
+  // wants — eight rows — and it should never have been getting them by
+  // downloading the table and slicing it.
+  async getTransactions({ type, locationId, from, to, partyId, limit } = {}) {
     // [2026-09-09] Paged. Before this it returned the newest 1,000 rows and
     // every all-time total in the app was computed from that slice.
     const makeQuery = () => {
@@ -902,10 +921,22 @@ const rawApi = {
       .select("*, locations(name, address, phone), parties(name, id_number, phone), products(name)");
     if (type) query = query.eq("type", type);
     if (locationId) query = query.eq("location_id", locationId);
+    if (partyId) query = query.eq("party_id", partyId);
+    if (from) query = query.gte("tx_date", from);
+    if (to) query = query.lte("tx_date", to);
       return query;
     };
     // Ordering is applied after the walk, not inside it — see fetchAll.
-    const data = await fetchAll(makeQuery, { sort: desc("created_at") });
+    let data;
+    if (limit) {
+      const { data: rows, error } = await makeQuery()
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) throw error;
+      data = rows || [];
+    } else {
+      data = await fetchAll(makeQuery, { sort: desc("created_at") });
+    }
     return data.map((t) => ({
       ...t,
       stationName: t.locations?.name || "—",
@@ -2128,7 +2159,9 @@ const rawApi = {
   // took the rice off the books and left the cash on them — the one report
   // that didn't already exclude a cancelled transaction, because it reads
   // payments rather than transactions and a payment had no idea.
-  async getPayments({ locationId, type, includeVoided = false } = {}) {
+  // `from` / `to` are Cambodia calendar dates matched against pay_date —
+  // see getTransactions above for why this moved into the query.
+  async getPayments({ locationId, type, includeVoided = false, from, to } = {}) {
     // [2026-09-09] Paged — see fetchAll. The dashboard's money position and
     // the Cash Flow report both read every payment; capped at 1,000 they were
     // simply wrong once the table grew past that.
@@ -2137,6 +2170,8 @@ const rawApi = {
       if (!includeVoided) query = query.is("voided_at", null);
       if (locationId) query = query.eq("location_id", locationId);
       if (type) query = query.eq("type", type);
+      if (from) query = query.gte("pay_date", from);
+      if (to) query = query.lte("pay_date", to);
       return query;
     };
     const data = await fetchAll(makeQuery, { sort: desc("pay_date", "created_at") });
