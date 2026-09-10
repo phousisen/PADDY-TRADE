@@ -89,6 +89,10 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   const canOpenLocation = isAdmin || isViewOnly;
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
+  // [2026-09-10] Stock adjustments, for the Adjusted column in Location
+  // Performance. Loaded alongside the rest but allowed to fail on its own —
+  // a missing column is better than a blank dashboard.
+  const [adjustments, setAdjustments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -97,6 +101,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     setLoadError("");
     try {
       const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      api.getStockAdjustments().then(setAdjustments).catch(() => setAdjustments([]));
       // A request that raced ahead of the auth session fully attaching
       // (weak station WiFi, right after login/reload) can come back
       // empty — RLS quietly filters everything out instead of erroring —
@@ -194,19 +199,64 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // still lives in src/cashDirection.js and the same figures are on the
   // Financial Reports screens, so nothing was lost, only moved out of the way.
 
+  // [2026-09-10] Location Performance, rebuilt so the row actually adds up.
+  //
+  // The old table put PERIOD-filtered Buy and Sell next to an ALL-TIME stock
+  // figure, under a heading that said "(Today)". On a quiet day it read
+  // "— · — · −1,670 kg", which looks broken and isn't: the dashes were today
+  // and the −1,670 was the running balance since the station opened. The two
+  // could never be made to reconcile, and that is what made this table look
+  // wrong every time anyone checked it.
+  //
+  // Now every row reads left to right and the last column is the sum of the
+  // ones before it:
+  //
+  //     Opening + Bought − Sold + Adjusted = On hand
+  //
+  // On hand is the station's own balance (maintained by a database trigger,
+  // so it is authoritative). Opening is DERIVED by winding that balance back
+  // through the period's movements — not stored, and correct for any period
+  // the filter is set to. Adjusted is stock written off during the period,
+  // which was invisible before and is part of why the old columns never
+  // reconciled.
   const locationPerformance = useMemo(() => {
     return locations.map((loc) => {
       const locPeriod = periodTxs.filter((t) => t.location_id === loc.id);
-      const buyKg = locPeriod.filter((t) => t.type === "BUY").reduce((s, t) => s + Number(t.quantity_kg), 0);
-      const sellKg = locPeriod.filter((t) => t.type === "SELL").reduce((s, t) => s + Number(t.quantity_kg), 0);
-      // A location with no capacity set (0 or blank) would divide by zero
-      // here and show "Infinity%" on the progress bar — fall back to 0
-      // instead so it just reads as an empty bar.
-      const capacity = Number(loc.capacity_kg) || 0;
-      const pct = capacity > 0 ? Math.round((Number(loc.current_stock_kg) / capacity) * 100) : 0;
-      return { loc, buyKg, sellKg, pct };
+      const boughtKg = locPeriod.filter((t) => t.type === "BUY").reduce((s, t) => s + Number(t.quantity_kg || 0), 0);
+      const soldKg = locPeriod.filter((t) => t.type === "SELL").reduce((s, t) => s + Number(t.quantity_kg || 0), 0);
+      // Adjustments are dated by when they were made, in Cambodia time, so a
+      // late-evening write-off lands on the day it happened rather than the
+      // next one.
+      const adjustedKg = adjustments
+        .filter((a) => a.location_id === loc.id)
+        .filter((a) => {
+          const day = cambodiaDateStr(new Date(a.created_at));
+          return day >= rangeStart && day <= rangeEnd;
+        })
+        .reduce((s, a) => s + Number(a.adjustment_kg || 0), 0);
+
+      const onHandKg = Number(loc.current_stock_kg) || 0;
+      // Wind the authoritative closing balance back through the period.
+      const openingKg = onHandKg - boughtKg + soldKg - adjustedKg;
+      const moved = boughtKg > 0 || soldKg > 0 || adjustedKg !== 0;
+
+      // The old dot meant "percentage of capacity", so every station showed
+      // red — a trader who ships everything out is permanently under 40%
+      // full, and five red dots read as five alarms. It now means whether
+      // the station needs you.
+      const status = onHandKg < -0.01 ? "attn" : moved ? "trading" : "quiet";
+
+      return { loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status };
     });
-  }, [locations, periodTxs]);
+  }, [locations, periodTxs, adjustments, rangeStart, rangeEnd]);
+
+  const perfTotals = useMemo(() => locationPerformance.reduce((acc, r) => ({
+    openingKg: acc.openingKg + r.openingKg,
+    boughtKg: acc.boughtKg + r.boughtKg,
+    soldKg: acc.soldKg + r.soldKg,
+    adjustedKg: acc.adjustedKg + r.adjustedKg,
+    onHandKg: acc.onHandKg + r.onHandKg,
+  }), { openingKg: 0, boughtKg: 0, soldKg: 0, adjustedKg: 0, onHandKg: 0 }), [locationPerformance]);
 
   const liveFeed = useMemo(() => {
     return txs.slice().sort((a, b) => (a.tx_date + a.tx_time < b.tx_date + b.tx_time ? 1 : -1)).slice(0, 8);
@@ -315,74 +365,110 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             (lg: and up), where this was already the right layout. */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <h3 className="font-bold text-slate-800">{t("dash_location_perf", { range: rangeLabel })}</h3>
-              <span className="text-[11px] text-slate-400">{t("dash_locations_count", { n: locations.length })}</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+              <div className="flex items-baseline gap-2.5">
+                <h3 className="font-bold text-slate-800">{t("dash_location_perf_plain")}</h3>
+                {/* The unit, said once. Every number in this table is kilos —
+                    repeating "kg" in thirty cells is noise. */}
+                <span className="rounded border border-slate-200 px-1.5 py-px text-[10px] font-semibold tracking-wide text-slate-400">kg</span>
+              </div>
+              <span className="whitespace-nowrap text-[11px] tabular-nums text-slate-400">
+                {rangeLabel} · {t("dash_locations_count", { n: locations.length })}
+              </span>
             </div>
-            {/* overflow-x-auto: a defensive safety net so the table scrolls
-                sideways on its own if it's ever still too wide for a very
-                narrow phone, instead of pushing the whole page wider than
-                the screen the way the fixed 3-column grid used to. */}
+            {/* overflow-x-auto: the table scrolls sideways on its own on a
+                narrow phone instead of pushing the whole page wider. */}
             <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
-                  <th className="px-5 py-2.5 font-semibold">{t("col_location")}</th>
-                  <th className="px-3 py-2.5 font-semibold">{t("col_buy_kg")}</th>
-                  <th className="px-3 py-2.5 font-semibold">{t("col_sell_kg")}</th>
-                  <th className="px-3 py-2.5 font-semibold">{t("col_stock")}</th>
+                <tr className="border-b border-slate-200 text-right text-[10px] uppercase tracking-[0.09em] text-slate-400">
+                  <th className="px-5 py-2.5 text-left font-bold">{t("col_location")}</th>
+                  <th className="px-3 py-2.5 font-bold">{t("col_opening")}</th>
+                  {/* The three movement columns sit on a faint wash so they
+                      read as one group — what happened during the period —
+                      without ruling a line through the table. */}
+                  <th className="bg-slate-50/70 px-3 py-2.5 font-bold">{t("col_bought")}</th>
+                  <th className="bg-slate-50/70 px-3 py-2.5 font-bold">{t("col_sold")}</th>
+                  <th className="bg-slate-50/70 px-3 py-2.5 font-bold">{t("col_adjusted")}</th>
+                  <th className="px-3 py-2.5 font-bold">{t("col_on_hand")}</th>
                   {canOpenLocation && <th className="w-8 px-3 py-2.5"></th>}
                 </tr>
               </thead>
               <tbody>
-                {/* [2026-08-31] Rows are now clickable for HQ Admin/Owner —
-                    opens LocationDetail (same page the Locations list
-                    already links to), so "what's happening at this
-                    location" is one click away instead of only reachable
-                    via Settings > Locations. Sample-approved: same table,
-                    same columns, just a hover highlight + chevron added.
-                    [2026-09-03] `canOpenLocation` (isAdmin || isViewOnly) —
-                    a view-only account reaches the exact same read-only
-                    LocationDetail page an HQ Admin does, so it gets the
-                    same tap-through here too. Still not clickable for any
-                    other role, since station-detail stays gated to
-                    isAdmin/isViewOnly in App.jsx — clicking would only hit
-                    a permission-denied screen for them. */}
-                {locationPerformance.map(({ loc, buyKg, sellKg, pct }) => (
+                {/* Rows open LocationDetail for HQ Admin / Owner and for a
+                    view-only account, which reaches the same read-only page.
+                    Any other role would only hit a permission screen, so it
+                    stays unclickable for them (App.jsx gates station-detail). */}
+                {locationPerformance.map(({ loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status }) => (
                   <tr
                     key={loc.id}
                     onClick={canOpenLocation ? () => { setSelectedLocationId(loc.id); setPage("station-detail"); } : undefined}
-                    className={`border-b border-slate-50 last:border-0 ${canOpenLocation ? "cursor-pointer hover:bg-brand-50" : "hover:bg-slate-50/60"}`}
+                    className={`border-b border-slate-50 text-right last:border-0 ${canOpenLocation ? "cursor-pointer hover:bg-brand-50/40" : "hover:bg-slate-50/60"}`}
                   >
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full ${pct > 80 ? "bg-emerald-500" : pct > 40 ? "bg-gold-500" : "bg-rose-400"}`} />
+                    <td className="px-5 py-3.5 text-left">
+                      <div className="flex items-center gap-2.5">
+                        <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${
+                          status === "attn" ? "bg-amber-500 ring-[3px] ring-amber-100"
+                          : status === "trading" ? "bg-brand-600"
+                          : "bg-slate-300"}`} />
                         <span className="font-semibold text-slate-700">{loc.name}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 font-medium text-brand-600">{buyKg > 0 ? `+${fmt2(buyKg)}` : "—"}</td>
-                    <td className="px-3 py-3.5 font-medium text-rose-600">{sellKg > 0 ? `-${fmt2(sellKg)}` : "—"}</td>
-                    <td className="px-3 py-3.5 text-slate-600">
-                      <div className="flex items-center gap-2.5">
-                        <span>{fmt2(loc.current_stock_kg)} kg</span>
-                        <span className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-100">
-                          <span className="block h-full rounded-full bg-brand-500" style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
-                        </span>
-                        <span className="text-[11px] text-slate-400">{pct}%</span>
-                      </div>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-600">{fmt(openingKg)}</td>
+                    {/* No "+" on Bought — it is always positive, so a plus on
+                        every row carries no information. Sold and Adjusted
+                        keep the minus, which does. */}
+                    <td className="bg-slate-50/70 px-3 py-3.5 tabular-nums text-brand-700">
+                      {boughtKg > 0 ? fmt(boughtKg) : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="bg-slate-50/70 px-3 py-3.5 tabular-nums text-rose-600">
+                      {soldKg > 0 ? `−${fmt(soldKg)}` : <span className="text-slate-300">—</span>}
+                    </td>
+                    <td className="bg-slate-50/70 px-3 py-3.5 tabular-nums text-rose-600">
+                      {adjustedKg !== 0 ? `${adjustedKg < 0 ? "−" : ""}${fmt(Math.abs(adjustedKg))}` : <span className="text-slate-300">—</span>}
+                    </td>
+                    {/* The only column in full weight: it is what the row is
+                        for, and where the eye should land. */}
+                    <td className={`px-3 py-3.5 font-semibold tabular-nums ${onHandKg < -0.01 ? "text-rose-600" : onHandKg === 0 ? "text-slate-400" : "text-slate-800"}`}>
+                      {onHandKg < 0 ? `−${fmt(Math.abs(onHandKg))}` : fmt(onHandKg)}
                     </td>
                     {canOpenLocation && (
-                      <td className="px-3 py-3.5 text-slate-300">
-                        <ChevronRight size={15} />
-                      </td>
+                      <td className="px-3 py-3.5 text-slate-300"><ChevronRight size={15} /></td>
                     )}
                   </tr>
                 ))}
-                {loading && locations.length === 0 && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
-                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={5} className="px-5 py-10 text-center text-sm text-slate-400">{t("dash_no_locations")}</td></tr>}
+                {loading && locations.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
+                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("dash_no_locations")}</td></tr>}
               </tbody>
+              {locationPerformance.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-slate-300 bg-slate-50/70 text-right font-bold">
+                    <td className="px-5 py-3.5 text-left text-slate-700">{t("col_all_locations")}</td>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{fmt(perfTotals.openingKg)}</td>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{fmt(perfTotals.boughtKg)}</td>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{perfTotals.soldKg > 0 ? `−${fmt(perfTotals.soldKg)}` : "—"}</td>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{perfTotals.adjustedKg !== 0 ? `${perfTotals.adjustedKg < 0 ? "−" : ""}${fmt(Math.abs(perfTotals.adjustedKg))}` : "—"}</td>
+                    <td className="px-3 py-3.5 tabular-nums text-slate-800">{perfTotals.onHandKg < 0 ? `−${fmt(Math.abs(perfTotals.onHandKg))}` : fmt(perfTotals.onHandKg)}</td>
+                    {canOpenLocation && <td className="px-3 py-3.5"></td>}
+                  </tr>
+                </tfoot>
+              )}
             </table>
             </div>
+            {locationPerformance.length > 0 && (
+              <>
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 bg-slate-50/70 px-5 py-3 text-[11.5px] text-slate-500">
+                  <span className="flex items-center gap-2"><span className="h-[7px] w-[7px] rounded-full bg-brand-600" /><b className="font-semibold text-slate-700">{t("perf_trading")}</b> {t("perf_trading_why")}</span>
+                  <span className="flex items-center gap-2"><span className="h-[7px] w-[7px] rounded-full bg-slate-300" /><b className="font-semibold text-slate-700">{t("perf_quiet")}</b> {t("perf_quiet_why")}</span>
+                  <span className="flex items-center gap-2"><span className="h-[7px] w-[7px] rounded-full bg-amber-500 ring-[3px] ring-amber-100" /><b className="font-semibold text-slate-700">{t("perf_attn")}</b> {t("perf_attn_why")}</span>
+                </div>
+                {/* Printed so anyone can check the arithmetic on any row
+                    without being told how the table works. */}
+                <div className="border-t border-slate-100 px-5 py-3 text-[11.5px] text-slate-400">
+                  <code className="rounded bg-slate-100 px-1.5 py-0.5 font-sans font-semibold text-slate-600">{t("perf_formula")}</code>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
