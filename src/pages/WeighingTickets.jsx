@@ -1538,16 +1538,14 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // still guards against writing a zero-riel payment.
       const isPaidNow = isBuy ? true : (!priceNotGiven && sellPaidNow);
       const paymentStatusNow = isPaidNow ? "paid" : undefined;
-      // [2026-09-09] txDate: the day this load actually belongs to. Normally
-      // undefined, and finalizeTicketOffline stamps today as it always has.
-      // Set only when staff confirmed on the previous screen that the truck
-      // came on an earlier day and this is just a late finish — which stops
-      // a load quietly moving itself into the wrong month.
+      // [2026-09-10] No txDate is passed, ever. finalizeTicketOffline stamps
+      // the moment Finish is pressed, which is the day the receipt prints and
+      // the money moves — SISEN's standing rule. The 09/09 back-dating
+      // checkbox that overrode this is gone (see ConfirmFinishModal).
       const tx = await finalizeTicketOffline(tareUpdated, {
         userId: session.user.id,
         receiptPhotoUrl,
         paymentStatus: paymentStatusNow,
-        ...(ticket.backdatedTo ? { txDate: ticket.backdatedTo } : {}),
       });
       // [2026-09-08] Money received at the scale is a real payment row —
       // the same thing the manual New Sell form does — so Cash Flow and
@@ -1906,14 +1904,26 @@ function cambodiaDayKey(d) {
 }
 
 function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
-  // [2026-09-09] A ticket finished late used to land on TODAY's books no
-  // matter which day the truck actually came. The warning below has existed
-  // since 06/09 but only told staff to get an admin to fix it afterwards —
-  // and nobody did, so a load weighed on 31 August and finished on
-  // 1 September quietly moved itself into September. That is exactly the
-  // kind of silent drift the monthly close is meant to prevent, so the
-  // choice belongs here, at the one moment somebody knows the answer.
-  const [useWeighInDay, setUseWeighInDay] = useState(true);
+  // [2026-09-10] THE TRANSACTION DATE IS THE DAY FINISH IS PRESSED. Always.
+  //
+  // That is the day the receipt is printed and the day the money changes
+  // hands, and it is SISEN's standing rule, stated twice: "if weigh-out is
+  // on the 6th and weigh-in is on the 5th, the transaction should be on the
+  // 6th — that's the printing day — but never change the weigh-in date."
+  //
+  // On 09/09 a checkbox was added here, TICKED BY DEFAULT, that recorded a
+  // late-finished ticket as the weigh-in day's business instead. That was
+  // wrong and it is removed. It is why receipt INV-758896-B printed
+  // 09-09-2026 for a load that was weighed out and paid for on the 10th.
+  //
+  // The warning below stays — knowing the truck was weighed in on another
+  // day is exactly how staff catch that they have the WRONG TICKET open,
+  // which is what it was originally for (06/09, Jomnoum TKT-872042). It
+  // just no longer offers to move the money into a different month.
+  //
+  // The weigh-in and weigh-out stamps are not touched by any of this: they
+  // are stamped once, at the scale, and nothing in the app rewrites them.
+  //
   // [2026-09-06] Jomnoum TKT-872042: the truck was weighed out on the 5th
   // but nobody pressed Finish Ticket until the next morning, so tare_at
   // (recorded at the moment the button is pressed) said 10:10 AM on the
@@ -1935,22 +1945,11 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
           <p className="mt-1 text-xs text-amber-700">
             If it's the wrong ticket entirely, press cancel.
           </p>
-          <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border-2 border-amber-300 bg-white p-2.5">
-            <input
-              type="checkbox"
-              checked={useWeighInDay}
-              onChange={(e) => setUseWeighInDay(e.target.checked)}
-              className="mt-0.5 h-5 w-5 shrink-0 rounded border-amber-400 text-amber-600 focus:ring-amber-400"
-            />
-            <span className="text-xs text-amber-900">
-              <strong>Record this as {weighedInDay}'s business, not today's.</strong>
-              <span className="ml-1 font-khmer font-normal">កត់ត្រាជាការងាររបស់ថ្ងៃថ្លឹងចូល មិនមែនថ្ងៃនេះទេ។</span>
-              <span className="mt-1 block font-normal text-amber-700">
-                Leave this ticked when the truck came that day and this is just being finished late — the load then counts
-                in the right day, and the right month. Untick it only if the rice genuinely moved today.
-              </span>
-            </span>
-          </label>
+          <p className="mt-2 text-xs text-amber-800">
+            The weigh-in stays on {inStamp.date}. The receipt is dated today, because today is
+            when it is printed and paid.
+            <span className="ml-1 font-khmer">ការថ្លឹងចូលនៅតែថ្ងៃដដែល។ វិក្កយបត្រចុះថ្ងៃនេះ ព្រោះថ្ងៃនេះជាថ្ងៃបោះពុម្ព និងបង់ប្រាក់។</span>
+          </p>
         </div>
       )}
       <div className="mb-5 rounded-lg border-2 border-brand-200 bg-brand-50 p-4 text-center">
@@ -1963,7 +1962,7 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
       </div>
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">This isn't it — cancel</button>
-        <button onClick={() => onConfirm(differentDay && useWeighInDay ? weighedInDay : null)} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+        <button onClick={() => onConfirm()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
           Yes, this is the right truck <ArrowRight size={14} />
         </button>
       </div>
@@ -2636,7 +2635,7 @@ export default function WeighingTickets() {
         <ConfirmFinishModal
           ticket={confirmFinishTicket}
           onClose={() => setConfirmFinishTicket(null)}
-          onConfirm={async (businessDate) => {
+          onConfirm={async () => {
             // Another device may have finished this ticket since this board
             // last refreshed — check before opening the form (audit #10).
             const fresh = await withTimeout(
@@ -2649,11 +2648,10 @@ export default function WeighingTickets() {
               alert(tr("err_already_finished"));
               return;
             }
-            // businessDate is set only when staff confirmed this is a late
-            // finish for an earlier day. It rides on the ticket object into
-            // FinishTicketModal, which hands it to finalizeTicketOffline as
-            // txDate — the same field the offline queue already stamps.
-            setFinishTicket(businessDate ? { ...confirmFinishTicket, backdatedTo: businessDate } : confirmFinishTicket);
+            // [2026-09-10] Nothing rides on the ticket to change its date any
+            // more. The transaction is dated the day Finish is pressed, full
+            // stop — see ConfirmFinishModal for why the 09/09 override went.
+            setFinishTicket(confirmFinishTicket);
             setConfirmFinishTicket(null);
           }}
         />
