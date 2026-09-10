@@ -2471,12 +2471,16 @@ export default function WeighingTickets() {
       </div>
 
       <main className="flex-1 overflow-y-auto bg-slate-100 p-6">
-        {/* [2026-09-09] The daily close sits at the top of the board the
-            station already works from, rather than on a screen someone has
-            to remember to visit. Hidden entirely when no single station is
-            selected — "confirm today" has no meaning across five of them at
-            once — and hidden too if the feature is not installed in the
-            database yet. */}
+        {/* [2026-09-10] The day check is COLLAPSED by default — one line
+            and a button, not a panel across the whole board. It used to
+            open full height every time a station opened this screen and
+            push the waiting trucks off the page (SISEN). It is a
+            once-a-day job; it waits until someone chooses to do it. See
+            StationDayClose.jsx.
+
+            Still hidden entirely when no single station is selected —
+            "confirm today" has no meaning across five at once — and when
+            the feature is not installed in the database. */}
         {effectiveLocationId && (
           <StationDayClose
             locationId={effectiveLocationId}
