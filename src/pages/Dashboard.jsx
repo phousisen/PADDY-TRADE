@@ -94,6 +94,12 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // a missing column is better than a blank dashboard.
   const [adjustments, setAdjustments] = useState([]);
   const [feedTxs, setFeedTxs] = useState([]);
+  // [2026-09-10] What each station held at the END of the selected period,
+  // and at the end of the day BEFORE it. Read from the ledger, which knows
+  // the answer for any date. Empty until they arrive, or if the database
+  // function is not installed yet — see the fallback in locationPerformance.
+  const [closeAtEnd, setCloseAtEnd] = useState(new Map());
+  const [closeBeforeStart, setCloseBeforeStart] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -137,6 +143,12 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
 
       api.getStockAdjustments({ startDate: rangeStart, endDate: rangeEnd })
         .then(setAdjustments).catch(() => setAdjustments([]));
+
+      // The two snapshots that make "On hand" mean the end of the period
+      // you picked rather than right now.
+      const dayBefore = addDays(rangeStart, -1);
+      api.getStockAtClose(rangeEnd).then(setCloseAtEnd).catch(() => setCloseAtEnd(new Map()));
+      api.getStockAtClose(dayBefore).then(setCloseBeforeStart).catch(() => setCloseBeforeStart(new Map()));
 
       // The one the page genuinely has to wait for before it stops saying
       // "Loading…": the movements for the period on screen.
@@ -269,9 +281,25 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
         })
         .reduce((s, a) => s + Number(a.adjustment_kg || 0), 0);
 
-      const onHandKg = Number(loc.current_stock_kg) || 0;
-      // Wind the authoritative closing balance back through the period.
-      const openingKg = onHandKg - boughtKg + soldKg - adjustedKg;
+      // [2026-09-10] Both ends are now REAL SNAPSHOTS, read from the
+      // ledger: what this station held at the end of the day before the
+      // period, and at the end of the last day of it.
+      //
+      // Before this, On hand was always today's figure whatever period was
+      // selected, and Opening was worked backwards from it — so the
+      // Yesterday row showed yesterday's movements against today's balance
+      // and described no real moment (SISEN spotted it).
+      //
+      // If the snapshots are not there — the database function isn't
+      // installed yet, or they simply have not arrived — this falls back to
+      // exactly the old behaviour rather than showing a blank.
+      const haveSnapshots = closeAtEnd.size > 0;
+      const onHandKg = haveSnapshots
+        ? (closeAtEnd.get(loc.id) ?? 0)
+        : (Number(loc.current_stock_kg) || 0);
+      const openingKg = haveSnapshots && closeBeforeStart.size > 0
+        ? (closeBeforeStart.get(loc.id) ?? 0)
+        : onHandKg - boughtKg + soldKg - adjustedKg;
       const moved = boughtKg > 0 || soldKg > 0 || adjustedKg !== 0;
 
       // The old dot meant "percentage of capacity", so every station showed
@@ -282,7 +310,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
 
       return { loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status };
     });
-  }, [locations, periodTxs, adjustments, rangeStart, rangeEnd]);
+  }, [locations, periodTxs, adjustments, rangeStart, rangeEnd, closeAtEnd, closeBeforeStart]);
 
   // Its own bounded fetch — see load(). Sorting eight rows is free.
   const liveFeed = useMemo(() => {
