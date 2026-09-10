@@ -226,20 +226,69 @@ async function extractFnError(error) {
 // every row or an error — never a silent half-answer. `makeQuery` must BUILD
 // a fresh query each call: a Supabase builder is single-use once awaited.
 //
+// [2026-09-09, same day — a flaw in the first version of this fix]
+//
+// The first version let each caller keep its own `.order("created_at", desc)`
+// and paged with .range() on top of that. That is WRONG while rows are being
+// inserted, which at five weighbridges is every few minutes:
+//
+//   page 1 = rows 0..999 of "newest first"
+//   ... a farmer's load is finished at a station, a new row goes to the TOP ...
+//   page 2 = rows 1000..1999 of a list where everything has shifted down one
+//
+// so the row that was at position 999 is fetched a SECOND time. Totals come
+// out inflated, and inflated by a different amount on every page load — which
+// is exactly the "it was different just now" that gave this away.
+//
+// The fix is to page by a key that never moves: the row's own id, ascending.
+// A row inserted mid-walk lands at the END, after the pages already taken, so
+// it is either picked up on the last page or missed until the next load —
+// never duplicated, never skipped from what was already there. The caller's
+// display order is then applied in JS, so what it receives is unchanged.
+//
 // HARD_ROW_CAP is a seatbelt, not a limit: at 500,000 rows something is very
 // wrong (a missing filter, a runaway join), and it throws rather than
 // silently returning a partial set, which is the exact failure being fixed.
 const PAGE_SIZE = 1000;
 const HARD_ROW_CAP = 500000;
 
-async function fetchAll(makeQuery) {
+// Comparators for restoring each caller's display order after the walk.
+// `desc("a", "b")` sorts by a descending, then b descending as a tiebreak.
+function desc(...fields) {
+  return (x, y) => {
+    for (const f of fields) {
+      const a = x[f] ?? "", b = y[f] ?? "";
+      if (a < b) return 1;
+      if (a > b) return -1;
+    }
+    return 0;
+  };
+}
+function asc(...fields) {
+  return (x, y) => {
+    for (const f of fields) {
+      const a = x[f] ?? "", b = y[f] ?? "";
+      if (a < b) return -1;
+      if (a > b) return 1;
+    }
+    return 0;
+  };
+}
+
+// keyColumn must be unique and never change — the row's own id for a table.
+// For a VIEW with no id, pass the column that uniquely identifies a row.
+// sort is applied once, after every page is in, so the caller sees exactly
+// the order it saw before this function existed.
+async function fetchAll(makeQuery, { keyColumn = "id", sort = null } = {}) {
   const rows = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await makeQuery().range(from, from + PAGE_SIZE - 1);
+    const { data, error } = await makeQuery()
+      .order(keyColumn, { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
     if (error) throw error;
     const page = data || [];
     rows.push(...page);
-    if (page.length < PAGE_SIZE) return rows;
+    if (page.length < PAGE_SIZE) break;
     if (rows.length >= HARD_ROW_CAP) {
       throw new Error(
         `Refusing to load more than ${HARD_ROW_CAP} rows in one go — this query is missing a filter. ` +
@@ -247,11 +296,31 @@ async function fetchAll(makeQuery) {
       );
     }
   }
+  // Belt and braces: a duplicate can only appear if the key column is not
+  // actually unique, which would be a schema mistake rather than a race —
+  // but a double-counted transaction is expensive enough to be worth one
+  // pass of a Set.
+  if (rows.length > 1 && rows[0] && rows[0][keyColumn] !== undefined) {
+    const seen = new Set();
+    let dupes = 0;
+    const unique = [];
+    for (const r of rows) {
+      const k = r[keyColumn];
+      if (seen.has(k)) { dupes++; continue; }
+      seen.add(k);
+      unique.push(r);
+    }
+    if (dupes > 0) {
+      console.warn(`[fetchAll] dropped ${dupes} duplicate row(s) on ${keyColumn}`);
+      return sort ? unique.sort(sort) : unique;
+    }
+  }
+  return sort ? rows.sort(sort) : rows;
 }
 
 const rawApi = {
   async getLocations() {
-    return await fetchAll(() => supabase.from("locations").select("*").order("name"));
+    return await fetchAll(() => supabase.from("locations").select("*"), { sort: asc("name") });
   },
 
   // Live weighbridge connection — reads the single "current weight" row a
@@ -350,7 +419,7 @@ const rawApi = {
 
   async getRoles() {
     try {
-      return await fetchAll(() => supabase.from("roles").select("*").order("scope").order("name"));
+      return await fetchAll(() => supabase.from("roles").select("*"), { sort: asc("scope", "name") });
     } catch (e) {
       console.warn("Roles table not available yet:", e.message);
       return [];
@@ -404,7 +473,7 @@ const rawApi = {
     if (endDate) query = query.lte("created_at", `${endDate}T23:59:59+07:00`);
       return query;
     };
-    const data = await fetchAll(makeQuery);
+    const data = await fetchAll(makeQuery, { sort: desc("created_at") });
     return data.map((a) => ({ ...a, stationName: a.locations?.name || "—", adjustedByName: a.profiles?.full_name || "—" }));
   },
 
@@ -560,11 +629,11 @@ const rawApi = {
   // migration_partner_capital_bank_loans.sql.
   async getPartners(locationId) {
     const makeQuery = () => {
-    let query = supabase.from("partners").select("*, locations(name)").order("name");
+    let query = supabase.from("partners").select("*, locations(name)");
     if (locationId) query = query.eq("location_id", locationId);
       return query;
     };
-    const data = await fetchAll(makeQuery);
+    const data = await fetchAll(makeQuery, { sort: asc("name") });
     return data.map((p) => ({ ...p, locationName: p.locations?.name || "—" }));
   },
 
@@ -620,11 +689,9 @@ const rawApi = {
   // Bank loans (outside lenders) at a location — a flat borrow/repay
   // ledger, the same style as the payments table. Admin-only.
   async getBankLoans() {
-    const data = await fetchAll(() => supabase
-      .from("bank_loans")
-      .select("*, locations(name)")
-      .order("entry_date", { ascending: false })
-      .order("created_at", { ascending: false }));
+    const data = await fetchAll(
+      () => supabase.from("bank_loans").select("*, locations(name)"),
+      { sort: desc("entry_date", "created_at") });
     return data.map((e) => ({ ...e, stationName: e.locations?.name || "—" }));
   },
 
@@ -669,7 +736,7 @@ const rawApi = {
   async getParties({ type, q, qPhone, phone, locationId } = {}) {
     // [2026-09-09] Paged — see fetchAll.
     const makeQuery = () => {
-    let query = supabase.from("parties").select("*").order("name");
+    let query = supabase.from("parties").select("*");
     if (type) query = query.eq("type", type);
     if (q) query = query.ilike("name", `%${q}%`);
     if (qPhone) query = query.ilike("phone", `%${qPhone}%`);
@@ -677,7 +744,7 @@ const rawApi = {
     if (locationId) query = query.eq("location_id", locationId);
       return query;
     };
-    return await fetchAll(makeQuery);
+    return await fetchAll(makeQuery, { sort: asc("name") });
   },
 
   // `id` is optional — used by the offline queue to replay a party that
@@ -791,13 +858,13 @@ const rawApi = {
       // address/phone: per-location fields (see add_location_address_phone.sql)
       // used on the printed receipt header — falls back to "—" below if a
       // location hasn't had them filled in yet.
-      .select("*, locations(name, address, phone), parties(name, id_number, phone), products(name)")
-      .order("created_at", { ascending: false });
+      .select("*, locations(name, address, phone), parties(name, id_number, phone), products(name)");
     if (type) query = query.eq("type", type);
     if (locationId) query = query.eq("location_id", locationId);
       return query;
     };
-    const data = await fetchAll(makeQuery);
+    // Ordering is applied after the walk, not inside it — see fetchAll.
+    const data = await fetchAll(makeQuery, { sort: desc("created_at") });
     return data.map((t) => ({
       ...t,
       stationName: t.locations?.name || "—",
@@ -919,8 +986,7 @@ const rawApi = {
       .from("weighing_tickets")
       // address/phone: per-location fields (see add_location_address_phone.sql)
       // used on the printed Weigh-In Slip header.
-      .select("*, locations(name, address, phone), gross_profile:gross_by(full_name), priced_profile:priced_by(full_name), tare_profile:tare_by(full_name), created_profile:created_by(full_name)")
-      .order("created_at", { ascending: false });
+      .select("*, locations(name, address, phone), gross_profile:gross_by(full_name), priced_profile:priced_by(full_name), tare_profile:tare_by(full_name), created_profile:created_by(full_name)");
     if (locationId) query = query.eq("location_id", locationId);
     if (stages && stages.length) query = query.in("stage", stages);
       return query;
@@ -930,11 +996,13 @@ const rawApi = {
     // everything instead of the newest 1,000 — see fetchAll.
     let data;
     if (limit) {
-      const { data: page, error } = await makeQuery().limit(limit);
+      const { data: page, error } = await makeQuery()
+        .order("created_at", { ascending: false })
+        .limit(limit);
       if (error) throw error;
       data = page || [];
     } else {
-      data = await fetchAll(makeQuery);
+      data = await fetchAll(makeQuery, { sort: desc("created_at") });
     }
     return data.map((t) => ({
       ...t,
@@ -1413,12 +1481,13 @@ const rawApi = {
   },
 
   async getChangeRequests() {
-    const data = await fetchAll(() => supabase
-      .from("change_requests")
-      .select(
-        "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, paper_ticket_no, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
-      )
-      .order("created_at", { ascending: false }));
+    const data = await fetchAll(
+      () => supabase
+        .from("change_requests")
+        .select(
+          "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, paper_ticket_no, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
+        ),
+      { sort: desc("created_at") });
     return data.map((r) => ({
       ...r,
       transactionCode: r.transactions?.code || "—",
@@ -1714,8 +1783,9 @@ const rawApi = {
   async getAuditLogs() {
     // [2026-09-09] Paged — see fetchAll. An audit log that silently stops at
     // 1,000 entries is worse than none: it looks complete.
-    const data = await fetchAll(() =>
-      supabase.from("audit_logs").select("*, profiles(full_name)").order("created_at", { ascending: false }));
+    const data = await fetchAll(
+      () => supabase.from("audit_logs").select("*, profiles(full_name)"),
+      { sort: desc("created_at") });
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
@@ -1892,10 +1962,9 @@ const rawApi = {
   async getTicketMismatches() {
     // [2026-09-09] Paged — a watchdog that silently stops listing faults at
     // 1,000 is worse than no watchdog.
-    const data = await fetchAll(() => supabase
-      .from("v_ticket_mismatches")
-      .select("*")
-      .order("tx_date", { ascending: false }));
+    const data = await fetchAll(
+      () => supabase.from("v_ticket_mismatches").select("*"),
+      { keyColumn: "transaction_id", sort: desc("tx_date") });
     return data || [];
   },
 
@@ -1928,9 +1997,9 @@ const rawApi = {
     // break the Transactions screen.
     let data;
     try {
-      data = await fetchAll(() => supabase
-        .from("v_transaction_edits")
-        .select("transaction_id, edit_count, last_changed_at"));
+      data = await fetchAll(
+        () => supabase.from("v_transaction_edits").select("transaction_id, edit_count, last_changed_at"),
+        { keyColumn: "transaction_id" });
     } catch (e) {
       console.warn("[edits] badge data unavailable:", e.message);
       return {};
@@ -2002,13 +2071,13 @@ const rawApi = {
     // the Cash Flow report both read every payment; capped at 1,000 they were
     // simply wrong once the table grew past that.
     const makeQuery = () => {
-      let query = supabase.from("payments").select("*, profiles(full_name)").order("pay_date", { ascending: false }).order("created_at", { ascending: false });
+      let query = supabase.from("payments").select("*, profiles(full_name)");
       if (!includeVoided) query = query.is("voided_at", null);
       if (locationId) query = query.eq("location_id", locationId);
       if (type) query = query.eq("type", type);
       return query;
     };
-    const data = await fetchAll(makeQuery);
+    const data = await fetchAll(makeQuery, { sort: desc("pay_date", "created_at") });
     return data.map((p) => ({ ...p, createdByName: p.profiles?.full_name || "—" }));
   },
 
