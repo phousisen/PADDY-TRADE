@@ -93,6 +93,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // Performance. Loaded alongside the rest but allowed to fail on its own —
   // a missing column is better than a blank dashboard.
   const [adjustments, setAdjustments] = useState([]);
+  const [feedTxs, setFeedTxs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -100,8 +101,22 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     setLoading(true);
     setLoadError("");
     try {
-      const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
-      api.getStockAdjustments().then(setAdjustments).catch(() => setAdjustments([]));
+      // [2026-09-10] The dashboard asks for the PERIOD ON SCREEN, not for
+      // every transaction ever recorded. The period buttons used to
+      // re-slice a full download; now they change the query. Same figures,
+      // and it stops growing with the whole history of the business.
+      //
+      // The live feed is fetched separately and bounded to eight rows, so
+      // it still shows the last few loads first thing in the morning when
+      // "Today" is legitimately empty.
+      const [locs, transactions, feed] = await Promise.all([
+        api.getLocations(),
+        api.getTransactions({ from: rangeStart, to: rangeEnd }),
+        api.getTransactions({ limit: 8 }).catch(() => []),
+      ]);
+      setFeedTxs(feed.filter((x) => (x.hq_status || "processing") !== "cancelled"));
+      api.getStockAdjustments({ startDate: rangeStart, endDate: rangeEnd })
+        .then(setAdjustments).catch(() => setAdjustments([]));
       // A request that raced ahead of the auth session fully attaching
       // (weak station WiFi, right after login/reload) can come back
       // empty — RLS quietly filters everything out instead of erroring —
@@ -123,17 +138,6 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       setLoading(false);
     }
   }
-  useEffect(() => {
-    // Wait for AuthContext's own startup check to finish and a real
-    // session to actually be attached before firing Dashboard's own
-    // fetch. App.jsx already blocks rendering until authLoading is
-    // false, but a cached-profile fallback (AuthContext's
-    // PROFILE_TIMEOUT_MS path, for a slow connection) can let that
-    // happen slightly before the Supabase client's own session is fully
-    // attached — this re-fires load() once session actually shows up.
-    if (authLoading || !session?.user?.id) return;
-    load();
-  }, [authLoading, session?.user?.id]);
 
   const todayStr = cambodiaDateStr();
   const [period, setPeriod] = useState("today");
@@ -141,9 +145,9 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   const [customEnd, setCustomEnd] = useState(todayStr);
   const PERIODS = PERIOD_IDS.map((p) => ({ ...p, label: t(p.key) }));
 
-  // Every card/table below reads from this one range — switching the
-  // period control re-slices the same transaction list instead of
-  // re-fetching, so it's instant.
+  // Every card/table below reads from this one range. [2026-09-10]
+  // Switching the period now re-runs the query for that period rather
+  // than re-slicing a full download — see the effect just below.
   const { rangeStart, rangeEnd, rangeLabel } = useMemo(() => {
     switch (period) {
       case "yesterday": {
@@ -166,6 +170,23 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, todayStr, customStart, customEnd, t]);
+
+  // [2026-09-10] Moved below the period memo, and the period is now in the
+  // dependency list: switching Today/Week/Month re-runs the query instead
+  // of re-slicing a full download. It has to sit here rather than further
+  // up — naming rangeStart in a dependency list before it is declared is a
+  // reference error, and the whole page would go white.
+  //
+  // Wait for AuthContext's own startup check to finish and a real session
+  // to actually be attached before firing. App.jsx already blocks
+  // rendering until authLoading is false, but a cached-profile fallback
+  // (AuthContext's PROFILE_TIMEOUT_MS path, for a slow connection) can let
+  // that happen slightly before the Supabase client's session is fully
+  // attached — this re-fires load() once session actually shows up.
+  useEffect(() => {
+    if (authLoading || !session?.user?.id) return;
+    load();
+  }, [authLoading, session?.user?.id, rangeStart, rangeEnd]);
 
   const periodTxs = useMemo(
     () => txs.filter((t) => t.tx_date >= rangeStart && t.tx_date <= rangeEnd),
@@ -258,9 +279,10 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     onHandKg: acc.onHandKg + r.onHandKg,
   }), { openingKg: 0, boughtKg: 0, soldKg: 0, adjustedKg: 0, onHandKg: 0 }), [locationPerformance]);
 
+  // Its own bounded fetch — see load(). Sorting eight rows is free.
   const liveFeed = useMemo(() => {
-    return txs.slice().sort((a, b) => (a.tx_date + a.tx_time < b.tx_date + b.tx_time ? 1 : -1)).slice(0, 8);
-  }, [txs]);
+    return feedTxs.slice().sort((a, b) => (a.tx_date + a.tx_time < b.tx_date + b.tx_time ? 1 : -1)).slice(0, 8);
+  }, [feedTxs]);
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">

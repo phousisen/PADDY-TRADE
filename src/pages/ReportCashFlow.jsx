@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { api } from "../api.js";
+import { queryRange, rangeKey } from "../reportQuery.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
@@ -111,8 +112,18 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
     setLoading(true);
     setLoadError("");
     try {
+      // [2026-09-10] The payments — which is what this report IS — are
+      // asked of the database for the chosen period and station, exactly
+      // the filter that used to be applied in the browser afterwards.
+      //
+      // The transactions are NOT narrowed, deliberately: they are only a
+      // lookup, so a payment made this month against a sale from last
+      // month can still show the buyer's name and print its receipt.
+      // Narrowing them would blank those rows. That download is the one
+      // thing still unbounded on this screen and wants its own fix.
+      const range = queryRange({ selectedLocationIds, startDate, endDate });
       const [payData, txData, partyData] = await Promise.all([
-        api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
+        api.getPayments(isAdmin ? range : { locationId: profile?.location_id, ...range }),
         api.getTransactions(),
         api.getParties(),
       ]);
@@ -128,7 +139,7 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   function openPayment(p) {
     if (!p.transaction_id) return;

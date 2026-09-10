@@ -14,7 +14,8 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
   function load() {
     setLoading(true);
     setLoadError("");
-    Promise.all([api.getLocations(), api.getTransactions()])
+    // [2026-09-10] Period and station asked of the database — reportQuery.js.
+    Promise.all([api.getLocations(), api.getTransactions(queryRange({ selectedLocationIds, startDate, endDate }))])
       .then(([s, t]) => {
         setAllStations(s);
         setAllTxs(t.slice().sort((a, b) => (a.tx_date + a.tx_time > b.tx_date + b.tx_time ? 1 : -1)));
@@ -26,7 +27,7 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
       })
       .finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   const stations = selectedLocationIds.length ? allStations.filter((s) => selectedLocationIds.includes(s.id)) : allStations;
   const txs = allTxs

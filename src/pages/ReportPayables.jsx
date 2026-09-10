@@ -27,7 +27,11 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
   function load() {
     setLoading(true);
     setLoadError("");
-    Promise.all([api.getTransactions({ type: TYPE }), api.getPayments({ type: PAY_TYPE })])
+    // [2026-09-10] Period and station asked of the database — reportQuery.js.
+    // Payments stay unfiltered by date: this report needs to know what has
+    // been paid against a transaction whenever that happened, not only
+    // inside the period on screen.
+    Promise.all([api.getTransactions({ type: TYPE, ...queryRange({ selectedLocationIds, startDate, endDate }) }), api.getPayments({ type: PAY_TYPE })])
       .then(([tx, pay]) => {
         setAllRows(tx);
         setPayments(pay);
@@ -40,7 +44,7 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
       })
       .finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")

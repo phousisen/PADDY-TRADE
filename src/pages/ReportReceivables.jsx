@@ -27,7 +27,9 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
   function load() {
     setLoading(true);
     setLoadError("");
-    Promise.all([api.getTransactions({ type: TYPE }), api.getPayments({ type: PAY_TYPE })])
+    // [2026-09-10] Period and station asked of the database — reportQuery.js.
+    // Payments stay unfiltered by date — see ReportPayables for why.
+    Promise.all([api.getTransactions({ type: TYPE, ...queryRange({ selectedLocationIds, startDate, endDate }) }), api.getPayments({ type: PAY_TYPE })])
       .then(([tx, pay]) => {
         setAllRows(tx);
         setPayments(pay);
@@ -40,7 +42,7 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
       })
       .finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")

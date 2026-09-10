@@ -15,7 +15,8 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
   function load() {
     setLoading(true);
     setLoadError("");
-    api.getTransactions()
+    // [2026-09-10] Period and station asked of the database — reportQuery.js.
+    api.getTransactions(queryRange({ selectedLocationIds, startDate, endDate }))
       .then(setAllTxs)
       .catch((err) => {
         // Without this, a failed/dropped request silently showed "No
@@ -25,7 +26,7 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
       })
       .finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   const txs = allTxs
     .filter((t) => (t.hq_status || "processing") !== "cancelled")

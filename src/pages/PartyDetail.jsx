@@ -34,13 +34,18 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
     const txType = isSupplier ? "BUY" : "SELL";
     const payType = isSupplier ? "pay_supplier" : "receive_customer";
     setLoading(true);
+    // [2026-09-10] Ask for THIS farmer's transactions, not everyone's.
+    // This page shows one person's history — perhaps fifty rows — and used
+    // to download every Buy (or every Sell) in the business to find them,
+    // then discard the rest in the browser. Opening one farmer's profile
+    // cost the same as loading the whole company's trading.
     Promise.all([
       api.getParties({ type: partyType }),
-      api.getTransactions({ type: txType }),
+      api.getTransactions({ type: txType, partyId }),
       api.getPayments({ type: payType }).catch(() => []),
     ]).then(([parties, txs, pays]) => {
       setParty(parties.find((p) => p.id === partyId) || null);
-      setRows(txs.filter((t) => t.party_id === partyId));
+      setRows(txs);
       setPayments(pays);
       setLoading(false);
     });

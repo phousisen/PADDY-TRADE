@@ -50,14 +50,15 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
   function load() {
     setLoading(true);
     setLoadError("");
-    api.getStockAdjustments()
+    // [2026-09-10] Period and station asked of the database — reportQuery.js.
+    api.getStockAdjustments(queryRangeAdj({ selectedLocationIds, startDate, endDate }))
       .then(setAllAdjustments)
       .catch((err) => {
         setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
       })
       .finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   const adjustments = useMemo(() => {
     return allAdjustments

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Wallet } from "lucide-react";
 import { api } from "../api.js";
+import { queryRange, rangeKey } from "../reportQuery.js";
 import { SummaryStrip, SummaryCell, ReportCard, SectionLabel, Row, TotalBox, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
@@ -99,15 +100,19 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   const [loanEntries, setLoanEntries] = useState([]);
   const [payments, setPayments] = useState([]);
 
+  // [2026-09-10] The period is asked of the database, not filtered out of
+  // a full download afterwards. Same figures, a fraction of the data.
+  const rk = rangeKey({ selectedLocationIds, startDate, endDate });
   useEffect(() => {
-    Promise.all([api.getTransactions(), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
-    api.getPayments().then(setPayments).catch(() => setPayments([]));
+    const range = queryRange({ selectedLocationIds, startDate, endDate });
+    Promise.all([api.getTransactions(range), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
+    api.getPayments(range).then(setPayments).catch(() => setPayments([]));
     // Admin-only tables — a non-admin viewer (shouldn't normally reach this
     // page, but just in case) simply sees zero partner capital/bank loans
     // rather than an error.
     api.getPartnerCapitalEntries().then(setCapitalEntries).catch(() => setCapitalEntries([]));
     api.getBankLoans().then(setLoanEntries).catch(() => setLoanEntries([]));
-  }, []);
+  }, [rk]);
 
   const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
   const activeTxs = txs

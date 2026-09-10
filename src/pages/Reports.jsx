@@ -6,6 +6,8 @@ import DateRangeFilter from "../components/DateRangeFilter.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
+import { queryRange } from "../reportQuery.js";
+import { getAccurateNow } from "../supabaseClient.js";
 import { downloadReportWorkbook, cambodiaTimestamp } from "../reportExport.js";
 import ReportOverview from "./ReportOverview.jsx";
 import ReportBalanceSheet from "./ReportBalanceSheet.jsx";
@@ -20,6 +22,19 @@ import ReportCapital from "./ReportCapital.jsx";
 import ReportTax from "./ReportTax.jsx";
 import ReportAuditLog from "./ReportAuditLog.jsx";
 
+
+// Cambodia's calendar today, and the first of the month it falls in — the
+// period every report opens on.
+function cambodiaToday() {
+  const p = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(getAccurateNow()).forEach((x) => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day}`;
+}
+function monthStart() {
+  return `${cambodiaToday().slice(0, 7)}-01`;
+}
+
 export default function Reports({ initialTab = "overview" }) {
   const { t } = useLanguage();
   const { profile } = useAuth();
@@ -27,8 +42,15 @@ export default function Reports({ initialTab = "overview" }) {
   const [tab, setTab] = useState(initialTab);
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
+  // [2026-09-10] Reports open on THIS MONTH, not on all time.
+  //
+  // Chosen by SISEN. It is not cosmetic: the period is now part of the
+  // database query, so a report can only ask for a period it has. Opening
+  // on "everything" would mean every report downloading the whole history
+  // before showing anything, which is the problem being fixed. Any range,
+  // including all of it, is still one click away on the date filter.
+  const [startDate, setStartDate] = useState(() => monthStart());
+  const [endDate, setEndDate] = useState(() => cambodiaToday());
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
@@ -40,9 +62,14 @@ export default function Reports({ initialTab = "overview" }) {
     setExporting(true);
     setExportError("");
     try {
+      // [2026-09-10] The export now respects the filters ON SCREEN. It used
+      // to fetch everything ever recorded and hand it to the workbook,
+      // which then filtered it — so the download was the size of the whole
+      // business no matter what period you had chosen.
+      const range = queryRange({ selectedLocationIds, startDate, endDate });
       const [txs, payments, capitalEntries, loanEntries] = await Promise.all([
-        api.getTransactions(),
-        api.getPayments(),
+        api.getTransactions(range),
+        api.getPayments(range),
         api.getPartnerCapitalEntries().catch(() => []),
         api.getBankLoans().catch(() => []),
       ]);

@@ -84,20 +84,19 @@ export default function LocationDetail({ locationId, setPage }) {
       // problem loading adjustments alone (a bad join, a network blip)
       // only leaves the ledger's "Lost" figures blank, never blocks the
       // rest of this page from loading.
+      // [2026-09-10] Ask the database for THIS station's transactions.
+      // This page fetched every station's, then filtered in the browser —
+      // five times the data it needed, and growing with the whole business
+      // rather than with this one shed.
       const [locs, transactions, adjustmentRows] = await Promise.all([
         api.getLocations(),
-        api.getTransactions(),
+        api.getTransactions(isCombined ? {} : { locationId }),
         isCombined ? Promise.resolve([]) : api.getStockAdjustments({ locationId }).catch(() => []),
       ]);
       setAllLocations(locs);
       setAdjustments(adjustmentRows);
-      if (isCombined) {
-        setLocation(null);
-        setTxs(transactions);
-      } else {
-        setLocation(locs.find((l) => l.id === locationId) || null);
-        setTxs(transactions.filter((t) => t.location_id === locationId));
-      }
+      setTxs(transactions);
+      setLocation(isCombined ? null : (locs.find((l) => l.id === locationId) || null));
     } catch (err) {
       // Without this, a failed/dropped request left this whole page stuck
       // showing "Loading…" forever with no error and no way to retry.

@@ -12,10 +12,16 @@ export default function ReportPurchases({ selectedLocationIds = [], startDate = 
   const [groupBy, setGroupBy] = useState("party");
   const [view, setView] = useState("summary");
 
+  // [2026-09-10] Period and station asked of the database — see reportQuery.js.
+  const rk = rangeKey({ selectedLocationIds, startDate, endDate });
   useEffect(() => {
-    api.getTransactions({ type: "BUY" }).then(setAllRows);
+    const range = queryRange({ selectedLocationIds, startDate, endDate });
+    api.getTransactions({ type: "BUY", ...range }).then(setAllRows);
+    // Payments are deliberately NOT date-filtered: this list answers
+    // "when was it paid", and a sale inside the period can be paid
+    // outside it. Narrowing these would make paid rows look unpaid.
     api.getPayments({ type: "pay_supplier" }).then(setPayments).catch(() => setPayments([]));
-  }, []);
+  }, [rk]);
 
   const rows = allRows
     .filter((r) => (r.hq_status || "processing") !== "cancelled")
