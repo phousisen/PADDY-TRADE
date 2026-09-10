@@ -438,6 +438,38 @@ function pendingTransactionIds() {
 // flash away, and any transaction the server doesn't know about yet
 // (still offline, or synced a split second ago and not yet re-fetched)
 // stays visible too instead of disappearing.
+// [2026-09-10] What gets WRITTEN to the device is capped; what gets
+// RETURNED to the screen is not.
+//
+// This cache existed to keep a station working when its connection drops.
+// It was being handed every transaction in the business and writing the
+// lot to localStorage on every load of the Transactions page — a few
+// megabytes of JSON, stringified on the main thread while the person
+// waits, and growing forever. localStorage is a handful of megabytes, so
+// eventually the write simply fails, and writeJSON swallows that: the
+// offline safety net would quietly stop working exactly when the business
+// had grown enough to need it.
+//
+// Everything still queued on this device is always kept — that is the part
+// that cannot be re-fetched. On top of that, the most recent rows, which
+// is what a station actually looks at while offline.
+const CACHE_MAX_ROWS = 400;
+
+function capForCache(list, keepIds, max = CACHE_MAX_ROWS) {
+  if (list.length <= max) return list;
+  const kept = [];
+  const seen = new Set();
+  for (const r of list) {
+    if (keepIds.has(r.id)) { kept.push(r); seen.add(r.id); }
+  }
+  // `list` arrives newest-first, so slicing from the front keeps the recent ones.
+  for (const r of list) {
+    if (kept.length >= max) break;
+    if (!seen.has(r.id)) kept.push(r);
+  }
+  return kept;
+}
+
 export function mergeServerTransactions(serverTxs) {
   const pendingIds = pendingTransactionIds();
   const local = getCachedTransactions();
@@ -447,7 +479,7 @@ export function mergeServerTransactions(serverTxs) {
   for (const t of local) {
     if (!serverIds.has(t.id) && pendingIds.has(t.id)) merged.unshift(t);
   }
-  writeJSON(TX_CACHE_KEY, merged);
+  writeJSON(TX_CACHE_KEY, capForCache(merged, pendingIds));
   return merged;
 }
 
@@ -486,7 +518,8 @@ export function mergeServerPayments(serverPayments) {
   for (const p of local) {
     if (!serverIds.has(p.id) && pendingIds.has(p.id)) merged.unshift(p);
   }
-  writeJSON(PAYMENT_CACHE_KEY, merged);
+  // Capped for the same reason as the transaction cache above.
+  writeJSON(PAYMENT_CACHE_KEY, capForCache(merged, pendingIds));
   return merged;
 }
 

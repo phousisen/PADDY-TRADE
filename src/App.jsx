@@ -59,11 +59,21 @@ export default function App() {
     setPage("party-detail");
   }
 
+  // [2026-09-10] A count, not the whole table. This used to call
+  // getChangeRequests() — every request ever made, joined to its
+  // transaction, that transaction's party and the requester's profile —
+  // and `page` was in the dependency list, so it ran again on every single
+  // navigation. Moving between three screens downloaded it three times, for
+  // one number. Now the database counts and returns no rows at all, and it
+  // only re-runs when the signed-in person changes.
   useEffect(() => {
-    if (profile?.role === "admin") {
-      api.getChangeRequests().then((rows) => setPendingRequests(rows.filter((r) => r.status === "pending").length));
-    }
-  }, [profile, page]);
+    if (profile?.role !== "admin") return;
+    let cancelled = false;
+    api.getPendingChangeRequestCount()
+      .then((n) => { if (!cancelled) setPendingRequests(n); })
+      .catch(() => {}); // a failed count just means no badge, never an error banner
+    return () => { cancelled = true; };
+  }, [profile]);
 
   // Start the offline sync/safety-net once someone's actually signed in —
   // app-wide, not just while the Weighing Tickets screen happens to be

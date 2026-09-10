@@ -282,16 +282,42 @@ function asc(...fields) {
 // For a VIEW with no id, pass the column that uniquely identifies a row.
 // sort is applied once, after every page is in, so the caller sees exactly
 // the order it saw before this function existed.
+// [2026-09-10] Proper keyset paging: each page asks for rows AFTER the last
+// id it saw, rather than "skip the first N".
+//
+// I first rewrote this to fetch pages in parallel, because three sequential
+// round trips per screen is most of why the app feels slow. Then I checked
+// what that costs: parallel pages have to be addressed by OFFSET, and an
+// offset walk over a table people are inserting into loses rows — a ticket
+// finished at a station mid-walk shifts every later page by one, and one row
+// silently never arrives. That is the same class of defect as the 1,000-row
+// cap, traded for speed. Not acceptable here.
+//
+// Keyset paging is immune to it: "give me the next 1,000 rows with an id
+// greater than this one" means nothing inserted behind the cursor can shift
+// anything ahead of it. It is sequential by nature, so the speed has to come
+// from asking for FEWER ROWS — a date range, one station — which is the real
+// fix and is being done screen by screen. Small tables still cost exactly
+// one round trip, as they always did.
 async function fetchAll(makeQuery, { keyColumn = "id", sort = null } = {}) {
   const rows = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await makeQuery()
-      .order(keyColumn, { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
+  let after = null;
+
+  for (;;) {
+    let q = makeQuery().order(keyColumn, { ascending: true }).limit(PAGE_SIZE);
+    if (after !== null) q = q.gt(keyColumn, after);
+    const { data, error } = await q;
     if (error) throw error;
     const page = data || [];
     rows.push(...page);
     if (page.length < PAGE_SIZE) break;
+    after = page[page.length - 1][keyColumn];
+    if (after === undefined || after === null) {
+      throw new Error(
+        `Cannot page safely: "${keyColumn}" is missing on a returned row. ` +
+        "Refusing to guess rather than returning a partial answer."
+      );
+    }
     if (rows.length >= HARD_ROW_CAP) {
       throw new Error(
         `Refusing to load more than ${HARD_ROW_CAP} rows in one go — this query is missing a filter. ` +
@@ -1495,13 +1521,34 @@ const rawApi = {
     return data;
   },
 
-  async getChangeRequests() {
+  // [2026-09-10] Just the number, for the badge on the bell and in the
+  // sidebar. It was being answered by downloading every change request ever
+  // made, each joined to its transaction, that transaction's party, and the
+  // profile of whoever asked — on EVERY page change. Three screens visited
+  // meant three downloads of a table nobody had opened. This asks the
+  // database to count and send back no rows at all.
+  async getPendingChangeRequestCount() {
+    const { count, error } = await supabase
+      .from("change_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending");
+    if (error) throw error;
+    return count || 0;
+  },
+
+  // `status` filters in the DATABASE. Every caller wants pending only; the
+  // full history is one `status: null` away if a screen ever needs it.
+  async getChangeRequests({ status = null } = {}) {
     const data = await fetchAll(
-      () => supabase
+      () => {
+        let q = supabase
         .from("change_requests")
         .select(
           "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, paper_ticket_no, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
-        ),
+        );
+        if (status) q = q.eq("status", status);
+        return q;
+      },
       { sort: desc("created_at") });
     return data.map((r) => ({
       ...r,

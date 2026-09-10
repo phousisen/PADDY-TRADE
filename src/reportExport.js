@@ -228,7 +228,13 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     ["Stock — Current Summary"],
     [],
     ["Location", "Current Stock (kg)", "Capacity (kg)", "% Full"],
-    ...filteredStations.map((s) => [s.name, round2(s.current_stock_kg), round2(s.capacity_kg), Math.round((Number(s.current_stock_kg) / Number(s.capacity_kg)) * 100)]),
+    // [2026-09-10] `|| 0` then a zero test: a station with no capacity set
+    // used to export the text "Infinity" into the spreadsheet cell.
+    ...filteredStations.map((s) => {
+      const capKg = Number(s.capacity_kg) || 0;
+      return [s.name, round2(s.current_stock_kg), round2(s.capacity_kg),
+              capKg > 0 ? Math.round((Number(s.current_stock_kg) / capKg) * 100) : ""];
+    }),
     [],
     ["Movement Detail"],
     [rangeLabel],
