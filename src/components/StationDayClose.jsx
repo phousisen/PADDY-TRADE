@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, AlertTriangle, Delete, Loader2 } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Delete, Loader2, ClipboardList } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useLanguage } from "../i18n.jsx";
@@ -145,6 +145,11 @@ export default function StationDayClose({ locationId, locationName }) {
   // they typed 14 when they meant 15. Answering again simply replaces the
   // number; every version stays in the change history.
   const [redoDate, setRedoDate] = useState(null);
+  // [2026-09-10] Collapsed by default. This used to open across the whole
+  // weighing board every time a station opened it, pushing the trucks that
+  // are actually waiting off the screen. It is a once-a-day job, so it
+  // waits behind one button until someone chooses to do it (SISEN).
+  const [open, setOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!locationId) { setLoading(false); return; }
@@ -227,10 +232,46 @@ export default function StationDayClose({ locationId, locationName }) {
 
   const suggestion = tickets ? suggestMissing(tickets) : null;
 
+  // A single line while closed: what is waiting, and one button to do it.
+  // Amber only when a day is actually unanswered — nothing to do should
+  // never look like something to do.
+  if (!open) {
+    const waiting = pending.length;
+    return (
+      <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-2.5 ${
+        waiting > 0 ? "border-amber-200 bg-amber-50/70" : "border-slate-200 bg-white"}`}>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <ClipboardList size={15} className={waiting > 0 ? "text-amber-600" : "text-slate-400"} />
+          <span className="truncate text-[13px] font-semibold text-slate-700">{t("day_section_title")}</span>
+          <span className="truncate text-[11.5px] text-slate-500">
+            {locationName ? `${locationName} · ` : ""}
+            {waiting > 0
+              ? `${dayLabel(pending[0].business_date, today, t)}${waiting > 1 ? ` · ${t("day_more_waiting", { n: waiting - 1 })}` : ""}`
+              : t("day_all_answered")}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={`shrink-0 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${
+            waiting > 0
+              ? "bg-amber-500 text-white hover:bg-amber-600"
+              : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}
+        >
+          {waiting > 0 ? t("day_count_now") : t("day_answer_again")}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mb-4 rounded-xl border-2 border-slate-200 bg-white p-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-[13px] font-bold text-slate-700">{t("day_section_title")}</h3>
+        <button type="button" onClick={() => { resetDay(); setOpen(false); }}
+                className="order-last ml-auto rounded-lg border border-slate-200 px-2.5 py-1 text-[11.5px] font-semibold text-slate-500 hover:bg-slate-50">
+          {t("day_later")}
+        </button>
         <span className="text-[11px] font-semibold text-slate-400">
           {locationName ? `${locationName} · ` : ""}
           {day ? dayLabel(day.business_date, today, t) : t("day_all_answered")}
