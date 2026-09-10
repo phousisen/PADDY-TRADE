@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Pencil, TrendingUp, Warehouse, MapPin, Wallet, Receipt, Scale, CalendarDays } from "lucide-react";
+import { ArrowLeft, Pencil, TrendingUp, Warehouse, Wallet, Scale, CalendarDays } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
@@ -40,11 +40,6 @@ export default function LocationDetail({ locationId, setPage }) {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
-  // [2026-08-31] Redesign, sample-approved: All/Buy/Sell filter for the
-  // Transaction History table below, same pattern already used on the main
-  // Transactions page — purely a client-side filter over what's already
-  // loaded, no new data fetching.
-  const [txTypeFilter, setTxTypeFilter] = useState("");
   // [2026-08-31] "Adjust Stock" — manual only, matching the same modal
   // already used on Stock & Inventory (no new reason type, no automatic
   // reminder/enforcement: staff haven't been trained on the overnight
@@ -458,68 +453,13 @@ export default function LocationDetail({ locationId, setPage }) {
           </div>
         )}
 
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-          {/* [2026-08-31] Redesign, sample-approved: All/Buy/Sell filter
-              pills, same pattern as the Transactions page — purely
-              client-side over txs already loaded above. */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-            <div className="flex items-center gap-2">
-              <Receipt size={15} className="text-brand-600" />
-              <h3 className="font-semibold text-slate-700">Transaction History</h3>
-            </div>
-            <div className="inline-flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5">
-              {[{ v: "", l: "All" }, { v: "BUY", l: "Buy" }, { v: "SELL", l: "Sell" }].map((opt) => (
-                <button
-                  key={opt.v}
-                  onClick={() => setTxTypeFilter(opt.v)}
-                  className={`rounded-md px-3 py-1 text-xs font-medium ${txTypeFilter === opt.v ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                >
-                  {opt.l}
-                </button>
-              ))}
-            </div>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Date</th>
-                <th className="px-5 py-3 font-medium">Receipt</th>
-                {isCombined && <th className="px-5 py-3 font-medium">Location</th>}
-                <th className="px-5 py-3 font-medium">Type</th>
-                <th className="px-5 py-3 font-medium">Party</th>
-                <th className="px-5 py-3 font-medium">Qty (kg)</th>
-                <th className="px-5 py-3 font-medium">Amount</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {txs.filter((t) => !txTypeFilter || t.type === txTypeFilter).slice().sort((a, b) => (a.tx_date + a.tx_time < b.tx_date + b.tx_time ? 1 : -1)).map((t) => {
-                const isCancelled = (t.hq_status || "processing") === "cancelled";
-                return (
-                <tr key={t.id} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
-                  <td className="px-5 py-3 text-slate-500">{t.tx_date}</td>
-                  <td className="px-5 py-3 font-medium text-slate-700">{t.code}</td>
-                  {isCombined && <td className="px-5 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{t.stationName}</div></td>}
-                  <td className="px-5 py-3"><span className={`rounded px-1.5 py-0.5 text-xs font-semibold ${t.type === "BUY" ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600"}`}>{t.type}</span></td>
-                  <td className="px-5 py-3 text-slate-700">{t.partyName}</td>
-                  <td className="px-5 py-3 text-slate-700">{fmt2(t.quantity_kg)}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(t.amount)}</td>
-                  <td className="px-5 py-3">
-                    {isCancelled ? (
-                      <span className="text-xs font-medium text-slate-400 line-through">Cancelled</span>
-                    ) : (
-                      <span className="text-xs text-slate-300">—</span>
-                    )}
-                  </td>
-                </tr>
-              );})}
-              {txs.length === 0 && <tr><td colSpan={isCombined ? 8 : 7} className="px-5 py-10 text-center text-sm text-slate-400">No transactions yet.</td></tr>}
-              {txs.length > 0 && txs.filter((t) => !txTypeFilter || t.type === txTypeFilter).length === 0 && (
-                <tr><td colSpan={isCombined ? 8 : 7} className="px-5 py-10 text-center text-sm text-slate-400">No {txTypeFilter === "BUY" ? "buy" : "sell"} transactions in this period.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* [2026-09-10] The Transaction History table was removed at SISEN's
+            request. It listed every transaction the station had ever done —
+            807 rows at Jomnoum, thousands at Pong Ro — which is the same list
+            the Transactions page already gives you, with search and filters
+            this page never had. Scrolling it here answered no question that
+            page doesn't answer better. */}
+
       </main>
 
       {editing && location && (
