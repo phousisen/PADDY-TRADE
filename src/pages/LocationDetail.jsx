@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Pencil, TrendingUp, Warehouse, Wallet, Scale, CalendarDays } from "lucide-react";
+import { ArrowLeft, Pencil, TrendingUp, Warehouse, Wallet, Scale, CalendarDays, Boxes } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
@@ -8,6 +8,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import { buildDailyLedgerRows } from "../dailyLedger.js";
+import { buildShed } from "../shedStock.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -18,6 +19,32 @@ function cambodiaDateStr(d = getAccurateNow()) {
   new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+// [2026-09-10] "What's in the shed" — one stepped hue, not a rainbow. The
+// paddy types don't rank against each other, and different hues would imply
+// they do. Darkest = biggest pile, so the swatches read as an order without
+// claiming any type is "good" or "bad".
+const SHED_COLORS = ["#123626", "#1B5238", "#217A4F", "#2E9E63", "#4FBE80", "#93D9AE"];
+const SHED_CARRIED_COLOR = "#94a3b8"; // slate-400 — the untyped lump
+
+// 14 points of a type's own stock level. Deliberately unlabelled: the number
+// above it is the amount, this only has to say which way it is going.
+function ShedSpark({ values, color, label }) {
+  const n = values?.length || 0;
+  if (n < 2) return <div className="mt-2.5 h-6" />;
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 0);
+  const span = max - min || 1;
+  const y = (v) => 22 - ((v - min) / span) * 18;
+  const points = values.map((v, i) => `${(i / (n - 1)) * 120},${y(v).toFixed(2)}`).join(" ");
+  return (
+    <svg viewBox="0 0 120 26" preserveAspectRatio="none" role="img" aria-label={label}
+         className="mt-2.5 h-6 w-full overflow-visible">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.6" vectorEffect="non-scaling-stroke" />
+      <circle cx="119" cy={y(values[n - 1]).toFixed(2)} r="2.2" fill={color} />
+    </svg>
+  );
 }
 
 export default function LocationDetail({ locationId, setPage }) {
@@ -127,6 +154,20 @@ export default function LocationDetail({ locationId, setPage }) {
     totals.marginAmt = totals.earnedAmt - totals.spentAmt;
     return totals;
   }, [ledgerRows]);
+
+  // [2026-09-10] "What's in the shed" — replaces the Transaction History
+  // table that used to be here (SISEN: "i dont need to see the transaction
+  // history anymore. it spointless — i want to see something more useful
+  // like stock as well as what kind of stock is inside").
+  //
+  // All of the arithmetic lives in shedStock.js, on its own, so it can be
+  // tested against fixtures (scripts-check-shed.mjs) instead of being
+  // trusted because it looks right. Read the comment at the top of that
+  // file for why it anchors on the last stock count.
+  const shed = useMemo(() => {
+    if (isCombined || !location) return null;
+    return buildShed({ txs, adjustments, location, now: getAccurateNow() });
+  }, [txs, adjustments, location, isCombined]);
 
   const combinedStock = useMemo(() => allLocations.reduce((s, l) => s + Number(l.current_stock_kg), 0), [allLocations]);
   const combinedCapacity = useMemo(() => allLocations.reduce((s, l) => s + Number(l.capacity_kg), 0), [allLocations]);
@@ -458,7 +499,90 @@ export default function LocationDetail({ locationId, setPage }) {
             807 rows at Jomnoum, thousands at Pong Ro — which is the same list
             the Transactions page already gives you, with search and filters
             this page never had. Scrolling it here answered no question that
-            page doesn't answer better. */}
+            page doesn't answer better.
+
+            In its place: what's actually in the shed. See the `shed` memo
+            above for how it is built and why it reconciles. */}
+        {shed && (
+          <div className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <Boxes size={15} className="text-brand-600" />
+                <h3 className="font-semibold text-slate-700">{t("shed_title")}</h3>
+                <span className="rounded border border-slate-200 px-1.5 py-px text-[10px] font-semibold tracking-wide text-slate-400">kg</span>
+              </div>
+              <span className="text-xs text-slate-400">
+                {t("shed_meta", { kg: fmt2(shed.stockKg), date: cambodiaDateStr() })}
+              </span>
+            </div>
+
+            {shed.tiles.length === 0 && Math.abs(shed.carriedKg) <= 0.005 ? (
+              <div className="border-t border-slate-100 px-5 py-8 text-center text-sm text-slate-400">
+                {t("shed_empty")}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-px border-t border-slate-100 bg-slate-100 sm:grid-cols-3 lg:grid-cols-4">
+                {shed.tiles.map((r, i) => {
+                  const color = SHED_COLORS[Math.min(i, SHED_COLORS.length - 1)];
+                  const share = shed.stockKg > 0 ? Math.round((r.kg / shed.stockKg) * 100) : null;
+                  const dir = r.series
+                    ? (r.series[r.series.length - 1] - r.series[0] > 0.005 ? "up"
+                      : r.series[r.series.length - 1] - r.series[0] < -0.005 ? "down" : "flat")
+                    : null;
+                  return (
+                    <div key={r.key} className="bg-white px-4 py-4">
+                      <div className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-500">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} />
+                        <span className="truncate font-khmer">
+                          {r.other ? t("shed_other", { n: r.count }) : (r.name || t("shed_untyped"))}
+                        </span>
+                      </div>
+                      <p className={`mt-1.5 text-2xl font-bold tabular-nums tracking-tight ${r.kg < -0.005 ? "text-rose-600" : "text-slate-800"}`}>
+                        {fmt2(r.kg)}
+                      </p>
+                      <p className="mt-0.5 text-[11.5px] text-slate-400">
+                        {r.kg < -0.005 ? t("shed_below_zero")
+                          : share != null ? t("shed_share", { pct: share })
+                          : " "}
+                      </p>
+                      {r.series
+                        ? <ShedSpark values={r.series} color={color} label={t(`shed_dir_${dir}`)} />
+                        : <div className="mt-2.5 h-6" />}
+                    </div>
+                  );
+                })}
+
+                {/* The untyped carry-forward from the last stock count. It is
+                    a tile of its own rather than being spread across the
+                    types, because nothing in the data says which type it is
+                    — spreading it would be a guess printed as a fact. */}
+                {Math.abs(shed.carriedKg) > 0.005 && (
+                  <div className="bg-white px-4 py-4">
+                    <div className="flex items-center gap-2 text-[12.5px] font-semibold text-slate-500">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: SHED_CARRIED_COLOR }} />
+                      <span className="truncate">{t("shed_carried")}</span>
+                    </div>
+                    <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-slate-500">{fmt2(shed.carriedKg)}</p>
+                    <p className="mt-0.5 text-[11.5px] text-slate-400">{t("shed_carried_note", { date: shed.countedOn })}</p>
+                    <div className="mt-2.5 h-6" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* The check. If the parts ever stop adding up to the station's
+                own figure, this says so on screen instead of leaving a wrong
+                split looking right. */}
+            <div className={`border-t px-5 py-3 text-[11.5px] leading-relaxed ${
+              Math.abs(shed.diff) > 0.5
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-slate-100 bg-slate-50/70 text-slate-400"}`}>
+              {Math.abs(shed.diff) > 0.5
+                ? t("shed_recon_bad", { computed: fmt2(shed.computed), stock: fmt2(shed.stockKg), diff: fmt2(shed.diff) })
+                : t("shed_foot")}
+            </div>
+          </div>
+        )}
 
       </main>
 
