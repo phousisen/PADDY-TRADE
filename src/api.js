@@ -1,5 +1,8 @@
 import { supabase, getAccurateNow } from "./supabaseClient.js";
 import { isViewOnlyMode, ViewOnlyError } from "./viewOnlyGuard.js";
+// [2026-09-10] One definition of "the same paddy type", shared with the
+// database's product_key(). See src/productName.js.
+import { cleanProductName, findProductByName } from "./productName.js";
 
 // [2026-09-04] THAPEDEY had two different transactions both showing paper
 // ticket number "TD 000678" — even though add_paper_ticket_no_unique_
@@ -600,7 +603,13 @@ const rawApi = {
   // so re-sending it once the connection returns reuses the same id
   // instead of making a duplicate.
   async createProduct(name, id) {
-    const row = id ? { id, name } : { name };
+    // [2026-09-10] Store the CLEANED name. Zero-width characters and stray
+    // spaces from a Khmer keyboard are what created seven copies of
+    // "សែន ក្រអូប"; cleaning here means the database and the app agree on
+    // what the name is, and the unique index on product_key(name) can do its
+    // job. See src/productName.js.
+    const cleaned = cleanProductName(name);
+    const row = id ? { id, name: cleaned } : { name: cleaned };
     try {
       return await insertOrFetchExisting("products", row);
     } catch (error) {
@@ -612,13 +621,19 @@ const rawApi = {
       // cause is a duplicate product name — reuse the existing one
       // instead of leaving the queue stuck forever on an insert that can
       // never succeed.
-      if (error?.code === "23505" && name) {
+      // [2026-09-10] Was `.ilike("name", name)` — an exact, case-insensitive
+      // match, which could never find the row it had just collided with. The
+      // collision is precisely between two names that are NOT equal as
+      // strings: one carries an invisible character the other does not.
+      // Match on the same key the database's unique index uses instead.
+      if (error?.code === "23505" && cleaned) {
         const { data: existing, error: fetchErr } = await supabase
           .from("products")
-          .select("*")
-          .ilike("name", name)
-          .limit(1);
-        if (!fetchErr && existing && existing.length) return existing[0];
+          .select("*");
+        if (!fetchErr && existing) {
+          const match = findProductByName(existing, cleaned);
+          if (match) return match;
+        }
       }
       throw error;
     }

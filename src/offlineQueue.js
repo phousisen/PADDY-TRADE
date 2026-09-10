@@ -28,6 +28,8 @@
 import { api } from "./api.js";
 import { ensureFreshSession, getAccurateNow } from "./supabaseClient.js";
 import { assertNotViewOnly } from "./viewOnlyGuard.js";
+// [2026-09-10] Shared with api.js and with the database's product_key().
+import { cleanProductName, findProductByName } from "./productName.js";
 // [2026-09-09] Tags an Error with a translation key. The English text still
 // goes on .message, so nothing that already reads .message changes; a screen
 // that calls errText(t, err) gets Khmer instead. See src/errText.js.
@@ -1429,24 +1431,38 @@ export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl }
 // Same idea for the paddy/product type field.
 export async function resolveProductIdOffline(typedName) {
   assertNotViewOnly();
-  const trimmed = (typedName || "").trim();
-  if (!trimmed) return null;
+  // [2026-09-10] Matching used to be `.trim().toLowerCase()`. For Khmer that
+  // sees almost nothing: input methods insert zero-width characters, and the
+  // same word can be stored in more than one Unicode normalisation, so two
+  // names that draw identically compare as different. This function is where
+  // a new paddy type gets minted, so every one of those differences became a
+  // duplicate row — seven copies of "សែន ក្រអូប", and several paddy types
+  // showing a NEGATIVE balance because stock was sold under one copy and
+  // bought under another.
+  //
+  // productKey() is the JavaScript twin of the database's product_key(), and
+  // the database now has a unique index on it. See src/productName.js.
+  const cleaned = cleanProductName(typedName);
+  if (!cleaned) return null;
 
-  const cachedMatch = getCachedProducts().find((p) => (p.name || "").trim().toLowerCase() === trimmed.toLowerCase());
+  const cachedMatch = findProductByName(getCachedProducts(), cleaned);
   if (cachedMatch) return cachedMatch.id;
 
   if (navigator.onLine) {
     const all = await withTimeout(api.getProducts().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null);
     if (all) {
       setCachedProducts(all);
-      const exact = all.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+      const exact = findProductByName(all, cleaned);
       if (exact) return exact.id;
     }
   }
 
+  // Nothing matched anywhere, so this really is a new paddy type. It is
+  // stored cleaned, so when it syncs it either inserts once or collides with
+  // an identical name and api.createProduct hands back the existing row.
   const id = newId();
-  addCachedProduct({ id, name: trimmed });
-  enqueue({ type: "createProduct", payload: { id, name: trimmed } });
+  addCachedProduct({ id, name: cleaned });
+  enqueue({ type: "createProduct", payload: { id, name: cleaned } });
   trySync();
   return id;
 }
