@@ -109,25 +109,38 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       // The live feed is fetched separately and bounded to eight rows, so
       // it still shows the last few loads first thing in the morning when
       // "Today" is legitimately empty.
-      const [locs, transactions, feed] = await Promise.all([
-        api.getLocations(),
-        api.getTransactions({ from: rangeStart, to: rangeEnd }),
-        api.getTransactions({ limit: 8 }).catch(() => []),
-      ]);
-      setFeedTxs(feed.filter((x) => (x.hq_status || "processing") !== "cancelled"));
+      // [2026-09-10] NOTHING WAITS FOR ANYTHING ELSE.
+      //
+      // These three used to be one Promise.all: the screen showed
+      // "Loading…" and 0 locations until the slowest of them came back,
+      // even though the station list is a handful of rows and arrives in a
+      // fraction of the time. The stations, their names and their current
+      // stock now paint the moment they arrive; the period's movements
+      // fill in behind them; the live feed and the adjustments arrive when
+      // they arrive. Same requests, but the page stops being held hostage
+      // by its slowest one.
+      const locsPromise = api.getLocations();
+
+      locsPromise.then((locs) => {
+        // A request that raced ahead of the auth session fully attaching
+        // (weak station WiFi, right after login/reload) can come back
+        // empty — RLS quietly filters everything out instead of erroring —
+        // which is indistinguishable from "this account really has zero
+        // locations". Retry once before showing anything.
+        if (locs.length === 0 && session?.user?.id && !isRetry) { load({ isRetry: true }); return; }
+        setLocations(locs);
+      }).catch(() => {});
+
+      api.getTransactions({ limit: 8 })
+        .then((feed) => setFeedTxs(feed.filter((x) => (x.hq_status || "processing") !== "cancelled")))
+        .catch(() => {});
+
       api.getStockAdjustments({ startDate: rangeStart, endDate: rangeEnd })
         .then(setAdjustments).catch(() => setAdjustments([]));
-      // A request that raced ahead of the auth session fully attaching
-      // (weak station WiFi, right after login/reload) can come back
-      // empty — RLS quietly filters everything out instead of erroring —
-      // which is indistinguishable on screen from "this account really
-      // has zero locations". If that happens once while a real login is
-      // in hand, quietly retry a single time before showing anything; a
-      // genuinely empty account just looks the same on the retry.
-      if (locs.length === 0 && session?.user?.id && !isRetry) {
-        return load({ isRetry: true });
-      }
-      setLocations(locs);
+
+      // The one the page genuinely has to wait for before it stops saying
+      // "Loading…": the movements for the period on screen.
+      const transactions = await api.getTransactions({ from: rangeStart, to: rangeEnd });
       setTxs(transactions.filter((x) => (x.hq_status || "processing") !== "cancelled"));
     } catch (err) {
       // Without this, a failed/dropped request left the dashboard — the
@@ -270,14 +283,6 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       return { loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status };
     });
   }, [locations, periodTxs, adjustments, rangeStart, rangeEnd]);
-
-  const perfTotals = useMemo(() => locationPerformance.reduce((acc, r) => ({
-    openingKg: acc.openingKg + r.openingKg,
-    boughtKg: acc.boughtKg + r.boughtKg,
-    soldKg: acc.soldKg + r.soldKg,
-    adjustedKg: acc.adjustedKg + r.adjustedKg,
-    onHandKg: acc.onHandKg + r.onHandKg,
-  }), { openingKg: 0, boughtKg: 0, soldKg: 0, adjustedKg: 0, onHandKg: 0 }), [locationPerformance]);
 
   // Its own bounded fetch — see load(). Sorting eight rows is free.
   const liveFeed = useMemo(() => {
@@ -462,19 +467,10 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                 {loading && locations.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
                 {locations.length === 0 && !loading && !loadError && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("dash_no_locations")}</td></tr>}
               </tbody>
-              {locationPerformance.length > 0 && (
-                <tfoot>
-                  <tr className="border-t-2 border-slate-300 bg-slate-50/70 text-right font-bold">
-                    <td className="px-5 py-3.5 text-left text-slate-700">{t("col_all_locations")}</td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{fmt(perfTotals.openingKg)}</td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{fmt(perfTotals.boughtKg)}</td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{perfTotals.soldKg > 0 ? `−${fmt(perfTotals.soldKg)}` : "—"}</td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-700">{perfTotals.adjustedKg !== 0 ? `${perfTotals.adjustedKg < 0 ? "−" : ""}${fmt(Math.abs(perfTotals.adjustedKg))}` : "—"}</td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-800">{perfTotals.onHandKg < 0 ? `−${fmt(Math.abs(perfTotals.onHandKg))}` : fmt(perfTotals.onHandKg)}</td>
-                    {canOpenLocation && <td className="px-3 py-3.5"></td>}
-                  </tr>
-                </tfoot>
-              )}
+              {/* [2026-09-10] The "All locations" totals row was removed at
+                  SISEN's request: every figure in it is already on the four
+                  cards directly above this table. Repeating a number is not
+                  free — it is one more thing that can disagree with itself. */}
             </table>
             </div>
             {locationPerformance.length > 0 && (
