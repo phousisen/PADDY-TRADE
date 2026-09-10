@@ -155,21 +155,30 @@ function NotificationBell() {
 
   useEffect(() => onSyncStatusChange(setSyncStatus), []);
 
+  // [2026-09-10] The bell shows a count; the list behind it is only fetched
+  // when someone actually opens it. This used to download every change
+  // request ever made — with its transaction, party and requester joined —
+  // on every mount, to show a number. The count costs no rows at all, and
+  // the pending-only list is filtered in the database rather than here.
+  const [pendingCount, setPendingCount] = useState(0);
+
   useEffect(() => {
-    if (!isAdmin) { setPendingReqs([]); return; }
+    if (!isAdmin) { setPendingCount(0); setPendingReqs([]); return; }
     let cancelled = false;
-    api.getChangeRequests()
-      .then((rows) => {
-        if (cancelled) return;
-        setPendingReqs(
-          rows
-            .filter((r) => r.status === "pending")
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        );
-      })
-      .catch(() => {}); // same fire-and-forget-on-failure as the Sidebar badge — a failed fetch just means no badge, not an error banner
+    api.getPendingChangeRequestCount()
+      .then((n) => { if (!cancelled) setPendingCount(n); })
+      .catch(() => {}); // a failed count just means no badge, not an error banner
     return () => { cancelled = true; };
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!open || !isAdmin) return;
+    let cancelled = false;
+    api.getChangeRequests({ status: "pending" })
+      .then((rows) => { if (!cancelled) setPendingReqs(rows); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [open, isAdmin]);
 
   useEffect(() => {
     if (!open) return;
@@ -190,7 +199,9 @@ function NotificationBell() {
     ? { kind: "offline", text: `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} saved on this device, waiting for the connection to come back.` }
     : null;
 
-  const count = pendingReqs.length + (syncNotice ? 1 : 0);
+  // The dot reads the COUNT (always loaded, costs no rows); the list below
+  // reads pendingReqs, which is only fetched once the bell is opened.
+  const count = pendingCount + (syncNotice ? 1 : 0);
   const dotClass = syncNotice?.kind === "stuck" ? "bg-rose-500" : syncNotice?.kind === "session" ? "bg-indigo-500" : "bg-amber-500";
 
   return (
@@ -229,6 +240,9 @@ function NotificationBell() {
               ))}
               {pendingReqs.length > 6 && (
                 <p className="px-4 py-2 text-center text-[11px] text-slate-400">+{pendingReqs.length - 6} more pending — see Change Requests</p>
+              )}
+              {pendingCount > 0 && pendingReqs.length === 0 && (
+                <p className="px-4 py-3 text-center text-[11px] text-slate-400">Loading…</p>
               )}
             </div>
           )}
