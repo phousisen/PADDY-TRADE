@@ -71,13 +71,19 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
             </thead>
             <tbody>
               {stations.map((s) => {
-                const pct = Math.round((Number(s.current_stock_kg) / Number(s.capacity_kg)) * 100);
+                // [2026-09-10] Capacity is not required when a location is
+                // created (AddLocationModal) and defaults to 0, so a brand-new
+                // station divided by zero here and printed "Infinity%" — or
+                // "NaN%" before its first ticket. StockInventory.jsx already
+                // guarded this; these three places did not.
+                const capKg = Number(s.capacity_kg) || 0;
+                const pct = capKg > 0 ? Math.round((Number(s.current_stock_kg) / capKg) * 100) : null;
                 return (
                   <Tr key={s.id}>
                     <Td name>{s.name}</Td>
                     <Td num>{fmt2(s.current_stock_kg)}</Td>
                     <Td num>{fmt2(s.capacity_kg)}</Td>
-                    <Td num>{pct}%</Td>
+                    <Td num>{pct == null ? "—" : `${pct}%`}</Td>
                   </Tr>
                 );
               })}

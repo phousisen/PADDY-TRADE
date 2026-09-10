@@ -263,7 +263,10 @@ export default function LocationDetail({ locationId, setPage }) {
 
   const stockKg = isCombined ? combinedStock : Number(location.current_stock_kg);
   const capacityKg = isCombined ? combinedCapacity : Number(location.capacity_kg);
-  const pct = Math.round((stockKg / capacityKg) * 100);
+  // [2026-09-10] A location created without a capacity stores 0, which made
+  // this "Infinity%" (or "NaN%" at 0 stock) and drew a full progress bar on a
+  // station that has never been given a capacity. See ReportStock.jsx.
+  const pct = capacityKg > 0 ? Math.round((stockKg / capacityKg) * 100) : null;
   const displayName = isCombined ? "All Locations Combined" : location.name;
   const displayNameKh = isCombined ? "ទីតាំងទាំងអស់រួមគ្នា" : location.name_kh;
 
@@ -322,8 +325,10 @@ export default function LocationDetail({ locationId, setPage }) {
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Warehouse size={15} /></div>
             <div className="text-xs text-slate-400">{isCombined ? "Combined Stock" : "Current Stock"}</div>
             <p className="mt-1 text-xl font-bold text-slate-800">{fmt2(stockKg)} kg</p>
-            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-brand-500" style={{ width: `${Math.min(pct, 100)}%` }} /></div>
-            <p className="mt-1 text-xs text-slate-400">{pct}% of {fmt2(capacityKg)} kg capacity</p>
+            <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-brand-500" style={{ width: `${pct == null ? 0 : Math.min(pct, 100)}%` }} /></div>
+            <p className="mt-1 text-xs text-slate-400">
+              {pct == null ? "No capacity set for this location" : `${pct}% of ${fmt2(capacityKg)} kg capacity`}
+            </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600"><TrendingUp size={15} /></div>

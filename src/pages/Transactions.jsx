@@ -1599,40 +1599,53 @@ export default function Transactions({ setPage }) {
     if (isAdmin) api.getLocations().then(setLocations).catch(() => {});
   }, [isAdmin]);
 
-  // [2026-09-09] Two maps rather than one.
+  // [2026-09-09] Two maps rather than one — see each one's comment below.
+  // [2026-09-10] One pass over the payments, not one pass PER TRANSACTION.
   //
+  // Both maps below used to scan the whole payment list for every row —
+  // twice over, once each. At 2,787 transactions and a similar number of
+  // payments that is about 16 million comparisons on the main thread every
+  // time this screen re-renders, which is a visible freeze and gets four
+  // times worse each time the business doubles. Grouping the payments by
+  // transaction id first makes it one pass over each list.
+  const paidByTx = useMemo(() => {
+    const map = new Map();
+    for (const p of payments) {
+      if (!p.transaction_id) continue;
+      const key = `${p.transaction_id}|${p.type}`;
+      map.set(key, (map.get(key) || 0) + Number(p.amount || 0));
+    }
+    return map;
+  }, [payments]);
+
+  const paidFor = (tx) =>
+    paidByTx.get(`${tx.id}|${tx.type === "BUY" ? "pay_supplier" : "receive_customer"}`) || 0;
+
   // remainingByTx keeps its old meaning — never below zero — because the
   // Unpaid filter, the Record Payment box and the HQ status column are all
   // built on "how much is still owed", and an overpayment is not a debt.
-  //
-  // overpaidByTx carries what that Math.max(0, …) throws away. Until now an
-  // overpayment simply disappeared: pay a farmer 100,000 too much and the
-  // row read "Settled", exactly like one paid correctly. The money was gone
-  // and nothing on screen said so. (Same shape of bug as CN 000261 — a
-  // clamp hiding a number that mattered.)
   const remainingByTx = useMemo(() => {
     const map = {};
-    rows.forEach((tx) => {
-      const paid = payments
-        .filter((p) => p.transaction_id === tx.id && p.type === (tx.type === "BUY" ? "pay_supplier" : "receive_customer"))
-        .reduce((s, p) => s + Number(p.amount), 0);
-      map[tx.id] = Math.max(0, Number(tx.total_with_tax ?? tx.amount) - paid);
-    });
+    for (const tx of rows) {
+      map[tx.id] = Math.max(0, Number(tx.total_with_tax ?? tx.amount) - paidFor(tx));
+    }
     return map;
-  }, [rows, payments]);
+  }, [rows, paidByTx]);
 
+  // overpaidByTx carries what that Math.max(0, …) throws away. Until 09/09
+  // an overpayment simply disappeared: pay a farmer 100,000 too much and
+  // the row read "Settled", exactly like one paid correctly. The money was
+  // gone and nothing on screen said so. (Same shape of bug as CN 000261 —
+  // a clamp hiding a number that mattered.)
   const overpaidByTx = useMemo(() => {
     const map = {};
-    rows.forEach((tx) => {
-      const paid = payments
-        .filter((p) => p.transaction_id === tx.id && p.type === (tx.type === "BUY" ? "pay_supplier" : "receive_customer"))
-        .reduce((s, p) => s + Number(p.amount), 0);
-      const over = paid - Number(tx.total_with_tax ?? tx.amount);
+    for (const tx of rows) {
+      const over = paidFor(tx) - Number(tx.total_with_tax ?? tx.amount);
       // A riel or two either way is rounding, not an overpayment.
       if (over > 0.01) map[tx.id] = over;
-    });
+    }
     return map;
-  }, [rows, payments]);
+  }, [rows, paidByTx]);
 
   // Applies the Unpaid/Not Received toggles (each scoped to its own
   // transaction type) and the location picker on top of whatever the
