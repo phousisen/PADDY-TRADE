@@ -179,6 +179,54 @@ w = makeWorld();
 eq("a failed queue write recovers nothing", w.recoverStuckOps(["pay1"], { storageFails: true }), { rebuilt: 0, retried: 0 });
 eq("and the payment stays tracked as stuck", w.stuckOps.has("pay1"), true);
 
+// 10. THE ROOT CAUSE. "Send back to Waiting board" must take the whole
+//     finish with it — the payment and its activity-log entries — or the
+//     payment is left pointing at a transaction that no longer exists,
+//     which is exactly what stranded Ping Pong on 11 Sept.
+function dropOpsForGoneTransaction(queue, txId) {
+  if (!txId) return queue;
+  const doomed = new Set();
+  const doomedPaymentIds = new Set();
+  for (const op of queue) {
+    if (op.type === "createTransaction" || op.type === "finalizeTicket") continue;
+    const needsTx =
+      op.payload?.transactionId ||
+      (op.payload?.tableName === "transactions" ? op.payload?.recordId : null) ||
+      null;
+    if (needsTx !== txId) continue;
+    doomed.add(op._id);
+    if (op.type === "createPayment" && op.payload?.id) doomedPaymentIds.add(op.payload.id);
+  }
+  if (doomedPaymentIds.size) {
+    for (const op of queue) {
+      if (op.type !== "logAudit") continue;
+      if (op.payload?.tableName === "payments" && doomedPaymentIds.has(op.payload?.recordId)) doomed.add(op._id);
+    }
+  }
+  return queue.filter((o) => !doomed.has(o._id));
+}
+
+const finishQueue = () => [
+  { _id: "fin", type: "finalizeTicket", ticketId: "TK1", payload: { transactionId: "TX1" } },
+  { _id: "pay", type: "createPayment", payload: { id: "PY1", transactionId: "TX1", amount: 970000 } },
+  { _id: "audTx", type: "logAudit", payload: { tableName: "transactions", recordId: "TX1" } },
+  { _id: "audPay", type: "logAudit", payload: { tableName: "payments", recordId: "PY1" } },
+  // Another ticket's work, entirely unrelated — must survive untouched.
+  { _id: "pay2", type: "createPayment", payload: { id: "PY9", transactionId: "TX9", amount: 500 } },
+  { _id: "aud9", type: "logAudit", payload: { tableName: "payments", recordId: "PY9" } },
+];
+
+eq("sending a ticket back drops its payment and both log entries",
+   dropOpsForGoneTransaction(finishQueue().filter((o) => o._id !== "fin"), "TX1").map((o) => o._id),
+   ["pay2", "aud9"]);
+eq("another ticket's payment is never touched",
+   dropOpsForGoneTransaction(finishQueue(), "TX9").map((o) => o._id),
+   ["fin", "pay", "audTx", "audPay"]);
+eq("no transaction id drops nothing",
+   dropOpsForGoneTransaction(finishQueue(), null).length, 6);
+eq("an unknown transaction id drops nothing",
+   dropOpsForGoneTransaction(finishQueue(), "NOPE").length, 6);
+
 // The source must still contain the rules tested above.
 for (const needle of [
   "export function recoverStuckOps",
@@ -189,6 +237,8 @@ for (const needle of [
   "const queuedTxIds = pendingTransactionIds()",
   "if (!persisted) continue",
   "recoverTxId: canRebuild ? needsTx : null",
+  "function dropOpsForGoneTransaction",
+  "dropOpsForGoneTransaction(txId)",
 ]) {
   if (!src.includes(needle)) { console.error(`FAIL  offlineQueue.js missing: ${needle}`); failed++; }
 }
@@ -205,4 +255,4 @@ for (const key of ["sync_recover_badge", "sync_recover_hint", "sync_recover_btn"
 }
 
 if (failed) { console.error(`\n${failed} recover check(s) FAILED.`); process.exit(1); }
-console.log("Checked 26 recover cases — a missing transaction is rebuilt from this device's own copy, with its original id, date and time.");
+console.log("Checked 30 recover cases — a missing transaction is rebuilt from this device's own copy, with its original id, date and time.");
