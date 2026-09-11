@@ -180,7 +180,24 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       // Without this, a failed/dropped request left the dashboard — the
       // first thing anyone sees when they open PaddyTrade — stuck showing
       // nothing, with no indication of why or how to retry.
-      setLoadError(err.message || t("dash_load_error"));
+      // [2026-09-11] A dropped or timed-out request is a connection
+      // problem, not something the person reading this screen can act on.
+      // Ping Pong showed a red banner reading
+      // "AbortError: signal is aborted without reason" — a raw browser
+      // string, from supabaseClient.js's own per-request cutoff firing on
+      // a slow link. Nobody can do anything with that, and the page
+      // reloads fine a second later. Show the plain "couldn't load" line
+      // for those and keep the specific text for real errors (a
+      // permissions problem, a bad query) which an admin CAN act on.
+      const raw = `${err?.name || ""} ${err?.message || err || ""}`.toLowerCase();
+      const isConnectionBlip =
+        raw.includes("aborterror") ||
+        raw.includes("signal is aborted") ||
+        raw.includes("failed to fetch") ||
+        raw.includes("networkerror") ||
+        raw.includes("load failed") ||
+        raw.includes("timed out");
+      setLoadError(isConnectionBlip ? t("dash_load_error") : (err.message || t("dash_load_error")));
     } finally {
       setLoading(false);
     }
