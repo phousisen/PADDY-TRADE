@@ -41,6 +41,18 @@ function genCode(type) {
   return type === "BUY" ? `RCP-${n}-A` : `INV-${n}-B`;
 }
 
+// [2026-09-11] The only quality values the transactions table accepts —
+// CHECK (quality_grade = ANY (ARRAY['A','B','C'])), blank allowed. See
+// buildTransactionRow for the incident: one screen offered 1/2/3, so the
+// first ticket ever given a quality took the whole sale down with it.
+// Applied at every write that touches this column, so a value that
+// cannot be stored is dropped rather than blocking the trade.
+const QUALITY_GRADES = ["A", "B", "C"];
+function normalizeQualityGrade(value) {
+  const v = String(value ?? "").trim().toUpperCase();
+  return QUALITY_GRADES.includes(v) ? v : null;
+}
+
 function genTicketCode() {
   const n = Math.floor(100000 + Math.random() * 899999);
   return `TKT-${n}`;
@@ -998,7 +1010,18 @@ const rawApi = {
       station_quantity_kg: type === "SELL" ? quantityKg : null,
       station_price_per_kg: type === "SELL" ? pricePerKg : null,
       created_by: userId,
-      quality_grade: qualityGrade || null,
+      // [2026-09-11] A quality letter is a note. It must never be the
+      // reason a truckload cannot be recorded.
+      //
+      // The database enforces CHECK (quality_grade IN ('A','B','C')), and
+      // one screen had been offering 1/2/3 since the field was built. The
+      // first person ever to use it lost a 39.5 million riel sale into the
+      // stuck queue — no retry could ever succeed, because the value
+      // itself was the problem. The dropdown is fixed, but the shape of
+      // that failure is what matters: a decorative field permanently
+      // blocking a real sale. Anything that is not a grade the database
+      // accepts is dropped here instead, so the sale always lands.
+      quality_grade: normalizeQualityGrade(qualityGrade),
       tax_applicable: !!taxApplicable,
       tax_rate: taxApplicable ? (taxRate || 0) : 0,
       moisture_pct: moisturePct || 0,
@@ -1293,7 +1316,9 @@ const rawApi = {
 
   async setTicketPrice(id, { qualityGrade, moisturePct, mixturePct, outthrowPct, deductionKg, pricePerKg, staffFee, taxApplicable, taxRate, priceNote, userId, decline, bankName, bankAccount, bankQrUrl }) {
     const patch = {
-      quality_grade: qualityGrade || null,
+      // Normalized here too, so a ticket can never carry a quality the
+      // transactions table will reject when it is finalized.
+      quality_grade: normalizeQualityGrade(qualityGrade),
       moisture_pct: moisturePct || 0,
       mixture_pct: mixturePct || 0,
       outthrow_pct: outthrowPct || 0,
@@ -1749,7 +1774,7 @@ const rawApi = {
     const { data, error } = await supabase
       .from("transactions")
       .update({
-        quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: qualityGrade || null,
+        quantity_kg: quantityKg, price_per_kg: pricePerKg, amount, payment_status: paymentStatus, quality_grade: normalizeQualityGrade(qualityGrade),
         tax_applicable: !!taxApplicable, tax_rate: taxApplicable ? (taxRate || 0) : 0,
         ...(deductionKg !== undefined ? { deduction_kg: deductionKg || 0 } : {}),
         ...(staffFee !== undefined ? { staff_fee: staffFee || 0 } : {}),
@@ -2263,6 +2288,43 @@ const rawApi = {
       created_by: userId,
       ...(category !== undefined ? { category } : {}),
     };
+    // [2026-09-11] Double-payment guard for the screens that do NOT send
+    // a client id.
+    //
+    // The offline queue always supplies one, so a retried sync of the
+    // same payment is recognised and fetched rather than written twice
+    // (see insertOrFetchExisting). The Record Payment modal, the Edit ->
+    // mark Paid action, Expenses and Cash Flow all call this directly
+    // with no id at all — and every request in the app has an 8-second
+    // cutoff. So a payment that COMMITS on the server but answers too
+    // slowly surfaces to the user as a failure, the button re-enables,
+    // and the natural second press writes a second real payment against
+    // the same purchase. Nothing downstream would ever flag it: two
+    // legitimate-looking rows, and a farmer or buyer recorded as paid
+    // twice.
+    //
+    // An identical payment — same transaction, same type, same amount,
+    // same day — recorded within the last two minutes is that retry, not
+    // a second genuine payment. Returned as-is instead of inserted. A
+    // real second instalment of the exact same amount on the same day is
+    // possible in principle; two minutes apart, to the riel, is not.
+    if (!id && transactionId && amount != null) {
+      try {
+        const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+        const { data: recent } = await supabase
+          .from("payments")
+          .select("*")
+          .eq("transaction_id", transactionId)
+          .eq("type", type)
+          .eq("amount", amount)
+          .gte("created_at", cutoff)
+          .limit(1);
+        if (recent && recent.length) return recent[0];
+      } catch {
+        // A failed lookup must never block a real payment — fall through
+        // and insert, which is the behaviour that existed before this.
+      }
+    }
     return insertOrFetchExisting("payments", row);
   },
 };

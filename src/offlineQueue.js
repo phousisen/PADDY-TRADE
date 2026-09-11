@@ -369,7 +369,25 @@ export function mergeServerTickets(serverTickets) {
   const pendingIds = new Set(getQueue().map((op) => op.ticketId).filter(Boolean));
   const local = getCachedTickets();
   const localById = new Map(local.map((t) => [t.id, t]));
-  const merged = serverTickets.map((t) => (pendingIds.has(t.id) && localById.has(t.id) ? localById.get(t.id) : t));
+  // [2026-09-11] pending_tx_id / pending_tx_code are LOCAL-ONLY columns —
+  // the server row does not carry them — and they are what guarantees a
+  // ticket keeps ONE transaction id for life however many times it is
+  // finished. Taking the server row verbatim wiped them, which quietly
+  // undid the whole point of send-back ("finish it again later and it
+  // re-sends the same transaction id"): the next board refresh, about 15
+  // seconds later, erased the memory, and the re-finish minted a second
+  // transaction for the same truckload. They are carried across here so
+  // that promise actually holds.
+  const carryLocalOnly = (serverRow, localRow) => {
+    if (!localRow) return serverRow;
+    const out = { ...serverRow };
+    if (localRow.pending_tx_id && !out.pending_tx_id) out.pending_tx_id = localRow.pending_tx_id;
+    if (localRow.pending_tx_code && !out.pending_tx_code) out.pending_tx_code = localRow.pending_tx_code;
+    return out;
+  };
+  const merged = serverTickets.map((t) =>
+    pendingIds.has(t.id) && localById.has(t.id) ? localById.get(t.id) : carryLocalOnly(t, localById.get(t.id))
+  );
   // Keep any locally-created tickets the server doesn't know about yet
   // (still offline, or synced a split second ago and not yet re-fetched).
   const serverIds = new Set(serverTickets.map((t) => t.id));
@@ -432,6 +450,27 @@ function pendingTransactionIds() {
   return ids;
 }
 
+// Every transaction id this device still has ANY queued work against —
+// the two above, plus the ones a queued payment or activity-log entry
+// points at. [2026-09-11] Used to protect the cache from eviction: the
+// 400-row cap (capForCache below) only ever kept transactions with their
+// own queued op, so a transaction referenced by a stuck payment could be
+// evicted once the station got busy — and with it the only copy left to
+// rebuild from, turning a recoverable stuck payment into one that can
+// only be discarded. The copy has to outlive everything that needs it.
+function transactionIdsStillNeededLocally() {
+  const ids = pendingTransactionIds();
+  for (const op of getQueue()) {
+    if (op.type === "createTransaction" || op.type === "finalizeTicket") continue;
+    const needsTx =
+      op.payload?.transactionId ||
+      (op.payload?.tableName === "transactions" ? op.payload?.recordId : null) ||
+      null;
+    if (needsTx) ids.add(needsTx);
+  }
+  return ids;
+}
+
 // Same reasoning as mergeServerTickets above: server data wins for any
 // transaction with no local pending changes; one still queued on this
 // device keeps its local (already receipt-ready) version so it doesn't
@@ -471,7 +510,7 @@ function capForCache(list, keepIds, max = CACHE_MAX_ROWS) {
 }
 
 export function mergeServerTransactions(serverTxs) {
-  const pendingIds = pendingTransactionIds();
+  const pendingIds = transactionIdsStillNeededLocally();
   const local = getCachedTransactions();
   const localById = new Map(local.map((t) => [t.id, t]));
   const merged = serverTxs.map((t) => (pendingIds.has(t.id) && localById.has(t.id) ? localById.get(t.id) : t));
@@ -565,6 +604,15 @@ function remapPartyId(oldId, newId) {
   mutateQueue((q) => {
     for (const op of q) {
       if (op.payload && op.payload.partyId === oldId) op.payload.partyId = newId;
+      // [2026-09-11] updateParty carries the id at the TOP level, not in
+      // the payload, so it was missed here. api.updateParty matches zero
+      // rows for a dead id and deliberately returns a synthetic object
+      // rather than erroring, so trySync counted it a success and deleted
+      // it — which silently threw away a corrected bank account or QR
+      // entered at Finish Ticket for a farmer created offline. Money
+      // would then go to the old account, and the device would show the
+      // new one. Nothing anywhere reported a problem.
+      if (op.partyId === oldId) op.partyId = newId;
     }
     return q;
   });
@@ -612,8 +660,24 @@ function remapProductId(oldId, newId) {
 // runs in trySync; it doesn't need special handling here.)
 function dropOtherOpsForGoneTicket(ticketId) {
   if (!ticketId) return;
+  // [2026-09-11] Take the finish's payment and audit entries with it.
+  // This filter matches on op.ticketId, and createPaymentOffline /
+  // logAuditOffline never set one — they only know the transaction id.
+  // So a ticket deleted on the server used to drop its finalize and
+  // leave the cash payment behind pointing at a transaction that could
+  // now never exist: the identical stranding that happened at Ping Pong
+  // through the send-back button. Same fix, applied here too.
+  const goneTxIds = new Set(
+    getQueue()
+      .filter((op) => op.ticketId === ticketId && op.type === "finalizeTicket" && op.payload?.transactionId)
+      .map((op) => op.payload.transactionId)
+  );
   removeCachedTicket(ticketId);
   mutateQueue((q) => q.filter((op) => op.ticketId !== ticketId));
+  for (const txId of goneTxIds) {
+    dropOpsForGoneTransaction(txId);
+    removeCachedTransaction(txId);
+  }
   // Also clear any "stuck" tracking for that ticket's now-dropped ops —
   // otherwise a ticket that just got cleared could keep reporting as
   // stuck in the sync banner forever, even though nothing for it is left
@@ -685,6 +749,32 @@ export function enqueue(op) {
   const queuedAt = getAccurateNow().toISOString();
   const { persisted } = mutateQueue((q) => { q.push({ ...op, _id: opId, queuedAt }); return q; });
   return { opId, persisted };
+}
+// [2026-09-11] Same check as enqueue(), but it THROWS instead of handing
+// back a flag nobody reads.
+//
+// WHY — a full audit of every enqueue() call site found twelve that
+// ignored `persisted` entirely: the cash payment at Finish Ticket, the
+// weigh-in, the tare, the price, the ticket edit, a new farmer, a new
+// paddy type, a corrected bank account, the activity log, and the
+// registrar's party save. Every one of them wrote to the local cache,
+// returned normally and let the screen say "saved" — so on a device whose
+// localStorage is full or blocked, the work existed only on screen and
+// was gone at the next refresh, with nothing shown to anyone. That is the
+// worst failure this app can have, and it was silent in ten places.
+//
+// A save that could not be written down has to stop and say so. Nothing
+// is allowed to print, or to report success, on a change that was never
+// queued.
+function enqueueStrict(op, errKey = "err_storage_change", message) {
+  const { opId, persisted } = enqueue(op);
+  if (!persisted) {
+    throw tagError(
+      new Error(message || "Could not save this change on this device (storage error) — nothing was queued. Do NOT print a receipt. Try again in a moment, or free up space on this device if it keeps happening."),
+      errKey
+    );
+  }
+  return opId;
 }
 // True if a specific op (by the id enqueue() gave it) is still sitting in
 // the durable queue — i.e. not yet removed by a successful sync. Used to
@@ -1217,6 +1307,20 @@ export function discardStuckOps(opIds) {
   const allowed = new Set(listStuckOps().map((x) => x.opId));
   const ids = new Set((opIds || []).filter((id) => allowed.has(id)));
   if (!ids.size) return 0;
+  // [2026-09-11] Whatever depended on a discarded transaction goes with
+  // it. Discarding a stuck createTransaction or finalizeTicket while
+  // leaving its payment behind would create the exact orphan this whole
+  // panel exists to clean up — a payment pointing at a transaction that
+  // will now never be written, failing forever. Collected before the
+  // removal, because the ops have to still be in the queue to be read.
+  const orphanedTxIds = new Set();
+  for (const op of getQueue()) {
+    if (!ids.has(op._id)) continue;
+    const txId =
+      (op.type === "createTransaction" ? op.payload?.id : null) ||
+      (op.type === "finalizeTicket" ? op.payload?.transactionId : null);
+    if (txId) orphanedTxIds.add(txId);
+  }
   let removed = 0;
   mutateQueue((q) =>
     q.filter((o) => {
@@ -1226,6 +1330,10 @@ export function discardStuckOps(opIds) {
     })
   );
   for (const id of ids) stuckOps.delete(id);
+  for (const txId of orphanedTxIds) {
+    dropOpsForGoneTransaction(txId);
+    removeCachedTransaction(txId);
+  }
   notifyStatus();
   return removed;
 }
@@ -1545,9 +1653,21 @@ export function trySync() {
         // A payment must never be attempted before the transaction it
         // points at exists. Same principle as rule 1 above (a ticket's own
         // changes apply in order) — manual entries just never had it.
-        const blockedTxIds = new Set(
-          q.filter((o) => o.type === "createTransaction" && o.payload?.id).map((o) => o.payload.id)
-        );
+        //
+        // [2026-09-11] finalizeTicket counts too, and this is the line
+        // that would have prevented Ping Pong entirely. Finish Ticket on
+        // a paid BUY queues finalizeTicket -> createPayment -> logAudit.
+        // The payment carries no ticketId, so rule 1 never held it back,
+        // and seeding this set from createTransaction alone meant that
+        // the moment a finalize was slow or timed out, its payment was
+        // attempted anyway, took an immediate foreign-key rejection, and
+        // was counted three strikes into "stuck — call an admin" for a
+        // save that was doing nothing wrong. Tickets and manual entries
+        // both create transactions; both belong here.
+        const blockedTxIds = new Set([
+          ...q.filter((o) => o.type === "createTransaction" && o.payload?.id).map((o) => o.payload.id),
+          ...q.filter((o) => o.type === "finalizeTicket" && o.payload?.transactionId).map((o) => o.payload.transactionId),
+        ]);
         let progressed = false;
 
         for (const op of q) {
@@ -1619,6 +1739,9 @@ export function trySync() {
             // covers that as well.
             if (op.type === "createTransaction" && op.payload?.id) {
               blockedTxIds.add(op.payload.id);
+            }
+            if (op.type === "finalizeTicket" && op.payload?.transactionId) {
+              blockedTxIds.add(op.payload.transactionId);
             }
           }
         }
@@ -1767,7 +1890,7 @@ export async function resolvePartyIdOffline(typedName, type, locationId, extra =
     phone: extra.phone || null, bank_name: extra.bankName || null, bank_account: extra.bankAccount || null,
     bank_qr_url: extra.bankQrUrl || null, id_number: extra.idNumber || null, company: extra.company || null, destination: extra.destination || null,
   });
-  enqueue({
+  enqueueStrict({
     type: "createParty",
     payload: {
       id, name: trimmed, type, locationId, phone: extra.phone, bankName: extra.bankName, bankAccount: extra.bankAccount,
@@ -1795,7 +1918,7 @@ export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl }
     list[idx] = { ...list[idx], ...fields };
     setCachedParties(list);
   }
-  enqueue({ type: "updateParty", partyId, payload: { bankName, bankAccount, bankQrUrl } });
+  enqueueStrict({ type: "updateParty", partyId, payload: { bankName, bankAccount, bankQrUrl } });
   trySync();
 }
 
@@ -1833,7 +1956,7 @@ export async function resolveProductIdOffline(typedName) {
   // an identical name and api.createProduct hands back the existing row.
   const id = newId();
   addCachedProduct({ id, name: cleaned });
-  enqueue({ type: "createProduct", payload: { id, name: cleaned } });
+  enqueueStrict({ type: "createProduct", payload: { id, name: cleaned } });
   trySync();
   return id;
 }
@@ -1890,7 +2013,7 @@ export function createTicketOffline({ type, locationId, locationName, locationAd
     created_by: userId, createdByName: null, created_at: nowIso,
   };
   upsertCachedTicket(ticket);
-  enqueue({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg: hasGross ? grossKg : undefined } });
+  enqueueStrict({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg: hasGross ? grossKg : undefined } });
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
@@ -1907,7 +2030,7 @@ function patchCachedTicket(id, patch) {
 export function setTicketGrossOffline(id, { grossKg, userId }) {
   assertNotViewOnly();
   const updated = patchCachedTicket(id, { gross_kg: grossKg, gross_at: getAccurateNow().toISOString(), gross_by: userId, stage: "weighed_in" });
-  enqueue({ type: "setTicketGross", ticketId: id, payload: { grossKg, userId } });
+  enqueueStrict({ type: "setTicketGross", ticketId: id, payload: { grossKg, userId } });
   trySync();
   return updated;
 }
@@ -1937,7 +2060,7 @@ export function editTicketOffline(id, { partyId, partyName, phone, carPlate, dri
     patch.gross_by = userId;
   }
   const updated = patchCachedTicket(id, patch);
-  enqueue({
+  enqueueStrict({
     type: "editTicket",
     ticketId: id,
     payload: { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId },
@@ -1973,7 +2096,7 @@ export function setTicketPriceOffline(id, opts) {
   if (bankAccount !== undefined) patch.bank_account = bankAccount || null;
   if (bankQrUrl !== undefined) patch.bank_qr_url = bankQrUrl || null;
   const updated = patchCachedTicket(id, patch);
-  enqueue({ type: "setTicketPrice", ticketId: id, payload: opts });
+  enqueueStrict({ type: "setTicketPrice", ticketId: id, payload: opts });
   trySync();
   return updated;
 }
@@ -1992,7 +2115,7 @@ export function forgetPendingTransaction(ticketId) {
 export function setTicketTareOffline(id, { tareKg, userId }) {
   assertNotViewOnly();
   const updated = patchCachedTicket(id, { tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" });
-  enqueue({ type: "setTicketTare", ticketId: id, payload: { tareKg, userId } });
+  enqueueStrict({ type: "setTicketTare", ticketId: id, payload: { tareKg, userId } });
   trySync();
   return updated;
 }
@@ -2377,8 +2500,41 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
 // it lands on the server as the exact same record whenever it syncs.
 export function createPaymentOffline({ type, transactionId, locationId, amount, method, payDate, memo, userId }) {
   assertNotViewOnly();
+  // [2026-09-11] DUPLICATE-MONEY GUARD.
+  //
+  // The transaction side of Finish Ticket is idempotent several times
+  // over: the ticket-locked finalize RPC refuses a second transaction,
+  // finalizeTicketOffline reuses an already-queued op, and a retried
+  // insert with the same client id fetches the existing row instead of
+  // writing a twin. The PAYMENT had none of that — every call minted a
+  // fresh id, so any path that runs Finish twice for one ticket (a second
+  // device finishing the same truck, a re-finish after a timeout, a
+  // re-finish after a send-back where the first payment had actually
+  // landed) queued a second full payment for the same purchase. The
+  // farmer then reads as paid twice in Cash Flow and Payables.
+  //
+  // Both callers of this function record "paid in full, at the moment of
+  // the sale/purchase", so one payment of a given type and amount against
+  // a given transaction is the most that can be correct. If one already
+  // exists — still queued, or already synced and sitting in the payment
+  // cache — this returns it instead of creating another.
+  const sameMoney = (p) =>
+    p && p.transaction_id === transactionId && p.type === type &&
+    Math.round(Number(p.amount) || 0) === Math.round(Number(amount) || 0);
+  const queuedTwin = getQueue().find(
+    (op) => op.type === "createPayment" && sameMoney({
+      transaction_id: op.payload?.transactionId, type: op.payload?.type, amount: op.payload?.amount,
+    })
+  );
+  if (queuedTwin) return { ...queuedTwin.payload, transaction_id: transactionId, location_id: locationId, pay_date: payDate };
+  const syncedTwin = getCachedPayments().find(sameMoney);
+  if (syncedTwin) return syncedTwin;
+
   const id = newId();
-  enqueue({ type: "createPayment", payload: { id, type, transactionId, locationId, amount, method, payDate, memo, userId } });
+  enqueueStrict(
+    { type: "createPayment", payload: { id, type, transactionId, locationId, amount, method, payDate, memo, userId } },
+    "err_storage_payment"
+  );
   trySync();
   const payment = { id, type, transaction_id: transactionId, location_id: locationId, amount, method, pay_date: payDate, memo, created_by: userId };
   upsertCachedPayment(payment);
@@ -2390,6 +2546,12 @@ export function createPaymentOffline({ type, transactionId, locationId, amount, 
 // manual entry is traceable later even if it was saved while offline.
 export function logAuditOffline(payload) {
   assertNotViewOnly();
+  // Deliberately NOT strict. Every other save in this file stops and
+  // shouts if the device cannot write it down, because losing it loses
+  // money or a truckload. An Activity Log entry is a record ABOUT a save
+  // that has already been queued — throwing here would abort a Finish
+  // Ticket whose purchase and payment are already safely queued, which
+  // trades a missing log line for a broken finish. Wrong trade.
   enqueue({ type: "logAudit", payload });
   trySync();
 }

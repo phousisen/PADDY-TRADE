@@ -141,6 +141,8 @@ export const translations = {
     // Thrown by the offline queue, tagged so they arrive here translated.
     err_storage_ticket: "Could not save this ticket on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Finish Ticket again in a moment, or free up space on this device if it keeps happening.",
     err_storage_entry: "Could not save this entry on this device (storage error) — nothing was queued. Do NOT print a receipt. Try Save again in a moment, or free up space on this device if it keeps happening.",
+    err_storage_change: "This computer could not write the change down (storage error) — it was NOT saved. Do not print anything. Try again in a moment; if it keeps happening, tell an admin — this computer is out of space.",
+    err_storage_payment: "The purchase was saved, but this computer could not write down the CASH PAYMENT — it was NOT saved. Record the payment by hand from the Transactions page, and tell an admin: this computer is out of space.",
     err_request_timeout: "Timed out waiting for a response — the connection may be too unstable to complete this save right now.",
     err_unconfirmed_head: "NOT SAVED YET — do NOT print. This device is online but PaddyTrade's database did not confirm this {what} within {secs} seconds (slow or unstable connection). It is safely queued on this device and will keep retrying automatically.",
     err_unconfirmed_retry_safe: "Wait a moment and press Finish Ticket again — that is safe, it will NOT create a duplicate. If the ticket disappears from this board in the meantime, it already saved: print its receipt from the Transactions page instead.",
@@ -567,6 +569,8 @@ export const translations = {
 
     err_storage_ticket: "រក្សាទុកសំបុត្រនេះនៅលើឧបករណ៍នេះមិនបាន (បញ្ហាទំហំផ្ទុក) — គ្មានអ្វីត្រូវបានដាក់ជួរទេ។ កុំបោះពុម្ពបង្កាន់ដៃ។ សូមចុច បញ្ចប់សំបុត្រ ម្តងទៀតក្នុងមួយភ្លែត ឬសម្អាតទំហំផ្ទុកលើឧបករណ៍នេះ បើវានៅតែកើតឡើង។",
     err_storage_entry: "រក្សាទុកទិន្នន័យនេះនៅលើឧបករណ៍នេះមិនបាន (បញ្ហាទំហំផ្ទុក) — គ្មានអ្វីត្រូវបានដាក់ជួរទេ។ កុំបោះពុម្ពបង្កាន់ដៃ។ សូមចុច រក្សាទុក ម្តងទៀតក្នុងមួយភ្លែត ឬសម្អាតទំហំផ្ទុកលើឧបករណ៍នេះ បើវានៅតែកើតឡើង។",
+    err_storage_change: "កុំព្យូទ័រនេះមិនអាចកត់ត្រាការផ្លាស់ប្តូរបានទេ (បញ្ហាទំហំផ្ទុក) — វាមិនត្រូវបានរក្សាទុកទេ។ កុំបោះពុម្ពអ្វីទាំងអស់។ សូមព្យាយាមម្តងទៀត។ បើវានៅតែកើតឡើង សូមប្រាប់អ្នកគ្រប់គ្រង — កុំព្យូទ័រនេះអស់ទំហំផ្ទុក។",
+    err_storage_payment: "ការទិញត្រូវបានរក្សាទុក ប៉ុន្តែកុំព្យូទ័រនេះមិនអាចកត់ត្រាការបង់ប្រាក់សុទ្ធបានទេ — វាមិនត្រូវបានរក្សាទុកទេ។ សូមកត់ត្រាការបង់ប្រាក់ដោយដៃពីទំព័រប្រតិបត្តិការ ហើយប្រាប់អ្នកគ្រប់គ្រង៖ កុំព្យូទ័រនេះអស់ទំហំផ្ទុក។",
     err_request_timeout: "រង់ចាំចម្លើយយូរពេក — អ៊ីនធឺណិតប្រហែលជាមិនស្ថិតស្ថេរគ្រប់គ្រាន់ដើម្បីបញ្ចប់ការរក្សាទុកនេះឥឡូវនេះ។",
     err_unconfirmed_head: "មិនទាន់រក្សាទុកទេ — កុំបោះពុម្ព។ ឧបករណ៍នេះមានអ៊ីនធឺណិត ប៉ុន្តែមូលដ្ឋានទិន្នន័យ PaddyTrade មិនបានបញ្ជាក់{what}នេះក្នុងរយៈពេល {secs} វិនាទីទេ (អ៊ីនធឺណិតយឺត ឬមិនស្ថិតស្ថេរ)។ វាត្រូវបានដាក់ជួរដោយសុវត្ថិភាពនៅលើឧបករណ៍នេះ ហើយនឹងព្យាយាមផ្ញើដោយស្វ័យប្រវត្តិ។",
     err_unconfirmed_retry_safe: "សូមរង់ចាំមួយភ្លែត រួចចុច បញ្ចប់សំបុត្រ ម្តងទៀត — វាមានសុវត្ថិភាព វានឹងមិនបង្កើតច្បាប់ចម្លងទេ។ បើសំបុត្រនេះបាត់ពីក្តារនេះក្នុងពេលនោះ មានន័យថាវាបានរក្សាទុករួចហើយ៖ សូមបោះពុម្ពបង្កាន់ដៃពីទំព័រ ប្រតិបត្តិការ ជំនួសវិញ។",
