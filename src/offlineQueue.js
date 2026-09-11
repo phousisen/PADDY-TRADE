@@ -937,6 +937,245 @@ function noteOpFailure(op, err) {
 function clearOpFailure(opId) {
   stuckOps.delete(opId);
 }
+// [2026-09-11] Reading and DISCARDING permanently-stuck operations.
+//
+// WHY THIS EXISTS — Ping Pong, 11 Sept. Two `createPayment` ops were left
+// pointing at transaction ids the server does not have. Every pass they
+// were retried, every pass the server answered
+//   insert or update on table "payments" violates foreign key constraint
+//   "payments_transaction_id_fkey"
+// and the red banner said, correctly, that this would not fix itself and
+// to tell an admin. But there was nothing an admin could actually DO: the
+// banner's "View details" panel only lists work that is still PENDING, so
+// it showed "nothing waiting" while the bar above it shouted — and there
+// was no way anywhere in the app to get rid of a save that can never
+// succeed. The only route left was a browser developer console, which is
+// not a thing to ask a weighbridge to do.
+//
+// An op that references a row the database does not have can never
+// succeed no matter how long it retries, so there has to be a way to
+// throw it away deliberately. This is that way — with the rule that the
+// person doing it SEES exactly what is being discarded first (see
+// listStuckOps below, and the confirm list in Topbar.jsx).
+//
+// Deliberately narrow: it can only discard ops already counted as stuck
+// (STUCK_THRESHOLD consecutive failures while online). A save that is
+// merely waiting for the internet is never offered up.
+function describeOp(op) {
+  const p = op.payload || {};
+  const n = (v) => (v == null || v === "" ? null : new Intl.NumberFormat("en-US").format(Math.round(Number(v) || 0)));
+  switch (op.type) {
+    case "createPayment":
+      return `Payment ${n(p.amount) || "?"} \u17DB${p.memo ? ` \u2014 ${p.memo}` : ""}${p.payDate ? ` (${p.payDate})` : ""}`;
+    case "createTransaction":
+      return `${p.type || "Entry"} ${n(p.quantityKg) || "?"} kg${p.code ? ` \u2014 ${p.code}` : ""}`;
+    case "finalizeTicket":
+      return `Finish ticket${p.transactionCode ? ` \u2014 ${p.transactionCode}` : ""}`;
+    case "logAudit":
+      return `Activity log entry${p.action ? ` (${p.action})` : ""}`;
+    case "createParty":
+      return `New farmer/buyer${p.name ? ` \u2014 ${p.name}` : ""}`;
+    case "createProduct":
+      return `New paddy type${p.name ? ` \u2014 ${p.name}` : ""}`;
+    default:
+      return op.type;
+  }
+}
+
+// ---------------------------------------------------------------------
+// [2026-09-11] RECOVERING a stuck save, not just discarding it.
+//
+// Discarding is the last resort. It throws real work away — at Ping Pong
+// that would have meant two payments, already printed on a receipt and
+// handed to a farmer, simply ceasing to exist.
+//
+// But the transaction those payments point at is not actually gone. The
+// station PC keeps a full copy of every transaction it has made in its
+// own local cache (getCachedTransactions above) — party, weight, price,
+// truck, grade, the exact date and time, everything the receipt was
+// printed from. That copy is written at the same moment the save is
+// queued and is never removed by a failed sync. So when a payment is
+// rejected with
+//   violates foreign key constraint "payments_transaction_id_fkey"
+// the missing transaction can be REBUILT from that cache and re-queued
+// under its ORIGINAL id — which is the whole point, because the payment
+// already points at that id, so once the transaction lands the payment
+// goes through on its very next attempt with nothing retyped.
+//
+// Re-sending a transaction that (unknown to us) is actually already on
+// the server is harmless: api.js's insertOrFetchExisting recognises the
+// duplicate id and returns the existing row instead of writing anything.
+// So recovery is always the safe thing to try FIRST, and discarding is
+// only for what genuinely cannot be rebuilt.
+//
+// The weigh-in date and time are carried across exactly as the device
+// recorded them — recovery must never move a transaction to today.
+// ---------------------------------------------------------------------
+
+// The transaction a non-transaction op depends on: a payment by
+// payload.transactionId, an audit entry by payload.recordId when it is
+// logging against the transactions table. Same rule trySync uses to
+// decide what waits behind what.
+function dependsOnTransactionId(op) {
+  if (op.type === "createTransaction" || op.type === "finalizeTicket") return null;
+  return (
+    op.payload?.transactionId ||
+    (op.payload?.tableName === "transactions" ? op.payload?.recordId : null) ||
+    null
+  );
+}
+
+// Turns a cached transaction row (server snake_case — the shape
+// upsertCachedTransaction stores) back into the camelCase payload a
+// createTransaction op carries. Returns null if the cached row is too
+// incomplete to rebuild a real transaction from, so a half-written cache
+// entry can never become a bogus row in the database.
+function cachedTxToCreateOpPayload(tx) {
+  if (!tx || !tx.id || !tx.type || !tx.location_id || !tx.party_id) return null;
+  if (tx.quantity_kg == null) return null;
+  return {
+    id: tx.id,
+    code: tx.code || null,
+    type: tx.type,
+    locationId: tx.location_id,
+    partyId: tx.party_id,
+    productId: tx.product_id || null,
+    quantityKg: Number(tx.quantity_kg) || 0,
+    pricePerKg: Number(tx.price_per_kg) || 0,
+    paymentStatus: tx.payment_status || "unpaid",
+    userId: tx.created_by || null,
+    qualityGrade: tx.quality_grade || null,
+    taxApplicable: !!tx.tax_applicable,
+    taxRate: Number(tx.tax_rate) || 0,
+    moisturePct: Number(tx.moisture_pct) || 0,
+    mixturePct: Number(tx.mixture_pct) || 0,
+    outthrowPct: Number(tx.outthrow_pct) || 0,
+    deductionKg: Number(tx.deduction_kg) || 0,
+    staffFee: Number(tx.staff_fee) || 0,
+    note: tx.note || null,
+    carPlate: tx.car_plate || null,
+    driverName: tx.driver_name || null,
+    receiptPhotoUrl: tx.receipt_photo_url || null,
+    paymentProofUrl: tx.payment_proof_url || null,
+    // The day and time the device stamped when the weight was taken —
+    // NEVER "now". buildTransactionRow only falls back to today when
+    // these are missing, so they are always passed explicitly here.
+    txDate: tx.tx_date || null,
+    txTime: tx.tx_time || null,
+    // Present when the transaction came from a Weighing Ticket; absent
+    // (and harmlessly null) on a manually-entered Buy/Sell.
+    paperTicketNo: tx.paper_ticket_no || null,
+    grossKg: tx.gross_kg ?? null,
+    grossAt: tx.gross_at || null,
+    tareKg: tx.tare_kg ?? null,
+    tareAt: tx.tare_at || null,
+    recordedByName: tx.recorded_by_name || null,
+    bankQrUrl: tx.bank_qr_url || null,
+  };
+}
+
+function describeCachedTx(tx) {
+  const n = (v) => (v == null ? "?" : new Intl.NumberFormat("en-US").format(Math.round(Number(v) || 0)));
+  const bits = [`${tx.type || "Entry"} ${n(tx.quantity_kg)} kg`];
+  if (tx.code) bits.push(tx.code);
+  if (tx.tx_date) bits.push(tx.tx_date + (tx.tx_time ? ` ${String(tx.tx_time).slice(0, 5)}` : ""));
+  return bits.join(" — ");
+}
+
+// Everything currently counted as stuck, with enough detail to decide.
+// `recoverTxId` is set when this op is only failing because a
+// transaction is missing from the server AND this device still holds a
+// complete copy of it — i.e. when Recover will actually fix it.
+export function listStuckOps() {
+  const queue = getQueue();
+  const byId = new Map(queue.map((o) => [o._id, o]));
+  // A transaction that is itself still queued is not missing — it just
+  // has not had its turn yet — so nothing depending on it is offered a
+  // rebuild. Whatever is really wrong is with that transaction's own op.
+  const queuedTxIds = pendingTransactionIds();
+  const txById = new Map(getCachedTransactions().map((t) => [t.id, t]));
+  const out = [];
+  for (const [opId, e] of stuckOps) {
+    if (e.attempts < STUCK_THRESHOLD) continue;
+    const op = byId.get(opId);
+    if (!op) continue; // already left the queue
+    const needsTx = dependsOnTransactionId(op);
+    const cachedTx = needsTx && !queuedTxIds.has(needsTx) ? txById.get(needsTx) : null;
+    const canRebuild = !!(cachedTx && cachedTxToCreateOpPayload(cachedTx));
+    out.push({
+      opId,
+      type: op.type,
+      summary: describeOp(op),
+      attempts: e.attempts,
+      error: e.error || "",
+      since: e.since,
+      recoverTxId: canRebuild ? needsTx : null,
+      recoverSummary: canRebuild ? describeCachedTx(cachedTx) : null,
+    });
+  }
+  return out;
+}
+
+// Rebuild the missing transactions the named stuck ops are waiting on,
+// re-queue them under their original ids, and let those ops try again
+// from a clean slate. Returns { rebuilt, retried } — how many
+// transactions were put back, and how many stuck saves were released.
+//
+// Nothing is deleted here, by design: if a rebuild turns out not to fix
+// it, the op is still in the queue and Discard is still available.
+export function recoverStuckOps(opIds) {
+  const byOpId = new Map(listStuckOps().map((x) => [x.opId, x]));
+  const txById = new Map(getCachedTransactions().map((t) => [t.id, t]));
+  const doneTxIds = new Set();
+  let rebuilt = 0;
+  let retried = 0;
+  for (const opId of opIds || []) {
+    const entry = byOpId.get(opId);
+    if (!entry || !entry.recoverTxId) continue;
+    const txId = entry.recoverTxId;
+    if (!doneTxIds.has(txId)) {
+      const payload = cachedTxToCreateOpPayload(txById.get(txId));
+      if (!payload) continue;
+      // Same storage-failure check every other enqueue in this file
+      // makes: if the device could not actually write the queue, nothing
+      // was queued and the stuck op must be left exactly as it is rather
+      // than reported as recovered.
+      const { persisted } = enqueue({ type: "createTransaction", payload });
+      if (!persisted) continue;
+      doneTxIds.add(txId);
+      rebuilt += 1;
+    }
+    stuckOps.delete(opId);
+    retried += 1;
+  }
+  if (rebuilt || retried) {
+    notifyStatus();
+    trySync();
+  }
+  return { rebuilt, retried };
+}
+
+// Throw the named ops away for good. Returns how many were actually
+// removed. Only ops currently counted as stuck can be discarded, so a
+// stale opId from a screen left open cannot quietly delete a save that
+// has since started working again.
+export function discardStuckOps(opIds) {
+  const allowed = new Set(listStuckOps().map((x) => x.opId));
+  const ids = new Set((opIds || []).filter((id) => allowed.has(id)));
+  if (!ids.size) return 0;
+  let removed = 0;
+  mutateQueue((q) =>
+    q.filter((o) => {
+      if (!ids.has(o._id)) return true;
+      removed += 1;
+      return false;
+    })
+  );
+  for (const id of ids) stuckOps.delete(id);
+  notifyStatus();
+  return removed;
+}
+
 function clearStuckTracking() {
   stuckOps.clear();
 }

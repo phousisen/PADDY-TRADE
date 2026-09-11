@@ -361,6 +361,24 @@ export const translations = {
     // SettleDifferenceModal.jsx for why the limit is read from the
     // station's own smallest ticket instead of being a setting.
     close_label: "Close",
+    // [2026-09-11] Discarding saves that can never succeed — see
+    // listStuckOps/discardStuckOps in offlineQueue.js.
+    sync_discard_open: "Fix stuck items",
+    sync_discard_title: "Saves that are not going through",
+    sync_discard_sub: "These have been rejected by the server over and over. They will never go through on their own.",
+    sync_discard_none: "Nothing is stuck right now — there is nothing to fix.",
+    sync_discard_attempts: "Rejected {n} times",
+    sync_discard_warning: "Check the list above against your paper book first. Anything genuinely missing from PaddyTrade has to be entered again by hand after this — discarding does NOT save it, it throws it away.",
+    sync_discard_btn: "Discard {n} item(s)",
+    sync_discard_done: "Discarded {n} item(s). The warning will clear in a moment.",
+    // [2026-09-11] Recover — rebuilding the missing transaction from this
+    // device's own copy instead of throwing the payment away. See
+    // recoverStuckOps in offlineQueue.js.
+    sync_recover_badge: "This device still has the missing entry: {s}",
+    sync_recover_hint: "The entry these are waiting for is missing from the server, but this computer still has a full copy of it. Put it back first — nothing has to be retyped.",
+    sync_recover_btn: "Put back {n} missing entry(s)",
+    sync_recover_done: "Put back {n} entry(s) and restarted {r} save(s). They are sending now — the red bar clears by itself once they land. If it is still there in a minute, come back here.",
+    sync_recover_only_after: "Only discard something after trying Put back, or when there is nothing left to put back.",
     settle_title: "Settle difference — {station}",
     settle_subtitle: "Closing a small gap between the system and the shed",
     settle_smallest_ticket: "Smallest ticket here",
@@ -746,6 +764,19 @@ export const translations = {
     adj_confirm_btn: "បញ្ជាក់ការកែតម្រូវ", adj_incorrect_password: "ពាក្យសម្ងាត់មិនត្រឹមត្រូវ។",
 
     close_label: "បិទ",
+    sync_discard_open: "ជួសជុលទិន្នន័យជាប់គាំង",
+    sync_discard_title: "ការរក្សាទុកដែលមិនអាចចូលបាន",
+    sync_discard_sub: "ទាំងនេះត្រូវបានម៉ាស៊ីនមេបដិសេធម្តងហើយម្តងទៀត។ វានឹងមិនអាចចូលដោយខ្លួនឯងបានទេ។",
+    sync_discard_none: "ឥឡូវនេះគ្មានអ្វីជាប់គាំងទេ — គ្មានអ្វីត្រូវជួសជុលទេ។",
+    sync_discard_attempts: "ត្រូវបានបដិសេធ {n} ដង",
+    sync_discard_warning: "សូមពិនិត្យបញ្ជីខាងលើជាមួយសៀវភៅក្រដាសរបស់អ្នកជាមុនសិន។ អ្វីដែលបាត់ពី PaddyTrade ពិតប្រាកដ ត្រូវតែបញ្ចូលឡើងវិញដោយដៃបន្ទាប់ពីនេះ — ការលុបចោលមិនរក្សាទុកវាទេ គឺបោះចោលវា។",
+    sync_discard_btn: "លុបចោល {n} ធាតុ",
+    sync_discard_done: "បានលុបចោល {n} ធាតុ។ ការព្រមាននឹងបាត់ក្នុងពេលបន្តិចទៀត។",
+    sync_recover_badge: "កុំព្យូទ័រនេះនៅមានទិន្នន័យដែលបាត់: {s}",
+    sync_recover_hint: "ប្រតិបត្តិការដែលទាំងនេះកំពុងរង់ចាំបានបាត់ពីម៉ាស៊ីនមេ ប៉ុន្តែកុំព្យូទ័រនេះនៅមានច្បាប់ចម្លងពេញលេញ។ សូមដាក់វាត្រឡប់ចូលវិញជាមុនសិន — មិនចាំបាច់វាយបញ្ចូលឡើងវិញទេ។",
+    sync_recover_btn: "ដាក់ត្រឡប់ចូលវិញ {n} ធាតុ",
+    sync_recover_done: "បានដាក់ត្រឡប់ចូលវិញ {n} ធាតុ និងចាប់ផ្តើមរក្សាទុកឡើងវិញ {r} ដង។ វាកំពុងផ្ញើឥឡូវនេះ — របាររំលេចក្រហមនឹងបាត់ដោយខ្លួនឯងនៅពេលវាចូល។ បើនៅតែមានក្នុងមួយនាទីទៀត សូមត្រឡប់មកទីនេះវិញ។",
+    sync_recover_only_after: "សូមលុបចោលតែក្រោយពីបានសាកល្បងដាក់ត្រឡប់ចូលវិញ ឬពេលគ្មានអ្វីអាចដាក់ត្រឡប់ចូលវិញបានទៀត។",
     settle_title: "កែតម្រូវភាពខុសគ្នា — {station}",
     settle_subtitle: "បិទគម្លាតតូចរវាងប្រព័ន្ធ និងឃ្លាំង",
     settle_smallest_ticket: "សំបុត្រតូចបំផុតនៅទីនេះ",
