@@ -1573,6 +1573,50 @@ const rawApi = {
     return new Map((data || []).map((r) => [r.location_id, Number(r.kg) || 0]));
   },
 
+  // [2026-09-11] The smallest buy ticket each station has ever written, plus
+  // its average and how many tickets that is based on (see
+  // station_ticket_floor_2026-09-11.sql).
+  //
+  // This is what decides whether a stock difference can be settled on the
+  // spot. A gap SMALLER than the smallest ticket a station writes cannot be
+  // a missing ticket — it has to be rain, scale drift or sweepings. A gap
+  // larger than that might be a lost ticket, so the app refuses to write it
+  // off and sends you to the paper book instead.
+  //
+  // Deliberately not a number in Settings: a setting invites "just raise it
+  // this once", and a limit that can be argued up is not a limit. This one
+  // only moves if the station genuinely starts writing bigger tickets.
+  //
+  // Fails CLOSED. Empty Map on any error (function not installed yet, no
+  // permission, offline) and every caller then treats every station as
+  // un-settleable — the safe direction, since the cost of not settling
+  // 35 kg is nothing and the cost of wrongly settling 21 tonnes is 20
+  // million riel.
+  async getStationTicketFloor() {
+    const { data, error } = await supabase.rpc("station_ticket_floor");
+    if (error) {
+      console.warn("[getStationTicketFloor] not available:", error.message);
+      return new Map();
+    }
+    return new Map(
+      (data || []).map((r) => [
+        r.location_id,
+        {
+          floorKg: Number(r.floor_kg) || 0,
+          avgKg: Number(r.avg_kg) || 0,
+          ticketCount: Number(r.ticket_count) || 0,
+          enoughHistory: r.enough_history === true,
+          // Weighted average buy price at this station over the last 30
+          // days, or null if it has bought nothing priced in that window.
+          // Only ever used to put a riel figure beside the kilos — null
+          // means the screen shows kilos alone rather than inventing a
+          // price, same standing rule as the Adjust Stock modal.
+          recentPrice: r.recent_price_per_kg == null ? null : Number(r.recent_price_per_kg),
+        },
+      ])
+    );
+  },
+
   // [2026-09-10] Just the number, for the badge on the bell and in the
   // sidebar. It was being answered by downloading every change request ever
   // made, each joined to its transaction, that transaction's party, and the

@@ -355,6 +355,30 @@ export const translations = {
     adj_confirm_password_label: "Enter your password to confirm this reset",
     adj_confirm_btn: "Confirm Reset", adj_incorrect_password: "Incorrect password.",
 
+    // [2026-09-11] "Settle difference" — closing a small NEGATIVE stock
+    // figure in one step, with the riel shown, and refusing outright when
+    // the gap is big enough to be a missing ticket. See
+    // SettleDifferenceModal.jsx for why the limit is read from the
+    // station's own smallest ticket instead of being a setting.
+    close_label: "Close",
+    settle_title: "Settle difference — {station}",
+    settle_subtitle: "Closing a small gap between the system and the shed",
+    settle_smallest_ticket: "Smallest ticket here",
+    settle_gain_headline: "Gain {kg} kg{value}",
+    settle_gain_why: "Weigh-out came to more than weigh-in. Recorded as a stock gain.",
+    settle_too_small_to_be_ticket: "{pct}% of this station's smallest ticket — too small to be a lost one.",
+    settle_reason_label: "Why",
+    settle_reason_moisture: "Rain / moisture — paddy heavier at weigh-out",
+    settle_reason_drift: "Scale drift / recounted",
+    settle_note_label: "Note (optional)",
+    settle_btn: "Settle",
+    settle_refused_title: "This is too large to settle",
+    settle_refused_too_big: "{kg} kg is about {value} — roughly {tickets} buy ticket(s) at this station's average. A gap this size is missing tickets, not rain. Settling it would hide them for good.",
+    settle_refused_no_history: "This station has only {n} buy ticket(s) so far, so there is no reliable smallest ticket to measure against yet. Nothing can be settled here until it has more history.",
+    settle_refused_next_step: "Check the paper ticket book for this station.",
+    perf_settle_btn: "Settle {kg} kg",
+    perf_settle_blocked: "Too big to settle",
+
     // [2026-09-03] Registrar shell tab label + full i18n coverage for
     // RegisterPartyStaff.jsx and PartyDetail.jsx — both shared screens
     // (also used by Staff/Admin, not just Registrar) had zero t() calls
@@ -720,6 +744,25 @@ export const translations = {
     adj_confirm_warning_body: "រឿងនេះមិនអាចលុបចោលដោយស្ងាត់ៗនៅពេលក្រោយបានទេ — វាជាការកត់ត្រាអចិន្ត្រៃយ៍ក្នុងបញ្ជីស្តុក ដូចការកែតម្រូវផ្សេងទៀតដែរ។",
     adj_confirm_password_label: "បញ្ចូលពាក្យសម្ងាត់របស់អ្នកដើម្បីបញ្ជាក់ការកែតម្រូវនេះ",
     adj_confirm_btn: "បញ្ជាក់ការកែតម្រូវ", adj_incorrect_password: "ពាក្យសម្ងាត់មិនត្រឹមត្រូវ។",
+
+    close_label: "បិទ",
+    settle_title: "កែតម្រូវភាពខុសគ្នា — {station}",
+    settle_subtitle: "បិទគម្លាតតូចរវាងប្រព័ន្ធ និងឃ្លាំង",
+    settle_smallest_ticket: "សំបុត្រតូចបំផុតនៅទីនេះ",
+    settle_gain_headline: "ចំណេញ {kg} គ.ក្រ{value}",
+    settle_gain_why: "ទម្ងន់ចេញច្រើនជាងទម្ងន់ចូល។ កត់ត្រាជាការកើនឡើងស្តុក។",
+    settle_too_small_to_be_ticket: "{pct}% នៃសំបុត្រតូចបំផុតរបស់ស្ថានីយនេះ — តូចពេកមិនអាចជាសំបុត្របាត់បានទេ។",
+    settle_reason_label: "មូលហេតុ",
+    settle_reason_moisture: "ភ្លៀង / សំណើម — ស្រូវធ្ងន់ជាងពេលថ្លឹងចេញ",
+    settle_reason_drift: "ជញ្ជីងឃ្លាតប្រែប្រួល / បានរាប់ឡើងវិញ",
+    settle_note_label: "កំណត់ចំណាំ (ស្រេចចិត្ត)",
+    settle_btn: "កែតម្រូវ",
+    settle_refused_title: "ចំនួននេះធំពេកមិនអាចកែតម្រូវបានទេ",
+    settle_refused_too_big: "{kg} គ.ក្រ មានតម្លៃប្រហែល {value} — ស្មើនឹងប្រហែល {tickets} សំបុត្រទិញតាមមធ្យមភាគរបស់ស្ថានីយនេះ។ គម្លាតធំបែបនេះគឺជាសំបុត្របាត់ មិនមែនភ្លៀងទេ។ ការកែតម្រូវវានឹងលាក់បាំងវាជារៀងរហូត។",
+    settle_refused_no_history: "ស្ថានីយនេះមានត្រឹមតែ {n} សំបុត្រទិញប៉ុណ្ណោះ ដូច្នេះមិនទាន់មានសំបុត្រតូចបំផុតគួរឲ្យទុកចិត្តសម្រាប់ប្រៀបធៀបនៅឡើយទេ។ មិនអាចកែតម្រូវអ្វីនៅទីនេះបានទេ រហូតដល់មានទិន្នន័យច្រើនជាងនេះ។",
+    settle_refused_next_step: "សូមពិនិត្យសៀវភៅសំបុត្រក្រដាសរបស់ស្ថានីយនេះ។",
+    perf_settle_btn: "កែតម្រូវ {kg} គ.ក្រ",
+    perf_settle_blocked: "ធំពេកមិនអាចកែតម្រូវ",
 
     nav_register: "ចុះឈ្មោះ",
     party_farmer: "កសិករ", party_buyer: "អ្នកទិញ",
