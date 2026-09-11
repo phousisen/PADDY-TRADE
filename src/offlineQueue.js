@@ -805,6 +805,18 @@ export function discardStuckFinalize(opId) {
   const txId = op.payload?.transactionId;
   removeOp(opId);
   if (txId) removeCachedTransaction(txId);
+  // [2026-09-11] Ping Pong. Cancelling the finish used to take back the
+  // TRANSACTION and leave everything queued alongside it — in particular
+  // the cash payment Finish Ticket queues right after it (see
+  // WeighingTickets.jsx). That payment stayed in the queue pointing at a
+  // transaction that no longer existed anywhere, so from that moment on
+  // every sync, every 15 seconds, came back with
+  //   violates foreign key constraint "payments_transaction_id_fkey"
+  // and the station sat under a permanent red banner with nothing it
+  // could do about it. Sending a ticket back has to take the whole
+  // finish with it, payment included — the money is re-recorded when the
+  // ticket is finished again.
+  dropOpsForGoneTransaction(txId);
   // pending_tx_id / pending_tx_code are deliberately LEFT on the cached
   // ticket, so a later Finish re-sends the same transaction id — the
   // server then returns the row it already has instead of a twin.
@@ -823,7 +835,49 @@ export function discardStuckManualEntry(opId) {
   const txId = op.payload?.id;
   removeOp(opId);
   if (txId) removeCachedTransaction(txId);
+  // Same reasoning as discardStuckFinalize above — TransactionForm.jsx
+  // queues the "already paid" cash payment and the activity-log entries
+  // immediately after the transaction itself, and they cannot outlive it.
+  dropOpsForGoneTransaction(txId);
   return true;
+}
+
+// Everything queued that only makes sense if a given transaction exists —
+// its payment, its activity-log entries — removed together with it, and
+// its stuck tracking cleared so the banner does not keep reporting ops
+// that are no longer in the queue. Called wherever a queued transaction
+// is deliberately taken back.
+function dropOpsForGoneTransaction(txId) {
+  if (!txId) return;
+  const queue = getQueue();
+  const doomed = new Set();
+  // Anything pointing straight at the transaction: its payment, and any
+  // activity-log entry written against the transactions table.
+  const doomedPaymentIds = new Set();
+  for (const op of queue) {
+    if (op.type === "createTransaction" || op.type === "finalizeTicket") continue;
+    const needsTx =
+      op.payload?.transactionId ||
+      (op.payload?.tableName === "transactions" ? op.payload?.recordId : null) ||
+      null;
+    if (needsTx !== txId) continue;
+    doomed.add(op._id);
+    if (op.type === "createPayment" && op.payload?.id) doomedPaymentIds.add(op.payload.id);
+  }
+  // Second pass: the activity-log entry written against the PAYMENT that
+  // just went with it (tableName "payments"), which has no link to the
+  // transaction of its own and would otherwise be left describing a
+  // payment that was never created.
+  if (doomedPaymentIds.size) {
+    for (const op of queue) {
+      if (op.type !== "logAudit") continue;
+      if (op.payload?.tableName === "payments" && doomedPaymentIds.has(op.payload?.recordId)) doomed.add(op._id);
+    }
+  }
+  if (!doomed.size) return;
+  mutateQueue((q) => q.filter((o) => !doomed.has(o._id)));
+  for (const id of doomed) stuckOps.delete(id);
+  notifyStatus();
 }
 
 // ---------------------------------------------------------------------
