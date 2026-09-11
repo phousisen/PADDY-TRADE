@@ -394,7 +394,17 @@ export function mergeServerTickets(serverTickets) {
   for (const t of local) {
     if (!serverIds.has(t.id) && pendingIds.has(t.id)) merged.unshift(t);
   }
-  writeJSON(CACHE_KEY, merged);
+  // [2026-09-12] Capped, like the transaction and payment caches. This was
+  // the one still writing its whole list to localStorage — and the board
+  // asks for `declined` tickets too, which is a terminal state that is
+  // never archived, so the list only ever grows. It is rewritten every 60
+  // seconds on the ticket board, stringified on the main thread, forever.
+  // Anything still queued on this device is kept whichever way (that is
+  // what capForCache's keep-list is for); the rest is the recent board,
+  // which is all a station looks at.
+  writeJSON(CACHE_KEY, capForCache(merged, pendingIds));
+  // What is RETURNED to the screen is never capped — only what is written
+  // to the device. Same rule as mergeServerTransactions.
   return merged;
 }
 
@@ -501,6 +511,12 @@ function capForCache(list, keepIds, max = CACHE_MAX_ROWS) {
   for (const r of list) {
     if (keepIds.has(r.id)) { kept.push(r); seen.add(r.id); }
   }
+  // [2026-09-12] The keep-list is added before the cap is checked, so a
+  // device with more queued work than `max` used to keep an uncapped
+  // cache — the one thing this function exists to prevent. Unsynced work
+  // still always wins (it cannot be re-fetched, so dropping it would lose
+  // it), but once it alone fills the budget nothing else is added on top.
+  if (kept.length >= max) return kept;
   // `list` arrives newest-first, so slicing from the front keeps the recent ones.
   for (const r of list) {
     if (kept.length >= max) break;
@@ -568,11 +584,34 @@ export function mergeServerPayments(serverPayments) {
 // without a network round-trip.
 // ---------------------------------------------------------------------
 
+// [2026-09-12] THE CAP THAT KEEPS A STATION ABLE TO TRADE IN YEAR FIVE.
+//
+// This cache held EVERY farmer and buyer in the business, from every
+// station, written whole to localStorage on every refresh. It had no cap
+// at all — the transaction cache got one (CACHE_MAX_ROWS above) after the
+// same problem was found there, and these two were missed.
+//
+// Where that ends: parties grow with every new farmer. Across five
+// stations over ten years that is tens of thousands of rows at a few
+// hundred bytes each — 10-25 MB against a browser quota of about 5-10 MB.
+// The quota is shared by everything this app stores on that PC, and
+// writeJSON fails SILENTLY when it is exceeded. So first the offline
+// farmer lookup quietly stops updating, and then the sync queue's own
+// write starts failing too — at which point enqueueStrict throws and the
+// station cannot save a ticket at all. The offline safety net would fail
+// exactly when the business had grown enough to need it.
+//
+// Newest first, because api.getParties() returns them that way and recent
+// farmers are the ones a station types today. A party that is not in the
+// cache is not lost — it is one lookup away whenever there is a
+// connection, and typing a new name has always been allowed offline.
+const LOOKUP_CACHE_MAX_ROWS = 2000;
+
 export function getCachedParties() {
   return readJSON(PARTY_CACHE_KEY, []);
 }
 export function setCachedParties(list) {
-  writeJSON(PARTY_CACHE_KEY, list);
+  writeJSON(PARTY_CACHE_KEY, (list || []).slice(0, LOOKUP_CACHE_MAX_ROWS));
 }
 export function addCachedParty(party) {
   const list = getCachedParties();
@@ -691,7 +730,11 @@ export function getCachedProducts() {
   return readJSON(PRODUCT_CACHE_KEY, []);
 }
 export function setCachedProducts(list) {
-  writeJSON(PRODUCT_CACHE_KEY, list);
+  // Capped for the same reason as parties above. Paddy types grow far
+  // more slowly, so this cap should never actually bite — it is here so
+  // that a future import, or a station typing free-text names, cannot
+  // quietly fill the device's storage and stop it saving tickets.
+  writeJSON(PRODUCT_CACHE_KEY, (list || []).slice(0, LOOKUP_CACHE_MAX_ROWS));
 }
 export function addCachedProduct(product) {
   const list = getCachedProducts();
@@ -1861,11 +1904,26 @@ export function startAutoSync() {
 // picking a fresh code and retrying — see insertWithFreshCodeOnCollision
 // in api.js — but starting from a much bigger space means that almost
 // never needs to happen in the first place).
+// [2026-09-12] Kept identical to api.js's randomCodeNumber. These are
+// the codes PRINTED ON THE RECEIPT while offline, so if this half of the
+// pair stayed at six digits the paper would keep colliding with the
+// server and getting rewritten behind the farmer's back. Nine digits
+// takes the collision rate at 368,000 rows from 41% to 0.04%.
+const LOCAL_CODE_SPACE = 1_000_000_000; // 9 digits — must match api.js
+function randomLocalCodeNumber() {
+  try {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return String(buf[0] % LOCAL_CODE_SPACE).padStart(9, "0");
+  } catch {
+    return String(Math.floor(Math.random() * LOCAL_CODE_SPACE)).padStart(9, "0");
+  }
+}
 function genLocalTicketCode() {
-  return `TKT-${Math.floor(100000 + Math.random() * 899999)}`;
+  return `TKT-${randomLocalCodeNumber()}`;
 }
 function genLocalTxCode(type) {
-  const n = Math.floor(100000 + Math.random() * 899999);
+  const n = randomLocalCodeNumber();
   return type === "BUY" ? `RCP-${n}-A` : `INV-${n}-B`;
 }
 

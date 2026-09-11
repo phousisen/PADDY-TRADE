@@ -36,8 +36,44 @@ export function normalizePaperTicketNo(raw) {
 // real, recurring occurrence rather than a theoretical one (see
 // insertWithFreshCodeOnCollision above for how a collision is now also
 // recovered from automatically, rather than getting permanently stuck).
+// [2026-09-12] Nine digits, not six — and the reason is arithmetic, not
+// taste.
+//
+// The old space was 100000-999998: 899,999 possible codes, for every
+// transaction the business will ever record. That is the birthday problem
+// with a very small room. The chance that a NEW code collides with one
+// already stored is simply rows / 899,999:
+//
+//     today      ~3,000 rows    0.3%   (already happening)
+//     year 5   ~185,000 rows     21%
+//     year 10  ~368,000 rows     41%
+//
+// At year 10 that is two saves in five needing an extra round trip to the
+// server, inside the Finish Ticket timeout, on a weighbridge's weak
+// connection — and insertWithFreshCodeOnCollision only retries five
+// times, so about one save in 200 would fail outright in front of a
+// farmer. It also silently rewrites the code AFTER the receipt has
+// printed, so the paper and the system disagree.
+//
+// One billion codes takes year 10 from 41% to 0.04% — roughly a dozen
+// retries a year across the whole business, and no hard failures. Three
+// more digits on a receipt is a cheap price. crypto is used rather than
+// Math.random because it is uniform and available in every browser this
+// runs on; the old expression also never produced 999999, which is the
+// kind of small wrongness that hides bigger ones.
+const CODE_SPACE = 1_000_000_000; // 9 digits
+function randomCodeNumber() {
+  try {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    return String(buf[0] % CODE_SPACE).padStart(9, "0");
+  } catch {
+    return String(Math.floor(Math.random() * CODE_SPACE)).padStart(9, "0");
+  }
+}
+
 function genCode(type) {
-  const n = Math.floor(100000 + Math.random() * 899999);
+  const n = randomCodeNumber();
   return type === "BUY" ? `RCP-${n}-A` : `INV-${n}-B`;
 }
 
@@ -54,8 +90,7 @@ function normalizeQualityGrade(value) {
 }
 
 function genTicketCode() {
-  const n = Math.floor(100000 + Math.random() * 899999);
-  return `TKT-${n}`;
+  return `TKT-${randomCodeNumber()}`;
 }
 
 // Used when a row is created with a client-supplied id (offline queue —
@@ -711,13 +746,25 @@ const rawApi = {
     return data;
   },
 
+  // [2026-09-12] Paged, like every other list fetch in this file.
+  //
+  // This was the last one left on a bare .order() with no limit and no
+  // paging — and PostgREST silently caps such a query at 1,000 rows and
+  // returns no error at all. At even one capital entry a day that ceiling
+  // arrives inside three years, after which the equity line on the
+  // Balance Sheet would be computed from the newest 1,000 entries only
+  // and quietly understate what the partners have put in. Nothing would
+  // have flagged it: the page would keep rendering a confident number.
+  // This is exactly the defect fetchAll was written to kill (see the
+  // 1,000-row incident in the project log); this call site was missed.
   async getPartnerCapitalEntries() {
-    const { data, error } = await supabase
-      .from("partner_capital_entries")
-      .select("*, partners(name), locations(name)")
-      .order("entry_date", { ascending: false })
-      .order("created_at", { ascending: false });
-    if (error) throw error;
+    const makeQuery = () =>
+      supabase
+        .from("partner_capital_entries")
+        .select("*, partners(name), locations(name)")
+        .order("entry_date", { ascending: false })
+        .order("created_at", { ascending: false });
+    const data = await fetchAll(makeQuery, { sort: desc("entry_date") });
     return data.map((e) => ({ ...e, partnerName: e.partners?.name || "—", stationName: e.locations?.name || "—" }));
   },
 
@@ -1974,12 +2021,32 @@ const rawApi = {
     if (error) throw error;
   },
 
-  async getAuditLogs() {
-    // [2026-09-09] Paged — see fetchAll. An audit log that silently stops at
-    // 1,000 entries is worse than none: it looks complete.
-    const data = await fetchAll(
-      () => supabase.from("audit_logs").select("*, profiles(full_name)"),
-      { sort: desc("created_at") });
+  // [2026-09-09] Paged — see fetchAll. An audit log that silently stops at
+  // 1,000 entries is worse than none: it looks complete.
+  //
+  // [2026-09-12] Now takes a date range, and this is the difference
+  // between a page that works in year ten and one that is permanently
+  // broken by then.
+  //
+  // Two audit rows are written for every finished ticket, so this table
+  // grows at roughly 200 a day — about 73,000 a year. Unfiltered, the page
+  // pulled the WHOLE table including its before/after jsonb blobs: 220
+  // sequential round trips by year 3, and at about year 6.8 it crosses
+  // fetchAll's HARD_ROW_CAP and throws. At that point the Activity Log is
+  // dead with no filter available to work around it, which is the worst
+  // possible failure for the one screen that answers "who changed this".
+  //
+  // `from`/`to` are Cambodia calendar dates; created_at is a full UTC
+  // timestamp, so the day is bracketed in UTC+7 the same way
+  // getStockAdjustments does it.
+  async getAuditLogs({ from = null, to = null } = {}) {
+    const makeQuery = () => {
+      let q = supabase.from("audit_logs").select("*, profiles(full_name)");
+      if (from) q = q.gte("created_at", `${from}T00:00:00+07:00`);
+      if (to) q = q.lte("created_at", `${to}T23:59:59+07:00`);
+      return q;
+    };
+    const data = await fetchAll(makeQuery, { sort: desc("created_at") });
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
@@ -2262,12 +2329,33 @@ const rawApi = {
   // payments rather than transactions and a payment had no idea.
   // `from` / `to` are Cambodia calendar dates matched against pay_date —
   // see getTransactions above for why this moved into the query.
-  async getPayments({ locationId, type, includeVoided = false, from, to } = {}) {
+  // [2026-09-12] `transactionIds` — the bound the report pages actually
+  // needed.
+  //
+  // Purchases, Sales, Payables and Receivables all filter TRANSACTIONS by
+  // the chosen period but fetched EVERY payment ever recorded, and the
+  // reason was sound: a sale made in September can be paid in November, so
+  // narrowing payments to the period would make paid rows look unpaid.
+  //
+  // But the honest bound was never the date — it is the transactions on
+  // screen. A payment against a transaction that is not in this report can
+  // never affect it. Passing the ids the page just loaded gives exactly
+  // the right answer AND stops the fetch growing with ten years of
+  // history: at year 5 those four reports were dominated by a 185,000-row
+  // payment download whatever period was chosen.
+  //
+  // An empty array means "no transactions, so no payments" and returns
+  // [] without asking the server — not "no filter", which is the classic
+  // way a bound like this turns into a full table scan.
+  //
+  // Chunked because a PostgREST `in.(...)` list travels in the URL, and a
+  // few thousand uuids would exceed what servers accept.
+  async getPayments({ locationId, type, includeVoided = false, from, to, transactionIds } = {}) {
     // [2026-09-09] Paged — see fetchAll. The dashboard's money position and
     // the Cash Flow report both read every payment; capped at 1,000 they were
     // simply wrong once the table grew past that.
-    const makeQuery = () => {
-      let query = supabase.from("payments").select("*, profiles(full_name)");
+    const base = (q) => {
+      let query = q;
       if (!includeVoided) query = query.is("voided_at", null);
       if (locationId) query = query.eq("location_id", locationId);
       if (type) query = query.eq("type", type);
@@ -2275,7 +2363,28 @@ const rawApi = {
       if (to) query = query.lte("pay_date", to);
       return query;
     };
-    const data = await fetchAll(makeQuery, { sort: desc("pay_date", "created_at") });
+    let data;
+    if (transactionIds) {
+      const ids = [...new Set(transactionIds.filter(Boolean))];
+      if (ids.length === 0) return [];
+      const CHUNK = 200;
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+      const pages = await Promise.all(
+        chunks.map((chunk) =>
+          fetchAll(() => base(supabase.from("payments").select("*, profiles(full_name)")).in("transaction_id", chunk),
+            { sort: desc("pay_date", "created_at") })
+        )
+      );
+      // A payment belongs to exactly one transaction, so chunks cannot
+      // overlap — but de-duplicate by id anyway rather than trusting that.
+      const seen = new Set();
+      data = [];
+      for (const page of pages) for (const p of page) if (!seen.has(p.id)) { seen.add(p.id); data.push(p); }
+    } else {
+      data = await fetchAll(() => base(supabase.from("payments").select("*, profiles(full_name)")),
+        { sort: desc("pay_date", "created_at") });
+    }
     return data.map((p) => ({ ...p, createdByName: p.profiles?.full_name || "—" }));
   },
 
