@@ -1720,11 +1720,22 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           )}
           <div>
             <NewTicketFieldLabel icon="⭐" en="Paddy Quality (optional)" km="ថ្នាក់គុណភាព (ស្រេចចិត្ត)" lang={lang} />
+            {/* [2026-09-11] A / B / C, not 1 / 2 / 3.
+                The database has always had
+                  CHECK (quality_grade = ANY (ARRAY['A','B','C']))
+                on transactions, and every other screen in the app (New
+                Buy, Record Change, Edit Transaction) offers A/B/C. This
+                one dropdown offered 1/2/3, so the FIRST time anyone
+                actually picked a quality on a weighing ticket — Pong Ro,
+                11 Sept, a 39,561,600 riel sale — the transaction was
+                rejected outright and stuck in the queue forever. Blank
+                passes the rule, which is the only reason 2,882 earlier
+                transactions were fine: nobody had ever used the field. */}
             <select value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={fieldCls}>
               <option value="">Not set</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
             </select>
           </div>
         </div>
