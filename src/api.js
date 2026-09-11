@@ -518,13 +518,24 @@ const rawApi = {
     return data.map((a) => ({ ...a, stationName: a.locations?.name || "—", adjustedByName: a.profiles?.full_name || "—" }));
   },
 
-  // `pricePerKg` is only ever meaningful for a LOSS (adjustmentKg < 0) — the
-  // per-kg value used to put a real riel figure on paddy that's being
-  // written off (moisture/spillage/a daily reset), typically the day's
-  // weighted-average Buy price at that location (see StockInventory.jsx).
-  // Left null for a gain (recount finding more than expected) or when no
-  // price was available/entered — `valueLost` then stays null too rather
-  // than silently computing off a missing price.
+  // `pricePerKg` puts a real riel figure on an adjustment — typically the
+  // station's own weighted-average Buy price (see StockInventory.jsx and
+  // station_ticket_floor()).
+  //
+  // [2026-09-11] Now stored for a GAIN as well as a loss. It used to be
+  // kept only when the adjustment was negative, so a gain survived in
+  // kilograms and nothing else: Reang Kesey settled +35 kg on 11 September,
+  // the Settle screen worked out what it was worth, showed the figure and
+  // then dropped it, and Reports → Shrinkage could never price a gain.
+  // See adjustment_gain_value_2026-09-11.sql, which also back-fills the
+  // gains already recorded.
+  //
+  // `valueLost` still means money LOST, so the database writes it for
+  // losses only — a gain is not a loss of zero, and a positive number in a
+  // column named value_lost would corrupt every total that sums it
+  // (dailyLedger.js, LocationDetail, Stock Inventory). Shrinkage multiplies
+  // kg by price for gains instead. Both stay null when no price was
+  // available, so the report shows a dash rather than a confident zero.
   async recordStockAdjustment({ locationId, previousStockKg, newStockKg, reason, note, userId, pricePerKg }) {
     // [2026-09-08] One atomic database call (record_stock_adjustment in
     // week1_hardening_2026-09-08.sql). It reads the station's CURRENT
