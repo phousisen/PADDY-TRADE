@@ -1229,6 +1229,32 @@ export function trySync() {
 
         const blockedTicketIds = new Set();
         const blockedLocalIds = new Set(); // party/product local ids that failed to create this pass
+        // [2026-09-11] Transaction ids that nothing depending on them may
+        // run in front of. Seeded with every transaction whose
+        // createTransaction op is STILL QUEUED (i.e. has not reached the
+        // server yet), and added to when one fails during this pass.
+        //
+        // THE BUG THIS FIXES — found at Ping Pong, 11 Sept. A manual
+        // Buy/Sell queues three ops together: createTransaction,
+        // createPayment and logAudit. None of them carries a ticketId
+        // (they are not weighing tickets), so the ticket-ordering rule
+        // above did not apply to them and there was nothing else holding
+        // them in order. If the createTransaction was slow or timed out,
+        // the createPayment right behind it was tried anyway — against a
+        // transaction the server did not have yet — and came back
+        //   insert or update on table "payments" violates foreign key
+        //   constraint "payments_transaction_id_fkey"
+        // every single pass, forever. Two of those sat on Ping Pong's PC
+        // hammering the server with 409s and showing a red banner nobody
+        // could act on, while the transaction they belonged to was still
+        // sitting in the queue right beside them.
+        //
+        // A payment must never be attempted before the transaction it
+        // points at exists. Same principle as rule 1 above (a ticket's own
+        // changes apply in order) — manual entries just never had it.
+        const blockedTxIds = new Set(
+          q.filter((o) => o.type === "createTransaction" && o.payload?.id).map((o) => o.payload.id)
+        );
         let progressed = false;
 
         for (const op of q) {
@@ -1238,6 +1264,17 @@ export function trySync() {
             continue;
           }
           if (op.ticketId && blockedTicketIds.has(op.ticketId)) continue;
+          // Wait for the transaction this op belongs to. `createTransaction`
+          // is exempt (it IS the transaction); a payment references it by
+          // payload.transactionId, an audit entry by payload.recordId when
+          // it is logging against the transactions table.
+          if (op.type !== "createTransaction") {
+            const needsTx =
+              op.payload?.transactionId ||
+              (op.payload?.tableName === "transactions" ? op.payload?.recordId : null) ||
+              null;
+            if (needsTx && blockedTxIds.has(needsTx)) continue;
+          }
 
           try {
             const result = await runOpWithTimeout(op);
@@ -1281,6 +1318,14 @@ export function trySync() {
             if (op.ticketId) blockedTicketIds.add(op.ticketId);
             if ((op.type === "createParty" || op.type === "createProduct") && op.payload?.id) {
               blockedLocalIds.add(op.payload.id);
+            }
+            // A transaction that just failed keeps its payment and audit
+            // entry behind it for the rest of this pass too — they are
+            // already in blockedTxIds from the seed above, but a
+            // createTransaction ENQUEUED mid-pass would not be, so this
+            // covers that as well.
+            if (op.type === "createTransaction" && op.payload?.id) {
+              blockedTxIds.add(op.payload.id);
             }
           }
         }
