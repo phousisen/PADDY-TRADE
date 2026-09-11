@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity, ChevronRight } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import SettleDifferenceModal, { canSettle } from "../components/SettleDifferenceModal.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -87,6 +88,11 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // it would open was already allowed. `canOpenLocation` is this table's
   // one gate for both the row's click handler and its chevron affordance.
   const canOpenLocation = isAdmin || isViewOnly;
+  // [2026-09-11] Settling writes to the stock ledger, so it is Owner/HQ
+  // Admin only — a view-only account reaches the same table and must not
+  // get the button, and neither should a station login looking at its own
+  // row.
+  const canSettleRole = isAdmin && !isViewOnly;
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
   // [2026-09-10] Stock adjustments, for the Adjusted column in Location
@@ -100,6 +106,14 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // function is not installed yet — see the fallback in locationPerformance.
   const [closeAtEnd, setCloseAtEnd] = useState(new Map());
   const [closeBeforeStart, setCloseBeforeStart] = useState(new Map());
+  // [2026-09-11] Per-station smallest/average buy ticket and recent price —
+  // what decides whether a negative On hand can be settled here or has to
+  // go back to the paper book. Empty Map until it arrives, or forever if
+  // station_ticket_floor_2026-09-11.sql hasn't been run yet, in which case
+  // canSettle() is false for every station and the column stays exactly as
+  // it was before this feature existed.
+  const [ticketFloor, setTicketFloor] = useState(new Map());
+  const [settleLoc, setSettleLoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
@@ -143,6 +157,14 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
 
       api.getStockAdjustments({ startDate: rangeStart, endDate: rangeEnd })
         .then(setAdjustments).catch(() => setAdjustments([]));
+
+      // Not affected by the period buttons — a station's smallest ticket is
+      // a fact about its whole history, not about the days on screen. It
+      // still rides along with each load rather than being fetched once,
+      // because it is a single grouped read that returns one row per
+      // station, and keeping it here means a settle made a moment ago is
+      // reflected without a special refresh path.
+      api.getStationTicketFloor().then(setTicketFloor).catch(() => setTicketFloor(new Map()));
 
       // The two snapshots that make "On hand" mean the end of the period
       // you picked rather than right now.
@@ -195,6 +217,21 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, todayStr, customStart, customEnd, t]);
+
+  // [2026-09-11] Settling is only offered while the table is showing the
+  // CURRENT state. On an older period the On hand column is a historical
+  // snapshot — pressing settle there would set the station's stock TODAY to
+  // zero based on where it stood last Tuesday, which is a different and
+  // much worse operation than the one the button appears to offer. Rather
+  // than explain that, the column simply is not there unless the period
+  // ends today.
+  const periodEndsToday = rangeEnd === cambodiaDateStr();
+  const canSettleHere = canSettleRole && periodEndsToday;
+  // Six fixed columns, plus the settle column and the chevron when shown —
+  // kept as one number so the "loading" and "no locations" rows below span
+  // the table properly instead of a hard-coded 7 that silently goes wrong
+  // the moment a column is added.
+  const perfColSpan = 6 + (canSettleHere ? 1 : 0) + (canOpenLocation ? 1 : 0);
 
   // [2026-09-10] Moved below the period memo, and the period is now in the
   // dependency list: switching Today/Week/Month re-runs the query instead
@@ -446,6 +483,12 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                   <th className="bg-slate-50/70 px-3 py-2.5 font-bold">{t("col_sold")}</th>
                   <th className="bg-slate-50/70 px-3 py-2.5 font-bold">{t("col_adjusted")}</th>
                   <th className="px-3 py-2.5 font-bold">{t("col_on_hand")}</th>
+                  {/* [2026-09-11] Holds the settle control. Deliberately
+                      unlabelled: it is empty on every station whose stock
+                      is fine, and a column heading over mostly-blank cells
+                      reads as something missing rather than something
+                      that only appears when it applies. */}
+                  {canSettleHere && <th className="px-3 py-2.5"></th>}
                   {canOpenLocation && <th className="w-8 px-3 py-2.5"></th>}
                 </tr>
               </thead>
@@ -487,13 +530,44 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                     <td className={`px-3 py-3.5 font-semibold tabular-nums ${onHandKg < -0.01 ? "text-rose-600" : onHandKg === 0 ? "text-slate-400" : "text-slate-800"}`}>
                       {onHandKg < 0 ? `−${fmt(Math.abs(onHandKg))}` : fmt(onHandKg)}
                     </td>
+                    {/* [2026-09-11] Only ever shown against a NEGATIVE On
+                        hand — a shed cannot hold less than nothing, so a
+                        negative is always an error and there is always
+                        something to do about it. A positive figure is
+                        left alone: it might be real paddy sitting in the
+                        shed, and zeroing that is the daily reset's job
+                        (password and all), not this button's.
+                        stopPropagation because the whole row is a link
+                        into the station page. */}
+                    {canSettleHere && (
+                      <td className="px-3 py-3.5 text-right">
+                        {onHandKg < -0.005 && (
+                          canSettle(onHandKg, ticketFloor.get(loc.id)) ? (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
+                              className="whitespace-nowrap rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-[11.5px] font-bold text-brand-700 hover:bg-brand-100"
+                            >
+                              {t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })}
+                            </button>
+                          ) : (
+                            <span
+                              title={t("settle_refused_next_step")}
+                              className="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-slate-400"
+                            >
+                              {t("perf_settle_blocked")}
+                            </span>
+                          )
+                        )}
+                      </td>
+                    )}
                     {canOpenLocation && (
                       <td className="px-3 py-3.5 text-slate-300"><ChevronRight size={15} /></td>
                     )}
                   </tr>
                 ))}
-                {loading && locations.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
-                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("dash_no_locations")}</td></tr>}
+                {loading && locations.length === 0 && <tr><td colSpan={perfColSpan} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
+                {locations.length === 0 && !loading && !loadError && <tr><td colSpan={perfColSpan} className="px-5 py-10 text-center text-sm text-slate-400">{t("dash_no_locations")}</td></tr>}
               </tbody>
               {/* [2026-09-10] The "All locations" totals row was removed at
                   SISEN's request: every figure in it is already on the four
@@ -541,6 +615,47 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
           </div>
         </div>
       </main>
+
+      {/* [2026-09-11] Settle difference. `settleLoc` carries BOTH the row's
+          location and the exact On hand figure that row was showing, so the
+          modal can never quote a different number from the table that
+          opened it (the table's On hand comes from the stock ledger;
+          locations.current_stock_kg is a separate cached copy). The write
+          itself is still safe regardless: record_stock_adjustment re-reads
+          the station's real current stock under lock on the server, so a
+          sale syncing in between cannot turn this into a wrong loss —
+          see api.recordStockAdjustment. */}
+      {settleLoc && (
+        <SettleDifferenceModal
+          station={settleLoc.loc}
+          onHandKg={settleLoc.onHandKg}
+          floor={ticketFloor.get(settleLoc.loc.id)}
+          priceSuggestion={
+            ticketFloor.get(settleLoc.loc.id)?.recentPrice != null
+              ? { price: ticketFloor.get(settleLoc.loc.id).recentPrice, source: "recent" }
+              : null
+          }
+          t={t}
+          onClose={() => setSettleLoc(null)}
+          onSubmit={async ({ newStockKg, reason, note, pricePerKg }) => {
+            await api.recordStockAdjustment({
+              locationId: settleLoc.loc.id,
+              previousStockKg: Number(settleLoc.loc.current_stock_kg) || 0,
+              newStockKg,
+              reason,
+              note,
+              userId: session?.user?.id,
+              pricePerKg,
+            });
+            setSettleLoc(null);
+            // Full reload rather than patching the row by hand: the
+            // adjustment changes On hand, the Adjusted column and the
+            // ledger snapshots at once, and re-deriving all three from one
+            // source beats keeping three copies in step.
+            load();
+          }}
+        />
+      )}
     </div>
   );
 }
