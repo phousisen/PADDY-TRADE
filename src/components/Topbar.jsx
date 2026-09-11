@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut } from "lucide-react";
+import { Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut, Trash2, Undo2 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
-import { onSyncStatusChange } from "../offlineQueue.js";
+import { onSyncStatusChange, listStuckOps, discardStuckOps, recoverStuckOps } from "../offlineQueue.js";
 import NeedsAttentionModal from "./NeedsAttentionModal.jsx";
 import { api } from "../api.js";
 import { getAccurateNow, supabase } from "../supabaseClient.js";
@@ -27,6 +27,21 @@ function SyncStatusBanner({ onSignInAgain }) {
   // opened it (audit #9) — every "check the Needs Attention panel" message
   // pointed nowhere. This banner is the one place it belongs.
   const [showAttention, setShowAttention] = useState(false);
+  // [2026-09-11] Discarding saves that can never succeed. See
+  // listStuckOps/discardStuckOps in offlineQueue.js for why this exists —
+  // in short, Ping Pong had two payments pointing at a transaction the
+  // server does not have, retrying forever, with no way in the app to get
+  // rid of them. Owner/HQ Admin only, and never without showing exactly
+  // what is about to be thrown away.
+  const { profile: bannerProfile } = useAuth();
+  const canDiscard = bannerProfile?.role === "admin";
+  const [discardList, setDiscardList] = useState(null);
+  const [discarded, setDiscarded] = useState(0);
+  // [2026-09-11] Recover comes FIRST. Discard throws real work away;
+  // rebuilding the missing transaction from this device's own copy does
+  // not. See recoverStuckOps in offlineQueue.js.
+  const [recovered, setRecovered] = useState(null);
+  const recoverable = (discardList || []).filter((x) => x.recoverTxId);
   const viewBtn = (cls) => (
     <button type="button" onClick={() => setShowAttention(true)} className={`shrink-0 rounded-md px-3 py-1 font-semibold ${cls}`}>{t("sync_view_details")}</button>
   );
@@ -88,6 +103,94 @@ function SyncStatusBanner({ onSignInAgain }) {
         {status.lastStuckError && (
           <div className="pl-[21px] font-normal text-rose-100">
             {t("sync_stuck_reason", { n: status.stuckCount, msg: status.lastStuckError })}
+          </div>
+        )}
+        {canDiscard && (
+          <div className="pl-[21px]">
+            <button
+              type="button"
+              onClick={() => { setDiscarded(0); setRecovered(null); setDiscardList(listStuckOps()); }}
+              className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-white/25"
+            >
+              <Undo2 size={12} /> {t("sync_discard_open")}
+            </button>
+          </div>
+        )}
+        {discardList && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 font-normal text-slate-700">
+            <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+              <h3 className="mb-1 flex items-center gap-2 text-[15px] font-bold text-slate-800">
+                <AlertTriangle size={15} className="text-rose-600" /> {t("sync_discard_title")}
+              </h3>
+              <p className="mb-3 text-xs text-slate-500">{t("sync_discard_sub")}</p>
+
+              {recovered ? (
+                <p className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-[13px] font-semibold text-brand-800">
+                  {t("sync_recover_done", { n: recovered.rebuilt, r: recovered.retried })}
+                </p>
+              ) : discarded > 0 ? (
+                <p className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-[13px] font-semibold text-brand-800">
+                  {t("sync_discard_done", { n: discarded })}
+                </p>
+              ) : discardList.length === 0 ? (
+                <p className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[13px] text-slate-500">
+                  {t("sync_discard_none")}
+                </p>
+              ) : (
+                <>
+                  <div className="mb-3 max-h-64 overflow-y-auto rounded-lg border border-slate-200">
+                    {discardList.map((x) => (
+                      <div key={x.opId} className="border-b border-slate-100 px-3 py-2.5 last:border-0">
+                        <p className="text-[13px] font-semibold text-slate-800">{x.summary}</p>
+                        <p className="mt-0.5 text-[11.5px] text-rose-600">{x.error}</p>
+                        <p className="text-[11px] text-slate-400">{t("sync_discard_attempts", { n: x.attempts })}</p>
+                        {/* The whole point of Recover: say, per item, that
+                            the missing entry is still here and what it is. */}
+                        {x.recoverTxId && (
+                          <p className="mt-1 rounded-md bg-brand-50 px-2 py-1 text-[11.5px] font-semibold text-brand-800">
+                            {t("sync_recover_badge", { s: x.recoverSummary })}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {recoverable.length > 0 ? (
+                    <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-brand-800">
+                      {t("sync_recover_hint")}
+                    </div>
+                  ) : null}
+                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
+                    {t("sync_discard_warning")}
+                    {recoverable.length > 0 ? ` ${t("sync_recover_only_after")}` : ""}
+                  </div>
+                </>
+              )}
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={() => setDiscardList(null)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
+                  {t("close_label")}
+                </button>
+                {!recovered && discarded === 0 && discardList.length > 0 && (
+                  <button type="button"
+                    onClick={() => setDiscarded(discardStuckOps(discardList.map((x) => x.opId)))}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+                      recoverable.length > 0
+                        ? "border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                        : "bg-rose-600 text-white hover:bg-rose-700"
+                    }`}>
+                    <span className="inline-flex items-center gap-1.5"><Trash2 size={13} /> {t("sync_discard_btn", { n: discardList.length })}</span>
+                  </button>
+                )}
+                {!recovered && discarded === 0 && recoverable.length > 0 && (
+                  <button type="button"
+                    onClick={() => setRecovered(recoverStuckOps(recoverable.map((x) => x.opId)))}
+                    className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
+                    <span className="inline-flex items-center gap-1.5"><Undo2 size={13} /> {t("sync_recover_btn", { n: recoverable.length })}</span>
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
