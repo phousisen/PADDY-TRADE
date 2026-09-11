@@ -34,7 +34,16 @@ function SyncStatusBanner({ onSignInAgain }) {
   // rid of them. Owner/HQ Admin only, and never without showing exactly
   // what is about to be thrown away.
   const { profile: bannerProfile } = useAuth();
+  // Discarding throws real work away, so it stays Owner/HQ Admin only.
+  // [2026-09-11] Putting a missing entry BACK does the opposite — it can
+  // only ever restore data this device already holds — and the person
+  // sitting in front of the stuck PC is station staff, not an admin.
+  // Gating recovery behind an admin login is what would keep a station
+  // stuck all evening waiting for someone else to log in. So: anyone who
+  // can save at all can open this panel and put an entry back; only an
+  // admin sees Discard.
   const canDiscard = bannerProfile?.role === "admin";
+  const canFix = !!bannerProfile && !bannerProfile.view_only;
   const [discardList, setDiscardList] = useState(null);
   const [discarded, setDiscarded] = useState(0);
   // [2026-09-11] Recover comes FIRST. Discard throws real work away;
@@ -105,7 +114,7 @@ function SyncStatusBanner({ onSignInAgain }) {
             {t("sync_stuck_reason", { n: status.stuckCount, msg: status.lastStuckError })}
           </div>
         )}
-        {canDiscard && (
+        {canFix && (
           <div className="pl-[21px]">
             <button
               type="button"
@@ -159,10 +168,12 @@ function SyncStatusBanner({ onSignInAgain }) {
                       {t("sync_recover_hint")}
                     </div>
                   ) : null}
-                  <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
-                    {t("sync_discard_warning")}
-                    {recoverable.length > 0 ? ` ${t("sync_recover_only_after")}` : ""}
-                  </div>
+                  {canDiscard && (
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
+                      {t("sync_discard_warning")}
+                      {recoverable.length > 0 ? ` ${t("sync_recover_only_after")}` : ""}
+                    </div>
+                  )}
                 </>
               )}
 
@@ -171,7 +182,7 @@ function SyncStatusBanner({ onSignInAgain }) {
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
                   {t("close_label")}
                 </button>
-                {!recovered && discarded === 0 && discardList.length > 0 && (
+                {canDiscard && !recovered && discarded === 0 && discardList.length > 0 && (
                   <button type="button"
                     onClick={() => setDiscarded(discardStuckOps(discardList.map((x) => x.opId)))}
                     className={`rounded-lg px-4 py-2 text-sm font-semibold ${
