@@ -59,6 +59,13 @@ export default function NeedsAttentionModal({ onClose }) {
   }
 
   function discard(item) {
+    // [2026-09-11] Only a genuinely stuck save can be thrown away here.
+    // This panel also lists work that is merely WAITING — offline, or a
+    // slow connection — and that resolves itself the moment the link
+    // comes back. Discarding one of those would delete a perfectly good
+    // ticket for no reason. The banner's own Discard has always filtered
+    // to stuck items; this one never did.
+    if (!item.isStuck) return;
     if (item.opType === "finalizeTicket") discardStuckFinalize(item.opId);
     else discardStuckManualEntry(item.opId);
     setConfirmDiscard(null);
