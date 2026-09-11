@@ -1681,7 +1681,18 @@ export function trySync() {
           // is exempt (it IS the transaction); a payment references it by
           // payload.transactionId, an audit entry by payload.recordId when
           // it is logging against the transactions table.
-          if (op.type !== "createTransaction") {
+          //
+          // [2026-09-11, same evening] finalizeTicket must be exempt too,
+          // and leaving it out cost Pong Ro two hours. Adding finalize's
+          // transactionId to blockedTxIds above without adding finalize to
+          // this exemption made the op BLOCK ITSELF: its own
+          // payload.transactionId was in the set, so it was skipped on
+          // every pass — silently, with no error, no console line and no
+          // red banner, because an op that is never attempted can never
+          // fail. A 39,561,600 riel sale sat "waiting to sync" forever.
+          // An op is exempt from waiting for a transaction when it IS the
+          // thing that creates that transaction.
+          if (op.type !== "createTransaction" && op.type !== "finalizeTicket") {
             const needsTx =
               op.payload?.transactionId ||
               (op.payload?.tableName === "transactions" ? op.payload?.recordId : null) ||
