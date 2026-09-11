@@ -89,6 +89,26 @@ const manualQueue = [
 ];
 eq("a manual entry's payment still waits", wouldAttempt(manualQueue, manualQueue[1]), false);
 
+// [2026-09-11, same evening] THE REGRESSION THIS FILE FAILED TO CATCH.
+// The fixture above encoded the right rule while the source did not: an op
+// that CREATES a transaction must be exempt from waiting for it, or it
+// blocks itself and is skipped silently on every pass — no error, no
+// console line, no banner, because an op that is never attempted can never
+// fail. Pong Ro's 39,561,600 riel sale sat "waiting to sync" for two hours.
+// A fixture that agrees with itself proves nothing; this reads the source.
+const exemptionLine = src.match(/if \(op\.type !== "createTransaction"[^)]*\)\s*\{/);
+if (!exemptionLine) {
+  console.error("FAIL  could not find the blockedTxIds exemption in trySync"); failed++;
+} else if (!exemptionLine[0].includes('op.type !== "finalizeTicket"')) {
+  console.error("FAIL  finalizeTicket is not exempt from blockedTxIds — it will block itself and never be attempted");
+  failed++;
+}
+// And the set it is exempt from must still contain finalize's transaction,
+// so the PAYMENT keeps waiting. Both halves, or neither works.
+if (!src.includes('q.filter((o) => o.type === "finalizeTicket" && o.payload?.transactionId).map((o) => o.payload.transactionId)')) {
+  console.error("FAIL  blockedTxIds no longer holds finalizeTicket transaction ids"); failed++;
+}
+
 // ---------------------------------------------------------------------
 // 3. THE SAME MONEY IS NEVER QUEUED TWICE.
 // ---------------------------------------------------------------------
@@ -233,4 +253,4 @@ for (const good of ['<option value="A">A</option>', '<option value="B">B</option
 }
 
 if (failed) { console.error(`\n${failed} integrity check(s) FAILED.`); process.exit(1); }
-console.log("Checked 33 integrity cases — nothing lost silently, nothing orphaned, no money queued twice.");
+console.log("Checked 35 integrity cases — nothing lost silently, nothing orphaned, no money queued twice.");
