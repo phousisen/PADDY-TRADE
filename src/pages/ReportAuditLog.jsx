@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+import { rangeKey } from "../reportQuery.js";
 import { TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -144,7 +145,7 @@ function describeChange(log) {
   return parts.length ? parts.join(" · ") : "—";
 }
 
-export default function ReportAuditLog() {
+export default function ReportAuditLog({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -153,7 +154,9 @@ export default function ReportAuditLog() {
   function load() {
     setLoading(true);
     setLoadError("");
-    api.getAuditLogs()
+    // [2026-09-12] Asks the database for the chosen period instead of
+    // downloading every entry ever recorded — see api.getAuditLogs.
+    api.getAuditLogs({ from: startDate, to: endDate })
       .then((data) => setLogs(data))
       .catch((err) => {
         // Without this, a failed/dropped request left this page stuck
@@ -162,7 +165,10 @@ export default function ReportAuditLog() {
       })
       .finally(() => setLoading(false));
   }
-  useEffect(() => { load(); }, []);
+  // Refetch when the period changes — rangeKey gives a stable string so an
+  // array prop does not retrigger this on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   const categories = ["all", "payment", "transaction", "request", "user", "capital"];
 

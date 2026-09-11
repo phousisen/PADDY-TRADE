@@ -31,7 +31,15 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
     // Payments stay unfiltered by date: this report needs to know what has
     // been paid against a transaction whenever that happened, not only
     // inside the period on screen.
-    Promise.all([api.getTransactions({ type: TYPE, ...queryRange({ selectedLocationIds, startDate, endDate }) }), api.getPayments({ type: PAY_TYPE })])
+    api.getTransactions({ type: TYPE, ...queryRange({ selectedLocationIds, startDate, endDate }) })
+      .then(async (tx) => {
+        // [2026-09-12] Payments are bounded by the TRANSACTIONS on screen,
+        // not by the period — a sale inside the period can still be paid
+        // outside it, so the date was never the right bound. See
+        // api.getPayments' transactionIds option.
+        const pay = await api.getPayments({ type: PAY_TYPE, transactionIds: tx.map((t) => t.id) });
+        return [tx, pay];
+      })
       .then(([tx, pay]) => {
         setAllRows(tx);
         setPayments(pay);

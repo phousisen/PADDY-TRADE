@@ -149,7 +149,7 @@ export default function Reports({ initialTab = "overview" }) {
         {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "capital" && <ReportCapital selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
-        {tab === "auditlog" && isAdmin && <ReportAuditLog />}
+        {tab === "auditlog" && isAdmin && <ReportAuditLog selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
       </main>
     </div>
   );

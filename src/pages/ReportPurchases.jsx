@@ -16,11 +16,16 @@ export default function ReportPurchases({ selectedLocationIds = [], startDate = 
   const rk = rangeKey({ selectedLocationIds, startDate, endDate });
   useEffect(() => {
     const range = queryRange({ selectedLocationIds, startDate, endDate });
-    api.getTransactions({ type: "BUY", ...range }).then(setAllRows);
-    // Payments are deliberately NOT date-filtered: this list answers
-    // "when was it paid", and a sale inside the period can be paid
-    // outside it. Narrowing these would make paid rows look unpaid.
-    api.getPayments({ type: "pay_supplier" }).then(setPayments).catch(() => setPayments([]));
+    api.getTransactions({ type: "BUY", ...range }).then((tx) => {
+      setAllRows(tx);
+    // [2026-09-12] Payments are bounded by the TRANSACTIONS on screen,
+    // not by the period — a sale inside the period can still be paid
+    // outside it, so the date was never the right bound. See
+    // api.getPayments' transactionIds option.
+      api.getPayments({ type: "pay_supplier", transactionIds: tx.map((t) => t.id) })
+        .then(setPayments)
+        .catch(() => setPayments([]));
+    });
   }, [rk]);
 
   const rows = allRows

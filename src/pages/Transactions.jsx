@@ -1097,10 +1097,16 @@ function parseCsv(text) {
   return rows.filter((r) => r.some((v) => v !== "")).map((r) => Object.fromEntries(header.map((h, i) => [h, (r[i] ?? "").trim()])));
 }
 
-function StationCheckModal({ allRows, locations, onClose }) {
+function StationCheckModal({ allRows, loadError, locations, onClose }) {
   const [result, setResult] = useState(null);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
+  // [2026-09-12] allRows is null until every transaction has actually
+  // been downloaded. Comparing a station's CSV against a partial list
+  // reports tickets as missing that are not missing at all, which is the
+  // opposite of what this tool is for — so it refuses to run rather than
+  // answer from incomplete data.
+  const ready = Array.isArray(allRows);
   const norm = (v) => normalizePaperTicketNo(v) || "";
   const num = (v) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return Number.isFinite(n) ? n : null; };
 
@@ -1108,6 +1114,10 @@ function StationCheckModal({ allRows, locations, onClose }) {
     const file = e.target.files?.[0];
     if (!file) return;
     setError(""); setResult(null); setFileName(file.name);
+    if (!ready) {
+      setError("Still loading every transaction to check against — wait a moment and choose the file again.");
+      return;
+    }
     try {
       const rows = parseCsv(await file.text());
       if (!rows.length || !("transaction_code" in rows[0])) {
@@ -1164,8 +1174,13 @@ function StationCheckModal({ allRows, locations, onClose }) {
             <span className="text-sm font-semibold text-slate-700">Choose the station's log file</span>
             <span className="mt-1 text-xs text-slate-500">On the station PC: weighbridge folder → <span className="font-mono">PaddyTrade_Logs</span> → <span className="font-mono">2026-09-07.csv</span> (one file per day)</span>
             {fileName && <span className="mt-2 rounded bg-white px-2 py-0.5 text-xs font-medium text-brand-700">{fileName}</span>}
-            <input type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
+            <input type="file" accept=".csv,text/csv" onChange={onFile} disabled={!ready} className="hidden" />
           </label>
+          {/* [2026-09-12] Said plainly, before a file is even chosen: this
+              check cannot run without the complete list, and it will not
+              guess. */}
+          {loadError && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{loadError}</p>}
+          {!ready && !loadError && <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">Loading every transaction to check against\u2026</p>}
           {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           {result && (
             <div className="mt-4 space-y-4">
@@ -1431,7 +1446,10 @@ export default function Transactions({ setPage }) {
   const [exportingLedger, setExportingLedger] = useState(false);
   const [exportLedgerError, setExportLedgerError] = useState("");
   const [stationCheckOpen, setStationCheckOpen] = useState(false);
-  const [stationCheckRows, setStationCheckRows] = useState([]);
+  // null = not loaded yet (or the load failed). Never [] as a stand-in
+  // for "everything", so the modal can tell "no data" from "no answer".
+  const [stationCheckRows, setStationCheckRows] = useState(null);
+  const [stationCheckError, setStationCheckError] = useState("");
   // Consolidated "Filters" popover — Unpaid (Buys), Not Received (Sells),
   // Date Range and Location all live inside it now instead of each being
   // its own button in the toolbar. None of the state or logic for any of
@@ -2024,8 +2042,36 @@ export default function Transactions({ setPage }) {
                 onClick={async () => {
                   // All types, all stations, fresh from the server — the
                   // list on screen may be filtered to one tab/station.
-                  try { setStationCheckRows(await withTimeout(api.getTransactions(), 15000, rows)); } catch { setStationCheckRows(rows); }
+                  //
+                  // [2026-09-12] It must NEVER fall back to `rows`.
+                  //
+                  // This tool compares a station PC's daily CSV against
+                  // the system and reports what is missing. It used to
+                  // substitute the on-screen list — one tab, one station,
+                  // 20 rows a page — whenever the full download timed out
+                  // or failed, and then present that as "all types, all
+                  // stations". The answer it gave was a list of tickets
+                  // that are not missing at all. A tool whose whole job is
+                  // to find missing data must never invent some.
+                  //
+                  // The download grows with the business and will pass 15
+                  // seconds on a slow link well inside the first year, so
+                  // this is not a rare path. Better to say it could not
+                  // check than to answer wrongly.
+                  setStationCheckError("");
+                  setStationCheckRows(null);
                   setStationCheckOpen(true);
+                  try {
+                    const all = await withTimeout(api.getTransactions(), 60000, null);
+                    if (!all) throw new Error("timeout");
+                    setStationCheckRows(all);
+                  } catch {
+                    setStationCheckRows(null);
+                    setStationCheckError(
+                      "Could not load every transaction to check against — the connection was too slow or dropped. " +
+                      "Nothing is wrong with your data; this check simply could not run. Try again on a better connection."
+                    );
+                  }
                 }}
                 title="Station check — compare a station PC's daily log with the system"
                 className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
@@ -2577,7 +2623,7 @@ export default function Transactions({ setPage }) {
         </div>
       )}
       {stationCheckOpen && (
-        <StationCheckModal allRows={stationCheckRows} locations={locations} onClose={() => setStationCheckOpen(false)} />
+        <StationCheckModal allRows={stationCheckRows} loadError={stationCheckError} locations={locations} onClose={() => setStationCheckOpen(false)} />
       )}
       {cancelConfirmTx && (
         <ConfirmCancelModal

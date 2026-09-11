@@ -29,7 +29,15 @@ export default function ReportReceivables({ selectedLocationIds = [], startDate 
     setLoadError("");
     // [2026-09-10] Period and station asked of the database — reportQuery.js.
     // Payments stay unfiltered by date — see ReportPayables for why.
-    Promise.all([api.getTransactions({ type: TYPE, ...queryRange({ selectedLocationIds, startDate, endDate }) }), api.getPayments({ type: PAY_TYPE })])
+    api.getTransactions({ type: TYPE, ...queryRange({ selectedLocationIds, startDate, endDate }) })
+      .then(async (tx) => {
+        // [2026-09-12] Payments are bounded by the TRANSACTIONS on screen,
+        // not by the period — a sale inside the period can still be paid
+        // outside it, so the date was never the right bound. See
+        // api.getPayments' transactionIds option.
+        const pay = await api.getPayments({ type: PAY_TYPE, transactionIds: tx.map((t) => t.id) });
+        return [tx, pay];
+      })
       .then(([tx, pay]) => {
         setAllRows(tx);
         setPayments(pay);

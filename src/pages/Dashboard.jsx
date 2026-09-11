@@ -529,7 +529,12 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                         <span className="font-semibold text-slate-700">{loc.name}</span>
                       </div>
                     </td>
-                    <td className="px-3 py-3.5 tabular-nums text-slate-600">{fmt(openingKg)}</td>
+                    {/* A negative opening is the same warning as a negative
+                        On hand — the books said the shed owed paddy at the
+                        start of the period — so it is coloured the same
+                        way rather than sitting there as a plain grey
+                        number. */}
+                    <td className={`px-3 py-3.5 tabular-nums ${openingKg < -0.01 ? "text-rose-600" : "text-slate-600"}`}>{fmt(openingKg)}</td>
                     {/* No "+" on Bought — it is always positive, so a plus on
                         every row carries no information. Sold and Adjusted
                         keep the minus, which does. */}
@@ -539,8 +544,17 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                     <td className="bg-slate-50/70 px-3 py-3.5 tabular-nums text-rose-600">
                       {soldKg > 0 ? `−${fmt(soldKg)}` : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="bg-slate-50/70 px-3 py-3.5 tabular-nums text-rose-600">
-                      {adjustedKg !== 0 ? `${adjustedKg < 0 ? "−" : ""}${fmt(Math.abs(adjustedKg))}` : <span className="text-slate-300">—</span>}
+                    {/* [2026-09-12] Adjusted takes its colour from its SIGN.
+                        It was hard-coded rose like Sold, so Reang Kesey's
+                        +35 kg — paddy the station turned out to have MORE
+                        of — was printed in the same red as a loss. Sold is
+                        always red because stock always leaves; an
+                        adjustment goes either way, and the colour has to
+                        say which. A "+" is shown too, for the same reason
+                        the minus is shown on Sold: the sign is the
+                        information. */}
+                    <td className={`bg-slate-50/70 px-3 py-3.5 tabular-nums ${adjustedKg < 0 ? "text-rose-600" : "text-brand-700"}`}>
+                      {adjustedKg !== 0 ? `${adjustedKg < 0 ? "−" : "+"}${fmt(Math.abs(adjustedKg))}` : <span className="text-slate-300">—</span>}
                     </td>
                     {/* The only column in full weight: it is what the row is
                         for, and where the eye should land. */}

@@ -129,7 +129,52 @@ export default function StockInventory() {
   // average or the per-paddy-type breakdown below, either.
   const activeTxs = useMemo(() => txs.filter((t) => (t.hq_status || "processing") !== "cancelled"), [txs]);
 
-  const avgPrice = activeTxs.length ? activeTxs.reduce((s, x) => s + Number(x.price_per_kg), 0) / activeTxs.length : 0;
+  // [2026-09-12] What the shed is worth, priced on RECENT BUYS.
+  //
+  // This was the plain mean of price_per_kg across every transaction ever
+  // recorded — buys and sells together, unweighted, all the way back to
+  // the first day. Two things were wrong with it and both get worse every
+  // year the system runs:
+  //
+  //   - It averaged SELL prices in with BUY prices. Stock in the shed is
+  //     paddy the business has paid for; what it later sold for is a
+  //     different number.
+  //   - It was an all-time average, so today's shed would be valued at the
+  //     average paddy price of the last ten years. In a market that moves,
+  //     that figure drifts further from the truth every season and never
+  //     comes back.
+  //
+  // Weighted by kilograms, buys only, last 90 days — the same basis the
+  // settle-difference limit and the adjustment value use, so the whole app
+  // prices paddy one way. Falls back to a wider window, then to all-time,
+  // so a quiet station still shows a number rather than zero.
+  const STOCK_VALUE_WINDOW_DAYS = 90;
+  const { avgPrice, avgPriceBasis } = useMemo(() => {
+    const dayCut = (days) => {
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      return cambodiaDateStr(d);
+    };
+    const weighted = (rows) => {
+      let kg = 0, riel = 0;
+      for (const t of rows) {
+        const k = Number(t.quantity_kg) || 0;
+        const p = Number(t.price_per_kg) || 0;
+        if (k <= 0 || p <= 0) continue;
+        kg += k; riel += k * p;
+      }
+      return kg > 0 ? riel / kg : 0;
+    };
+    const buys = activeTxs.filter((t) => t.type === "BUY");
+    for (const [days, basis] of [[STOCK_VALUE_WINDOW_DAYS, `avg buy price, last ${STOCK_VALUE_WINDOW_DAYS} days`], [365, "avg buy price, last year"]]) {
+      const cut = dayCut(days);
+      const recent = buys.filter((t) => (t.tx_date || "") >= cut);
+      const p = weighted(recent);
+      if (p > 0) return { avgPrice: p, avgPriceBasis: basis };
+    }
+    const all = weighted(buys);
+    return { avgPrice: all, avgPriceBasis: all > 0 ? "avg buy price, all time" : "no buy price on record" };
+  }, [activeTxs]);
   const estimatedValue = Math.round(totalStockKg * avgPrice);
 
   const todayStr = cambodiaDateStr();
@@ -598,6 +643,9 @@ export default function StockInventory() {
           <div className="flex-1 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2 flex items-center gap-2 text-xs text-slate-400"><Gauge size={14} /><span>{t("est_value")}</span></div>
             <p className="text-3xl font-bold text-slate-800">{(estimatedValue / 1_000_000_000).toFixed(2)}<span className="ml-1 text-base font-medium text-slate-400">{t("unit_billion_riel")}</span></p>
+            {/* Says which price this is worked out at, so nobody has to
+                guess whether it is current. */}
+            <p className="mt-1 text-[11px] text-slate-400">{avgPrice > 0 ? `${new Intl.NumberFormat("en-US").format(Math.round(avgPrice))} ៛/kg · ${avgPriceBasis}` : avgPriceBasis}</p>
             <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-brand-500" style={{ width: `${Math.min(capacityPct, 100)}%` }} /></div>
             <p className="mt-1 text-xs text-slate-400">{capacityPct}% {t("of_capacity")}</p>
           </div>
