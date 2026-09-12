@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Save, ScanLine } from "lucide-react";
+import { Search, Save, ScanLine, ChevronDown, Ticket } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
 import Receipt from "./Receipt.jsx";
-import { api } from "../api.js";
+import { api, normalizePaperTicketNo } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { errText } from "../errText.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -12,6 +12,7 @@ import { getAccurateNow } from "../supabaseClient.js";
 import {
   withTimeout, resolvePartyIdOffline, resolveProductIdOffline, updatePartyOffline,
   createTransactionOffline, createPaymentOffline, logAuditOffline,
+  suggestNextPaperTicketNo, recordPaperTicketNo, getCachedTransactions,
 } from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -39,6 +40,33 @@ const BANK_OPTIONS = [
   "Chipmong Bank",
 ];
 
+// [2026-09-12] A fold-away section. Everything this form ever collected is
+// still on it — the eight things that get filled in on every single ticket
+// sit on top, and the rest (vehicle, bank, deductions, VAT, photos) lives
+// in one of these, one click away. Nothing REQUIRED to save is ever hidden
+// inside one, so a fold can never be the reason a save is refused.
+//
+// `filled` puts a small green dot on a closed section that has something in
+// it, so a number typed in earlier and then folded away can't be forgotten.
+function Fold({ title, hint, filled, children }) {
+  return (
+    <details className="group rounded-xl border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 [&::-webkit-details-marker]:hidden">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-medium text-slate-600 group-open:text-slate-800">{title}</span>
+          {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
+          {filled && <span className="h-1.5 w-1.5 rounded-full bg-brand-500" title="Something is filled in here" />}
+        </span>
+        <ChevronDown size={16} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-slate-100 px-5 py-4">{children}</div>
+    </details>
+  );
+}
+
+const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
+const labelCls = "mb-1 block text-xs text-slate-500";
+
 export default function TransactionForm({ type, setPage, prefillParty, clearPrefill }) {
   const isBuy = type === "BUY";
   const { t } = useLanguage();
@@ -54,6 +82,18 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   // Defaults to today, but staff can back-date it (e.g. entering a
   // truckload that was actually weighed yesterday but only got logged now).
   const [txDate, setTxDate] = useState(cambodiaDateStr());
+  // [2026-09-12] The number written on the paper booklet ticket. The
+  // weighbridge board has always asked for this; this form never did, so a
+  // manually-entered load was the one kind of transaction that could not be
+  // matched back to the book. Required here now, exactly as it is there.
+  const [paperTicketNo, setPaperTicketNo] = useState("");
+  // A number already used at this station. Set on the first Save attempt;
+  // pressing Save again with the same number goes through (the database
+  // allows the duplicate and flags it — see
+  // allow_paper_ticket_no_duplicates_with_alert.sql), because sometimes the
+  // booklet really does repeat and refusing outright would just stop staff
+  // recording a load that genuinely happened.
+  const [dupWarn, setDupWarn] = useState(null);
   const [productQuery, setProductQuery] = useState("");
   const [partyQuery, setPartyQuery] = useState("");
   const [selectedParty, setSelectedParty] = useState(null);
@@ -133,6 +173,26 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     if (settings.default_vat_rate) setTaxRate(settings.default_vat_rate);
   }, [settings]);
 
+  // Same booklet, same rule as the weighbridge board: tickets are
+  // pre-numbered and used in order, so once a number has been typed in for
+  // a station, suggest the next one. Only ever fills a BLANK box, so it can
+  // never overwrite a number staff already typed — and it is only a
+  // suggestion (spoiled ticket, different booklet, back-entering an older
+  // day) which is why it stays fully editable.
+  const suggestStationId = isAdmin ? stationId : profile?.location_id;
+  useEffect(() => {
+    if (suggestStationId && !paperTicketNo) {
+      const suggested = suggestNextPaperTicketNo(suggestStationId);
+      if (suggested) setPaperTicketNo(suggested);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestStationId]);
+
+  // Any edit to the number clears a standing duplicate warning — otherwise
+  // typing a corrected number and pressing Save would silently use the
+  // "they already confirmed it" path meant for the old one.
+  useEffect(() => { setDupWarn(null); }, [paperTicketNo]);
+
   // Staff at the location only ever hand over cash on the spot — a bank
   // transfer to a farmer is always sent later by HQ, from HQ, never by
   // staff at the scale. So a Buy can only be marked "Paid" here when it's
@@ -204,6 +264,50 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // below for how a blank price is actually stored.
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || (isBuy && !pricePerKg)) { setError(t("required_fields")); return; }
     if (!txDate) { setError(t("err_need_tx_date")); return; }
+    // [2026-09-12] The paper booklet number, now required here exactly as
+    // it is on the weighbridge board. Without it a back-entered load is
+    // unmatchable against the book, which is the only independent check
+    // anyone has on what this form recorded.
+    if (!paperTicketNo.trim()) { setError(t("err_need_paper_ticket")); return; }
+
+    // Entry sanity check on that number — same shape as NewTicketModal's in
+    // WeighingTickets.jsx, and for the same reason: two devices can each
+    // enter a load before either has synced the other's, so this asks the
+    // live database first (bounded, so a bad connection can never hang a
+    // save) and falls back to this device's own cache when offline.
+    //
+    // Unlike the board, a match here WARNS rather than refuses. This form
+    // is what gets used to re-type a day out of the book after the fact,
+    // where a genuinely repeated booklet number is a real thing that
+    // happens — refusing outright would leave a load that physically
+    // happened unrecorded, which is worse. Pressing Save a second time with
+    // the same number goes through and the database flags the pair.
+    const trimmedTicketNo = normalizePaperTicketNo(paperTicketNo) || "";
+    if (trimmedTicketNo && dupWarn?.ticketNo !== trimmedTicketNo) {
+      let dupMatch = null;
+      if (navigator.onLine) {
+        try {
+          dupMatch = await withTimeout(
+            api.findTransactionByPaperTicketNo({ locationId: effectiveStationId, paperTicketNo: trimmedTicketNo }),
+            3500, null
+          );
+        } catch { dupMatch = null; }
+      }
+      if (!dupMatch) {
+        dupMatch = getCachedTransactions().find(
+          (tx) => tx.location_id === effectiveStationId &&
+            (normalizePaperTicketNo(tx.paper_ticket_no) || "").toLowerCase() === trimmedTicketNo.toLowerCase()
+        ) || null;
+      }
+      if (dupMatch) {
+        setDupWarn({
+          ticketNo: trimmedTicketNo,
+          code: dupMatch.code || null,
+          partyName: dupMatch.party_name || dupMatch.partyName || null,
+        });
+        return;
+      }
+    }
     // Receipt photo is off while testing — no camera on this computer yet.
     // Re-add this check once photos are actually possible.
     setSaving(true);
@@ -287,6 +391,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         note: note.trim() || null,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
+        paperTicketNo: paperTicketNo.trim() || null,
         receiptPhotoUrl, paymentProofUrl,
         // Display-only fields — see the comment on createTransactionOffline
         // in offlineQueue.js for why these matter even offline: without
@@ -309,6 +414,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         newData: {
           code: tx.code, type, partyName, quantityKg: netKg, pricePerKg: finalPricePerKg,
           amount: tx.amount, stationName: myStation?.name, txDate: tx.tx_date, paymentStatus: finalPaymentStatus,
+          paperTicketNo: paperTicketNo.trim() || null,
         },
         userId: session.user.id,
       });
@@ -354,6 +460,12 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       // receipt screen (needs_verification) and keeps retrying from both
       // the browser queue and the station PC relay; the database itself
       // now guarantees it can't be saved twice.
+      // Remember this booklet number for this station so the NEXT entry
+      // starts on the one after it — same shared counter the weighbridge
+      // board uses, so the two screens stay on one running sequence instead
+      // of each suggesting from its own.
+      recordPaperTicketNo(effectiveStationId, paperTicketNo.trim());
+
       setSavedTx({
         ...tx,
         partyName, partyIdNumber: partyPhone || partyIdNumber || "",
@@ -384,111 +496,125 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
             unchanged on desktop/laptop. */}
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="space-y-5 lg:col-span-2">
-            {/* Section 1: Party Information */}
+            {/* ==============================================================
+                [2026-09-12] THE FAST PATH.
+
+                This used to be three numbered sections of roughly twenty
+                boxes, every one of them on screen at once, with the four
+                things that are actually typed on every ticket scattered
+                across all three. Rearranged — nothing removed — so the
+                eight fields a normal load needs read straight down in the
+                order they happen at the scale: which paper ticket, which
+                day, who, what, how heavy, what price, paid or not.
+
+                Everything else is still here, in the fold-away sections
+                below. Nothing required to save is hidden inside one.
+               ============================================================== */}
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">1</span>
-                {isBuy ? t("section1_seller") : t("section1_buyer")}
-              </h3>
-              <div className="relative mb-3">
-                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input value={partyPhone} onChange={(e) => { setPartyPhone(e.target.value); setSelectedParty(null); }} placeholder="Search by phone number"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                {partyPhone && !selectedParty && parties.length > 0 && (
-                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
-                    {parties.map((p) => (
-                      <button type="button" key={p.id} onClick={() => selectParty(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50">
-                        <span>{p.name}</span><span className="text-xs text-slate-400">{p.phone}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <p className="mt-1 text-[11px] text-slate-400">Type a phone number to search — lots of people share the same name, so phone is more reliable.</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div><label className="mb-1 block text-xs text-slate-500">{isBuy ? t("section1_seller") : t("section1_buyer")} Name</label><input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder="Type name, or select a match above" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-
-                {isBuy ? (
-                  <>
-                    <div>
-                      <label className="mb-1 block text-xs text-slate-500">{t("bank_name")}</label>
-                      <select
-                        value={bankIsOther ? "__other__" : bankName}
-                        onChange={(e) => {
-                          if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
-                          else { setBankIsOther(false); setBankName(e.target.value); }
-                        }}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                      >
-                        <option value="" disabled>Select payment method / bank</option>
-                        {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-                        <option value="__other__">Other...</option>
-                      </select>
-                      {bankIsOther && (
-                        <input
-                          value={bankName}
-                          onChange={(e) => setBankName(e.target.value)}
-                          placeholder="Type bank name"
-                          className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                        />
-                      )}
-                    </div>
-                    <div><label className="mb-1 block text-xs text-slate-500">{t("bank_account")}</label><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-                  </>
-                ) : (
-                  <>
-                    <div><label className="mb-1 block text-xs text-slate-500">{t("company_name")}</label><input value={company} onChange={(e) => setCompany(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-                    <div>
-                      <label className="mb-1 block text-xs text-slate-500">{t("destination")}</label>
-                      <input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)}
-                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                      <datalist id="destination-options">
-                        <option value="dest_hq">{t("dest_hq")}</option>
-                        <option value="dest_factory">{t("dest_factory")}</option>
-                        <option value="dest_border">{t("dest_border")}</option>
-                        <option value="dest_other">{t("dest_other")}</option>
-                      </datalist>
-                    </div>
-                  </>
-                )}
-
-                {isAdmin && (
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-500">{t("station")}</label>
-                    <select value={stationId} onChange={(e) => setStationId(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-                      {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                )}
-
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[190px_1fr_1fr]">
                 <div>
-                  <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
-                  <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  <p className="mt-1 text-[11px] text-slate-400">Defaults to today — change it if this load was actually weighed on a different day.</p>
-                </div>
-              </div>
-
-              {isBuy && bankName && bankName !== "Cash" && (
-                <div className="mt-4">
-                  <PhotoUpload
-                    label="Bank QR Code" kind="party-bank-qr"
-                    url={bankQrUrl} onUploaded={setBankQrUrl}
-                    hint={`Photo of this farmer's ${bankName} QR code — saved to their profile, not just this transaction`}
+                  <label className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gold-700">
+                    <Ticket size={12} /> Paper Ticket No.
+                  </label>
+                  <input
+                    value={paperTicketNo}
+                    onChange={(e) => setPaperTicketNo(e.target.value)}
+                    placeholder="e.g. 092152"
+                    className="w-full rounded-lg border border-gold-500 bg-gold-50 px-3 py-2 text-lg font-bold tracking-wide text-slate-800 outline-none focus:border-gold-700 focus:ring-2 focus:ring-gold-100"
                   />
                 </div>
+                <div>
+                  <label className={labelCls}>Transaction Date</label>
+                  <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()} className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>{t("station")}</label>
+                  {isAdmin ? (
+                    <select value={stationId} onChange={(e) => setStationId(e.target.value)} className={inputCls}>
+                      {stations.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  ) : (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      {myStation?.name || (stationsLoaded ? "—" : "…")}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {dupWarn ? (
+                <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                  Ticket <b>{dupWarn.ticketNo}</b> has already been used at this station
+                  {dupWarn.code ? ` — ${dupWarn.code}` : ""}{dupWarn.partyName ? `, ${dupWarn.partyName}` : ""}.
+                  Check the book. If the number really is right, press Save again and it will go through — both
+                  entries will be marked so they can be looked at later.
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-slate-400">
+                  The number on the paper booklet ticket — this is what ties this entry back to the book.
+                  Suggested from the last one used at this station; type over it if it's wrong.
+                </p>
               )}
+
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="relative">
+                  <label className={labelCls}>Phone number</label>
+                  <Search size={15} className="pointer-events-none absolute left-3 top-[30px] text-slate-400" />
+                  <input value={partyPhone} onChange={(e) => { setPartyPhone(e.target.value); setSelectedParty(null); }} placeholder="Search by phone"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                  {partyPhone && !selectedParty && parties.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
+                      {parties.map((p) => (
+                        <button type="button" key={p.id} onClick={() => selectParty(p)} className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-50">
+                          <span>{p.name}</span><span className="text-xs text-slate-400">{p.phone}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="mt-1 text-[11px] text-slate-400">Lots of people share a name — phone finds the right person.</p>
+                </div>
+                <div>
+                  <label className={labelCls}>{isBuy ? t("section1_seller") : t("section1_buyer")} Name</label>
+                  <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder="Type name, or pick a match" className={inputCls} />
+                </div>
+              </div>
+
+              <div className={`mt-3 grid grid-cols-1 gap-3 ${isBuy ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+                <div>
+                  <label className={labelCls}>{t("product")}</label>
+                  <input list="product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Type or pick" className={inputCls} />
+                  <datalist id="product-options">
+                    {products.map((p) => <option key={p.id} value={p.name} />)}
+                  </datalist>
+                </div>
+                {isBuy && (
+                  <div>
+                    <label className={labelCls}>{t("quality_grade")}</label>
+                    <input list="grade-options" value={qualityGrade} onChange={(e) => { setQualityGrade(e.target.value); setPriceOverridden(false); }} className={inputCls} />
+                    <datalist id="grade-options">
+                      <option value="A">{t("grade_a")}</option>
+                      <option value="B">{t("grade_b")}</option>
+                      <option value="C">{t("grade_c")}</option>
+                    </datalist>
+                    <p className="mt-1 text-[11px] text-slate-400">A/B/C fills the price in.</p>
+                  </div>
+                )}
+                <div>
+                  <label className={labelCls}>{t("price_per_kg")}</label>
+                  <input type="number" min="0" step="0.01" value={pricePerKg}
+                    onChange={(e) => { setPricePerKg(e.target.value); setPriceOverridden(true); }}
+                    placeholder="0.00" className={inputCls} />
+                  {isBuy
+                    ? <p className="mt-1 text-[11px] text-slate-400">From the grade — edit to override.</p>
+                    : <p className="mt-1 text-[11px] text-slate-400">Optional — leave blank if no price agreed yet.</p>}
+                </div>
+              </div>
             </section>
 
-            {/* Section 2: Weighbridge Data */}
+            {/* ===== Weight ===== */}
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">2</span>
-                <ScanLine size={16} /> {t("section2_weighbridge")}
+              <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
+                <ScanLine size={14} /> {t("section2_weighbridge")}
               </h3>
-
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <WeightField
                   locationId={effectiveLocationId}
                   label={t("gross_weight")}
@@ -506,74 +632,23 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   isAdmin={isAdmin}
                 />
               </div>
-
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("car_plate_number")}</label>
-                  <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("driver_name")}</label>
-                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                </div>
+              <div className="mt-3 flex items-baseline justify-between rounded-lg bg-brand-50 px-4 py-3">
+                <p className="text-xs font-medium text-brand-700/70">{t("net_weight")}</p>
+                <p className="text-3xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-base font-medium text-brand-600">KG</span></p>
               </div>
-              <div className="mt-4 rounded-lg bg-brand-50 p-4 text-center">
-                <p className="text-xs text-brand-700/70">{t("net_weight")}</p>
-                <p className="text-4xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-lg font-medium text-brand-600">KG</span></p>
-                {parseFloat(deductionKg) > 0 && (
-                  <p className="mt-1 text-xs text-brand-700/70">Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)</p>
-                )}
-              </div>
-              <div className="mt-4">
-                <PhotoUpload
-                  label="Physical Receipt Photo" kind="receipt"
-                  url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-                  hint="Photo of the printed weighbridge ticket/receipt (optional)"
-                />
-              </div>
+              {parseFloat(deductionKg) > 0 && (
+                <p className="mt-1 text-right text-xs text-brand-700/70">
+                  Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)
+                </p>
+              )}
             </section>
 
-            {/* Section 3: Quality & Pricing */}
+            {/* ===== Payment status + note ===== */}
             <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 flex items-center gap-2 font-semibold text-slate-700">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-xs text-white">3</span>
-                Quality &amp; Pricing
-              </h3>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
-                  <input list="product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Type or pick a product"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  <datalist id="product-options">
-                    {products.map((p) => <option key={p.id} value={p.name} />)}
-                  </datalist>
-                </div>
-                {isBuy && (
-                  <div>
-                    <label className="mb-1 block text-xs text-slate-500">{t("quality_grade")}</label>
-                    <input list="grade-options" value={qualityGrade} onChange={(e) => { setQualityGrade(e.target.value); setPriceOverridden(false); }}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                    <datalist id="grade-options">
-                      <option value="A">{t("grade_a")}</option>
-                      <option value="B">{t("grade_b")}</option>
-                      <option value="C">{t("grade_c")}</option>
-                    </datalist>
-                    <p className="mt-1 text-[11px] text-slate-400">A/B/C auto-fills the price — type anything else to set your own.</p>
-                  </div>
-                )}
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("price_per_kg")}</label>
-                  <input type="number" min="0" step="0.01" value={pricePerKg}
-                    onChange={(e) => { setPricePerKg(e.target.value); setPriceOverridden(true); }}
-                    placeholder="0.00" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  {isBuy && <p className="mt-1 text-[11px] text-slate-400">Auto-filled from grade — edit to override</p>}
-                  {!isBuy && <p className="mt-1 text-[11px] text-slate-400">Optional — leave blank if the buyer hasn't agreed a price yet. Add it later from the Transactions list.</p>}
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs text-slate-500">{t("payment_status")}</label>
-                  <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
+                  <label className={labelCls}>{t("payment_status")}</label>
+                  <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className={inputCls}>
                     {isBuy ? (
                       <>
                         <option value="pending">{t("pendingpay")}</option>
@@ -581,64 +656,133 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       </>
                     ) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
                   </select>
-                  {isBankTransfer && <p className="mt-1 text-[11px] text-slate-400">Bank transfer — stays Pending until HQ sends the money and records it (Transactions → Pay Supplier).</p>}
+                  {isBankTransfer && <p className="mt-1 text-[11px] text-slate-400">{bankName} transfer — stays Pending until HQ sends the money and records it (Transactions → Pay Supplier).</p>}
+                </div>
+                <div>
+                  <label className={labelCls}>Note (optional)</label>
+                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="anything worth remembering" className={inputCls} />
                 </div>
               </div>
-              <p className="mt-1 text-[11px] text-slate-400">Payment status choices are fixed — they feed your Financial Reports directly.</p>
+            </section>
 
-              {showPaymentProofUpload && (
-                <div className="mt-3">
-                  <PhotoUpload
-                    label="Bank QR / Payment Proof Photo" kind="payment-proof"
-                    url={paymentProofUrl} onUploaded={setPaymentProofUrl}
-                    hint="Photo of the bank transfer QR code or payment confirmation"
-                  />
+            {/* ==============================================================
+                Fold-away. Everything the old form showed all at once and
+                that a normal load never touches.
+               ============================================================== */}
+            <Fold title="Vehicle & driver" hint="plate, driver name" filled={!!(carPlate || driverName)}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className={labelCls}>{t("car_plate_number")}</label>
+                  <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234" className={inputCls} />
                 </div>
-              )}
-
-              <div className="mt-3 rounded-lg border border-slate-200 p-3">
-                <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
-                <div className="grid grid-cols-4 gap-2">
-                  <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Moisture %</label>
-                    <input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} placeholder="0"
-                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Mixture %</label>
-                    <input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} placeholder="0"
-                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label>
-                    <input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} placeholder="0"
-                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label>
-                    <input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} placeholder="0"
-                      className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  </div>
+                <div>
+                  <label className={labelCls}>{t("driver_name")}</label>
+                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith" className={inputCls} />
                 </div>
-                <p className="mt-1.5 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.</p>
               </div>
+            </Fold>
 
-              {isBuy && (
-                <div className="mt-3 rounded-lg border border-slate-200 p-3">
-                  <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
-                  <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
-                    className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                  <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — this amount is charged to them and comes off what they're paid.</p>
+            {isBuy ? (
+              <Fold
+                title="Bank details"
+                hint={bankName ? `${bankName}${bankAccount ? ` · ${bankAccount}` : ""}` : "how this seller gets paid"}
+                filled={!!(bankName || bankAccount)}
+              >
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className={labelCls}>{t("bank_name")}</label>
+                    <select
+                      value={bankIsOther ? "__other__" : bankName}
+                      onChange={(e) => {
+                        if (e.target.value === "__other__") { setBankIsOther(true); setBankName(""); }
+                        else { setBankIsOther(false); setBankName(e.target.value); }
+                      }}
+                      className={inputCls}
+                    >
+                      <option value="" disabled>Select payment method / bank</option>
+                      {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
+                      <option value="__other__">Other...</option>
+                    </select>
+                    {bankIsOther && (
+                      <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`mt-2 ${inputCls}`} />
+                    )}
+                  </div>
+                  <div>
+                    <label className={labelCls}>{t("bank_account")}</label>
+                    <input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={inputCls} />
+                  </div>
                 </div>
-              )}
+                {bankName && bankName !== "Cash" && (
+                  <div className="mt-4">
+                    <PhotoUpload
+                      label="Bank QR Code" kind="party-bank-qr"
+                      url={bankQrUrl} onUploaded={setBankQrUrl}
+                      hint={`Photo of this farmer's ${bankName} QR code — saved to their profile, not just this transaction`}
+                    />
+                  </div>
+                )}
+              </Fold>
+            ) : (
+              <Fold title="Company & destination" hint="where this load is going" filled={!!company}>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className={labelCls}>{t("company_name")}</label>
+                    <input value={company} onChange={(e) => setCompany(e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>{t("destination")}</label>
+                    <input list="destination-options" value={destination} onChange={(e) => setDestination(e.target.value)} className={inputCls} />
+                    <datalist id="destination-options">
+                      <option value="dest_hq">{t("dest_hq")}</option>
+                      <option value="dest_factory">{t("dest_factory")}</option>
+                      <option value="dest_border">{t("dest_border")}</option>
+                      <option value="dest_other">{t("dest_other")}</option>
+                    </datalist>
+                  </div>
+                </div>
+              </Fold>
+            )}
 
-              <div className="mt-3">
-                <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
-                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. from Weighbridge Ticket WT0134"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            <Fold
+              title="Quality deduction"
+              hint="moisture, mixture, outthrow, kg off"
+              filled={!!(moisturePct || mixturePct || outthrowPct || deductionKg)}
+            >
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-400">Moisture %</label>
+                  <input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} placeholder="0" className={inputCls} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-400">Mixture %</label>
+                  <input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} placeholder="0" className={inputCls} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label>
+                  <input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} placeholder="0" className={inputCls} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label>
+                  <input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} placeholder="0" className={inputCls} />
+                </div>
               </div>
+              <p className="mt-2 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.</p>
+            </Fold>
 
-              <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
+            {isBuy && (
+              <Fold title="Staff / carrying fee" hint="only if our men unloaded for them" filled={!!staffFee}>
+                <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
+                  className={`max-w-[200px] ${inputCls}`} />
+                <p className="mt-2 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — this amount is charged to them and comes off what they're paid.</p>
+              </Fold>
+            )}
+
+            <Fold
+              title="VAT & photos"
+              hint="tax, receipt photo, payment proof"
+              filled={taxApplicable || !!receiptPhotoUrl || !!paymentProofUrl}
+            >
+              <div className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
                   Apply VAT
@@ -651,7 +795,23 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   </div>
                 )}
               </div>
-            </section>
+              <div className="mt-3">
+                <PhotoUpload
+                  label="Physical Receipt Photo" kind="receipt"
+                  url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
+                  hint="Photo of the printed weighbridge ticket/receipt (optional)"
+                />
+              </div>
+              {showPaymentProofUpload && (
+                <div className="mt-3">
+                  <PhotoUpload
+                    label="Bank QR / Payment Proof Photo" kind="payment-proof"
+                    url={paymentProofUrl} onUploaded={setPaymentProofUrl}
+                    hint="Photo of the bank transfer QR code or payment confirmation"
+                  />
+                </div>
+              )}
+            </Fold>
             {error && <p className="text-sm text-rose-500">{error}</p>}
           </div>
 
