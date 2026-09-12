@@ -571,7 +571,22 @@ const rawApi = {
   // (dailyLedger.js, LocationDetail, Stock Inventory). Shrinkage multiplies
   // kg by price for gains instead. Both stay null when no price was
   // available, so the report shows a dash rather than a confident zero.
-  async recordStockAdjustment({ locationId, previousStockKg, newStockKg, reason, note, userId, pricePerKg }) {
+  // [2026-09-12] `effectiveDate` — which DAY this adjustment counts
+  // against, when that is not today.
+  //
+  // A station that buys until late often closes the day the next morning.
+  // Counted on the morning it was entered, the previous day closes owing
+  // paddy it never owed and the new day OPENS negative — a state a shed
+  // cannot be in. The app already did this silently for a reset done
+  // before 4am (effectiveAdjDateStr in dailyLedger.js); this makes it a
+  // deliberate choice, and — unlike the JS-only rule — it moves the stored
+  // timestamp so the DATABASE's own ledger snapshots agree too. Without
+  // that the Dashboard would keep showing the old opening figure, because
+  // its opening and closing balances come from the server, not the browser.
+  //
+  // The real entry time is preserved in the note by the SQL function, so
+  // nothing about who did what and when is lost.
+  async recordStockAdjustment({ locationId, previousStockKg, newStockKg, reason, note, userId, pricePerKg, effectiveDate }) {
     // [2026-09-08] One atomic database call (record_stock_adjustment in
     // week1_hardening_2026-09-08.sql). It reads the station's CURRENT
     // stock under lock — not the number this screen loaded minutes ago —
@@ -588,6 +603,7 @@ const rawApi = {
         p_reason: reason,
         p_note: note || null,
         p_price_per_kg: pricePerKg ?? null,
+        p_effective_date: effectiveDate ?? null,
       })
       .single();
     if (error) throw error;
