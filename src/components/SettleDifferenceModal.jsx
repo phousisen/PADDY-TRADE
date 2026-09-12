@@ -47,13 +47,42 @@ export function canSettle(onHandKg, floor) {
 // that is the number the person is looking at when they press the button.
 // Reading a second, possibly different figure out of the locations row here
 // is how a modal ends up disagreeing with the table that opened it.
+// Cambodia's calendar date for a moment, and the n-th day before today —
+// the station's own day boundary, not the viewing device's.
+function khDate(d = new Date()) {
+  const parts = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+function khDaysAgo(n) { return khDate(new Date(Date.now() - n * 86400000)); }
+
 export default function SettleDifferenceModal({ station, onHandKg, floor, priceSuggestion, t, onClose, onSubmit }) {
+  const today = khDate();
+  const yesterday = khDaysAgo(1);
+  const oldestAllowed = khDaysAgo(7);
   const previous = Number(onHandKg) || 0;
   const gapKg = Math.abs(previous);           // what has to appear to reach 0
   const allowed = canSettle(previous, floor);
 
   const [reason, setReason] = useState("moisture");
   const [note, setNote] = useState("");
+  // [2026-09-12] WHICH DAY THIS COUNTS AGAINST.
+  //
+  // A station buys until late and does not always get to close the day
+  // that night. The correction is then entered the next morning, and the
+  // day it belongs to closes owing paddy it never owed — so the next day
+  // OPENS negative, which is not a state a shed can be in.
+  //
+  // The app already does this for a daily reset done in the small hours
+  // (see effectiveAdjDateStr in dailyLedger.js): it counts against the
+  // night before, so that day's row ends clean. This makes the same thing
+  // a deliberate choice instead of an accident of the clock.
+  //
+  // Bounded to the last week and never the future: this moves which day a
+  // number lands on, so it must not be able to reach back into a month
+  // that has been closed and reported.
+  const [effectiveDate, setEffectiveDate] = useState(today);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -77,6 +106,9 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
         reason,
         note: note.trim() || null,
         pricePerKg: price != null && Number.isFinite(price) ? price : null,
+        // Only sent when it is NOT today — a same-day settle keeps the
+        // real moment it happened, which is always the truest record.
+        effectiveDate: effectiveDate !== today ? effectiveDate : null,
       });
     } catch (err) {
       setError(err.message || t("adj_save_error_default"));
@@ -133,6 +165,27 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
               <option value="recount">{t("settle_reason_drift")}</option>
               <option value="other">{t("adj_reason_other")}</option>
             </select>
+
+            {/* Which day it counts against. Two buttons for the case that
+                actually happens — "we closed it the next morning" — and a
+                date box for anything else. */}
+            <label className="mb-1 block text-xs font-medium text-slate-500">{t("settle_date_label")}</label>
+            <div className="mb-1 flex flex-wrap gap-2">
+              <button type="button" onClick={() => setEffectiveDate(today)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${effectiveDate === today ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                {t("settle_date_today")}
+              </button>
+              <button type="button" onClick={() => setEffectiveDate(yesterday)}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${effectiveDate === yesterday ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                {t("settle_date_yesterday")}
+              </button>
+              <input type="date" value={effectiveDate} min={oldestAllowed} max={today}
+                onChange={(e) => { if (e.target.value >= oldestAllowed && e.target.value <= today) setEffectiveDate(e.target.value); }}
+                className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            </div>
+            <p className="mb-3 text-[11.5px] leading-relaxed text-slate-400">
+              {effectiveDate === today ? t("settle_date_help_today") : t("settle_date_help_past", { date: effectiveDate })}
+            </p>
 
             <label className="mb-1 block text-xs font-medium text-slate-500">{t("settle_note_label")}</label>
             <input value={note} onChange={(e) => setNote(e.target.value)}
