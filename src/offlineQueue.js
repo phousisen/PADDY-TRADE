@@ -2452,7 +2452,17 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
 // without them here, the record cached below for the Transactions list
 // would have nothing to show in its Party/Station columns until the real
 // sync completes, same gap this whole change exists to close.
-export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
+// [2026-09-12] paperTicketNo added. A manually-entered Buy/Sell used to be
+// the ONE way a transaction could reach the database with no paper ticket
+// number on it at all — the weighbridge board has always asked for it, this
+// form never did. That left every back-entered load (a truck weighed while
+// the app was down, a day re-typed from the book afterwards) with nothing
+// tying it to the physical booklet, so nobody could check the app against
+// the paper, in either direction. It is carried in the queued payload like
+// every other field, so it survives a save made with no connection, and it
+// is on the cached row below so the Transactions list and the receipt show
+// it immediately rather than only after the sync lands.
+export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, paperTicketNo, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
   assertNotViewOnly();
   const id = newId();
   const code = genLocalTxCode(type);
@@ -2476,6 +2486,7 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
       id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId,
       qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg,
       staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
+      paperTicketNo: paperTicketNo || null,
     },
   });
   if (!persisted) {
@@ -2489,6 +2500,7 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
       quality_grade: qualityGrade, tax_applicable: !!taxApplicable, tax_rate: taxApplicable ? (taxRate || 0) : 0,
       moisture_pct: moisturePct || 0, mixture_pct: mixturePct || 0, outthrow_pct: outthrowPct || 0,
       deduction_kg: deductionKg || 0, staff_fee: staffFeeAmt, note, car_plate: carPlate, driver_name: driverName,
+      paper_ticket_no: paperTicketNo || null,
       receipt_photo_url: receiptPhotoUrl || null, payment_proof_url: paymentProofUrl || null, amount,
       station_quantity_kg: type === "SELL" ? quantityKg : null, station_price_per_kg: type === "SELL" ? pricePerKg : null,
       created_by: userId, status: "confirmed", hq_status: "processing",
@@ -2548,6 +2560,11 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
     note: note || null,
     car_plate: carPlate || null,
     driver_name: driverName || null,
+    // Kept on the cached row so the receipt printed a second after Save,
+    // and the Transactions list, both show the booklet number straight
+    // away — and so a stuck save rebuilt by recoverStuckOps carries it
+    // back into the re-queued op (cachedTxToCreateOpPayload reads it).
+    paper_ticket_no: paperTicketNo || null,
     receipt_photo_url: receiptPhotoUrl || null,
     payment_proof_url: paymentProofUrl || null,
     staff_fee: staffFeeAmt,
