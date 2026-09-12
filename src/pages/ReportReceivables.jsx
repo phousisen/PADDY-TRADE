@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+// [2026-09-12] These were CALLED on this page but never imported, so the
+// whole tab threw a ReferenceError before it painted anything.
+import { queryRange, rangeKey } from "../reportQuery.js";
 import { getAccurateNow } from "../supabaseClient.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr, AgeBadge } from "../components/ReportUI.jsx";
 

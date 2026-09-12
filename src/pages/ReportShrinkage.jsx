@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
+// [2026-09-12] These were CALLED on this page but never imported, so the
+// whole tab threw a ReferenceError before it painted anything.
+import { queryRangeAdj, rangeKey } from "../reportQuery.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }

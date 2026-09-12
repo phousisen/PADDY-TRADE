@@ -11,7 +11,7 @@ import { errText } from "../errText.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import {
-  startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
+  startAutoSync, refreshLookupCaches, getCachedTickets, getCachedTransactions, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
   setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
@@ -312,7 +312,16 @@ async function checkTicketNoDuplicate({ locationId, paperTicketNo, excludeId }) 
   let dupMatch = null;
   try {
     dupMatch = await withTimeout(
-      api.findTicketByPaperTicketNo({ locationId, paperTicketNo: trimmedTicketNo, excludeId }),
+      // [2026-09-12] findAnyByPaperTicketNo, not findTicketByPaperTicketNo.
+      // This looked only at other weighbridge tickets, so a number already
+      // sitting on a manually-entered Buy/Sell could be reused here with
+      // nothing said. A station has ONE paper booklet and does not care
+      // which screen a load was recorded on. JOMNOUM CN 000560 is the live
+      // case: Bory's board ticket of 7 September, then hen's typed entry of
+      // the 9th, no warning anywhere.
+      api.findAnyByPaperTicketNo({
+        locationId, paperTicketNo: trimmedTicketNo, excludeTicketId: excludeId,
+      }),
       3500,
       null
     );
@@ -320,10 +329,15 @@ async function checkTicketNoDuplicate({ locationId, paperTicketNo, excludeId }) 
     dupMatch = null;
   }
   if (!dupMatch) {
+    // Offline, or the live check timed out — this device's own caches, and
+    // again both of them for the same reason.
+    const sameNo = (v) =>
+      (normalizePaperTicketNo(v) || "").toLowerCase() === trimmedTicketNo.toLowerCase();
     dupMatch = getCachedTickets().find(
-      (t) => t.id !== excludeId && t.location_id === locationId &&
-        (normalizePaperTicketNo(t.paper_ticket_no) || "").toLowerCase() === trimmedTicketNo.toLowerCase()
-    );
+      (t) => t.id !== excludeId && t.location_id === locationId && sameNo(t.paper_ticket_no)
+    ) || getCachedTransactions().find(
+      (t) => t.location_id === locationId && sameNo(t.paper_ticket_no)
+    ) || null;
   }
   return dupMatch || null;
 }
