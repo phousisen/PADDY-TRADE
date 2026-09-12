@@ -108,8 +108,35 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [company, setCompany] = useState("");
   const [destination, setDestination] = useState("dest_hq");
   const [qualityGrade, setQualityGrade] = useState("");
+  // [2026-09-12] `grossKg` is the FIRST weigh (weigh IN), `tareKg` the
+  // SECOND (weigh OUT) — the same two database columns the weighbridge
+  // board fills, so a manual entry and a ticket-derived one are the same
+  // shape of record. What the two weights MEAN flips with the direction of
+  // the trade, which is the bug this fixes:
+  //
+  //   BUY  — the truck arrives LOADED and leaves EMPTY.  net = in − out
+  //   SELL — the truck arrives EMPTY and leaves LOADED.  net = out − in
+  //
+  // This form did `gross − tare` on both, so every Sell came out negative,
+  // was clamped to zero by the Math.max below, and saved as a 0 kg load
+  // worth 0 ៛ with no error shown. `WeighingTickets.jsx` has always had
+  // this right (see its own netKg) — only this screen was wrong.
   const [grossKg, setGrossKg] = useState("");
   const [tareKg, setTareKg] = useState("");
+  // The instant each weight was captured. On a station with a live scale
+  // that IS the moment of weighing, and it is what fills the IN/OUT rows on
+  // the printed receipt. Stamped once, when the box first gets a value, and
+  // cleared if the box is emptied — not re-stamped on every keystroke, so
+  // it stays the capture moment rather than the last-typed-character
+  // moment.
+  const [grossAt, setGrossAt] = useState(null);
+  const [tareAt, setTareAt] = useState(null);
+  const stampOnFirstValue = (v, setStamp) => {
+    const has = v !== "" && v != null;
+    setStamp((prev) => (has ? prev || getAccurateNow().toISOString() : null));
+  };
+  const onGrossChange = (v) => { setGrossKg(v); stampOnFirstValue(v, setGrossAt); };
+  const onTareChange = (v) => { setTareKg(v); stampOnFirstValue(v, setTareAt); };
   const [pricePerKg, setPricePerKg] = useState("");
   const [priceOverridden, setPriceOverridden] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(isBuy ? "pending" : "paid");
@@ -207,7 +234,24 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     if (isBankTransfer && paymentStatus === "paid") setPaymentStatus("pending");
   }, [isBankTransfer, paymentStatus]);
 
-  const netKg = Math.max(0, (parseFloat(grossKg) || 0) - (parseFloat(tareKg) || 0));
+  // See the comment on grossKg/tareKg above. A Buy loses weight between the
+  // two weighs, a Sell gains it.
+  const weighInKg = parseFloat(grossKg) || 0;
+  const weighOutKg = parseFloat(tareKg) || 0;
+  const rawNetKg = isBuy ? weighInKg - weighOutKg : weighOutKg - weighInKg;
+  const netKg = Math.max(0, rawNetKg);
+  // Both weighs entered but the wrong way round. Previously this silently
+  // became a 0 kg, 0 ៛ transaction — the clamp above hid it and Save went
+  // through. Now it is said out loud, on screen and at Save.
+  const bothWeighed = String(grossKg).trim() !== "" && String(tareKg).trim() !== "";
+  const weightsReversed = bothWeighed && rawNetKg <= 0;
+  const reversedMessage = isBuy
+    ? "Weigh In must be MORE than Weigh Out on a purchase — the truck arrives loaded and leaves empty."
+    : "Weigh Out must be MORE than Weigh In on a sale — the truck arrives empty and leaves loaded.";
+  // A capture instant is only sent if it lands on the day this transaction
+  // is dated — see where it is used in handleSubmit for why.
+  const stampIfOnTxDate = (iso) =>
+    (iso && cambodiaDateStr(new Date(iso)) === txDate ? iso : null);
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
   // Previously required before saving — dropped per Baitang's decision so
   // this matches the Weighing Tickets flow, which never required it either
@@ -262,6 +306,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // Tickets' own Finish Ticket flow — it gets corrected later from the
     // Transactions list once it's actually agreed. See finalPricePerKg
     // below for how a blank price is actually stored.
+    // Checked BEFORE the generic "fill in the required fields" below, so a
+    // reversed pair of weights says what is actually wrong instead of
+    // pointing at a form that looks completely filled in.
+    if (weightsReversed) { setError(reversedMessage + " Check the two weights."); return; }
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || (isBuy && !pricePerKg)) { setError(t("required_fields")); return; }
     if (!txDate) { setError(t("err_need_tx_date")); return; }
     // [2026-09-12] The paper booklet number, now required here exactly as
@@ -392,6 +440,27 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
         paperTicketNo: paperTicketNo.trim() || null,
+        // [2026-09-12] The two weighs themselves, not just the net.
+        //
+        // Until now a manually-entered Buy/Sell sent only `quantityKg`, so
+        // `gross_kg`/`tare_kg` landed null and the receipt's IN/OUT table
+        // printed "—  —  —" on both rows with nothing but a Net Weight —
+        // even though staff had typed (or the scale had captured) both
+        // numbers a moment earlier. They are the same two columns the
+        // weighbridge board fills, so a manual entry now prints an
+        // identical ticket.
+        grossKg: grossKg === "" ? null : weighInKg,
+        tareKg: tareKg === "" ? null : weighOutKg,
+        // The capture instants — but ONLY when they fall on the day this
+        // transaction is dated. Back-entering yesterday's load today would
+        // otherwise stamp today onto the IN/OUT rows and print a receipt
+        // whose weigh dates contradict its own transaction date — exactly
+        // the defect fixed in Receipt.jsx on 2026-09-06. When they do not
+        // match, the weights still print; only the date/time columns stay
+        // blank, which is honest: nobody knows what time yesterday's truck
+        // actually crossed the scale.
+        grossAt: stampIfOnTxDate(grossAt),
+        tareAt: stampIfOnTxDate(tareAt),
         receiptPhotoUrl, paymentProofUrl,
         // Display-only fields — see the comment on createTransactionOffline
         // in offlineQueue.js for why these matter even offline: without
@@ -614,28 +683,42 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
                 <ScanLine size={14} /> {t("section2_weighbridge")}
               </h3>
+              {/* [2026-09-12] The labels now say which weigh this is and
+                  what state the truck is in, instead of "Gross"/"Tare" —
+                  which are only meaningful on a Buy and are the exact words
+                  that made a Sell get entered backwards. Same wording as the
+                  weighbridge board's Weigh In / Weigh Out steps. */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <WeightField
                   locationId={effectiveLocationId}
-                  label={t("gross_weight")}
-                  scaleLabel="Live Scale Weight"
+                  label={isBuy ? "Weigh In — loaded truck (kg)" : "Weigh In — empty truck (kg)"}
+                  labelKm="ថ្លឹងទម្ងន់ចូល"
+                  scaleLabel={isBuy ? "Live Scale Weight (loaded truck)" : "Live Scale Weight (empty truck)"}
                   value={grossKg}
-                  onChange={setGrossKg}
+                  onChange={onGrossChange}
                   isAdmin={isAdmin}
                 />
                 <WeightField
                   locationId={effectiveLocationId}
-                  label={t("tare_weight")}
-                  scaleLabel="Live Scale Weight"
+                  label={isBuy ? "Weigh Out — empty truck (kg)" : "Weigh Out — loaded truck (kg)"}
+                  labelKm="ថ្លឹងទម្ងន់ចេញ"
+                  scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
                   value={tareKg}
-                  onChange={setTareKg}
+                  onChange={onTareChange}
                   isAdmin={isAdmin}
                 />
               </div>
-              <div className="mt-3 flex items-baseline justify-between rounded-lg bg-brand-50 px-4 py-3">
-                <p className="text-xs font-medium text-brand-700/70">{t("net_weight")}</p>
-                <p className="text-3xl font-bold text-brand-800">{fmt2(netKg)} <span className="text-base font-medium text-brand-600">KG</span></p>
+              <div className={`mt-3 flex items-baseline justify-between rounded-lg px-4 py-3 ${weightsReversed ? "bg-rose-50" : "bg-brand-50"}`}>
+                <p className={`text-xs font-medium ${weightsReversed ? "text-rose-700/80" : "text-brand-700/70"}`}>{t("net_weight")}</p>
+                <p className={`text-3xl font-bold ${weightsReversed ? "text-rose-700" : "text-brand-800"}`}>
+                  {fmt2(netKg)} <span className={`text-base font-medium ${weightsReversed ? "text-rose-600" : "text-brand-600"}`}>KG</span>
+                </p>
               </div>
+              {weightsReversed && (
+                <p className="mt-1.5 rounded-lg bg-rose-50 px-3 py-2 text-[11px] leading-relaxed text-rose-700">
+                  <b>The two weights are the wrong way round.</b> {reversedMessage} Swap them, or re-capture from the scale — this cannot be saved as it stands.
+                </p>
+              )}
               {parseFloat(deductionKg) > 0 && (
                 <p className="mt-1 text-right text-xs text-brand-700/70">
                   Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)

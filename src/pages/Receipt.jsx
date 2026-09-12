@@ -72,7 +72,14 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
   const { t } = useLanguage();
   const inStamp = splitCambodiaTimestamp(tx.gross_at);
   const outStamp = splitCambodiaTimestamp(tx.tare_at);
-  const hasWeighInOut = tx.gross_kg != null;
+  // [2026-09-12] The weight and its timestamp are now asked about
+  // separately. They used to be one flag (`tx.gross_kg != null`), which
+  // meant a row with a real weight but no recorded instant — every
+  // back-dated manual entry, where nobody can honestly say what time
+  // yesterday's truck crossed the scale — printed a dash in the WEIGHT
+  // column too. The number is known; only the clock reading is not.
+  const hasWeighIn = tx.gross_kg != null;
+  const hasWeighOut = tx.tare_kg != null;
   const productName = tx.product_name || tx.productName || "—";
 
   const partyLabelKh = isBuy ? "អ្នកលក់" : "អ្នកទិញ";
@@ -134,15 +141,15 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
         <tbody>
           <tr>
             <td>ចូល IN</td>
-            <td>{hasWeighInOut ? inStamp.date : "—"}</td>
-            <td>{hasWeighInOut ? inStamp.time : "—"}</td>
-            <td className="num">{hasWeighInOut ? `${fmt2(tx.gross_kg)} kg` : "—"}</td>
+            <td>{inStamp.date}</td>
+            <td>{inStamp.time}</td>
+            <td className="num">{hasWeighIn ? `${fmt2(tx.gross_kg)} kg` : "—"}</td>
           </tr>
           <tr>
             <td>ចេញ OUT</td>
-            <td>{hasWeighInOut ? outStamp.date : "—"}</td>
-            <td>{hasWeighInOut ? outStamp.time : "—"}</td>
-            <td className="num">{hasWeighInOut ? `${fmt2(tx.tare_kg)} kg` : "—"}</td>
+            <td>{outStamp.date}</td>
+            <td>{outStamp.time}</td>
+            <td className="num">{hasWeighOut ? `${fmt2(tx.tare_kg)} kg` : "—"}</td>
           </tr>
           <tr className="net">
             <td colSpan={3}>ទម្ងន់សុទ្ធ Net Weight</td>
