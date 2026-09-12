@@ -8,11 +8,11 @@ import { api, normalizePaperTicketNo } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
 import {
-  startAutoSync, refreshLookupCaches, getCachedTickets, mergeServerTickets,
+  startAutoSync, refreshLookupCaches, getCachedTickets, getCachedTransactions, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
   setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
-  suggestNextPaperTicketNo, withTimeout, logAuditOffline,
+  suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline,
 } from "../offlineQueue.js";
 
 // Same reasoning as the offline queue's own lookups: don't let a slow/no
@@ -531,11 +531,29 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // request), and the shared per-location counter (suggestNextPaperTicketNo)
   // is already keyed by location only, not type, so this needed no change
   // beyond dropping the old Buy-only guard.
+  //
+  // [2026-09-12] Asks the SERVER first. `api.getLatestPaperTicketNo` was
+  // written on 5 September for exactly this — two staff on two devices at
+  // one station each being told to use the same "next" number, because
+  // neither device's local memory knew what the other had just entered —
+  // and it was never actually called by anything. It is now, and it reads
+  // BOTH the board and manually-entered loads, so the suggestion follows
+  // the paper booklet rather than one screen's history. Bounded; falls
+  // back to this device's memory offline or on a slow connection.
   useEffect(() => {
-    if (locationId && !paperTicketNo) {
-      const suggested = suggestNextPaperTicketNo(locationId);
-      if (suggested) setPaperTicketNo(suggested);
-    }
+    let cancelled = false;
+    if (!locationId || paperTicketNo) return undefined;
+    (async () => {
+      const live = await withTimeout(
+        api.getLatestPaperTicketNo(locationId).catch(() => null), 3000, null
+      );
+      if (cancelled) return;
+      const suggested = incrementTicketNo(live) || suggestNextPaperTicketNo(locationId);
+      // Still only ever fills a box that is STILL blank — staff may have
+      // typed the real number while this was in flight, and that wins.
+      if (suggested) setPaperTicketNo((cur) => (cur ? cur : suggested));
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationId, type]);
 
@@ -634,7 +652,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       let dupMatch = null;
       try {
         dupMatch = await withTimeout(
-          api.findTicketByPaperTicketNo({ locationId, paperTicketNo: trimmedTicketNo }),
+          // [2026-09-12] findAnyByPaperTicketNo, not findTicketByPaperTicketNo
+          // — this used to look only at other weighbridge tickets, so a
+          // number already sitting on a manually-entered Buy/Sell could be
+          // reused here with nothing said. One paper booklet, one check.
+          api.findAnyByPaperTicketNo({ locationId, paperTicketNo: trimmedTicketNo }),
           3500,
           null
         );
@@ -647,10 +669,13 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         // in api.js for why: an extra space typed in the middle of the
         // number is invisible on screen but used to slip past this exact
         // check.
+        const sameNo = (v) =>
+          (normalizePaperTicketNo(v) || "").toLowerCase() === trimmedTicketNo.toLowerCase();
         dupMatch = getCachedTickets().find(
-          (t) => t.location_id === locationId &&
-            (normalizePaperTicketNo(t.paper_ticket_no) || "").toLowerCase() === trimmedTicketNo.toLowerCase()
-        );
+          (t) => t.location_id === locationId && sameNo(t.paper_ticket_no)
+        ) || getCachedTransactions().find(
+          (t) => t.location_id === locationId && sameNo(t.paper_ticket_no)
+        ) || null;
       }
       if (dupMatch) {
         setActiveWarning({ kind: "duplicate", ticketNo: trimmedTicketNo, match: dupMatch });
@@ -1021,7 +1046,11 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
       let dupMatch = null;
       try {
         dupMatch = await withTimeout(
-          api.findTicketByPaperTicketNo({ locationId: ticket.location_id, paperTicketNo: trimmedTicketNo, excludeId: ticket.id }),
+          // [2026-09-12] Both tables — see the comment at the New Ticket
+          // check above.
+          api.findAnyByPaperTicketNo({
+            locationId: ticket.location_id, paperTicketNo: trimmedTicketNo, excludeTicketId: ticket.id,
+          }),
           3500,
           null
         );
@@ -1029,10 +1058,13 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
         dupMatch = null;
       }
       if (!dupMatch) {
+        const sameNo = (v) =>
+          (normalizePaperTicketNo(v) || "").toLowerCase() === trimmedTicketNo.toLowerCase();
         dupMatch = getCachedTickets().find(
-          (t) => t.id !== ticket.id && t.location_id === ticket.location_id &&
-            (normalizePaperTicketNo(t.paper_ticket_no) || "").toLowerCase() === trimmedTicketNo.toLowerCase()
-        );
+          (t) => t.id !== ticket.id && t.location_id === ticket.location_id && sameNo(t.paper_ticket_no)
+        ) || getCachedTransactions().find(
+          (t) => t.location_id === ticket.location_id && sameNo(t.paper_ticket_no)
+        ) || null;
       }
       if (dupMatch) {
         setActiveWarning({ kind: "duplicate", ticketNo: trimmedTicketNo, match: dupMatch });

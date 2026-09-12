@@ -1232,17 +1232,70 @@ const rawApi = {
   // making a Buy ticket, the other a Sell — since neither device's local
   // memory knew what the other had just entered. Used to suggest the next
   // number in New Ticket; never blocks anything by itself.
+  //
+  // [2026-09-12] NOW READS BOTH TABLES. It only ever looked at
+  // `weighing_tickets`, so a station whose last few loads were typed
+  // straight into New Buy/New Sell (the manual form) would be told to
+  // carry on from a number the booklet had already moved well past. One
+  // paper booklet is one sequence; which screen a load happened to be
+  // recorded on is irrelevant to what number comes next.
   async getLatestPaperTicketNo(locationId) {
     if (!locationId) return null;
-    const { data, error } = await supabase
-      .from("weighing_tickets")
-      .select("paper_ticket_no, created_at")
-      .eq("location_id", locationId)
-      .not("paper_ticket_no", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (error) throw error;
-    return (data && data[0]?.paper_ticket_no) || null;
+    const pick = async (table) => {
+      const { data, error } = await supabase
+        .from(table)
+        .select("paper_ticket_no, created_at")
+        .eq("location_id", locationId)
+        .not("paper_ticket_no", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (error) throw error;
+      return (data && data[0]) || null;
+    };
+    const [fromTickets, fromTransactions] = await Promise.all([
+      pick("weighing_tickets"),
+      pick("transactions"),
+    ]);
+    if (!fromTickets) return fromTransactions?.paper_ticket_no || null;
+    if (!fromTransactions) return fromTickets.paper_ticket_no || null;
+    // Whichever was written most recently is the one the booklet is on.
+    return (new Date(fromTransactions.created_at) > new Date(fromTickets.created_at)
+      ? fromTransactions.paper_ticket_no
+      : fromTickets.paper_ticket_no) || null;
+  },
+
+  // [2026-09-12] ONE BOOKLET, ONE CHECK.
+  //
+  // Until now there were two separate duplicate checks that never spoke to
+  // each other: findTicketByPaperTicketNo looked only at weighing_tickets,
+  // findTransactionByPaperTicketNo only at transactions. A number used on
+  // the weighbridge board could therefore be reused on a manually-entered
+  // Buy/Sell, and neither screen would say a word.
+  //
+  // That is not hypothetical. JOMNOUM CN 000560 was on Bory's live ticket
+  // of 7 September and was then typed again onto hen's 9 September entry
+  // during the re-entry after the station PC failed. Same station, same
+  // booklet, same number, two records, no warning anywhere.
+  //
+  // The paper booklet does not know which screen a load was recorded on.
+  // Neither should this. Returns the first match found in either table, or
+  // null. `kind` tells the caller what it collided with so the warning can
+  // say something useful.
+  async findAnyByPaperTicketNo({ locationId, paperTicketNo, excludeTicketId, excludeTransactionId }) {
+    const trimmed = normalizePaperTicketNo(paperTicketNo) || "";
+    if (!locationId || !trimmed) return null;
+    const [onTicket, onTransaction] = await Promise.all([
+      this.findTicketByPaperTicketNo({ locationId, paperTicketNo: trimmed, excludeId: excludeTicketId })
+        .catch(() => null),
+      this.findTransactionByPaperTicketNo({ locationId, paperTicketNo: trimmed, excludeId: excludeTransactionId })
+        .catch(() => null),
+    ]);
+    // A finalized ticket and its own transaction share a number by design,
+    // so report the transaction when both exist — it is the record that
+    // survives, and the one staff can actually go and look at.
+    if (onTransaction) return { ...onTransaction, kind: "transaction" };
+    if (onTicket) return { ...onTicket, kind: "ticket" };
+    return null;
   },
 
   // [2026-09-04] Same idea as findTicketByPaperTicketNo above, but against
