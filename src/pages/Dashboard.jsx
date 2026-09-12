@@ -668,7 +668,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
           }
           t={t}
           onClose={() => setSettleLoc(null)}
-          onSubmit={async ({ newStockKg, reason, note, pricePerKg }) => {
+          onSubmit={async ({ newStockKg, reason, note, pricePerKg, effectiveDate }) => {
             await api.recordStockAdjustment({
               locationId: settleLoc.loc.id,
               previousStockKg: Number(settleLoc.loc.current_stock_kg) || 0,
@@ -677,6 +677,8 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
               note,
               userId: session?.user?.id,
               pricePerKg,
+              // Which day it counts against — see SettleDifferenceModal.
+              effectiveDate,
             });
             setSettleLoc(null);
             // Full reload rather than patching the row by hand: the
