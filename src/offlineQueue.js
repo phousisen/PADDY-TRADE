@@ -2462,7 +2462,16 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
 // every other field, so it survives a save made with no connection, and it
 // is on the cached row below so the Transactions list and the receipt show
 // it immediately rather than only after the sync lands.
-export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, paperTicketNo, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
+// [2026-09-12] grossKg/grossAt/tareKg/tareAt added for the same reason as
+// paperTicketNo above. A manual entry sent only the NET weight, so
+// `gross_kg`/`tare_kg` landed null and the receipt's Weigh In / Weigh Out
+// table printed a dash on every cell — a ticket with a total and no working
+// out. The two weighs were on screen the whole time; they simply were never
+// passed on. They travel in the queued payload like everything else, so a
+// save made with no connection still prints a complete ticket, and they are
+// on the cached row so a stuck save rebuilt by recoverStuckOps carries them
+// back (cachedTxToCreateOpPayload already reads all four).
+export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, paperTicketNo, grossKg, grossAt, tareKg, tareAt, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
   assertNotViewOnly();
   const id = newId();
   const code = genLocalTxCode(type);
@@ -2487,6 +2496,8 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
       qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg,
       staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
       paperTicketNo: paperTicketNo || null,
+      grossKg: grossKg ?? null, grossAt: grossAt || null,
+      tareKg: tareKg ?? null, tareAt: tareAt || null,
     },
   });
   if (!persisted) {
@@ -2501,6 +2512,8 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
       moisture_pct: moisturePct || 0, mixture_pct: mixturePct || 0, outthrow_pct: outthrowPct || 0,
       deduction_kg: deductionKg || 0, staff_fee: staffFeeAmt, note, car_plate: carPlate, driver_name: driverName,
       paper_ticket_no: paperTicketNo || null,
+      gross_kg: grossKg ?? null, gross_at: grossAt || null,
+      tare_kg: tareKg ?? null, tare_at: tareAt || null,
       receipt_photo_url: receiptPhotoUrl || null, payment_proof_url: paymentProofUrl || null, amount,
       station_quantity_kg: type === "SELL" ? quantityKg : null, station_price_per_kg: type === "SELL" ? pricePerKg : null,
       created_by: userId, status: "confirmed", hq_status: "processing",
@@ -2565,6 +2578,13 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
     // away — and so a stuck save rebuilt by recoverStuckOps carries it
     // back into the re-queued op (cachedTxToCreateOpPayload reads it).
     paper_ticket_no: paperTicketNo || null,
+    // The two weighs, so the receipt shown a second after Save already
+    // prints its Weigh In / Weigh Out rows instead of waiting for the sync
+    // to come back and fill them in.
+    gross_kg: grossKg ?? null,
+    gross_at: grossAt || null,
+    tare_kg: tareKg ?? null,
+    tare_at: tareAt || null,
     receipt_photo_url: receiptPhotoUrl || null,
     payment_proof_url: paymentProofUrl || null,
     staff_fee: staffFeeAmt,
