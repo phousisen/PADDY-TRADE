@@ -13,6 +13,7 @@ import {
   withTimeout, resolvePartyIdOffline, resolveProductIdOffline, updatePartyOffline,
   createTransactionOffline, createPaymentOffline, logAuditOffline,
   suggestNextPaperTicketNo, recordPaperTicketNo, getCachedTransactions,
+  incrementTicketNo, getCachedTickets,
 } from "../offlineQueue.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -206,12 +207,30 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   // never overwrite a number staff already typed — and it is only a
   // suggestion (spoiled ticket, different booklet, back-entering an older
   // day) which is why it stays fully editable.
+  //
+  // [2026-09-12] Asks the SERVER first, not just this device.
+  // suggestNextPaperTicketNo only knows what this one browser last typed.
+  // Two people entering loads at the same station on two devices would each
+  // be told to use the same next number, and the app would let them — which
+  // is one of the ways a booklet number ends up on two records. The live
+  // lookup reads both the weighbridge board and manually-entered loads, so
+  // it reflects the booklet rather than one screen's history. Bounded, and
+  // falls back to this device's memory offline or on a slow connection.
   const suggestStationId = isAdmin ? stationId : profile?.location_id;
   useEffect(() => {
-    if (suggestStationId && !paperTicketNo) {
-      const suggested = suggestNextPaperTicketNo(suggestStationId);
-      if (suggested) setPaperTicketNo(suggested);
-    }
+    let cancelled = false;
+    if (!suggestStationId || paperTicketNo) return undefined;
+    (async () => {
+      const live = await withTimeout(
+        api.getLatestPaperTicketNo(suggestStationId).catch(() => null), 3000, null
+      );
+      if (cancelled) return;
+      const suggested = incrementTicketNo(live) || suggestNextPaperTicketNo(suggestStationId);
+      // Only ever fills a box that is STILL blank — staff may well have
+      // typed the real number while this was in flight, and that must win.
+      if (suggested) setPaperTicketNo((cur) => (cur ? cur : suggested));
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestStationId]);
 
@@ -332,26 +351,41 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // the same number goes through and the database flags the pair.
     const trimmedTicketNo = normalizePaperTicketNo(paperTicketNo) || "";
     if (trimmedTicketNo && dupWarn?.ticketNo !== trimmedTicketNo) {
+      // [2026-09-12] Checks BOTH the weighbridge board and already-recorded
+      // transactions, not just transactions. One paper booklet does not care
+      // which screen a load was entered on, and looking at only half of it
+      // is how JOMNOUM CN 000560 ended up on Bory's live ticket of 7 Sept
+      // AND on hen's typed entry of the 9th with no warning shown.
       let dupMatch = null;
       if (navigator.onLine) {
         try {
           dupMatch = await withTimeout(
-            api.findTransactionByPaperTicketNo({ locationId: effectiveStationId, paperTicketNo: trimmedTicketNo }),
+            api.findAnyByPaperTicketNo({ locationId: effectiveStationId, paperTicketNo: trimmedTicketNo }),
             3500, null
           );
         } catch { dupMatch = null; }
       }
       if (!dupMatch) {
-        dupMatch = getCachedTransactions().find(
-          (tx) => tx.location_id === effectiveStationId &&
-            (normalizePaperTicketNo(tx.paper_ticket_no) || "").toLowerCase() === trimmedTicketNo.toLowerCase()
-        ) || null;
+        // Offline, or the live check timed out. This device's own caches
+        // are the fallback — again both of them, for the same reason.
+        const sameNo = (v) =>
+          (normalizePaperTicketNo(v) || "").toLowerCase() === trimmedTicketNo.toLowerCase();
+        const cachedTx = getCachedTransactions().find(
+          (tx) => tx.location_id === effectiveStationId && sameNo(tx.paper_ticket_no)
+        );
+        const cachedTicket = !cachedTx && getCachedTickets().find(
+          (tk) => tk.location_id === effectiveStationId && sameNo(tk.paper_ticket_no)
+        );
+        dupMatch = cachedTx
+          ? { ...cachedTx, kind: "transaction" }
+          : (cachedTicket ? { ...cachedTicket, kind: "ticket" } : null);
       }
       if (dupMatch) {
         setDupWarn({
           ticketNo: trimmedTicketNo,
           code: dupMatch.code || null,
           partyName: dupMatch.party_name || dupMatch.partyName || null,
+          kind: dupMatch.kind === "ticket" ? "ticket" : "transaction",
         });
         return;
       }
@@ -612,6 +646,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               {dupWarn ? (
                 <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
                   Ticket <b>{dupWarn.ticketNo}</b> has already been used at this station
+                  {dupWarn.kind === "ticket" ? " — on a weighbridge ticket" : ""}
                   {dupWarn.code ? ` — ${dupWarn.code}` : ""}{dupWarn.partyName ? `, ${dupWarn.partyName}` : ""}.
                   Check the book. If the number really is right, press Save again and it will go through — both
                   entries will be marked so they can be looked at later.

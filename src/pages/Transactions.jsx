@@ -477,7 +477,10 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
       let dupMatch = null;
       try {
         dupMatch = await withTimeout(
-          api.findTransactionByPaperTicketNo({ locationId: locationId || tx.location_id, paperTicketNo: trimmedTicketNo, excludeId: tx.id }),
+          // [2026-09-12] Both tables — a number already on a weighbridge
+          // ticket could be typed in here with nothing said. See
+          // findAnyByPaperTicketNo in api.js.
+          api.findAnyByPaperTicketNo({ locationId: locationId || tx.location_id, paperTicketNo: trimmedTicketNo, excludeTransactionId: tx.id }),
           3500,
           null
         );
