@@ -813,6 +813,95 @@ const rawApi = {
     return data;
   },
 
+  // ---- Finance Setup ------------------------------------------------------
+  // [2026-09-14] The figures the financial statements need that the
+  // weighbridge can never work out on its own: who owns what share of a
+  // station, what the business owns that wears out, and the cash that was in
+  // the safe before the system started. See migration_finance_setup.sql.
+  //
+  // Every one of these is allowed to be absent. A missing row is not an
+  // error and is never turned into a zero — statements.js reads it as "not
+  // entered" and the reports print it that way, because zero would be a claim
+  // nobody made.
+
+  // A partner's ownership share OF A STATION. Separate from their capital,
+  // deliberately: at Pong Ro the split does not follow the money put in.
+  async updatePartnerShare(partnerId, sharePct) {
+    const value = sharePct === "" || sharePct === null || sharePct === undefined
+      ? null : Number(sharePct);
+    const { data, error } = await supabase
+      .from("partners")
+      .update({ share_pct: value })
+      .eq("id", partnerId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async getFixedAssets() {
+    // Paged like everything else — an asset register is small today, but the
+    // 1,000-row default is exactly the trap this codebase has been bitten by
+    // before (see the project log), and a silently truncated register would
+    // understate depreciation forever without anything looking wrong.
+    const data = await fetchAll(
+      () => supabase.from("fixed_assets").select("*, locations(name)"),
+      { sort: desc("in_service_date", "created_at") });
+    return data.map((a) => ({ ...a, stationName: a.locations?.name || "—" }));
+  },
+
+  async createFixedAsset({ locationId, name, category, cost, usefulLifeYears, inServiceDate, note, userId }) {
+    const { data, error } = await supabase
+      .from("fixed_assets")
+      .insert({
+        location_id: locationId, name, category: category || null,
+        cost: Number(cost), useful_life_years: Number(usefulLifeYears),
+        in_service_date: inServiceDate, note: note || null, created_by: userId,
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async deleteFixedAsset(id) {
+    const { error } = await supabase.from("fixed_assets").delete().eq("id", id);
+    if (error) throw error;
+  },
+
+  // Returns a map keyed by location id, which is the shape statements.js
+  // wants. A station with no row simply is not in the map, and every figure
+  // for it reads as not entered.
+  async getFinanceSettings() {
+    const { data, error } = await supabase.from("finance_settings").select("*");
+    if (error) throw error;
+    const map = {};
+    for (const row of data || []) map[row.location_id] = row;
+    return map;
+  },
+
+  async saveFinanceSettings({ locationId, openingCash, openingCashDate, taxRatePct, interestRatePct, note, userId }) {
+    // An empty box means "still not entered", so it is written back as NULL
+    // rather than 0 — the difference is the whole point of this table.
+    const n = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+    const { data, error } = await supabase
+      .from("finance_settings")
+      .upsert({
+        location_id: locationId,
+        opening_cash: n(openingCash),
+        opening_cash_date: openingCashDate || null,
+        tax_rate_pct: n(taxRatePct),
+        interest_rate_pct: n(interestRatePct),
+        note: note || null,
+        updated_by: userId,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "location_id" })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
   // Bank loans (outside lenders) at a location — a flat borrow/repay
   // ledger, the same style as the payments table. Admin-only.
   async getBankLoans() {

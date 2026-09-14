@@ -88,16 +88,33 @@ export function computeFinancials({
   // end. This is what gives a real cost of goods sold and a real inventory
   // value — see periodBook.js for why the average and not the day's price.
   // -------------------------------------------------------------------------
-  const days = buildDays({
-    txs: active,
-    payments: expensesAll,
-    adjustments: adjustments.filter(
-      (a) => inScope(a.location_id) && notAfterEnd(String(a.created_at || "").slice(0, 10))),
-    locationIds: [...stationIds],
-  });
-  const periodDays = days.filter((d) => inPeriod(d.date));
-  const period = rollup(periodDays);
-  const toDate = rollup(days);
+  // [2026-09-14] EACH STATION IS POOLED ON ITS OWN, then added — the same fix
+  // statements.js carries, for the same reason. Reang Kesey's shed and
+  // Jomnoum's shed are two different piles of paddy bought at two different
+  // prices, and paddy does not move between them; one pooled average charges
+  // one station's sales partly at another's cost. Overview and the Balance
+  // Sheet read from different modules, so the fix has to exist in both or the
+  // two screens disagree the moment more than one station is selected.
+  const scopedAdj = adjustments.filter(
+    (a) => inScope(a.location_id) && notAfterEnd(String(a.created_at || "").slice(0, 10)));
+  const perStation = [...stationIds].map((id) => buildDays({
+    txs: active.filter((t) => t.location_id === id),
+    payments: expensesAll.filter((p) => p.location_id === id),
+    adjustments: scopedAdj.filter((a) => a.location_id === id),
+    locationIds: [id],
+  }));
+  const add = (rs) => {
+    if (rs.length === 1) return rs[0];
+    const o = {};
+    for (const k of Object.keys(rs[0] || {})) o[k] = rs.reduce((s, r) => s + (Number(r[k]) || 0), 0);
+    // A rate is re-derived from the pooled figures, never summed.
+    o.costPerKg = o.closingKg > 0 ? o.closingValue / o.closingKg : 0;
+    o.buyPricePerKg = o.boughtKg > 0 ? o.spent / o.boughtKg : 0;
+    o.days = Math.max(0, ...rs.map((r) => Number(r.days) || 0));
+    return o;
+  };
+  const period = add(perStation.map((ds) => rollup(ds.filter((d) => inPeriod(d.date)))));
+  const toDate = add(perStation.map((ds) => rollup(ds)));
 
   const totalSell = periodTxs.filter((t) => t.type === "SELL").reduce((s, t) => s + num(t.amount), 0);
   const totalBuy = periodTxs.filter((t) => t.type === "BUY").reduce((s, t) => s + num(t.amount), 0);
