@@ -26,20 +26,20 @@ const DW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 // ---- formatting -----------------------------------------------------------
 // Decimals sit in a lighter grey so the eye lands on the whole kilos.
-function Kg({ v }) {
-  if (!v) return <span className="text-slate-200">—</span>;
+function Kg({ v, dark }) {
+  if (!v) return <span className={dark ? "text-brand-300" : "text-slate-200"}>—</span>;
   const s = v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const i = s.lastIndexOf(".");
-  return <>{s.slice(0, i)}<span className="text-slate-300">{s.slice(i)}</span></>;
+  return <>{s.slice(0, i)}<span className={dark ? "text-brand-300" : "text-slate-300"}>{s.slice(i)}</span></>;
 }
-function Riel({ v }) {
-  if (!v) return <span className="text-slate-200">—</span>;
+function Riel({ v, dark }) {
+  if (!v) return <span className={dark ? "text-brand-300" : "text-slate-200"}>—</span>;
   return <>{Math.round(v).toLocaleString("en-US")}</>;
 }
-function Signed({ v }) {
-  if (!v) return <span className="text-slate-200">—</span>;
+function Signed({ v, dark }) {
+  if (!v) return <span className={dark ? "text-brand-300" : "text-slate-200"}>—</span>;
   return (
-    <span className={v >= 0 ? "font-semibold text-brand-700" : "font-semibold text-orange-700"}>
+    <span className={dark ? "font-semibold text-white" : v >= 0 ? "font-semibold text-brand-700" : "font-semibold text-orange-700"}>
       {v >= 0 ? "+" : "−"} {Math.abs(Math.round(v)).toLocaleString("en-US")}
     </span>
   );
@@ -73,6 +73,7 @@ const STK = "bg-sky-700/[0.04]";
 
 function LedgerRow({ label, sub, t, variant, onClick, onLoads, open }) {
   const tot = variant === "total";
+  const D = tot;   // dark row — placeholders need a lighter grey to be seen
   const wk = variant === "week";
   const cls = (extra = "") =>
     `${TD} ${tot ? "!bg-brand-700 !text-white font-semibold !border-0" : wk ? "!bg-slate-50/70 font-semibold text-slate-900 border-t border-slate-200" : open ? "!bg-brand-50" : ""} ${tot ? "" : extra}`;
@@ -89,7 +90,7 @@ function LedgerRow({ label, sub, t, variant, onClick, onLoads, open }) {
 
   return (
     <tr onClick={onClick} className={onClick ? "cursor-pointer hover:[&>td]:bg-brand-50" : ""}>
-      <td className={`${cls()} sticky left-0 z-[2] text-left ${tot ? "" : wk ? "!bg-slate-50/70" : open ? "!bg-brand-50" : "bg-white"}`}>
+      <td className={`${cls()} sticky left-0 z-[2] border-r border-slate-200 text-left ${tot ? "!border-r-brand-600" : wk ? "!bg-slate-50/70" : open ? "!bg-brand-50" : "bg-white"}`}>
         <span className="flex flex-col">
           <b className="text-[13px] font-semibold tracking-tight">{label}</b>
           {sub && <small className={`text-[10.5px] ${tot ? "text-brand-200" : "text-slate-400"}`}>{sub}</small>}
@@ -97,26 +98,26 @@ function LedgerRow({ label, sub, t, variant, onClick, onLoads, open }) {
       </td>
 
       <td className={`${cls(BUY)} text-center`}><Loads n={t.buyLoads} title={`${t.truck} truck · ${t.koyun} koyun · ${t.tractor} tractor${t.otherVeh ? ` · ${t.otherVeh} other` : ""} — click to see them`} /></td>
-      <td className={cls(BUY)}><Kg v={t.boughtKg} /></td>
-      <td className={cls(BUY)}>{t.buyPricePerKg ? t.buyPricePerKg.toFixed(2) : <span className="text-slate-200">—</span>}</td>
-      <td className={cls(BUY)}><Riel v={t.spent} /></td>
+      <td className={cls(BUY)}><Kg v={t.boughtKg} dark={D} /></td>
+      <td className={cls(BUY)}>{t.buyPricePerKg ? t.buyPricePerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(BUY)}><Riel v={t.spent} dark={D} /></td>
 
       <td className={`${cls(SELL)} text-center border-l border-slate-200`}><Loads n={t.sellLoads} title="click to see the loads" /></td>
-      <td className={cls(SELL)}><Kg v={t.soldKg} /></td>
-      <td className={cls(SELL)}><Riel v={t.received} /></td>
+      <td className={cls(SELL)}><Kg v={t.soldKg} dark={D} /></td>
+      <td className={cls(SELL)}><Riel v={t.received} dark={D} /></td>
 
-      <td className={`${cls()} border-l border-slate-200`}><Riel v={t.staff} /></td>
-      <td className={cls()}><Riel v={t.otherExp} /></td>
-      <td className={cls()}><Riel v={t.expenses} /></td>
+      <td className={`${cls()} border-l border-slate-200`}><Riel v={t.staff} dark={D} /></td>
+      <td className={cls()}><Riel v={t.otherExp} dark={D} /></td>
+      <td className={cls()}><Riel v={t.expenses} dark={D} /></td>
 
-      <td className={`${cls(STK)} border-l border-slate-200`}>{t.lostKg ? <Signed v={t.lostKg} /> : <span className="text-slate-200">—</span>}</td>
-      <td className={cls(STK)}>{t.lostValue ? <Signed v={t.lostValue} /> : <span className="text-slate-200">—</span>}</td>
-      <td className={cls(STK)}><Kg v={t.closingKg} /></td>
-      <td className={cls(STK)}>{t.costPerKg ? t.costPerKg.toFixed(2) : <span className="text-slate-200">—</span>}</td>
-      <td className={cls(STK)}><Riel v={t.closingValue} /></td>
+      <td className={`${cls(STK)} border-l border-slate-200`}>{t.lostKg ? <Signed v={t.lostKg} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}>{t.lostValue ? <Signed v={t.lostValue} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}><Kg v={t.closingKg} dark={D} /></td>
+      <td className={cls(STK)}>{t.costPerKg ? t.costPerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}><Riel v={t.closingValue} dark={D} /></td>
 
-      <td className={`${cls()} border-l border-slate-200`}><Signed v={t.profit} /></td>
-      <td className={cls()}><Signed v={t.cash} /></td>
+      <td className={`${cls()} border-l border-slate-200`}><Signed v={t.profit} dark={D} /></td>
+      <td className={cls()}><Signed v={t.cash} dark={D} /></td>
     </tr>
   );
 }
@@ -288,7 +289,7 @@ export default function DailyBook() {
   const GH = "px-3.5 pb-1.5 pt-2.5 text-center text-[9.5px] font-bold uppercase tracking-[0.14em]";
 
   return (
-    <div className="p-4 md:p-6">
+    <main className="min-w-0 flex-1 overflow-y-auto bg-paper p-4 md:p-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <h1 className="text-[15px] font-semibold text-slate-900">Daily Book</h1>
         <span className="rounded-md bg-gold-50 px-2 py-0.5 text-[10.5px] font-semibold text-gold-700 ring-1 ring-gold-300">
@@ -334,15 +335,15 @@ export default function DailyBook() {
             <table className="w-full border-separate border-spacing-0 text-[12.5px] tabular-nums">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-[3] bg-white" />
+                  <th className="sticky left-0 z-[3] border-r border-slate-200 bg-white" />
                   <th className={`${GH} ${BUY} text-brand-700`} colSpan={4}>Buy</th>
-                  <th className={`${GH} ${SELL} text-orange-700`} colSpan={3}>Sell</th>
-                  <th className={GH} colSpan={3}>Expenses</th>
-                  <th className={`${GH} ${STK} text-sky-800`} colSpan={5}>Stock</th>
-                  <th className={GH} colSpan={2}>Result</th>
+                  <th className={`${GH} ${SELL} border-l border-slate-200 text-orange-700`} colSpan={3}>Sell</th>
+                  <th className={`${GH} border-l border-slate-200`} colSpan={3}>Expenses</th>
+                  <th className={`${GH} ${STK} border-l border-slate-200 text-sky-800`} colSpan={5}>Stock</th>
+                  <th className={`${GH} border-l border-slate-200`} colSpan={2}>Result</th>
                 </tr>
                 <tr>
-                  <th className="sticky left-0 z-[3] border-b border-slate-200 bg-white px-3.5 pb-2.5 text-left text-[10px] font-semibold text-slate-400">Period</th>
+                  <th className="sticky left-0 z-[3] border-b border-r border-slate-200 bg-white px-3.5 pb-2.5 text-left text-[10px] font-semibold text-slate-400">Period</th>
                   <th className={`${TH} ${BUY} border-b border-slate-200 text-center`}>Loads</th>
                   <th className={`${TH} ${BUY} border-b border-slate-200`}>Weight kg</th>
                   <th className={`${TH} ${BUY} border-b border-slate-200`}>Price ៛</th>
@@ -421,6 +422,6 @@ export default function DailyBook() {
         Nothing here can be typed or edited — change a transaction and this row, its week, its month and the
         year all recalculate.
       </p>
-    </div>
+    </main>
   );
 }
