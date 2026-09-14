@@ -67,14 +67,19 @@ export default function Reports({ initialTab = "overview" }) {
       // which then filtered it — so the download was the size of the whole
       // business no matter what period you had chosen.
       const range = queryRange({ selectedLocationIds, startDate, endDate });
-      const [txs, payments, capitalEntries, loanEntries] = await Promise.all([
-        api.getTransactions(range),
-        api.getPayments(range),
+      // [2026-09-14] `from` dropped on purpose: the balance-sheet figures in
+      // this workbook are AS AT the period end and need the history behind
+      // them — see src/financials.js. The period slice is taken there.
+      const asAt = { ...range, from: undefined };
+      const [txs, payments, capitalEntries, loanEntries, adjustments] = await Promise.all([
+        api.getTransactions(asAt),
+        api.getPayments(asAt),
         api.getPartnerCapitalEntries().catch(() => []),
         api.getBankLoans().catch(() => []),
+        api.getStockAdjustments({ locationId: asAt.locationId, endDate }).catch(() => []),
       ]);
       downloadReportWorkbook(
-        { txs, payments, capitalEntries, loanEntries, stations: locations, selectedLocationIds, startDate, endDate },
+        { txs, payments, adjustments, capitalEntries, loanEntries, stations: locations, selectedLocationIds, startDate, endDate },
         `PaddyTrade_Report_${cambodiaTimestamp()}.xlsx`
       );
     } catch (err) {

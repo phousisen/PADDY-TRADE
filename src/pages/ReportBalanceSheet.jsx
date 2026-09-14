@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Scale, Printer } from "lucide-react";
 import { getAccurateNow } from "../supabaseClient.js";
 import { api } from "../api.js";
-import { computeFinancials } from "./ReportOverview.jsx";
+import { computeFinancials } from "../financials.js";
 import { ReportCard, SectionLabel, Row, TotalBox, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
@@ -81,26 +81,32 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
     .filter((p) => !endDate || p.pay_date <= endDate);
   const filteredExpenses = selectedLocationIds.length ? activeExpenses.filter((p) => selectedLocationIds.includes(p.location_id)) : activeExpenses;
 
+  // This page already fetches all-time data, which is what a point-in-time
+  // balance needs. computeFinancials takes the period slice for the P&L lines
+  // and cuts everything else at endDate itself.
   const calc = useMemo(
-    () => computeFinancials(filteredTxs, filteredStations, capitalEntries, loanEntries, payments, filteredExpenses),
-    [filteredTxs, filteredStations, capitalEntries, loanEntries, payments, filteredExpenses]
+    () => computeFinancials({
+      asAtTxs: txs, payments, adjustments, stations: filteredStations,
+      capitalEntries, loanEntries, startDate, endDate,
+    }),
+    [txs, payments, adjustments, filteredStations, capitalEntries, loanEntries, startDate, endDate]
   );
 
   const byLocation = useMemo(() => {
     return filteredStations.map((s) => {
-      const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-      const stationExpenses = activeExpenses.filter((p) => p.location_id === s.id);
-      const c = computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments, stationExpenses);
+      const c = computeFinancials({
+        asAtTxs: txs, payments, adjustments, stations: [s],
+        capitalEntries, loanEntries, startDate, endDate,
+      });
       return { station: s, ...c };
     });
-  }, [activeTxs, activeExpenses, filteredStations, capitalEntries, loanEntries, payments]);
+  }, [txs, payments, adjustments, filteredStations, capitalEntries, loanEntries, startDate, endDate]);
 
   const rangeLabel = !startDate && !endDate ? "All time" : `${startDate || "…"} to ${endDate || "…"}`;
   // Is the stock figure a past position or today's? Say so, rather than
   // leaving the reader to assume.
   const todayKh = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Phnom_Penh" }).format(getAccurateNow());
   const isAsAtPast = !!endDate && endDate < todayKh;
-  const balances = Math.abs(calc.totalAssets - (calc.totalLiabilities + calc.equity)) < 1;
 
   return (
     <div>
@@ -123,7 +129,9 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
         <SectionLabel>Assets</SectionLabel>
         <Row label={isAsAtPast ? `Inventory on hand (as at ${endDate})` : "Inventory on hand"} value={fmtRiel(calc.inventoryValue)} indent />
         <Row label="Accounts Receivable" value={fmtRiel(calc.accountsReceivable)} indent />
-        <Row label="Cash (estimate)" value={fmtRiel(Math.max(0, calc.cashEstimate))} indent />
+        {/* [2026-09-14] No longer floored at zero — an overdrawn business
+            used to read as having no cash rather than as owing. */}
+        <Row label="Cash (derived)" value={fmtRiel(calc.cashEstimate)} indent tone={calc.cashEstimate < 0 ? "neg" : undefined} />
         <Row label="Total Assets" value={fmtRiel(calc.totalAssets)} bold />
 
         <SectionLabel>Liabilities</SectionLabel>
@@ -137,8 +145,16 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
         <TotalBox><Row label="Total Equity" value={fmtRiel(calc.equity)} bold /></TotalBox>
 
         <TotalBox><Row label="Total Liabilities + Equity" value={fmtRiel(calc.totalLiabilities + calc.equity)} bold /></TotalBox>
-        {!balances && (
-          <p className="mt-2 text-[11.5px] text-amber-600">Note: this doesn't balance exactly against Total Assets — check for data still loading.</p>
+        {/* [2026-09-14] Retained Earnings used to be the figure that made this
+            balance. It is now accumulated profit, computed the same way this
+            period's profit is — so the two sides can genuinely differ, and the
+            gap is stated instead of being absorbed into equity. */}
+        {Math.abs(calc.unreconciled) > 1 && (
+          <div className="mt-3 rounded-lg border border-gold-300 bg-gold-50 px-3.5 py-3 text-[11.5px] leading-relaxed text-gold-700">
+            <b>{fmtRiel(calc.unreconciled)} unexplained.</b> Assets less liabilities and equity. Nothing on this
+            sheet is plugged, so this gap is real: it is almost certainly the cash the business held before the
+            system started, which has never been recorded. Entering an opening balance closes it.
+          </div>
         )}
       </ReportCard>
 
@@ -167,7 +183,11 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
       )}
 
       <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
-        Simplified model: inventory is valued at average purchase cost, cost of goods sold is approximated from total purchases, and Retained Earnings is whatever's left of Equity after subtracting real Partner Capital — it isn't a full double-entry set of books.
+        Inventory is valued at weighted average cost — what the paddy in the shed actually cost, mixed across
+        the days it was bought. Cost of goods sold is the cost of the paddy that shipped, not everything
+        purchased. Retained Earnings is accumulated profit since the system began. Balances are as at the end
+        of the chosen period; the profit figures belong to the period itself. Depreciation, interest and tax
+        are not yet included — they need the Finance Setup screens.
       </div>
     </div>
   );
