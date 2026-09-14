@@ -5,6 +5,7 @@ import { api } from "./api.js";
 import { startAutoSync } from "./offlineQueue.js";
 import Login from "./pages/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
+import DailyBook from "./pages/DailyBook.jsx";
 import MobileNav from "./components/MobileNav.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import StockInventory from "./pages/StockInventory.jsx";
@@ -172,6 +173,10 @@ export default function App() {
     if (page === "dashboard") return <Dashboard setPage={setPage} setSelectedLocationId={setSelectedLocationId} />;
     if (page === "stock") return <StockInventory />;
     if (page === "transactions") return <Transactions setPage={setPage} />;
+    // [2026-09-14] Reports → Daily Book. Read-only and derived entirely from
+    // transactions/payments/stock counts, so it needs no permission of its
+    // own: anyone who can see Transactions can see the same days summarised.
+    if (page === "daily-book") return <DailyBook />;
     if (page === "tickets") return <WeighingTickets />;
     if (page === "new-buy") return !isViewOnly ? <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
     if (page === "new-sell") return !isViewOnly ? <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
