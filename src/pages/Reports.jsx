@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank, TrendingDown } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank, TrendingDown, FileText, Package, Users, SlidersHorizontal } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -21,6 +21,12 @@ import ReportCashFlow from "./ReportCashFlow.jsx";
 import ReportCapital from "./ReportCapital.jsx";
 import ReportTax from "./ReportTax.jsx";
 import ReportAuditLog from "./ReportAuditLog.jsx";
+// [2026-09-14] The accountant's statements — built on statements.js, which
+// every one of them shares, so they cannot disagree about the same month.
+import ReportIncomeStatement from "./ReportIncomeStatement.jsx";
+import ReportInventory from "./ReportInventory.jsx";
+import ReportShareholders from "./ReportShareholders.jsx";
+import ReportFinanceSetup from "./ReportFinanceSetup.jsx";
 
 
 // Cambodia's calendar today, and the first of the month it falls in — the
@@ -91,16 +97,23 @@ export default function Reports({ initialTab = "overview" }) {
 
   const tabs = [
     { id: "overview", label: "Overview", icon: LayoutGrid },
+    // The three financial statements, in the order they are read and signed.
     { id: "balancesheet", label: "Balance Sheet", icon: Scale },
+    { id: "income", label: "Income Statement", icon: FileText },
+    { id: "cashflow", label: "Cash Flow", icon: Landmark },
+    { id: "inventory", label: "Inventory", icon: Package },
+    { id: "shareholders", label: "Shareholder's Records", icon: Users },
     { id: "purchases", label: "Purchases", icon: ShoppingBag },
     { id: "sales", label: "Sales", icon: TrendingUp },
     { id: "payables", label: "Accounts Payable", icon: HandCoins },
     { id: "receivables", label: "Accounts Receivable", icon: Wallet },
     { id: "stock", label: "Stock", icon: Boxes },
     { id: "shrinkage", label: "Stock Loss", icon: TrendingDown },
-    { id: "cashflow", label: "Cash Flow", icon: Landmark },
     { id: "capital", label: "Capital & Loans", icon: PiggyBank },
     { id: "tax", label: "Tax", icon: ReceiptText },
+    // Where the figures the weighbridge cannot know get typed in. Admin only,
+    // and gated again by RLS — see migration_finance_setup.sql.
+    ...(isAdmin ? [{ id: "financesetup", label: "Finance Setup", icon: SlidersHorizontal }] : []),
     ...(isAdmin ? [{ id: "auditlog", label: "Activity Log", icon: History }] : []),
   ];
 
@@ -145,6 +158,10 @@ export default function Reports({ initialTab = "overview" }) {
       <main className="flex-1 overflow-y-auto bg-paper p-6">
         {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
         {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "income" && <ReportIncomeStatement selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "inventory" && <ReportInventory selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "shareholders" && <ReportShareholders selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "financesetup" && isAdmin && <ReportFinanceSetup />}
         {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "sales" && <ReportSales selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "payables" && <ReportPayables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}

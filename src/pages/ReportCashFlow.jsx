@@ -1,269 +1,109 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
-import { api } from "../api.js";
-import { queryRange, rangeKey } from "../reportQuery.js";
-import { useAuth } from "../AuthContext.jsx";
-import Receipt from "./Receipt.jsx";
-import { getAccurateNow } from "../supabaseClient.js";
-import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td } from "../components/ReportUI.jsx";
-import { IS_INFLOW } from "../cashDirection.js";
+// Reports → Cash Flow.
+//
+// [2026-09-14] Rebuilt onto statements.js: operating, investing, financing,
+// in the shape an accountant expects, from the same arithmetic as the Balance
+// Sheet and the Income Statement.
+//
+// The distinction this page exists to make: PROFIT AND CASH ARE NOT THE SAME
+// NUMBER and are not supposed to be. Profit is what was earned — sales less
+// what the paddy that shipped cost, less expenses. Cash is what moved. A month
+// spent filling the shed earns little and drains cash; a month emptying it does
+// the reverse. The two differ by exactly the change in the value of the shed
+// plus what is owed in each direction, and that reconciliation is shown at the
+// bottom rather than left for the reader to wonder about.
+//
+// Without an opening balance this statement is honest about being a MOVEMENT
+// and not a closing balance — see the note on the page.
 
-function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
-// Cambodia's current calendar date (YYYY-MM-DD), independent of the
-// viewing device's own timezone/clock setting.
-function cambodiaDateStr(d = getAccurateNow()) {
-  const parts = {};
-  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
-    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-// The exact clock time a cash entry was recorded (as opposed to `pay_date`,
-// which is just the business date staff picked and can be back-dated).
-function cambodiaTime(iso) {
-  if (!iso) return "—";
-  return new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", second: "2-digit", hour12: true }).format(new Date(iso));
-}
-
-const TYPE_LABELS = {
-  pay_supplier: "Paid to supplier",
-  receive_customer: "Received from customer",
-  expense: "Expense",
-  transfer: "Fund transfer",
-  journal: "Journal entry",
-  capital_in: "Partner capital in",
-  capital_out: "Partner capital out",
-  loan_in: "Bank loan drawn",
-  loan_out: "Bank loan repaid",
-};
-
-// [2026-09-09] Moved to src/cashDirection.js so the dashboard's cash figure
-// and this report's running balance are computed from ONE table. Re-exported
-// under the same name so everything below reads exactly as it did.
-
-
-function AddEntryForm({ profile, onAdd }) {
-  const [open, setOpen] = useState(false);
-  const [type, setType] = useState("expense");
-  const [amount, setAmount] = useState("");
-  const [memo, setMemo] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  async function submit(e) {
-    e.preventDefault();
-    if (!amount || parseFloat(amount) <= 0) return;
-    setSaving(true);
-    await onAdd({ type, amount: parseFloat(amount), memo });
-    setSaving(false);
-    setAmount("");
-    setMemo("");
-    setOpen(false);
-  }
-
-  if (!open) {
-    return (
-      <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-        <Plus size={14} /> Add Cash Entry
-      </button>
-    );
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4">
-      <div>
-        <label className="mb-1 block text-xs text-slate-500">Type</label>
-        <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-          <option value="expense">Expense (money out)</option>
-          <option value="transfer">Fund Transfer</option>
-          <option value="journal">Journal Adjustment</option>
-        </select>
-      </div>
-      <div>
-        <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
-        <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-      </div>
-      <div className="flex-1 min-w-[160px]">
-        <label className="mb-1 block text-xs text-slate-500">Note</label>
-        <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. fuel, staff pay" className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-      </div>
-      <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-        {saving ? "Saving..." : "Save"}
-      </button>
-      <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
-        Cancel
-      </button>
-    </form>
-  );
-}
+import { useStatements } from "../useStatements.js";
+import { ReportCard } from "../components/ReportUI.jsx";
+import { Line, StatementHead, ScopeBar, fmt, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportCashFlow({ selectedLocationIds = [], startDate = null, endDate = null }) {
-  const { profile, session } = useAuth();
-  const isAdmin = profile?.role === "admin";
-  const [allPayments, setAllPayments] = useState([]);
-  // Full transaction + party records — used to show "who we paid/received
-  // from" on each row, and to reopen the actual receipt (bank details
-  // included) when a linked row is clicked.
-  const [txById, setTxById] = useState({});
-  const [partyById, setPartyById] = useState({});
-  const [viewingTx, setViewingTx] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const { data, stations, loading, error } = useStatements({ selectedLocationIds, startDate, endDate });
 
-  async function load() {
-    setLoading(true);
-    setLoadError("");
-    try {
-      // [2026-09-10] The payments — which is what this report IS — are
-      // asked of the database for the chosen period and station, exactly
-      // the filter that used to be applied in the browser afterwards.
-      //
-      // The transactions are NOT narrowed, deliberately: they are only a
-      // lookup, so a payment made this month against a sale from last
-      // month can still show the buyer's name and print its receipt.
-      // Narrowing them would blank those rows. That download is the one
-      // thing still unbounded on this screen and wants its own fix.
-      const range = queryRange({ selectedLocationIds, startDate, endDate });
-      const [payData, txData, partyData] = await Promise.all([
-        api.getPayments(isAdmin ? range : { locationId: profile?.location_id, ...range }),
-        api.getTransactions(),
-        api.getParties(),
-      ]);
-      setAllPayments(payData);
-      setTxById(Object.fromEntries(txData.map((t) => [t.id, t])));
-      setPartyById(Object.fromEntries(partyData.map((p) => [p.id, p])));
-    } catch (err) {
-      // Without this, a failed/dropped request silently showed an empty
-      // cash flow — as if nothing had ever moved — instead of saying the
-      // load itself had failed.
-      setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
-    } finally {
-      setLoading(false);
-    }
-  }
-  useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
+  if (loading) return <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">Loading…</div>;
+  if (error) return <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>;
 
-  function openPayment(p) {
-    if (!p.transaction_id) return;
-    const tx = txById[p.transaction_id];
-    if (!tx) return;
-    const party = tx.party_id ? partyById[tx.party_id] : null;
-    setViewingTx({
-      ...tx,
-      bank_name: tx.bank_name || party?.bank_name,
-      bank_account: tx.bank_account || party?.bank_account,
-      bank_qr_url: tx.bank_qr_url || party?.bank_qr_url,
-    });
-  }
-
-  const payments = allPayments
-    .filter((p) => !selectedLocationIds.length || selectedLocationIds.includes(p.location_id))
-    .filter((p) => !startDate || p.pay_date >= startDate)
-    .filter((p) => !endDate || p.pay_date <= endDate)
-    .map((p) => {
-      const tx = p.transaction_id ? txById[p.transaction_id] : null;
-      return { ...p, partyName: tx?.partyName || null, txCode: tx?.code || null };
-    });
-
-  const ledger = useMemo(() => {
-    const sorted = payments.slice().sort((a, b) => (a.pay_date + a.created_at < b.pay_date + b.created_at ? -1 : 1));
-    let balance = 0;
-    return sorted.map((p) => {
-      const isInflow = IS_INFLOW[p.type] ?? false;
-      const signedAmount = isInflow ? Number(p.amount) : -Number(p.amount);
-      balance += signedAmount;
-      return { ...p, signedAmount, balance };
-    }).reverse();
-  }, [payments]);
-
-  const totalIn = payments.filter((p) => IS_INFLOW[p.type] ?? false).reduce((s, p) => s + Number(p.amount), 0);
-  const totalOut = payments.filter((p) => !(IS_INFLOW[p.type] ?? false)).reduce((s, p) => s + Number(p.amount), 0);
-
-  async function addEntry({ type, amount, memo }) {
-    await api.createPayment({
-      type,
-      transactionId: null,
-      locationId: profile.location_id,
-      amount,
-      method: "cash",
-      payDate: cambodiaDateStr(),
-      memo,
-      userId: session.user.id,
-    });
-    load();
-  }
-
-  if (viewingTx) {
-    return (
-      <div className="fixed inset-0 z-50 bg-white">
-        <Receipt tx={viewingTx} onDone={() => setViewingTx(null)} />
-      </div>
-    );
-  }
-
-  const net = totalIn - totalOut;
+  const c = data.cashflow;
+  const i = data.income;
+  const period = startDate && endDate ? `${startDate} to ${endDate}` : "all time";
 
   return (
     <div>
-      {loadError && (
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
-          <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+      <StatementHead
+        title="Cash Flow Statement"
+        scope={stations.length === 1 ? stations[0].name : `${stations.length} stations, consolidated`}
+        period={period}
+      />
+      <ScopeBar stations={stations} />
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
+        <ReportCard>
+          <p className="mb-1 mt-1 text-[10.5px] font-semibold uppercase tracking-wide text-brand-700">Operating activities</p>
+          <Line label="Collected from buyers" value={c.collected} indent />
+          <Line label="Paid to farmers" value={-c.paidOut} indent signed />
+          <Line label="Expenses paid" value={-c.expensesPaid} indent signed />
+          <Line label="Net cash from operating" value={c.cfOperating} total signed />
+
+          <p className="mb-1 mt-5 text-[10.5px] font-semibold uppercase tracking-wide text-brand-700">Investing activities</p>
+          <Line
+            label="Property and equipment bought"
+            hint="assets whose in-service date falls in this period"
+            value={isKnown(c.assetsBought) ? -c.assetsBought : null}
+            why="No asset register yet — Reports → Finance Setup"
+            indent signed
+          />
+          <Line label="Net cash from investing" value={c.cfInvesting} total signed />
+
+          <p className="mb-1 mt-5 text-[10.5px] font-semibold uppercase tracking-wide text-brand-700">Financing activities</p>
+          <Line label="Partner capital contributed" value={c.capitalIn} indent />
+          <Line label="Bank loans drawn, less repaid" value={c.loansIn} indent signed />
+          <Line label="Drawings by partners" value={-c.drawings} indent signed />
+          <Line label="Net cash from financing" value={c.cfFinancing} total signed />
+
+          <Line label="Net movement in cash" value={c.cfNet} grand signed />
+          <Line
+            label="Opening cash balance"
+            hint="what was in the safe when the period began"
+            value={c.openingCash}
+            why="Not entered — Reports → Finance Setup"
+            indent
+          />
+          <Line label="Closing cash balance" value={c.closingCash} total />
+        </ReportCard>
+
+        <div className="space-y-4">
+          {/* The reconciliation that stops the two figures looking like a
+              contradiction. */}
+          <ReportCard title="Profit is not cash" subtitle="and is not meant to be">
+            <Line label="Profit before depreciation, interest and tax" value={i.profitBeforeUnknowns} indent signed />
+            <Line label="Cash from operating" value={c.cfOperating} indent signed />
+            <Line
+              label="Difference"
+              hint="the paddy that moved into or out of the shed, and what is still owed each way"
+              value={isKnown(c.cfOperating) ? i.profitBeforeUnknowns - c.cfOperating : null}
+              total signed
+            />
+          </ReportCard>
+
+          {!isKnown(c.openingCash) && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5 text-[12px] leading-relaxed text-amber-800">
+              <b className="font-semibold">This is a movement, not a balance.</b> Without an opening figure the
+              statement can say how much cash came in and went out — <b className="font-semibold">{fmt(c.cfNet)} ៛</b> this
+              period — but not what is actually in the safe. Entering an opening cash balance per station under
+              Finance Setup turns this into a real closing balance, and closes the unexplained gap on the Balance
+              Sheet at the same time.
+            </div>
+          )}
+
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
+            <b className="font-semibold text-slate-700">A drawing is not an expense.</b> Money a partner takes out
+            reduces equity and reduces cash, but it never touches the Income Statement — so it appears here under
+            financing, and on the Balance Sheet under equity, and nowhere else.
+          </div>
         </div>
-      )}
-
-      <SummaryStrip>
-        <SummaryCell label="Total In" value={fmtRiel(totalIn)} tone="pos" />
-        <SummaryCell label="Total Out" value={fmtRiel(totalOut)} tone="neg" />
-        <SummaryCell label="Net" value={fmtRiel(net)} tone={net >= 0 ? "pos" : "neg"} />
-      </SummaryStrip>
-
-      <div className="mb-4 flex justify-end">
-        {profile?.location_id || isAdmin ? <AddEntryForm profile={profile} onAdd={addEntry} /> : null}
       </div>
-
-      <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
-        "Running Total" only adds up the entries listed below (whatever date range/location you've filtered to) — it is not a real bank account
-        balance and there is no starting/opening balance set anywhere in the system. A big negative number usually just means outgoing payments
-        were recorded in this period without matching money-in entries also being recorded here (for example, capital or loan funds that came in
-        before this date range, or that were received but never logged as a payment). Click any row linked to a transaction to open its receipt.
-      </div>
-
-      <TableCard>
-        <Table>
-          <thead>
-            <tr>
-              <Th>Date</Th>
-              <Th>Time</Th>
-              <Th>Type</Th>
-              <Th>Paid to / Received from</Th>
-              <Th>Note</Th>
-              <Th>Recorded by</Th>
-              <Th num>Amount</Th>
-              <Th num>Running Total</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {ledger.map((p) => (
-              <tr
-                key={p.id}
-                onClick={() => openPayment(p)}
-                title={p.transaction_id ? "Click to view this transaction's receipt" : "Manual entry — not linked to a transaction"}
-                className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${p.transaction_id ? "cursor-pointer" : ""}`}
-              >
-                <Td>{p.pay_date}</Td>
-                <Td>{cambodiaTime(p.created_at)}</Td>
-                <Td>{TYPE_LABELS[p.type] || p.type}</Td>
-                <Td>{p.partyName || "—"}{p.txCode ? <span className="ml-1 text-[11px] text-slate-400">({p.txCode})</span> : null}</Td>
-                <Td>{p.memo || "—"}</Td>
-                <Td>{p.createdByName}</Td>
-                <Td num className={p.signedAmount >= 0 ? "!text-brand-700 !font-semibold" : "!text-rose-600 !font-semibold"}>{p.signedAmount >= 0 ? "+" : ""}{fmtRiel(p.signedAmount)}</Td>
-                <Td num>{fmtRiel(p.balance)}</Td>
-              </tr>
-            ))}
-            {loading && ledger.length === 0 && <tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></tr>}
-            {ledger.length === 0 && !loading && !loadError && <tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No cash movements recorded yet.</td></tr>}
-          </tbody>
-        </Table>
-      </TableCard>
     </div>
   );
 }
