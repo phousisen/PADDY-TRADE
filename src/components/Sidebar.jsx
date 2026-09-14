@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Warehouse, Receipt, Users, MapPin, BarChart3,
-  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Wallet, Activity,
+  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Wallet, Activity, BookOpen,
 } from "lucide-react";
 // ShieldCheck is used twice: the Roles nav entry (System) and Data Check
 // (Inventory & Reports). Same icon, different rows — deliberate: both mean
@@ -52,6 +52,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
           items: [
             { id: "stock", label: t("nav_stock"), icon: Warehouse },
             { id: "transactions", label: t("nav_transactions"), icon: Receipt },
+            { id: "daily-book", label: "Daily Book", icon: BookOpen },
             { id: "reports", label: t("nav_reports"), icon: BarChart3 },
             { id: "expenses", label: "Expenses", icon: Wallet },
           ],
@@ -64,6 +65,10 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
           items: [
             { id: "tickets", label: "Weighing Tickets", icon: Scale },
             { id: "transactions", label: t("nav_transactions"), icon: Receipt },
+            // [2026-09-14] The same days the station already records, summed
+            // by day/week/month with the shed level and the day's profit.
+            // Derived only — nothing on it can be edited.
+            { id: "daily-book", label: "Daily Book", icon: BookOpen },
             ...(canSeeAdminNav ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
           ],
         },
