@@ -21,10 +21,9 @@
 //     already shows) — rather than re-deriving it a second, inconsistent
 //     way. W In/W Out still show the raw gross_kg/tare_kg readings as
 //     before, just no longer used to compute Net.
-//   - Added a "Ticket #" column (tx.paper_ticket_no) right after Coupon
-//     No. — the handwritten number from the physical quality ticket at
-//     weigh-in, already shown elsewhere in the app as "Ticket No." and
-//     distinct from the system-generated Coupon No./tx.code next to it.
+//   - Added a "Ticket #" column (tx.paper_ticket_no) — the handwritten
+//     number from the physical quality ticket at weigh-in, already shown
+//     elsewhere in the app as "Ticket No.".
 //
 // Column mapping decisions (confirmed with the user before building this):
 //   - Buyer column = whoever recorded the transaction (tx.recorded_by_name),
@@ -33,16 +32,10 @@
 //     (tx.partyName) — the farmer on a BUY, the customer on a SELL.
 //   - Truck column = Car Plate and Truck/Driver Name combined, e.g.
 //     "3A-3850 - Driver Name" (either one alone if only one is on file).
-//   - Tare(%) / Tare Weight / Actual: if a real moisture/mixture deduction
-//     was recorded on that transaction (deduction_kg > 0), show the real
-//     deduction and the true payable weight. Otherwise those columns stay
-//     blank and Actual = Net, matching a transaction with no deduction.
 //
 // NOTE: no top-of-file "import ExcelJS from 'exceljs'" here on purpose —
 // see the comment on buildLedgerWorkbook() below for why it's loaded
 // dynamically instead.
-
-const UNIT_LABEL = "R"; // Riel — every amount in PaddyTrade is Riel, matches the old format's Unit column
 
 // Brand tokens, same values as tailwind.config.js's brand/gold scales —
 // ARGB (Excel wants an alpha channel first, "FF" = fully opaque).
@@ -81,24 +74,37 @@ function fmtTimeHM(value) {
   return p ? `${p.hour}:${p.minute}` : "";
 }
 
-// [2026-09-09] Staff Fee / VAT / Total with VAT added for the accountant,
-// who was recalculating all three by hand from the Amount column.
+// [2026-09-14] CUT FROM 22 COLUMNS TO 11, so the file actually prints.
 //
-// They are inserted immediately AFTER "Amount" rather than appended at the
-// end, and that position is deliberate: writeSummaryRow writes its totals
-// into fixed columns 12, 15 and 17 (Net, Actual, Amount). Inserting after
-// column 17 leaves every one of those indices untouched, so the subtotal
-// and grand-total rows keep landing where they should. Inserting anywhere
-// earlier would have silently moved the totals into the wrong columns.
-const HEADERS = ["Coupon No.", "Ticket #", "Truck", "Date In", "Date Out", "Tm in", "Tm Out", "Seller", "Buyer",
-  "W In", "W Out", "Net", "Tare(%)", "Tare Weight", "Actual", "Price", "Amount",
-  "Staff Fee", "VAT", "Total with VAT", "Unit", "Remarks"];
-const COL_WIDTHS = [14, 12, 20, 12, 12, 8, 8, 16, 14, 10, 10, 10, 9, 11, 10, 10, 14, 11, 12, 15, 6, 18];
+// The old sheet was ~26 inches of content. "Fit to one page wide" then
+// squeezed it to about 43%, which on paper is roughly 4pt type — legible
+// to nobody. Two separate things were wrong: that, and `paperSize` never
+// being set at all, so the whole thing was laid out for US Letter rather
+// than the A4 these stations actually print on.
+//
+// Removed at SISEN's direction, every one of them empty or duplicated on a
+// real export: Coupon No. (the transaction code — the paper Ticket # is
+// what staff match against), Tare(%), Tare Weight, Staff Fee, Unit (always
+// "R"), Remarks, and — because this business does not charge it — VAT and
+// Total with VAT. "Actual" went too: it is Net minus Tare Weight, so with
+// Tare Weight gone it was Net repeated.
+//
+// Date and time were four columns; they are now two ("14/09 00:07").
+// Eleven columns is ~13.4 inches, which prints at 88% — readable.
+const HEADERS = ["Ticket #", "Truck", "In", "Out", "Seller", "Buyer",
+  "W In", "W Out", "Net", "Price", "Amount"];
+const COL_WIDTHS = [10, 20, 12, 12, 14, 14, 10, 10, 12.5, 9, 13];
 const COL_COUNT = HEADERS.length; // derived — do not hardcode
 // 1-indexed column numbers (matches HEADERS order above).
-const DECIMAL_COLS = new Set([10, 11, 12, 13, 14, 15, 16]); // W In..Price
-const INT_COLS = new Set([17]); // Amount (Riel — no cents anywhere else in the app)
-const CENTER_COLS = new Set([2, 18]); // Ticket #, Unit
+const DECIMAL_COLS = new Set([7, 8, 9, 10]); // W In, W Out, Net, Price
+const INT_COLS = new Set([11]); // Amount (Riel — no cents anywhere else in the app)
+const CENTER_COLS = new Set([1, 3, 4]); // Ticket #, In, Out
+// Where writeSummaryRow puts its figures. Named rather than sprinkled as
+// literals, because the last time columns moved, the totals silently
+// landed in the wrong ones.
+const SUM_COL_ITEMS = 5;   // under Seller
+const SUM_COL_NET = 9;
+const SUM_COL_AMOUNT = 11;
 
 const thinGrid = { style: "thin", color: { argb: GRID_LINE } };
 const borderAll = { top: thinGrid, left: thinGrid, right: thinGrid, bottom: thinGrid };
@@ -121,44 +127,27 @@ function buildRow(tx) {
   const dateOut = hasWeighInOut ? fmtDateDMY(tx.tare_at) : fmtDateDMY(tx.tx_date);
   const tmIn = hasWeighInOut ? fmtTimeHM(tx.gross_at) : "";
   const tmOut = hasWeighInOut ? fmtTimeHM(tx.tare_at) : "";
-  const deductionKg = Number(tx.deduction_kg || 0);
-  const hasDeduction = deductionKg > 0.001;
-  const tarePct = hasDeduction && net > 0 ? round2((deductionKg / net) * 100) : "";
-  const tareWeight = hasDeduction ? round2(deductionKg) : "";
-  const actual = hasDeduction ? round2(net - deductionKg) : round2(net);
-  const truck = [tx.car_plate, tx.driver_name].filter(Boolean).join(" - ");
+  const truck = [tx.car_plate, tx.driver_name].filter(Boolean).join(" · ");
+  // One column each for arrival and departure: "14/09 00:07". The year is
+  // already on the FROM/TO line in the letterhead, so repeating it on every
+  // row cost width and told the reader nothing.
+  const stamp = (d, t) => (d ? `${d.slice(0, 5)}${t ? ` ${t}` : ""}` : "");
 
   return [
-    tx.code,
     tx.paper_ticket_no || "",
     truck,
-    dateIn,
-    dateOut,
-    tmIn,
-    tmOut,
+    stamp(dateIn, tmIn),
+    stamp(dateOut, tmOut),
     tx.partyName || "",
     tx.recorded_by_name || "",
     hasWeighInOut ? round2(tx.gross_kg) : "",
     hasWeighInOut ? round2(tx.tare_kg) : "",
     round2(net),
-    tarePct,
-    tareWeight,
-    actual,
     round2(tx.price_per_kg),
     round2(tx.amount),
-    // Blank rather than 0 when they do not apply, so a column of zeros does
-    // not read as "VAT was charged and came to nothing".
-    Number(tx.staff_fee || 0) > 0.001 ? round2(tx.staff_fee) : "",
-    tx.tax_applicable ? round2(tx.tax_amount ?? 0) : "",
-    // total_with_tax is a generated column in the database; fall back to
-    // the plain amount for any older row that predates it.
-    round2(tx.total_with_tax ?? tx.amount),
-    UNIT_LABEL,
-    tx.note || "",
   ];
 }
 
-// Groups a section's rows by product (preserving first-seen order).
 function groupByProduct(rows) {
   const order = [];
   const groups = {};
@@ -206,6 +195,11 @@ function writeLetterhead(ws, row, { companyName, singleStation, sectionLabel, st
   ws.mergeCells(row, 1, row, COL_COUNT);
   styleCell(ws.getCell(row, 1), { italic: true, size: 9.5, color: SLATE, align: "center" });
   ws.getCell(row, 1).value = `FROM: ${startDate ? fmtDateDMY(startDate) : "—"} 00:00  TO: ${endDate ? fmtDateDMY(endDate) : "—"} 23:59`;
+  row += 1;
+
+  ws.mergeCells(row, 1, row, COL_COUNT);
+  styleCell(ws.getCell(row, 1), { size: 9, color: SLATE, align: "center" });
+  ws.getCell(row, 1).value = "Weights in kilograms   ·   Amounts in riel";
   row += 2;
 
   return row;
@@ -214,7 +208,7 @@ function writeLetterhead(ws, row, { companyName, singleStation, sectionLabel, st
 function writeHeaderRow(ws, row) {
   HEADERS.forEach((h, i) => {
     const cell = ws.getCell(row, i + 1);
-    styleCell(cell, { bold: true, size: 10, color: WHITE, fill: BRAND, align: "center", border: borderAll, wrap: true });
+    styleCell(cell, { bold: true, size: 9, color: WHITE, fill: BRAND, align: "center", border: borderAll, wrap: true });
     cell.value = h;
   });
   ws.getRow(row).height = 26;
@@ -239,7 +233,7 @@ function writeDataRow(ws, row, values) {
     if (isNum) align = "right";
     else if (CENTER_COLS.has(col)) align = "center";
     styleCell(cell, {
-      size: 9.5, align, border: borderAll,
+      size: 9, align, border: borderAll,
       numFmt: isNum ? (DECIMAL_COLS.has(col) ? "#,##0.00" : INT_COLS.has(col) ? "#,##0" : undefined) : undefined,
       color: col === 2 ? SLATE : undefined,
     });
@@ -248,36 +242,38 @@ function writeDataRow(ws, row, values) {
   return row + 1;
 }
 
-function writeSummaryRow(ws, row, { label, itemCount, net, actual, amount, style }) {
+function writeSummaryRow(ws, row, { label, itemCount, net, amount, style }) {
   const fill = style === "total" ? BRAND_DARK : GOLD_FILL;
   const color = style === "total" ? WHITE : BRAND_DARK;
   const border = style === "total"
     ? { top: { style: "medium", color: { argb: BRAND_DARK } }, bottom: { style: "medium", color: { argb: BRAND_DARK } }, left: thinGrid, right: thinGrid }
     : { top: { style: "thin", color: { argb: GOLD_LINE } }, bottom: thinGrid, left: thinGrid, right: thinGrid };
-  const size = style === "total" ? 10.5 : 9.5;
+  const size = style === "total" ? 10 : 9;
 
   for (let col = 1; col <= COL_COUNT; col++) {
     const cell = ws.getCell(row, col);
-    styleCell(cell, { bold: true, size, color, fill, border, align: col > 9 ? "right" : "left" });
+    styleCell(cell, { bold: true, size, color, fill, border, align: col > 6 ? "right" : "left" });
   }
   ws.getCell(row, 1).value = label;
-  ws.getCell(row, 8).value = `${itemCount}  Item`;
-  ws.getCell(row, 12).value = net;
-  ws.getCell(row, 12).numFmt = "#,##0.00";
-  ws.getCell(row, 15).value = actual;
-  ws.getCell(row, 15).numFmt = "#,##0.00";
-  ws.getCell(row, 17).value = amount;
-  ws.getCell(row, 17).numFmt = "#,##0";
+  ws.getCell(row, SUM_COL_ITEMS).value = `${itemCount}  Item`;
+  ws.getCell(row, SUM_COL_NET).value = net;
+  ws.getCell(row, SUM_COL_NET).numFmt = "#,##0.00";
+  ws.getCell(row, SUM_COL_AMOUNT).value = amount;
+  ws.getCell(row, SUM_COL_AMOUNT).numFmt = "#,##0";
   return row + 1;
 }
 
-function setupPrint(ws, headerRow) {
+function setupPrint(ws, tabName, headerRow) {
+  // [2026-09-14] paperSize was never set, so every download printed on US
+  // Letter no matter what the printer was loaded with. 9 = A4.
+  ws.pageSetup.paperSize = 9;
   ws.pageSetup.orientation = "landscape";
   ws.pageSetup.fitToPage = true;
   ws.pageSetup.fitToWidth = 1;
   ws.pageSetup.fitToHeight = 0;
-  ws.pageSetup.margins = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0, footer: 0 };
+  ws.pageSetup.margins = { left: 0.2, right: 0.2, top: 0.3, bottom: 0.3, header: 0.15, footer: 0.15 };
   ws.pageSetup.printTitlesRow = `${headerRow}:${headerRow}`;
+  ws.headerFooter = { oddFooter: `&L&9${tabName}&R&9Page &P of &N` };
 }
 
 function buildSheet(wb, tabName, sectionLabel, rows, { companyName, singleStation, startDate, endDate }) {
@@ -290,33 +286,32 @@ function buildSheet(wb, tabName, sectionLabel, rows, { companyName, singleStatio
   const firstDataRow = row;
 
   const groups = groupByProduct(rows);
-  let grandCount = 0, grandNet = 0, grandActual = 0, grandAmount = 0;
+  let grandCount = 0, grandNet = 0, grandAmount = 0;
   groups.forEach(({ name, txs }) => {
     row = writeProductRow(ws, row, name);
-    let subNet = 0, subActual = 0, subAmount = 0;
+    let subNet = 0, subAmount = 0;
     txs.forEach((tx) => {
       const r = buildRow(tx);
       row = writeDataRow(ws, row, r);
-      subNet += Number(r[11]) || 0;
-      subActual += Number(r[14]) || 0;
-      subAmount += Number(r[16]) || 0;
+      subNet += Number(r[SUM_COL_NET - 1]) || 0;
+      subAmount += Number(r[SUM_COL_AMOUNT - 1]) || 0;
     });
     row = writeSummaryRow(ws, row, {
       label: "Sub-Total", itemCount: txs.length,
-      net: round2(subNet), actual: round2(subActual), amount: round2(subAmount), style: "subtotal",
+      net: round2(subNet), amount: round2(subAmount), style: "subtotal",
     });
-    grandCount += txs.length; grandNet += subNet; grandActual += subActual; grandAmount += subAmount;
+    grandCount += txs.length; grandNet += subNet; grandAmount += subAmount;
   });
 
   row = writeSummaryRow(ws, row, {
     label: "TOTAL", itemCount: grandCount,
-    net: round2(grandNet), actual: round2(grandActual), amount: round2(grandAmount), style: "total",
+    net: round2(grandNet), amount: round2(grandAmount), style: "total",
   });
 
   // Keeps the column header row on screen while scrolling through a long
   // section — the letterhead above it scrolls away, the header doesn't.
   ws.views = [{ state: "frozen", ySplit: headerRow, showGridLines: false }];
-  setupPrint(ws, headerRow);
+  setupPrint(ws, tabName, headerRow);
   return ws;
 }
 
