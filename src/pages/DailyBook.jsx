@@ -10,6 +10,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import LocationFilter from "../components/LocationFilter.jsx";
+import Topbar from "../components/Topbar.jsx";
 import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
 
 const GRAINS = [
@@ -288,16 +289,29 @@ export default function DailyBook() {
   const TH = "px-3.5 pb-2.5 text-right text-[10px] font-semibold text-slate-400 whitespace-nowrap";
   const GH = "px-3.5 pb-1.5 pt-2.5 text-center text-[9.5px] font-bold uppercase tracking-[0.14em]";
 
+  // [2026-09-14] The page is a FIXED-HEIGHT column, not a tall document.
+  //
+  // It was `<main className="flex-1 overflow-y-auto …">` sitting directly
+  // inside App.jsx's `<div className="flex bg-paper">` — which has no height
+  // of its own. `overflow-y-auto` on a box with no bounded height does
+  // nothing: the box simply grows to fit the table, so the whole window
+  // scrolled instead, dragging the sidebar's bottom (Settings, Log out) off
+  // the screen with it.
+  //
+  // Every other page in the app already does it this way — see Reports.jsx
+  // and StockInventory.jsx: `h-screen … flex-col overflow-hidden` wrapper,
+  // a Topbar and toolbar that stay put, and ONE scrolling `<main>` beneath
+  // them. That is also what makes the table's own sticky header work, and
+  // `main.overflow-y-auto` is the selector index.css uses to keep content
+  // clear of the phone bottom nav, so the class has to stay on the <main>.
   return (
-    <main className="min-w-0 flex-1 overflow-y-auto bg-paper p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <h1 className="text-[15px] font-semibold text-slate-900">Daily Book</h1>
-        <span className="rounded-md bg-gold-50 px-2 py-0.5 text-[10.5px] font-semibold text-gold-700 ring-1 ring-gold-300">
-          Auto-generated · read only
-        </span>
-      </div>
+    <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
+      <Topbar
+        title="Daily Book"
+        subtitle="Every day's buying, selling, expenses and shed level — read from what is already recorded"
+      />
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-3 md:px-6">
         <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Show</span>
         <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white">
           {GRAINS.map(([g, label]) => (
@@ -315,113 +329,118 @@ export default function DailyBook() {
           <option value="">Whole year {year}</option>
           {months.map((m) => <option key={m} value={m}>{MONTHS[Number(m.slice(5, 7)) - 1]} {m.slice(0, 4)}</option>)}
         </select>
+        <span className="rounded-md bg-gold-50 px-2 py-0.5 text-[10.5px] font-semibold text-gold-700 ring-1 ring-gold-300">
+          Auto-generated · read only
+        </span>
         <div className="ml-auto">
           <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
         </div>
       </div>
 
-      {error && <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>}
-      {loading && <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">Loading…</div>}
+      <main className="min-w-0 flex-1 overflow-y-auto bg-paper p-4 md:p-6">
+        {error && <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>}
+        {loading && <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">Loading…</div>}
 
-      {!loading && !periods.length && (
-        <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">
-          Nothing recorded for this period.
-        </div>
-      )}
-
-      {!loading && periods.length > 0 && (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="overflow-x-auto">
-            <table className="w-full border-separate border-spacing-0 text-[12.5px] tabular-nums">
-              <thead>
-                <tr>
-                  <th className="sticky left-0 z-[3] border-r border-slate-200 bg-white" />
-                  <th className={`${GH} ${BUY} text-brand-700`} colSpan={4}>Buy</th>
-                  <th className={`${GH} ${SELL} border-l border-slate-200 text-orange-700`} colSpan={3}>Sell</th>
-                  <th className={`${GH} border-l border-slate-200`} colSpan={3}>Expenses</th>
-                  <th className={`${GH} ${STK} border-l border-slate-200 text-sky-800`} colSpan={5}>Stock</th>
-                  <th className={`${GH} border-l border-slate-200`} colSpan={2}>Result</th>
-                </tr>
-                <tr>
-                  <th className="sticky left-0 z-[3] border-b border-r border-slate-200 bg-white px-3.5 pb-2.5 text-left text-[10px] font-semibold text-slate-400">Period</th>
-                  <th className={`${TH} ${BUY} border-b border-slate-200 text-center`}>Loads</th>
-                  <th className={`${TH} ${BUY} border-b border-slate-200`}>Weight kg</th>
-                  <th className={`${TH} ${BUY} border-b border-slate-200`}>Price ៛</th>
-                  <th className={`${TH} ${BUY} border-b border-slate-200`}>Spent ៛</th>
-                  <th className={`${TH} ${SELL} border-b border-slate-200 border-l text-center`}>Loads</th>
-                  <th className={`${TH} ${SELL} border-b border-slate-200`}>Weight kg</th>
-                  <th className={`${TH} ${SELL} border-b border-slate-200`}>Received ៛</th>
-                  <th className={`${TH} border-b border-l border-slate-200`}>Staff ៛</th>
-                  <th className={`${TH} border-b border-slate-200`}>Other ៛</th>
-                  <th className={`${TH} border-b border-slate-200`}>Total ៛</th>
-                  <th className={`${TH} ${STK} border-b border-l border-slate-200`}>Lost kg</th>
-                  <th className={`${TH} ${STK} border-b border-slate-200`}>Value ៛</th>
-                  <th className={`${TH} ${STK} border-b border-slate-200`}>Closing kg</th>
-                  <th className={`${TH} ${STK} border-b border-slate-200`}>Cost ៛/kg</th>
-                  <th className={`${TH} ${STK} border-b border-slate-200`}>Value ៛</th>
-                  <th className={`${TH} border-b border-l border-slate-200`}>Profit ៛</th>
-                  <th className={`${TH} border-b border-slate-200`}>Cash ៛</th>
-                </tr>
-              </thead>
-              <tbody>
-                {periods.map((p, i) => {
-                  const { main, sub } = labelFor(p, grain);
-                  const isDay = grain === "days";
-                  const day = isDay ? p.days[0] : null;
-                  const isOpen = isDay && open === p.key;
-                  // A week subtotal after each week, so a long month still
-                  // reads in chunks. Weeks only — a month view is already short.
-                  const nextP = periods[i + 1];
-                  const endsWeek = isDay && nextP && isoWeek(p.key).key !== isoWeek(nextP.key).key;
-                  const lastOfAll = isDay && !nextP;
-                  const weekDays = (endsWeek || lastOfAll)
-                    ? scoped.filter((d) => isoWeek(d.date).key === isoWeek(p.key).key) : null;
-
-                  return (
-                    <Fragment key={p.key}>
-                      <LedgerRow
-                        label={main} sub={sub} t={p.totals}
-                        open={isOpen}
-                        onClick={isDay ? () => setOpen(isOpen ? null : p.key)
-                          : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
-                        onLoads={isDay ? () => setOpen(isOpen ? null : p.key) : undefined}
-                      />
-                      {isOpen && (
-                        <tr>
-                          <td colSpan={18} className="border-b border-slate-200 p-0">
-                            <DayDrawer day={day} txs={raw.txs} payments={raw.payments} />
-                          </td>
-                        </tr>
-                      )}
-                      {weekDays && weekDays.length > 1 && (
-                        <LedgerRow variant="week"
-                          label={`Week ${isoWeek(p.key).week}`} sub={`${weekDays.length} trading days`}
-                          t={rollup(weekDays)} />
-                      )}
-                    </Fragment>
-                  );
-                })}
-                <LedgerRow variant="total"
-                  label={month ? `${MONTHS[Number(month.slice(5, 7)) - 1]} total` : `${year} total`}
-                  sub={`${totals.days} trading days`} t={totals} />
-              </tbody>
-            </table>
+        {!loading && !periods.length && (
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">
+            Nothing recorded for this period.
           </div>
+        )}
 
-          <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-[11.5px] text-slate-400">
-            <span><b className="font-semibold text-slate-600">Loads</b> is how many trucks came in — click the number for the vehicles and their tickets</span>
-            <span><b className="font-semibold text-slate-600">Price</b> is what was paid that day · <b className="font-semibold text-slate-600">Cost ៛/kg</b> is what the whole shed cost — the same number on a day the shed empties</span>
-            <span><b className="font-semibold text-slate-600">Profit</b> = sales − cost of the paddy sold − expenses · <b className="font-semibold text-slate-600">Cash</b> = received − paid − expenses</span>
-            <span><b className="font-semibold text-slate-600">Closing kg</b> is a level — it never adds up down the column</span>
+        {!loading && periods.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="overflow-x-auto">
+              <table className="w-full border-separate border-spacing-0 text-[12.5px] tabular-nums">
+                <thead>
+                  <tr>
+                    <th className="sticky left-0 z-[3] border-r border-slate-200 bg-white" />
+                    <th className={`${GH} ${BUY} text-brand-700`} colSpan={4}>Buy</th>
+                    <th className={`${GH} ${SELL} border-l border-slate-200 text-orange-700`} colSpan={3}>Sell</th>
+                    <th className={`${GH} border-l border-slate-200`} colSpan={3}>Expenses</th>
+                    <th className={`${GH} ${STK} border-l border-slate-200 text-sky-800`} colSpan={5}>Stock</th>
+                    <th className={`${GH} border-l border-slate-200`} colSpan={2}>Result</th>
+                  </tr>
+                  <tr>
+                    <th className="sticky left-0 z-[3] border-b border-r border-slate-200 bg-white px-3.5 pb-2.5 text-left text-[10px] font-semibold text-slate-400">Period</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200 text-center`}>Loads</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200`}>Weight kg</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200`}>Price ៛</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200`}>Spent ៛</th>
+                    <th className={`${TH} ${SELL} border-b border-slate-200 border-l text-center`}>Loads</th>
+                    <th className={`${TH} ${SELL} border-b border-slate-200`}>Weight kg</th>
+                    <th className={`${TH} ${SELL} border-b border-slate-200`}>Received ៛</th>
+                    <th className={`${TH} border-b border-l border-slate-200`}>Staff ៛</th>
+                    <th className={`${TH} border-b border-slate-200`}>Other ៛</th>
+                    <th className={`${TH} border-b border-slate-200`}>Total ៛</th>
+                    <th className={`${TH} ${STK} border-b border-l border-slate-200`}>Lost kg</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>Value ៛</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>Closing kg</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>Cost ៛/kg</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>Value ៛</th>
+                    <th className={`${TH} border-b border-l border-slate-200`}>Profit ៛</th>
+                    <th className={`${TH} border-b border-slate-200`}>Cash ៛</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {periods.map((p, i) => {
+                    const { main, sub } = labelFor(p, grain);
+                    const isDay = grain === "days";
+                    const day = isDay ? p.days[0] : null;
+                    const isOpen = isDay && open === p.key;
+                    // A week subtotal after each week, so a long month still
+                    // reads in chunks. Weeks only — a month view is already short.
+                    const nextP = periods[i + 1];
+                    const endsWeek = isDay && nextP && isoWeek(p.key).key !== isoWeek(nextP.key).key;
+                    const lastOfAll = isDay && !nextP;
+                    const weekDays = (endsWeek || lastOfAll)
+                      ? scoped.filter((d) => isoWeek(d.date).key === isoWeek(p.key).key) : null;
+
+                    return (
+                      <Fragment key={p.key}>
+                        <LedgerRow
+                          label={main} sub={sub} t={p.totals}
+                          open={isOpen}
+                          onClick={isDay ? () => setOpen(isOpen ? null : p.key)
+                            : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
+                          onLoads={isDay ? () => setOpen(isOpen ? null : p.key) : undefined}
+                        />
+                        {isOpen && (
+                          <tr>
+                            <td colSpan={18} className="border-b border-slate-200 p-0">
+                              <DayDrawer day={day} txs={raw.txs} payments={raw.payments} />
+                            </td>
+                          </tr>
+                        )}
+                        {weekDays && weekDays.length > 1 && (
+                          <LedgerRow variant="week"
+                            label={`Week ${isoWeek(p.key).week}`} sub={`${weekDays.length} trading days`}
+                            t={rollup(weekDays)} />
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  <LedgerRow variant="total"
+                    label={month ? `${MONTHS[Number(month.slice(5, 7)) - 1]} total` : `${year} total`}
+                    sub={`${totals.days} trading days`} t={totals} />
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-[11.5px] text-slate-400">
+              <span><b className="font-semibold text-slate-600">Loads</b> is how many trucks came in — click the number for the vehicles and their tickets</span>
+              <span><b className="font-semibold text-slate-600">Price</b> is what was paid that day · <b className="font-semibold text-slate-600">Cost ៛/kg</b> is what the whole shed cost — the same number on a day the shed empties</span>
+              <span><b className="font-semibold text-slate-600">Profit</b> = sales − cost of the paddy sold − expenses · <b className="font-semibold text-slate-600">Cash</b> = received − paid − expenses</span>
+              <span><b className="font-semibold text-slate-600">Closing kg</b> is a level — it never adds up down the column</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <p className="mt-4 text-[11.5px] leading-relaxed text-slate-400">
-        Every figure is read from transactions, payments, expense entries and stock counts already recorded.
-        Nothing here can be typed or edited — change a transaction and this row, its week, its month and the
-        year all recalculate.
-      </p>
-    </main>
+        <p className="mt-4 text-[11.5px] leading-relaxed text-slate-400">
+          Every figure is read from transactions, payments, expense entries and stock counts already recorded.
+          Nothing here can be typed or edited — change a transaction and this row, its week, its month and the
+          year all recalculate.
+        </p>
+      </main>
+    </div>
   );
 }
