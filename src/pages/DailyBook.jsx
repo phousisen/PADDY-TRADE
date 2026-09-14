@@ -8,7 +8,7 @@
 // at any grain opens what is inside it.
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import api from "../api.js";
+import { api } from "../api.js";
 import LocationFilter from "../components/LocationFilter.jsx";
 import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
 
