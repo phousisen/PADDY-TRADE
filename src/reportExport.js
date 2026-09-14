@@ -5,7 +5,7 @@
 // Flow, Tax), using whatever Location/Date filters are currently active.
 import * as XLSX from "xlsx";
 import { getAccurateNow } from "./supabaseClient.js";
-import { computeFinancials, paidStatusMap } from "./pages/ReportOverview.jsx";
+import { computeFinancials, paidStatusMap } from "./financials.js";
 
 // Cambodia's current date/time (independent of the viewing device's own
 // timezone/clock), used to stamp the exported filename.
@@ -67,7 +67,7 @@ function sheet(rows) {
   return ws;
 }
 
-export function buildReportWorkbook({ txs, payments, stations, capitalEntries = [], loanEntries = [], selectedLocationIds = [], startDate = null, endDate = null }) {
+export function buildReportWorkbook({ txs, payments, adjustments = [], stations, capitalEntries = [], loanEntries = [], selectedLocationIds = [], startDate = null, endDate = null }) {
   const wb = XLSX.utils.book_new();
   const rangeLabel = `Date range: ${startDate || "All time"} to ${endDate || "All time"}`;
   const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
@@ -91,12 +91,21 @@ export function buildReportWorkbook({ txs, payments, stations, capitalEntries = 
     .filter((p) => !endDate || p.pay_date <= endDate);
 
   // ---------------- Overview (P&L + Balance Sheet + By Location) ----------------
-  const calc = computeFinancials(activeTxs, filteredStations, capitalEntries, loanEntries, payments, activeExpenses);
-  const byLocation = filteredStations.map((s) => {
-    const stationTxs = activeTxs.filter((x) => x.location_id === s.id);
-    const stationExpenses = activeExpenses.filter((p) => p.location_id === s.id);
-    return { station: s, ...computeFinancials(stationTxs, [s], capitalEntries, loanEntries, payments, stationExpenses) };
+  // [2026-09-14] Same figures as the on-screen Overview/Balance Sheet, from
+  // the same module — `txs`/`payments` here are AS AT the period end (Reports
+  // .jsx drops `from` for exactly this reason), and computeFinancials takes
+  // the period slice itself.
+  const calc = computeFinancials({
+    asAtTxs: txs, payments, adjustments, stations: filteredStations,
+    capitalEntries, loanEntries, startDate, endDate,
   });
+  const byLocation = filteredStations.map((s) => ({
+    station: s,
+    ...computeFinancials({
+      asAtTxs: txs, payments, adjustments, stations: [s],
+      capitalEntries, loanEntries, startDate, endDate,
+    }),
+  }));
   // Buy/Sell counts, kg, and amounts per location for the summary table
   // below. Uses the same activeTxs already filtered to the selected
   // locations/date range — for a location-scoped account that's just their
