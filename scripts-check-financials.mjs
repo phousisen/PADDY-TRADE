@@ -136,5 +136,40 @@ ok(near(m.b1.remaining, 8000000), "unpaid purchase not reported as owing");
 ok(near(m.b2.remaining, 0), "paid purchase still reported as owing");
 ok(near(m.s1.paid, 14250000), "collected sale not reported as paid");
 
+
+// --- consolidation is addition, in THIS module too ---------------------------
+// [2026-09-14] financials.js pooled every station into one weighted-average
+// shed, so Reports → Overview charged one station's sales partly at another
+// station's cost, and disagreed with the Balance Sheet the moment more than
+// one station was selected. Each station is now pooled on its own and added.
+{
+  const A = "a", B = "b";
+  const st2 = [{ id: A, name: "A" }, { id: B, name: "B" }];
+  const t2 = (o) => ({ hq_status: "processing", status: "confirmed", car_plate: "Truck: A", ...o });
+  const txs2 = [
+    // Two sheds at very different prices, each selling its own paddy.
+    t2({ id: "a1", location_id: A, tx_date: "2026-09-01", type: "BUY",  quantity_kg: 10000, amount: 8000000 }),
+    t2({ id: "a2", location_id: A, tx_date: "2026-09-05", type: "SELL", quantity_kg: 6000,  amount: 5400000 }),
+    t2({ id: "b1", location_id: B, tx_date: "2026-09-02", type: "BUY",  quantity_kg: 10000, amount: 12000000 }),
+    t2({ id: "b2", location_id: B, tx_date: "2026-09-06", type: "SELL", quantity_kg: 6000,  amount: 7800000 }),
+  ];
+  const args = { asAtTxs: txs2, payments: [], adjustments: [], ...SEP };
+  const both = computeFinancials({ ...args, stations: st2 });
+  const onlyA = computeFinancials({ ...args, stations: [st2[0]] });
+  const onlyB = computeFinancials({ ...args, stations: [st2[1]] });
+
+  ok(near(both.costOfGoodsSold, onlyA.costOfGoodsSold + onlyB.costOfGoodsSold),
+     "two stations' cost of goods sold is not the two added up — the sheds are being pooled",
+     `${both.costOfGoodsSold} vs ${onlyA.costOfGoodsSold + onlyB.costOfGoodsSold}`);
+  ok(near(both.inventoryValue, onlyA.inventoryValue + onlyB.inventoryValue),
+     "two stations' inventory is not the two added up", both.inventoryValue);
+  ok(near(both.grossProfit, onlyA.grossProfit + onlyB.grossProfit),
+     "two stations' gross profit is not the two added up", both.grossProfit);
+  // The pooled RATE is re-derived, not the average of the two stations' rates.
+  ok(near(both.inventoryCostPerKg, both.inventoryValue / both.inventoryKg, 0.01),
+     "consolidated cost/kg is not pooled value over pooled kilos", both.inventoryCostPerKg);
+  console.log(`  consolidation is addition · cost of goods sold ${money(both.costOfGoodsSold)} = ${money(onlyA.costOfGoodsSold)} + ${money(onlyB.costOfGoodsSold)}`);
+}
+
 console.log(failures === 0 ? "\nAll checks passed.\n" : `\n${failures} CHECK(S) FAILED\n`);
 process.exit(failures === 0 ? 0 : 1);
