@@ -19,6 +19,8 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   const [loanEntries, setLoanEntries] = useState([]);
   const [payments, setPayments] = useState([]);
   const [adjustments, setAdjustments] = useState([]);
+  const [loadError, setLoadError] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   // [2026-09-10] The period is asked of the database, not filtered out of
   // a full download afterwards. Same figures, a fraction of the data.
@@ -29,7 +31,23 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     // data. The period slice for the P&L is taken inside computeFinancials.
     const range = queryRange({ selectedLocationIds, startDate, endDate });
     const asAt = { ...range, from: undefined };
-    Promise.all([api.getTransactions(asAt), api.getLocations()]).then(([t, s]) => { setTxs(t); setStations(s); });
+    // [2026-09-14] THIS FETCH USED TO FAIL SILENTLY.
+    //
+    // There was no .catch here. When the call failed for any reason — a dead
+    // login, a permissions rule, a network drop — `txs` simply stayed empty,
+    // and every figure on the page rendered as a confident "0 ៛": zero sales,
+    // zero purchases, zero stock, a balance sheet where liabilities exceed
+    // assets. The page could not tell "the business did nothing" from "I could
+    // not load the data", and so it showed the reader the most alarming and
+    // least true of the two, with nothing on screen to say otherwise.
+    //
+    // A report that cannot load its data must say so. It must never print a
+    // zero it did not get from the database.
+    setLoadError("");
+    setLoaded(false);
+    Promise.all([api.getTransactions(asAt), api.getLocations()])
+      .then(([t, s]) => { setTxs(t); setStations(s); setLoaded(true); })
+      .catch((e) => setLoadError(e?.message || "Couldn't load transactions."));
     api.getPayments(asAt).then(setPayments).catch(() => setPayments([]));
     api.getStockAdjustments({ locationId: asAt.locationId, endDate })
       .then(setAdjustments).catch(() => setAdjustments([]));
@@ -79,8 +97,73 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   const buyTx = filteredTxs.filter((t) => t.type === "BUY").length;
   const sellTx = filteredTxs.filter((t) => t.type === "SELL").length;
 
+  // [2026-09-14] Overview is a SUMMARY. The statements an accountant actually
+  // signs are their own pages, and they were reachable only from a tab row
+  // that scrolled sideways — so they shipped and stayed invisible. This puts
+  // them one click away from the page everyone lands on.
+  const STATEMENTS = [
+    ["balancesheet", "Balance Sheet", "assets, liabilities and equity as at the period end"],
+    ["income", "Income Statement", "the accountant's line order, down to net profit"],
+    ["cashflow", "Cash Flow", "operating, investing and financing"],
+    ["inventory", "Inventory", "the shed by station and consolidated"],
+    ["shareholders", "Shareholder's Records", "sales volume and value per partner"],
+  ];
+
+  // A failure is stated, and the zeros it would otherwise have produced are
+  // not shown at all — a wrong number next to an error message still gets
+  // read and believed.
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-rose-200 bg-rose-50 px-5 py-4">
+        <p className="text-[14px] font-semibold text-rose-800">This report could not load its data.</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-rose-700">
+          Nothing is shown rather than zeros, because a zero here would look like a real figure and would be wrong.
+        </p>
+        <p className="mt-2 rounded-md bg-white/70 px-3 py-2 font-mono text-[12px] text-rose-900">{loadError}</p>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-3 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-[13px] font-medium text-rose-700 hover:bg-rose-100"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  // Equally: do not paint a whole balance sheet of zeros while the data is
+  // still on its way.
+  if (!loaded) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">
+        Loading…
+      </div>
+    );
+  }
+
   return (
     <div>
+      {onNavigate && (
+        <div className="mb-5 rounded-xl border border-brand-200 bg-brand-50/60 p-4">
+          <p className="mb-0.5 text-[13px] font-semibold text-brand-900">The full financial statements</p>
+          <p className="mb-3 text-[11.5px] text-brand-800">
+            This page is the summary. These are the statements themselves — each one works for a single station or
+            consolidates however many you select.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {STATEMENTS.map(([id, label, hint]) => (
+              <button
+                key={id}
+                onClick={() => onNavigate(id)}
+                title={hint}
+                className="rounded-lg border border-brand-300 bg-white px-3 py-2 text-left text-[12.5px] font-medium text-brand-800 hover:border-brand-500 hover:bg-brand-50"
+              >
+                {label} <span className="text-brand-500">→</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <SummaryStrip>
         <SummaryCell label="Total Sales" value={`${fmt(calc.totalSell)} ៛`} sub={`${sellTx} transaction${sellTx === 1 ? "" : "s"}`} />
         <SummaryCell label="Total Purchases" value={`${fmt(calc.totalBuy)} ៛`} sub={`${buyTx} transaction${buyTx === 1 ? "" : "s"}`} />

@@ -17,7 +17,7 @@
 
 import { useStatements } from "../useStatements.js";
 import { ReportCard } from "../components/ReportUI.jsx";
-import { Line, StatementHead, ScopeBar, fmt, isKnown } from "../components/StatementUI.jsx";
+import { Line, StatementHead, StatementSummary, ScopeBar, fmt, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportCashFlow({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const { data, stations, loading, error } = useStatements({ selectedLocationIds, startDate, endDate });
@@ -37,6 +37,14 @@ export default function ReportCashFlow({ selectedLocationIds = [], startDate = n
         period={period}
       />
       <ScopeBar stations={stations} />
+      <StatementSummary cells={[
+        { label: "Collected from buyers", value: c.collected },
+        { label: "Paid to farmers", value: c.paidOut },
+        { label: "Expenses paid", value: c.expensesPaid },
+        { label: "Net cash movement", value: c.cfNet, sub: "in less out, this period" },
+        { label: "Closing cash", value: c.closingCash, sub: "opening balance plus the movement",
+          why: "No opening cash balance entered — Reports → Finance Setup" },
+      ]} />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
         <ReportCard>

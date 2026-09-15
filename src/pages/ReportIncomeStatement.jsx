@@ -14,7 +14,7 @@
 
 import { useStatements } from "../useStatements.js";
 import { ReportCard } from "../components/ReportUI.jsx";
-import { Line, StatementHead, ScopeBar, SetupNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
+import { Line, StatementHead, StatementSummary, ScopeBar, SetupNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportIncomeStatement({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const { data, stations, loading, error, setupMissing } = useStatements({ selectedLocationIds, startDate, endDate });
@@ -33,6 +33,13 @@ export default function ReportIncomeStatement({ selectedLocationIds = [], startD
         period={period}
       />
       <ScopeBar stations={stations} />
+      <StatementSummary cells={[
+        { label: "Sales", value: i.sales, sub: `${fmtKg(i.soldKg)} kg shipped` },
+        { label: "Cost of paddy sold", value: i.costOfGoodsSold, sub: "weighted average cost" },
+        { label: "Operating expenses", value: i.operatingExpenses, sub: "recorded this period" },
+        { label: "Inventory lost", value: i.inventoryLost, sub: "written off on counts", tone: "neg" },
+        { label: "Profit before dep/int/tax", value: i.profitBeforeUnknowns, sub: "every figure in it is real", tone: "pos" },
+      ]} />
       <SetupNotice missing={setupMissing} what="Depreciation and tax" />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">

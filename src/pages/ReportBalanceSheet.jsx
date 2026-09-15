@@ -23,7 +23,7 @@
 
 import { useStatements } from "../useStatements.js";
 import { ReportCard } from "../components/ReportUI.jsx";
-import { Line, StatementHead, ScopeBar, SetupNotice, UnreconciledNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
+import { Line, StatementHead, StatementSummary, ScopeBar, SetupNotice, UnreconciledNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportBalanceSheet({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const { data, stations, loading, error, setupMissing } = useStatements({ selectedLocationIds, startDate, endDate });
@@ -42,6 +42,14 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
         asAt={asAt}
       />
       <ScopeBar stations={stations} />
+      <StatementSummary cells={[
+        { label: "Current assets", value: b.currentAssets, sub: "cash, debts owed to us, the shed",
+          why: "Waiting on an opening cash balance — Reports → Finance Setup" },
+        { label: "Inventory", value: b.inventoryValue, sub: `${fmtKg(b.inventoryKg)} kg in the shed` },
+        { label: "Owed to farmers", value: b.accountsPayable, sub: "weighed in, not yet paid" },
+        { label: "Owed to us", value: b.accountsReceivable, sub: "shipped, not yet collected" },
+        { label: "Equity", value: b.equity, sub: "capital, less drawings, plus retained", tone: "pos" },
+      ]} />
       <SetupNotice missing={setupMissing} what="Fixed assets and opening cash" />
 
       <div className="grid gap-5 lg:grid-cols-2">

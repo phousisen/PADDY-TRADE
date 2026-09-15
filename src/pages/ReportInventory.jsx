@@ -15,7 +15,7 @@
 
 import { useStatements } from "../useStatements.js";
 import { TableCard } from "../components/ReportUI.jsx";
-import { StatementHead, ScopeBar, fmt, fmtKg } from "../components/StatementUI.jsx";
+import { StatementHead, StatementSummary, ScopeBar, fmt, fmtKg } from "../components/StatementUI.jsx";
 
 const TH = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap";
 const TD = "px-4 py-2.5 text-[13px] border-b border-slate-50 whitespace-nowrap tabular-nums";
@@ -38,6 +38,13 @@ export default function ReportInventory({ selectedLocationIds = [], startDate = 
         period={period}
       />
       <ScopeBar stations={stations} />
+      <StatementSummary cells={[
+        { label: "In the shed", value: total.closingKg, riel: false, sub: "kilograms, a level not a total" },
+        { label: "Value", value: total.closingValue, sub: `${fmt(total.costPerKg)} ៛/kg, re-derived` },
+        { label: "Bought", value: total.boughtKg, riel: false, sub: "kg in, this period" },
+        { label: "Shipped", value: total.soldKg, riel: false, sub: "kg out, this period" },
+        { label: "Lost on counts", value: total.lostValue, sub: `${fmtKg(total.lostKg)} kg`, tone: "neg" },
+      ]} />
 
       <TableCard
         title={`In the shed as at ${asAt}`}

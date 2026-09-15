@@ -135,7 +135,13 @@ export default function Reports({ initialTab = "overview" }) {
             {exporting ? "Exporting..." : "Export to Excel"}
           </button>
         </div>
-        <div className="flex gap-0.5 overflow-x-auto">
+        {/* [2026-09-14] WRAPS instead of scrolling sideways. With the five
+            financial statements added there are seventeen tabs, and a single
+            scrolling row put the new ones off the left edge with nothing to
+            say they were there — the Income Statement and Balance Sheet were
+            shipped, installed, and invisible. Two visible rows beat one row
+            with half of it hidden. */}
+        <div className="flex flex-wrap gap-0.5">
           {tabs.map((tb) => (
             <button
               key={tb.id}
