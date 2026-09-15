@@ -9,8 +9,65 @@
 // Every statement page renders through <Amount>, so this can never be done
 // one way on the Balance Sheet and another on the Income Statement.
 
-import { AlertTriangle } from "lucide-react";
+import { createContext, useContext, useState } from "react";
+import { AlertTriangle, BookOpen } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
+
+// ---------------------------------------------------------------------------
+// [2026-09-15] EXPLANATIONS ARE OPTIONAL NOW, NOT GONE.
+//
+// Every line on every statement carried a sentence underneath explaining what
+// it meant, and every page ended with two or three paragraphs of the same. All
+// of it is true and some of it is load-bearing — "buying paddy is not a cost
+// until it is sold" is the reason the Income Statement looks the way it does.
+// But it was on screen every single time, for someone who has read it a
+// hundred times.
+//
+// So it is behind one switch, off by default, remembered per station PC. The
+// figures are the page; the teaching is one click away when somebody new is
+// looking over your shoulder.
+// ---------------------------------------------------------------------------
+const ExplainCtx = createContext(false);
+const KEY = "paddytrade_explain";
+
+export function ExplainProvider({ children }) {
+  const [on, setOn] = useState(() => {
+    try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+  });
+  const toggle = () => setOn((v) => {
+    try { localStorage.setItem(KEY, v ? "0" : "1"); } catch { /* private window */ }
+    return !v;
+  });
+  return <ExplainCtx.Provider value={{ on, toggle }}>{children}</ExplainCtx.Provider>;
+}
+
+// Reading it outside a provider is not an error — it just means "off", so a
+// statement rendered anywhere else still shows its figures.
+export function useExplain() {
+  const ctx = useContext(ExplainCtx);
+  return ctx && typeof ctx === "object" ? ctx : { on: false, toggle: () => {} };
+}
+
+// Wraps anything that only exists to explain.
+export function Explain({ children }) {
+  const { on } = useExplain();
+  return on ? children : null;
+}
+
+export function ExplainToggle() {
+  const { t } = useLanguage();
+  const { on, toggle } = useExplain();
+  return (
+    <button
+      onClick={toggle}
+      className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-[12.5px] font-medium transition-colors ${
+        on ? "border-brand-300 bg-brand-50 text-brand-800"
+           : "border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:text-brand-700"}`}
+    >
+      <BookOpen size={13} /> {on ? t("st_explain_hide") : t("st_explain_show")}
+    </button>
+  );
+}
 
 export const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(Number(n) || 0));
 export const fmtKg = (n) =>
@@ -43,6 +100,7 @@ export function Amount({ v, riel = true, signed = false, bold, why }) {
 
 // A line on a statement.
 export function Line({ label, hint, value, indent, bold, total, grand, signed, riel = true, why }) {
+  const { on: explain } = useExplain();
   return (
     <div
       className={[
@@ -54,7 +112,7 @@ export function Line({ label, hint, value, indent, bold, total, grand, signed, r
     >
       <span className={`min-w-0 ${bold || total || grand ? "text-slate-900" : "text-slate-500"}`}>
         {label}
-        {hint && <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{hint}</span>}
+        {hint && explain && <span className="mt-0.5 block text-[11px] font-normal text-slate-400">{hint}</span>}
       </span>
       <span className="shrink-0 whitespace-nowrap text-slate-800">
         <Amount v={value} riel={riel} signed={signed} bold={bold || total || grand} why={why} />
