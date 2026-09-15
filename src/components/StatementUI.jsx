@@ -69,6 +69,26 @@ export function ExplainToggle() {
   );
 }
 
+// [2026-09-15] SISEN asked for the Cash Flow lines to end in "ក្នុងថ្ងៃ" — in
+// the day. They are right for the way he reads the page, and wrong the moment
+// somebody opens it with "This Month" selected: the label would say "in the
+// day" over a month's total. So the word follows the date filter instead of
+// being fixed. A single day gives him exactly the wording he wrote.
+//
+// Returns a translation key, so the phrase itself stays in i18n.jsx.
+export function periodWordKey(startDate, endDate) {
+  if (!startDate || !endDate) return "per_period";
+  if (startDate === endDate) return "per_day";
+  const m = /^(\d{4})-(\d{2})-01$/.exec(startDate);
+  if (m) {
+    // Last day of that same month — computed, not assumed, so February and the
+    // 30-day months are right without a table.
+    const last = new Date(Date.UTC(Number(m[1]), Number(m[2]), 0)).toISOString().slice(0, 10);
+    if (endDate === last) return "per_month";
+  }
+  return "per_period";
+}
+
 export const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(Number(n) || 0));
 export const fmtKg = (n) =>
   new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0);
