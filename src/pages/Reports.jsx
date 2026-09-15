@@ -30,7 +30,7 @@ import ReportFinanceSetup from "./ReportFinanceSetup.jsx";
 // [2026-09-15] The Finance section index, and the one list that defines what
 // is in this section. The sub-menu below and the Start page are built from
 // the SAME list, so a screen can never be in one and missing from the other.
-import FinanceStart, { FINANCE_SCREENS } from "./FinanceStart.jsx";
+import FinanceStart, { FINANCE_SCREENS, FINANCE_GROUPS } from "./FinanceStart.jsx";
 
 
 // Cambodia's calendar today, and the first of the month it falls in — the
@@ -117,14 +117,18 @@ export default function Reports({ initialTab = "start" }) {
     receivables: Wallet, stock: Boxes, shrinkage: TrendingDown,
     capital: PiggyBank, financesetup: SlidersHorizontal, tax: ReceiptText, auditlog: History,
   };
+  // [2026-09-15] Khmer pass — the menu holds keys, not words, and resolves
+  // them here, so the sub-menu switches language with the rest of the app.
   const navGroups = [
     { label: null, items: [
-      { id: "start", label: "Start here", short: "What is in this section" },
-      { id: "overview", label: "Overview", short: "The one-page summary" },
+      { id: "start", label: t("fin_start"), short: t("fin_start_h") },
+      { id: "overview", label: t("fin_overview"), short: t("fin_overview_h") },
     ] },
-    ...["Statements", "Ledgers", "Setup"].map((g) => ({
-      label: g,
-      items: FINANCE_SCREENS.filter((s) => s.group === g && (!s.admin || isAdmin)),
+    ...FINANCE_GROUPS.map((g) => ({
+      label: t(g.labelKey),
+      items: FINANCE_SCREENS
+        .filter((s) => s.group === g.id && (!s.admin || isAdmin))
+        .map((s) => ({ ...s, label: t(s.labelKey), short: t(s.shortKey) })),
     })),
   ];
   const allTabs = navGroups.flatMap((g) => g.items);
@@ -144,14 +148,14 @@ export default function Reports({ initialTab = "start" }) {
             className="flex items-center gap-1.5 rounded-lg bg-brand-700 px-3.5 py-2 text-[13px] font-medium text-white shadow-sm hover:bg-brand-800 disabled:opacity-50"
           >
             {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-            {exporting ? "Exporting..." : "Export to Excel"}
+            {exporting ? t("exporting_btn") : t("export_ledger")}
           </button>
         </div>
       </div>
       {exportError && (
         <div className="flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs font-medium text-rose-600">
           <span>{exportError}</span>
-          <button onClick={exportExcel} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={exportExcel} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_btn")}</button>
         </div>
       )}
       {/* The section's own two-column layout: sub-menu, then the screen.
@@ -196,7 +200,7 @@ export default function Reports({ initialTab = "start" }) {
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-700"
             >
               {navGroups.map((g, gi) => (
-                <optgroup key={g.label || `g${gi}`} label={g.label || "Finance"}>
+                <optgroup key={g.label || `g${gi}`} label={g.label || t("nav_finance")}>
                   {g.items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
                 </optgroup>
               ))}

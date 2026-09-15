@@ -15,21 +15,23 @@
 // has no share entered, their row says so rather than quietly under-reporting.
 
 import { useStatements } from "../useStatements.js";
+import { useLanguage } from "../i18n.jsx";
 import { TableCard } from "../components/ReportUI.jsx";
-import { StatementHead, ScopeBar, Amount, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
+import { StatementHead, StationChips, ScopeBar, Amount, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
 import { AlertTriangle } from "lucide-react";
 
 const TH = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap";
 const TD = "px-4 py-2.5 text-[13px] border-b border-slate-50 whitespace-nowrap";
 
-export default function ReportShareholders({ selectedLocationIds = [], startDate = null, endDate = null }) {
-  const { data, stations, loading, error } = useStatements({ selectedLocationIds, startDate, endDate });
+export default function ReportShareholders({ selectedLocationIds = [], setSelectedLocationIds, startDate = null, endDate = null }) {
+  const { t } = useLanguage();
+  const { data, stations, raw, loading, error } = useStatements({ selectedLocationIds, startDate, endDate });
 
-  if (loading) return <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">Loading…</div>;
+  if (loading) return <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">{t("loading_label")}</div>;
   if (error) return <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>;
 
   const { holdings, people } = data.shareholders;
-  const period = startDate && endDate ? `${startDate} to ${endDate}` : "all time";
+  const period = startDate && endDate ? t("st_period_between", { a: startDate, b: endDate }) : t("st_period_all");
 
   // A station whose shares do not add to 100% is describing something that is
   // not a whole, and the reader has to be told before they read the numbers.
@@ -42,40 +44,40 @@ export default function ReportShareholders({ selectedLocationIds = [], startDate
   return (
     <div>
       <StatementHead
-        title="Shareholder's Records"
-        scope={stations.length === 1 ? stations[0].name : `${stations.length} stations`}
+        title={t("sh_title")}
+        scope={stations.length === 1 ? stations[0].name : t("st_stations_n", { n: stations.length })}
         period={period}
       />
+      <StationChips stations={raw.stations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
       <ScopeBar stations={stations} />
 
       {(missingStations.length > 0 || offStations.length > 0) && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12.5px] leading-relaxed text-amber-800">
-          <span className="inline-flex items-center gap-1.5 font-semibold"><AlertTriangle size={13} /> Shares need attention.</span>{" "}
-          {missingStations.length > 0 && <>No share entered for some partners at <b>{missingStations.join(", ")}</b> — those holdings show as not entered rather than being guessed at. </>}
-          {offStations.length > 0 && <>The shares at <b>{offStations.join(", ")}</b> do not add to 100%. </>}
-          Set them under <b className="font-semibold">Reports → Finance Setup</b>.
+          <span className="inline-flex items-center gap-1.5 font-semibold"><AlertTriangle size={13} /> {t("sh_warn_t")}</span>{" "}
+          {missingStations.length > 0 && <>{t("sh_warn_missing", { list: missingStations.join(", ") })} </>}
+          {offStations.length > 0 && <>{t("sh_warn_off", { list: offStations.join(", ") })} </>}
+          {t("sh_warn_where")}
         </div>
       )}
 
       {holdings.length === 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">
-          No partners recorded at these stations yet. Add them under Reports → Capital &amp; Loans, then set each
-          one's share under Finance Setup.
+          {t("sh_empty")}
         </div>
       ) : (
         <div className="space-y-5">
-          <TableCard title="By station" right={<span className="text-[11.5px] font-normal text-slate-400">a share only means something inside its own station</span>}>
+          <TableCard title={t("sh_bystation")} right={<span className="text-[11.5px] font-normal text-slate-400">{t("sh_bystation_r")}</span>}>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200 text-left">
-                    <th className={TH}>Shareholder</th>
-                    <th className={TH}>Station</th>
-                    <th className={`${TH} text-right`}>Capital ៛</th>
-                    <th className={`${TH} text-right`}>Share</th>
-                    <th className={`${TH} text-right`}>Sales volume kg</th>
-                    <th className={`${TH} text-right`}>Sales value ៛</th>
-                    <th className={`${TH} text-right`}>Share of profit ៛</th>
+                    <th className={TH}>{t("sh_th_holder")}</th>
+                    <th className={TH}>{t("st_station")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_capital")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_share")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_volkg")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_value")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_profit")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -87,7 +89,7 @@ export default function ReportShareholders({ selectedLocationIds = [], startDate
                       <td className={`${TD} text-right`}>
                         {isKnown(h.sharePct)
                           ? <span className="tabular-nums font-medium">{h.sharePct}%</span>
-                          : <Amount v={null} why="No share entered for this partner — Reports → Finance Setup" />}
+                          : <Amount v={null} why={t("sh_noshare_why")} />}
                       </td>
                       <td className={`${TD} text-right`}>{isKnown(h.volKg) ? <span className="tabular-nums">{fmtKg(h.volKg)}</span> : <Amount v={null} />}</td>
                       <td className={`${TD} text-right`}><Amount v={h.value} /></td>
@@ -100,19 +102,19 @@ export default function ReportShareholders({ selectedLocationIds = [], startDate
           </TableCard>
 
           <TableCard
-            title="Each shareholder across the stations in scope"
-            right={<span className="text-[11.5px] font-normal text-slate-400">amounts added up — no blended percentage</span>}
+            title={t("sh_across")}
+            right={<span className="text-[11.5px] font-normal text-slate-400">{t("sh_across_r")}</span>}
           >
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-200 text-left">
-                    <th className={TH}>Shareholder</th>
-                    <th className={TH}>Holdings</th>
-                    <th className={`${TH} text-right`}>Capital ៛</th>
-                    <th className={`${TH} text-right`}>Sales volume kg</th>
-                    <th className={`${TH} text-right`}>Sales value ៛</th>
-                    <th className={`${TH} text-right`}>Share of profit ៛</th>
+                    <th className={TH}>{t("sh_th_holder")}</th>
+                    <th className={TH}>{t("sh_th_holdings")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_capital")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_volkg")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_value")}</th>
+                    <th className={`${TH} text-right`}>{t("sh_th_profit")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -120,10 +122,10 @@ export default function ReportShareholders({ selectedLocationIds = [], startDate
                     <tr key={p.name} className="hover:bg-slate-50/60">
                       <td className={`${TD} font-medium text-slate-800`}>{p.name}</td>
                       <td className={`${TD} text-slate-500`}>
-                        {p.stations} station{p.stations > 1 ? "s" : ""}
+                        {p.stations > 1 ? t("sh_nstations", { n: p.stations }) : t("sh_onestation")}
                         {p.partial && (
                           <span className="ml-1.5 inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-amber-700 ring-1 ring-amber-200">
-                            <AlertTriangle size={9} /> one has no share set
+                            <AlertTriangle size={9} /> {t("sh_partial")}
                           </span>
                         )}
                       </td>
@@ -137,9 +139,7 @@ export default function ReportShareholders({ selectedLocationIds = [], startDate
               </table>
             </div>
             <p className="border-t border-slate-100 px-4 py-3 text-[11.5px] leading-relaxed text-slate-400">
-              A row marked <b className="font-semibold text-amber-700">one has no share set</b> is incomplete on
-              purpose: that station's holding is left out of the totals rather than guessed at, so the figure is
-              understated and says so, instead of looking finished and being wrong.
+              {t("sh_foot")}
             </p>
           </TableCard>
         </div>

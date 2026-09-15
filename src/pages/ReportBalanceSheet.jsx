@@ -20,98 +20,89 @@
 //   reads "not entered" rather than silently claiming the business owns
 //   nothing — but Current Assets is still a real number, so the page is useful
 //   before setup is finished.
+//
+// [2026-09-15] Khmer pass — every label and hint now comes from i18n.jsx.
+// Accounting terms follow ACAR's published Khmer IFRS-for-SMEs statements.
 
 import { useStatements } from "../useStatements.js";
 import { ReportCard } from "../components/ReportUI.jsx";
-import { Line, StatementHead, StatementSummary, ScopeBar, SetupNotice, UnreconciledNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
+import { useLanguage } from "../i18n.jsx";
+import { Line, StatementHead, StatementSummary, StationChips, ScopeBar, SetupNotice, UnreconciledNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
 
-export default function ReportBalanceSheet({ selectedLocationIds = [], startDate = null, endDate = null }) {
-  const { data, stations, loading, error, setupMissing } = useStatements({ selectedLocationIds, startDate, endDate });
+export default function ReportBalanceSheet({ selectedLocationIds = [], setSelectedLocationIds, startDate = null, endDate = null }) {
+  const { t } = useLanguage();
+  const { data, stations, raw, loading, error, setupMissing } = useStatements({ selectedLocationIds, startDate, endDate });
 
-  if (loading) return <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">Loading…</div>;
+  if (loading) return <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">{t("loading_label")}</div>;
   if (error) return <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>;
 
   const b = data.balance;
-  const asAt = endDate || "today";
+  const asAt = endDate || t("st_today");
 
   return (
     <div>
       <StatementHead
-        title="Balance Sheet"
-        scope={stations.length === 1 ? stations[0].name : `${stations.length} stations, consolidated`}
+        title={t("fin_bs")}
+        scope={stations.length === 1 ? stations[0].name : t("st_consolidated_n", { n: stations.length })}
         asAt={asAt}
       />
+      <StationChips stations={raw.stations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
       <ScopeBar stations={stations} />
       <StatementSummary cells={[
-        { label: "Current assets", value: b.currentAssets, sub: "cash, debts owed to us, the shed",
-          why: "Waiting on an opening cash balance — Reports → Finance Setup" },
-        { label: "Inventory", value: b.inventoryValue, sub: `${fmtKg(b.inventoryKg)} kg in the shed` },
-        { label: "Owed to farmers", value: b.accountsPayable, sub: "weighed in, not yet paid" },
-        { label: "Owed to us", value: b.accountsReceivable, sub: "shipped, not yet collected" },
-        { label: "Equity", value: b.equity, sub: "capital, less drawings, plus retained", tone: "pos" },
+        { label: t("st_curassets"), value: b.currentAssets, sub: t("bs_sum_curassets"), why: t("bs_sum_curassets_why") },
+        { label: t("fin_inv"), value: b.inventoryValue, sub: t("bs_sum_inv", { kg: fmtKg(b.inventoryKg) }) },
+        { label: t("st_owedfarmers"), value: b.accountsPayable, sub: t("bs_sum_ap") },
+        { label: t("st_owedus"), value: b.accountsReceivable, sub: t("bs_sum_ar") },
+        { label: t("st_equity"), value: b.equity, sub: t("bs_sum_eq"), tone: "pos" },
       ]} />
-      <SetupNotice missing={setupMissing} what="Fixed assets and opening cash" />
+      <SetupNotice missing={setupMissing} what={t("bs_setup_what")} />
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* ---------------- Assets ---------------- */}
-        <ReportCard title="Assets">
+        <ReportCard title={t("st_assets")}>
           <Line
-            label="Cash and bank"
-            hint={isKnown(b.openingCash)
-              ? "opening balance plus everything in and out since"
-              : "opening balance not entered — see the note below"}
+            label={t("st_cash")}
+            hint={isKnown(b.openingCash) ? t("bs_cash_hint") : t("bs_cash_hint_none")}
             value={b.cash}
-            why="No opening cash balance entered — Reports → Finance Setup"
+            why={t("bs_cash_why")}
             indent
           />
-          <Line label="Accounts receivable — buyers" hint="shipped but not yet collected" value={b.accountsReceivable} indent />
+          <Line label={t("st_ar")} hint={t("bs_ar_hint")} value={b.accountsReceivable} indent />
           <Line
-            label="Inventory — paddy in the shed"
-            hint={`${fmtKg(b.inventoryKg)} kg at ${fmt(b.inventoryCostPerKg)} ៛/kg, weighted average`}
+            label={t("st_invline")}
+            hint={t("bs_inv_hint", { kg: fmtKg(b.inventoryKg), rate: fmt(b.inventoryCostPerKg) })}
             value={b.inventoryValue} indent
           />
-          <Line label="Current Assets" value={b.currentAssets} total />
+          <Line label={t("st_curassets")} value={b.currentAssets} total />
 
           <Line
-            label="Property and equipment, net"
+            label={t("st_ppe")}
             hint={isKnown(b.assetCost)
-              ? `cost ${fmt(b.assetCost)} ៛ less ${fmt(b.accumDep)} ៛ accumulated depreciation`
-              : "no asset register yet"}
+              ? t("bs_ppe_hint", { cost: fmt(b.assetCost), dep: fmt(b.accumDep) })
+              : t("bs_ppe_hint_none")}
             value={b.fixedAssetsNet}
-            why="Nothing in the asset register — add trucks, scales and buildings under Reports → Finance Setup"
+            why={t("bs_ppe_why")}
             indent
           />
-          <Line label="Total Assets" value={b.totalAssets} grand />
+          <Line label={t("st_totassets")} value={b.totalAssets} grand />
         </ReportCard>
 
         {/* ---------------- Liabilities + Equity ---------------- */}
         <div className="space-y-5">
-          <ReportCard title="Liabilities">
-            <Line label="Accounts payable — farmers" hint="weighed in but not yet paid for" value={b.accountsPayable} indent />
-            <Line label="Bank loans outstanding" value={b.loansOutstanding} indent />
-            <Line
-              label="Accrued expenses"
-              hint="costs incurred but not yet paid — no accruals ledger yet, so this is nil rather than unknown"
-              value={b.accrued} indent
-            />
-            <Line label="Total Liabilities" value={b.totalLiabilities} total />
+          <ReportCard title={t("st_liabilities")}>
+            <Line label={t("st_ap")} hint={t("bs_ap_hint")} value={b.accountsPayable} indent />
+            <Line label={t("bs_loans")} value={b.loansOutstanding} indent />
+            <Line label={t("st_accrued")} hint={t("bs_accrued_hint")} value={b.accrued} indent />
+            <Line label={t("st_totliab")} value={b.totalLiabilities} total />
           </ReportCard>
 
-          <ReportCard title="Equity">
-            <Line label="Partner capital contributed" hint="gross, what partners have put in" value={b.partnerCapital} indent />
+          <ReportCard title={t("st_equity")}>
+            <Line label={t("st_capital")} hint={t("bs_capital_hint")} value={b.partnerCapital} indent />
+            <Line label={t("st_drawings")} hint={t("bs_drawings_hint")} value={-b.drawings} indent signed />
+            <Line label={t("st_retained")} hint={t("bs_retained_hint")} value={b.retainedEarnings} indent signed />
+            <Line label={t("st_totequity")} value={b.equity} total signed />
             <Line
-              label="Less: drawings"
-              hint="what partners have taken out — not an expense, and never on the Income Statement"
-              value={-b.drawings} indent signed
-            />
-            <Line
-              label="Retained earnings"
-              hint="accumulated profit since the system began — earned, not the figure needed to balance"
-              value={b.retainedEarnings} indent signed
-            />
-            <Line label="Total Equity" value={b.equity} total signed />
-            <Line
-              label="Liabilities + Equity"
+              label={t("bs_lplusE")}
               value={isKnown(b.totalLiabilities) && isKnown(b.equity) ? b.totalLiabilities + b.equity : null}
               grand
             />
@@ -123,14 +114,11 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], startDate
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-          <b className="font-semibold text-slate-700">Cash movement so far: {fmt(b.cashMovement)} ៛.</b>{" "}
-          Money collected less money paid out, since the system began. Add the cash that was in the safe before that
-          and you have the cash actually held — which is why the opening balance matters more than it looks.
+          <b className="font-semibold text-slate-700">{t("bs_note1_t", { v: fmt(b.cashMovement) })}</b>{" "}
+          {t("bs_note1_b")}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-          <b className="font-semibold text-slate-700">Why the shed is worth what it says.</b>{" "}
-          Paddy is valued at its running weighted-average cost, not at today's price — what it actually cost to buy
-          the kilos still sitting there. On a day the shed empties, that cost and the day's price are the same number.
+          <b className="font-semibold text-slate-700">{t("bs_note2_t")}</b> {t("bs_note2_b")}
         </div>
       </div>
     </div>

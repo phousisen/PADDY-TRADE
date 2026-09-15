@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import PrintRegisterModal from "../components/PrintRegisterModal.jsx";
 import { Download, Plus, CheckCircle2, AlertTriangle, Filter, MapPin, Lock, Flag, Wallet, Pencil, RotateCcw, Camera, ImageOff, Printer, WifiOff, RefreshCw, Loader2, ChevronRight, ChevronLeft, Ban, Undo2, Search, X } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
@@ -53,6 +54,18 @@ function cambodiaDateStr(d = getAccurateNow()) {
   new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
     .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
   return `${parts.year}-${parts.month}-${parts.day}`;
+}
+// [2026-09-15] The "Printed 15/09/2026 08:42" line on the register's
+// letterhead. Cambodia wall-clock time, like every other date on a printed
+// document — a station PC with a drifting timezone must not put a different
+// day on the paper than the transactions it lists.
+function cambodiaTimestampLabel(d = getAccurateNow()) {
+  const p = {};
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d).forEach((x) => { p[x.type] = x.value; });
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}`;
 }
 // Splits a stored gross_at/tare_at timestamp into the plain
 // YYYY-MM-DD / HH:mm strings that <input type="date"> and
@@ -1449,6 +1462,9 @@ export default function Transactions({ setPage }) {
   const [exportingLedger, setExportingLedger] = useState(false);
   const [exportLedgerError, setExportLedgerError] = useState("");
   const [stationCheckOpen, setStationCheckOpen] = useState(false);
+  // [2026-09-15] Print Register — the 210 x 140 mm continuous form.
+  const [printOpen, setPrintOpen] = useState(false);
+  const [settingsMapForPrint, setSettingsMapForPrint] = useState({});
   // null = not loaded yet (or the load failed). Never [] as a stand-in
   // for "everything", so the modal can tell "no data" from "no answer".
   const [stationCheckRows, setStationCheckRows] = useState(null);
@@ -2082,7 +2098,20 @@ export default function Transactions({ setPage }) {
                 <CheckCircle2 size={14} /> Station check
               </button>
             )}
-            <button onClick={exportLedger} disabled={exportingLedger} title={exportingLedger ? "Exporting..." : t("export_ledger")} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+            <button
+              onClick={() => {
+                // Company name and address are wanted on the letterhead but are
+                // not worth blocking the dialog on — if the fetch fails the
+                // register still prints, with "PaddyTrade" on the top line.
+                api.getSettings().then((x) => setSettingsMapForPrint(x || {})).catch(() => {});
+                setPrintOpen(true);
+              }}
+              title={t("print_register")}
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            >
+              <Printer size={15} />
+            </button>
+            <button onClick={exportLedger} disabled={exportingLedger} title={exportingLedger ? t("exporting_btn") : t("export_ledger")} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               {exportingLedger ? <Loader2 size={15} className="animate-spin text-slate-400" /> : <Download size={15} />}
             </button>
             <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
@@ -2616,6 +2645,42 @@ export default function Transactions({ setPage }) {
         )}
       </main>
       {requestTx && <RequestChangeModal tx={requestTx} t={t} onClose={() => setRequestTx(null)} onSubmit={submitRequest} />}
+      {printOpen && (
+        <PrintRegisterModal
+          // Exactly what is on screen — the same location, date range, type and
+          // search filters. Printing something other than what the filters say
+          // would be the worst kind of surprise on a document people sign.
+          //
+          // Cancelled transactions are dropped here rather than printed struck
+          // through: hq_status is the cancellation flag (status stays
+          // "confirmed"), and a register is a record of what happened, not of
+          // what was typed and withdrawn.
+          rows={visibleRows
+            .filter((tx) => tx.hq_status !== "cancelled")
+            .map((tx) => {
+              const total = Number(tx.total_with_tax ?? tx.amount) || 0;
+              const owing = remainingByTx[tx.id] || 0;
+              return { ...tx, owing, paidAmount: Math.max(0, total - owing) };
+            })}
+          meta={{
+            company: settingsMapForPrint.company_name_kh || settingsMapForPrint.company_name || "PaddyTrade",
+            address: settingsMapForPrint.company_address_kh || settingsMapForPrint.company_address || "",
+            phone: settingsMapForPrint.company_phone || "",
+            station:
+              selectedLocationIds.length === 1
+                ? locations.find((l) => l.id === selectedLocationIds[0])?.name || t("st_allstations")
+                : t("st_allstations"),
+            period:
+              startDate && endDate ? `${startDate} – ${endDate}`
+              : startDate ? t("st_period_from", { a: startDate })
+              : endDate ? t("st_period_upto", { b: endDate })
+              : t("st_period_all"),
+            printedBy: profile?.full_name || "",
+            printedAt: cambodiaTimestampLabel(),
+          }}
+          onClose={() => setPrintOpen(false)}
+        />
+      )}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
       {editTx && <EditTransactionModal tx={editTx} locations={locations} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
       {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} onChanged={load} />}
