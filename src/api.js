@@ -1881,7 +1881,9 @@ const rawApi = {
         let q = supabase
         .from("change_requests")
         .select(
-          "*, transactions(id, code, type, quantity_kg, price_per_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, paper_ticket_no, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
+          // [2026-09-15] gross_kg/tare_kg added — a change request can now propose a
+        // weight, and the review screen has to be able to show what it is now.
+        "*, transactions(id, code, type, quantity_kg, price_per_kg, gross_kg, tare_kg, payment_status, quality_grade, tax_applicable, tax_rate, deduction_kg, moisture_pct, mixture_pct, outthrow_pct, note, car_plate, driver_name, amount, party_id, staff_fee, paper_ticket_no, parties(name)), profiles!change_requests_requested_by_fkey(full_name)"
         );
         if (status) q = q.eq("status", status);
         return q;
@@ -1911,8 +1913,28 @@ const rawApi = {
     return data;
   },
 
-  async resolveChangeRequest(id, status) {
-    const { data, error } = await supabase.from("change_requests").update({ status }).eq("id", id).select().single();
+  // [2026-09-15] This used to write { status } and nothing else — so who
+  // approved a change and when existed only as a row in audit_logs, and the
+  // Change Requests screen had to count "approved this month" off the REQUEST
+  // date because there was no resolved date to count.
+  //
+  // The three new columns come from migration_change_request_trail.sql. They
+  // are written through a soft retry rather than assumed: on a database where
+  // that migration has not been run yet, the first update fails on the unknown
+  // column and the second one writes the status alone, exactly as before. The
+  // approval still lands; only the extra detail is missing.
+  async resolveChangeRequest(id, status, { userId, rejectReason } = {}) {
+    const full = {
+      status,
+      resolved_at: new Date().toISOString(),
+      resolved_by: userId || null,
+      reject_reason: status === "rejected" ? (rejectReason || null) : null,
+    };
+    let { data, error } = await supabase.from("change_requests").update(full).eq("id", id).select().single();
+    if (error) {
+      console.warn("resolveChangeRequest: falling back to status only —", error.message);
+      ({ data, error } = await supabase.from("change_requests").update({ status }).eq("id", id).select().single());
+    }
     if (error) throw error;
     return data;
   },

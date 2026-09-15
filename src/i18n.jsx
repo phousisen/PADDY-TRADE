@@ -891,6 +891,20 @@ export const translations = {
     cfl_exp_int_hint: "កូនដៃ — recognised from the expense category, not typed here",
     cfl_exp_other_hint: "wages, fuel, repairs, interest, tax — everything that is not កូនដៃ",
 
+    lock_chip: "request",
+    lock_money_title: "This decides what the farmer is paid.",
+    lock_money_body: "Your account can fix any other field here directly. To change a weight or a price, send a request with the reason — someone else approves it, and both names are recorded.",
+    lock_money_cta: "Request a weight / price change",
+    req_weigh_title: "Weighbridge readings",
+    req_weigh_hint: "Fill in both to propose a corrected weight. Net is worked out from them.",
+    req_weigh_net: "Net becomes {kg} kg — worked out from the two readings, not typed.",
+    req_qty: "Net weight (kg)",
+    req_qty_derived: "(from the two readings above)",
+    cr_self_title: "You raised this request.",
+    cr_self_body: "Approving your own change is blocked. Someone else has to approve it.",
+    cr_reject_reason: "Why are you rejecting it? (optional)",
+    cr_reject_placeholder: "e.g. paper ticket shows 17,778 — no correction needed",
+
   },
   km: {
     appName: "PADDYTRADE",
@@ -1724,6 +1738,20 @@ export const translations = {
     cfl_capital_out: "ដកដើមទុន{p}",
     cfl_exp_int_hint: "កូនដៃ — សម្គាល់ចេញពីប្រភេទចំណាយ មិនមែនវាយបញ្ចូលនៅទីនេះទេ",
     cfl_exp_other_hint: "ប្រាក់ឈ្នួល ប្រេង ការជួសជុល ការប្រាក់ ពន្ធ — អ្វីៗទាំងអស់ដែលមិនមែនជាកូនដៃ",
+
+    lock_chip: "ត្រូវស្នើ",
+    lock_money_title: "នេះកំណត់ថាកសិករត្រូវបានបង់ប៉ុន្មាន។",
+    lock_money_body: "គណនីរបស់អ្នកអាចកែកន្លែងផ្សេងទៀតនៅទីនេះដោយផ្ទាល់។ ដើម្បីប្តូរទម្ងន់ ឬតម្លៃ សូមផ្ញើសំណើដោយភ្ជាប់មូលហេតុ — អ្នកផ្សេងជាអ្នកអនុម័ត ហើយឈ្មោះទាំងពីរត្រូវបានកត់ត្រា។",
+    lock_money_cta: "ស្នើសុំប្តូរទម្ងន់ / តម្លៃ",
+    req_weigh_title: "តួលេខពីជញ្ជីង",
+    req_weigh_hint: "បំពេញទាំងពីរដើម្បីស្នើទម្ងន់ដែលបានកែតម្រូវ។ ទម្ងន់សុទ្ធនឹងគណនាចេញពីវា។",
+    req_weigh_net: "ទម្ងន់សុទ្ធនឹងក្លាយជា {kg} គ.ក — គណនាចេញពីតួលេខទាំងពីរ មិនមែនវាយបញ្ចូលទេ។",
+    req_qty: "ទម្ងន់សុទ្ធ (គ.ក)",
+    req_qty_derived: "(ចេញពីតួលេខទាំងពីរខាងលើ)",
+    cr_self_title: "អ្នកជាអ្នកដាក់សំណើនេះ។",
+    cr_self_body: "ការអនុម័តការផ្លាស់ប្តូររបស់ខ្លួនឯងត្រូវបានហាមឃាត់។ ត្រូវមានអ្នកផ្សេងអនុម័ត។",
+    cr_reject_reason: "ហេតុអ្វីបានជាបដិសេធ? (ស្រេចចិត្ត)",
+    cr_reject_placeholder: "ឧ. សំបុត្រក្រដាសបង្ហាញ ១៧,៧៧៨ — មិនចាំបាច់កែតម្រូវទេ",
 
   },
 };

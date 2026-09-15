@@ -31,7 +31,7 @@ import RegistrarShell from "./pages/RegistrarShell.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
 
 export default function App() {
-  const { session, profile, loading, hasPermission, isViewOnly, passwordRecovery } = useAuth();
+  const { session, profile, loading, hasPermission, can, isViewOnly, passwordRecovery } = useAuth();
   const { t } = useLanguage();
   const [page, setPage] = useState("dashboard");
   const [selectedLocationId, setSelectedLocationId] = useState(null);
@@ -156,6 +156,14 @@ export default function App() {
   // via Settings -> Roles) is allowed in, scoped to their own location by
   // Supabase RLS. See canViewReports below.
   const canViewReports = !isStaff || hasPermission("view_reports");
+  // [2026-09-15] Hiding a nav row is not access control — these are the route
+  // gates, so typing the address in does nothing either. Same capability
+  // helper as the sidebar, so the two can never disagree.
+  const canApproveRequests = can("approve_change_requests");
+  const canManageLocations = can("manage_locations");
+  const canManageUsers = can("manage_users");
+  const canManageRoles = can("manage_roles");
+  const canManageSettings = can("manage_settings");
 
   function renderPage() {
     // [2026-09-01] `&& !isViewOnly` — a view-only account (see
@@ -185,9 +193,9 @@ export default function App() {
     // it's the pages themselves (and the api.js/offlineQueue.js backstop
     // behind them) that keep every actual edit/create/delete control off
     // limits once it's there. See viewOnlyGuard.js for the full picture.
-    if (page === "requests") return (isAdmin || isViewOnly) ? <ChangeRequests /> : <PermissionDenied />;
-    if (page === "stations") return (isAdmin || isViewOnly) ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
-    if (page === "station-detail") return (isAdmin || isViewOnly) ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
+    if (page === "requests") return (canApproveRequests || isViewOnly) ? <ChangeRequests /> : <PermissionDenied />;
+    if (page === "stations") return (canManageLocations || isViewOnly) ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
+    if (page === "station-detail") return (canManageLocations || isViewOnly) ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
     if (page === "station-health") return (isAdmin || isViewOnly) ? <StationHealth /> : <PermissionDenied />;
     // [2026-09-09] Data Check — same permission as Financial Reports, since
     // it is the screen finance uses to trust the stock and weight figures
@@ -197,9 +205,9 @@ export default function App() {
     if (page === "reports") return canViewReports ? <Reports /> : <PermissionDenied />;
     if (page === "payments") return canViewReports ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
     if (page === "expenses") return canViewReports ? <Expenses /> : <PermissionDenied />;
-    if (page === "users") return (isAdmin || isViewOnly) ? <UsersPage /> : <PermissionDenied />;
-    if (page === "roles") return (isAdmin || isViewOnly) ? <RolesPage /> : <PermissionDenied />;
-    if (page === "settings") return (isAdmin || isViewOnly) ? <SettingsPage /> : <PermissionDenied />;
+    if (page === "users") return (canManageUsers || isViewOnly) ? <UsersPage /> : <PermissionDenied />;
+    if (page === "roles") return (canManageRoles || isViewOnly) ? <RolesPage /> : <PermissionDenied />;
+    if (page === "settings") return (canManageSettings || isViewOnly) ? <SettingsPage /> : <PermissionDenied />;
     // Receipt Template Editor retired [2026-08-25]: Receipt.jsx now uses a
     // fixed, verified print design (logo + per-location address/phone,
     // matches the Weigh-In Slip) and no longer reads DEFAULT_RECEIPT_TEMPLATE

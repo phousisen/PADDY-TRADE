@@ -8,7 +8,14 @@ export const PERMISSION_GROUPS = [
     permissions: [
       { key: "view_dashboard", label: "View dashboard & stock" },
       { key: "create_transactions", label: "Record new buy/sell transactions" },
-      { key: "edit_transactions", label: "Edit a saved transaction's price/quantity" },
+      // [2026-09-15] Split in two. "edit_transactions" is now the INFO fields
+      // — party, plate, driver, product, paper ticket number, note, quality.
+      // Those are wrong often and cost nothing to fix. The weighbridge
+      // figures and the price are what decide what a farmer is paid, so they
+      // get their own permission, and a role without it has to raise a
+      // Change Request with a reason instead.
+      { key: "edit_transactions", label: "Edit a saved transaction's details (party, plate, note…)" },
+      { key: "edit_weights", label: "Change a recorded weight or price directly" },
       { key: "cancel_transactions", label: "Cancel a transaction" },
     ],
   },

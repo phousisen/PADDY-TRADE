@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { canWithProfile } from "./capabilities.js";
 import { supabase, getAccurateNow } from "./supabaseClient.js";
 import { setViewOnlyMode } from "./viewOnlyGuard.js";
 
@@ -358,10 +359,18 @@ export function AuthProvider({ children }) {
     return Array.isArray(profile?.permissions) && profile.permissions.includes(key);
   }
 
+  // [2026-09-15] `can()` is how the app asks "is this account allowed to do X".
+  // The rule itself lives in capabilities.js so it can be tested without a
+  // browser — including the safety net that a role with no permissions
+  // recorded keeps behaving exactly as it does today.
+  function can(key) {
+    return canWithProfile(profile, key);
+  }
+
   const isViewOnly = !!profile?.view_only;
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission, isViewOnly, passwordRecovery }}>
+    <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission, can, isViewOnly, passwordRecovery }}>
       {children}
     </AuthContext.Provider>
   );
