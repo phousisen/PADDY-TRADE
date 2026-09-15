@@ -366,6 +366,13 @@ export function computeStatements({
 
     cashflow: {
       collected, paidOut, expensesPaid: expensesPaidPeriod, cfOperating,
+      // [2026-09-15] Split so the Cash Flow can show កូនដៃ on its own line, the
+      // way the money is actually thought about here. "Other" is deliberately
+      // the REMAINDER rather than a second bucket sum, so the two lines always
+      // add back to expensesPaid exactly — a classification that misses a
+      // category can never open a silent gap between them.
+      expensesPaidIntermediary: expP.intermediary,
+      expensesPaidOther: expensesPaidPeriod - expP.intermediary,
       assetsBought: assetsBoughtInPeriod, cfInvesting,
       capitalIn: capitalInPeriod, loansIn: loansInPeriod, drawings: drawingsInPeriod, cfFinancing,
       cfNet, openingCash, closingCash: addKnown(openingCash, cfNet),

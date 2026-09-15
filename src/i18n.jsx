@@ -878,6 +878,19 @@ export const translations = {
     ov_unexp: "{v} ៛ unexplained.",
     ov_unexp_b: "Nothing here is plugged, so the two sides can disagree — and this gap is almost always the cash the business held before the system started, which has never been entered. Recording an opening balance closes it.",
 
+    per_day: " for the day",
+    per_month: " for the month",
+    per_period: " for the period",
+    cfl_collected: "Money collected from paddy sales{p}",
+    cfl_paidfarmers: "Money paid for paddy bought{p}",
+    cfl_exp_int: "Intermediary fee paid{p}",
+    cfl_exp_other: "Other expenses paid{p}",
+    cfl_netmove: "Net movement in cash{p}",
+    cfl_capital_in: "Capital added{p}",
+    cfl_capital_out: "Capital withdrawn{p}",
+    cfl_exp_int_hint: "កូនដៃ — recognised from the expense category, not typed here",
+    cfl_exp_other_hint: "wages, fuel, repairs, interest, tax — everything that is not កូនដៃ",
+
   },
   km: {
     appName: "PADDYTRADE",
@@ -1698,6 +1711,19 @@ export const translations = {
     ov_tryagain: "សាកម្តងទៀត",
     ov_unexp: "{v} ៛ មិនអាចពន្យល់បាន។",
     ov_unexp_b: "គ្មានអ្វីត្រូវបានបំពេញដោយបង្ខំនៅទីនេះទេ ដូច្នេះសងខាងអាចខុសគ្នា — ហើយគម្លាតនេះស្ទើរតែតែងតែជាសាច់ប្រាក់ដែលអាជីវកម្មមានមុនពេលប្រព័ន្ធចាប់ផ្តើម ដែលមិនដែលបានបញ្ចូល។ ការកត់ត្រាសមតុល្យដើមគ្រានឹងបិទវា។",
+
+    per_day: "ក្នុងថ្ងៃ",
+    per_month: "ក្នុងខែ",
+    per_period: "ក្នុងគ្រានេះ",
+    cfl_collected: "លុយប្រមូលបានពីការលក់ស្រូវសរុប{p}",
+    cfl_paidfarmers: "លុយបានទូទាត់ថ្លៃទិញស្រូវ{p}",
+    cfl_exp_int: "ចំណាយកូនដៃបានទូទាត់{p}",
+    cfl_exp_other: "ចំណាយផ្សេងៗបានទូទាត់{p}",
+    cfl_netmove: "ចលនាសាច់ប្រាក់សុទ្ធ{p}",
+    cfl_capital_in: "បន្ថែមដើមទុន{p}",
+    cfl_capital_out: "ដកដើមទុន{p}",
+    cfl_exp_int_hint: "កូនដៃ — សម្គាល់ចេញពីប្រភេទចំណាយ មិនមែនវាយបញ្ចូលនៅទីនេះទេ",
+    cfl_exp_other_hint: "ប្រាក់ឈ្នួល ប្រេង ការជួសជុល ការប្រាក់ ពន្ធ — អ្វីៗទាំងអស់ដែលមិនមែនជាកូនដៃ",
 
   },
 };
