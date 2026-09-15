@@ -18,7 +18,7 @@
 import { useStatements } from "../useStatements.js";
 import { useLanguage } from "../i18n.jsx";
 import { ReportCard } from "../components/ReportUI.jsx";
-import { Explain, Line, StatementHead, StatementSummary, StationChips, ScopeBar, fmt, isKnown } from "../components/StatementUI.jsx";
+import { Explain, Line, StatementHead, StatementSummary, StationChips, ScopeBar, periodWordKey, fmt, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportCashFlow({ selectedLocationIds = [], setSelectedLocationIds, startDate = null, endDate = null }) {
   const { t } = useLanguage();
@@ -30,6 +30,9 @@ export default function ReportCashFlow({ selectedLocationIds = [], setSelectedLo
   const c = data.cashflow;
   const i = data.income;
   const period = startDate && endDate ? t("st_period_between", { a: startDate, b: endDate }) : t("st_period_all");
+  // [2026-09-15] "ក្នុងថ្ងៃ" / "ក្នុងខែ" / "ក្នុងគ្រានេះ" — follows the date
+  // filter, so a line never claims to be a day's figure over a month's total.
+  const p = t(periodWordKey(startDate, endDate));
 
   const SECTION = "mb-1 mt-5 text-[10.5px] font-semibold uppercase tracking-wide text-brand-700";
 
@@ -53,9 +56,14 @@ export default function ReportCashFlow({ selectedLocationIds = [], setSelectedLo
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_330px]">
         <ReportCard>
           <p className={SECTION.replace("mt-5", "mt-1")}>{t("st_actop")}</p>
-          <Line label={t("st_collected")} value={c.collected} indent />
-          <Line label={t("st_paidfarmers")} value={-c.paidOut} indent signed />
-          <Line label={t("st_expensespaid")} value={-c.expensesPaid} indent signed />
+          <Line label={t("cfl_collected", { p })} value={c.collected} indent />
+          <Line label={t("cfl_paidfarmers", { p })} value={-c.paidOut} indent signed />
+          {/* [2026-09-15] កូនដៃ on its own line. "Other" is the remainder, so
+              the two always add back to expenses paid exactly. */}
+          <Line label={t("cfl_exp_int", { p })} hint={t("cfl_exp_int_hint")}
+                value={-c.expensesPaidIntermediary} indent signed />
+          <Line label={t("cfl_exp_other", { p })} hint={t("cfl_exp_other_hint")}
+                value={-c.expensesPaidOther} indent signed />
           <Line label={t("cf_netop")} value={c.cfOperating} total signed />
 
           <p className={SECTION}>{t("st_actinv")}</p>
@@ -69,12 +77,12 @@ export default function ReportCashFlow({ selectedLocationIds = [], setSelectedLo
           <Line label={t("cf_netinv")} value={c.cfInvesting} total signed />
 
           <p className={SECTION}>{t("st_actfin")}</p>
-          <Line label={t("st_capital")} value={c.capitalIn} indent />
+          <Line label={t("cfl_capital_in", { p })} value={c.capitalIn} indent />
           <Line label={t("cf_loansnet")} value={c.loansIn} indent signed />
-          <Line label={t("cf_drawingsline")} value={-c.drawings} indent signed />
+          <Line label={t("cfl_capital_out", { p })} value={-c.drawings} indent signed />
           <Line label={t("cf_netfin")} value={c.cfFinancing} total signed />
 
-          <Line label={t("st_netmove")} value={c.cfNet} grand signed />
+          <Line label={t("cfl_netmove", { p })} value={c.cfNet} grand signed />
           <Line
             label={t("st_opencash")}
             hint={t("cf_opencash_hint")}
