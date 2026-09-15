@@ -20,7 +20,7 @@ import { useAuth } from "../AuthContext.jsx";
 export default function MobileNav({ page, setPage, pendingRequests }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { lang, setLang, t } = useLanguage();
-  const { profile, hasPermission, logout, isViewOnly } = useAuth();
+  const { profile, hasPermission, can, logout, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isStaff = profile?.role === "staff";
   const isOwner = !!profile?.isOwner;
@@ -31,7 +31,17 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
   // [2026-09-02] A view-only account now gets its own simplified menu —
   // see Sidebar.jsx's matching comment for the full reasoning. It no
   // longer counts as "admin nav" here either.
-  const canSeeAdminNav = isAdmin && !isViewOnly;
+  // [2026-09-15] These were all `isAdmin`. They are now per-capability, so an
+  // HQ account can reach every station without also holding the keys to Users,
+  // Roles and Settings. A role with no permissions recorded still behaves
+  // exactly as before — see can() in AuthContext.jsx.
+  const canSeeAdminNav = isAdmin && !isViewOnly;            // Station Health, still all admins
+  const canApproveRequests = can("approve_change_requests") && !isViewOnly;
+  const canManageLocations = can("manage_locations") && !isViewOnly;
+  const canManageUsers = can("manage_users") && !isViewOnly;
+  const canManageRoles = can("manage_roles") && !isViewOnly;
+  const canManageSettings = can("manage_settings") && !isViewOnly;
+  const canSeeSystemGroup = canManageLocations || canManageUsers || canManageRoles || canManageSettings || canSeeAdminNav;
 
   // [2026-09-03] For a view-only account, only the 3 screens used most
   // constantly get their own primary tab — Dashboard/Stock/Transactions —
@@ -68,19 +78,19 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
       ]
     : [
         { id: "buyers", label: t("nav_buyers"), icon: ShoppingCart },
-        ...(canSeeAdminNav ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
+        ...(canApproveRequests ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
         { id: "stock", label: t("nav_stock"), icon: Warehouse },
         ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
         ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet }] : []),
       ];
 
-  const systemItems = canSeeAdminNav
+  const systemItems = canSeeSystemGroup
     ? [
-        { id: "stations", label: t("nav_stations"), icon: MapPin },
-        { id: "station-health", label: t("nav_station_health"), icon: Activity },
-        { id: "users", label: t("nav_users"), icon: UserCog },
-        { id: "roles", label: t("nav_roles"), icon: ShieldCheck },
-        { id: "settings", label: t("nav_settings"), icon: Settings },
+        ...(canManageLocations ? [{ id: "stations", label: t("nav_stations"), icon: MapPin }] : []),
+        ...(canSeeAdminNav ? [{ id: "station-health", label: t("nav_station_health"), icon: Activity }] : []),
+        ...(canManageUsers ? [{ id: "users", label: t("nav_users"), icon: UserCog }] : []),
+        ...(canManageRoles ? [{ id: "roles", label: t("nav_roles"), icon: ShieldCheck }] : []),
+        ...(canManageSettings ? [{ id: "settings", label: t("nav_settings"), icon: Settings }] : []),
       ]
     : [];
 

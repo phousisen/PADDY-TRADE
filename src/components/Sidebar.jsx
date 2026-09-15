@@ -15,7 +15,7 @@ import { useAuth } from "../AuthContext.jsx";
 // feature existed.
 export default function Sidebar({ page, setPage, pendingRequests }) {
   const { lang, setLang, t } = useLanguage();
-  const { profile, hasPermission, logout, isViewOnly } = useAuth();
+  const { profile, hasPermission, can, logout, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
   const isStaff = profile?.role === "staff";
   const isOwner = !!profile?.isOwner;
@@ -34,7 +34,17 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
   // canvas brief), which this group had missed. Still read-only: Expenses
   // itself hides its "Add Expense" button for `isViewOnly` (see
   // Expenses.jsx), same as every other write control in the app.
-  const canSeeAdminNav = isAdmin && !isViewOnly;
+  // [2026-09-15] These were all `isAdmin`. They are now per-capability, so an
+  // HQ account can reach every station without also holding the keys to Users,
+  // Roles and Settings. A role with no permissions recorded still behaves
+  // exactly as before — see can() in AuthContext.jsx.
+  const canSeeAdminNav = isAdmin && !isViewOnly;            // Station Health, still all admins
+  const canApproveRequests = can("approve_change_requests") && !isViewOnly;
+  const canManageLocations = can("manage_locations") && !isViewOnly;
+  const canManageUsers = can("manage_users") && !isViewOnly;
+  const canManageRoles = can("manage_roles") && !isViewOnly;
+  const canManageSettings = can("manage_settings") && !isViewOnly;
+  const canSeeSystemGroup = canManageLocations || canManageUsers || canManageRoles || canManageSettings || canSeeAdminNav;
   // A Staff account with "View Financial Reports" granted via Settings ->
   // Roles gets the Reports link too, same rule as App.jsx's canViewReports.
   const canViewReports = !isStaff || hasPermission("view_reports");
@@ -69,7 +79,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
             // by day/week/month with the shed level and the day's profit.
             // Derived only — nothing on it can be edited.
             { id: "daily-book", label: t("nav_daily_book"), icon: BookOpen },
-            ...(canSeeAdminNav ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
+            ...(canApproveRequests ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
           ],
         },
         {
@@ -102,20 +112,20 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
             ...(canViewReports ? [{ id: "data-check", label: t("nav_datacheck"), icon: ShieldCheck }] : []),
           ],
         },
-        ...(canSeeAdminNav
+        ...(canSeeSystemGroup
           ? [{
               label: t("grp_system"),
               items: [
-                { id: "stations", label: t("nav_stations"), icon: MapPin },
+                ...(canManageLocations ? [{ id: "stations", label: t("nav_stations"), icon: MapPin }] : []),
                 // [2026-09-01] One glance at all 5 stations' recent-activity
                 // status instead of finding out something's gone quiet from a
                 // phone call or a missing-receipt investigation days later —
                 // see StationHealth.jsx for exactly what it does and doesn't
                 // measure (recent transactions, not a live scale connection).
-                { id: "station-health", label: t("nav_station_health"), icon: Activity },
-                { id: "users", label: t("nav_users"), icon: UserCog },
-                { id: "roles", label: t("nav_roles"), icon: ShieldCheck },
-                { id: "settings", label: t("nav_settings"), icon: Settings },
+                ...(canSeeAdminNav ? [{ id: "station-health", label: t("nav_station_health"), icon: Activity }] : []),
+                ...(canManageUsers ? [{ id: "users", label: t("nav_users"), icon: UserCog }] : []),
+                ...(canManageRoles ? [{ id: "roles", label: t("nav_roles"), icon: ShieldCheck }] : []),
+                ...(canManageSettings ? [{ id: "settings", label: t("nav_settings"), icon: Settings }] : []),
                 // "Receipt Template" nav entry removed [2026-08-25] — that page
                 // no longer affects the printed receipt/slip design (see
                 // App.jsx), so it's no longer linked from here. The route
