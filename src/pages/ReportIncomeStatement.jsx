@@ -15,7 +15,7 @@
 import { useStatements } from "../useStatements.js";
 import { useLanguage } from "../i18n.jsx";
 import { ReportCard } from "../components/ReportUI.jsx";
-import { Line, StatementHead, StatementSummary, StationChips, ScopeBar, SetupNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
+import { Explain, Line, StatementHead, StatementSummary, StationChips, ScopeBar, SetupNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportIncomeStatement({ selectedLocationIds = [], setSelectedLocationIds, startDate = null, endDate = null }) {
   const { t } = useLanguage();
@@ -95,7 +95,7 @@ export default function ReportIncomeStatement({ selectedLocationIds = [], setSel
             <p className="mt-1.5 text-[22px] font-bold tracking-tight text-brand-900 tabular-nums">
               {fmt(i.profitBeforeUnknowns)} ៛
             </p>
-            <p className="mt-2 text-[12px] leading-relaxed text-brand-800">{t("is_pbdit_b")}</p>
+            <Explain><p className="mt-2 text-[12px] leading-relaxed text-brand-800">{t("is_pbdit_b")}</p></Explain>
           </div>
 
           <ReportCard title={t("is_from_t")} subtitle={t("is_from_s")}>
@@ -104,9 +104,11 @@ export default function ReportIncomeStatement({ selectedLocationIds = [], setSel
             <Line label={t("is_purchases")} value={i.purchases} indent hint={t("is_purchases_hint")} />
           </ReportCard>
 
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-            <b className="font-semibold text-slate-700">{t("is_note_t")}</b> {t("is_note_b")}
-          </div>
+          <Explain>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
+              <b className="font-semibold text-slate-700">{t("is_note_t")}</b> {t("is_note_b")}
+            </div>
+          </Explain>
         </div>
       </div>
     </div>

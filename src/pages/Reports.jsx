@@ -30,7 +30,8 @@ import ReportFinanceSetup from "./ReportFinanceSetup.jsx";
 // [2026-09-15] The Finance section index, and the one list that defines what
 // is in this section. The sub-menu below and the Start page are built from
 // the SAME list, so a screen can never be in one and missing from the other.
-import FinanceStart, { FINANCE_SCREENS, FINANCE_GROUPS } from "./FinanceStart.jsx";
+import { FINANCE_SCREENS, FINANCE_GROUPS } from "./FinanceStart.jsx";
+import { ExplainProvider, ExplainToggle } from "../components/StatementUI.jsx";
 
 
 // Cambodia's calendar today, and the first of the month it falls in — the
@@ -45,7 +46,7 @@ function monthStart() {
   return `${cambodiaToday().slice(0, 7)}-01`;
 }
 
-export default function Reports({ initialTab = "start" }) {
+export default function Reports({ initialTab = "overview" }) {
   const { t } = useLanguage();
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -117,25 +118,36 @@ export default function Reports({ initialTab = "start" }) {
     receivables: Wallet, stock: Boxes, shrinkage: TrendingDown,
     capital: PiggyBank, financesetup: SlidersHorizontal, tax: ReceiptText, auditlog: History,
   };
-  // [2026-09-15] Khmer pass — the menu holds keys, not words, and resolves
-  // them here, so the sub-menu switches language with the rest of the app.
+  // [2026-09-15] Two changes here, both about saying things once.
+  //
+  //   Every item used to carry a second line explaining itself — "Balance
+  //   Sheet / Own, owe, and what's left". That sentence is already at the top
+  //   of the screen the item opens, so the menu said it and then the page said
+  //   it again. The names stand on their own.
+  //
+  //   "Start here" and "Overview" were two names for one screen: the index and
+  //   the summary of the same section. They are now one item, Overview, and it
+  //   is where Finance opens. "start" still resolves to it so an old link or a
+  //   call to onNavigate("start") from anywhere in the app lands somewhere real.
   const navGroups = [
-    { label: null, items: [
-      { id: "start", label: t("fin_start"), short: t("fin_start_h") },
-      { id: "overview", label: t("fin_overview"), short: t("fin_overview_h") },
-    ] },
+    { label: null, items: [{ id: "overview", label: t("fin_overview") }] },
     ...FINANCE_GROUPS.map((g) => ({
       label: t(g.labelKey),
       items: FINANCE_SCREENS
         .filter((s) => s.group === g.id && (!s.admin || isAdmin))
-        .map((s) => ({ ...s, label: t(s.labelKey), short: t(s.shortKey) })),
+        .map((s) => ({ ...s, label: t(s.labelKey) })),
     })),
   ];
   const allTabs = navGroups.flatMap((g) => g.items);
 
   return (
+    // One provider around the whole section, because the switch lives in the
+    // toolbar and the prose it hides lives inside <main>.
+    <ExplainProvider>
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title={t("reports_title")} subtitle={t("reports_subtitle")} />
+      {/* [2026-09-15] The subtitle used to be a sentence explaining what the
+          section contains. The section's own menu does that now. */}
+      <Topbar title={t("nav_finance")} subtitle={t("reports_subtitle_short", { n: locations.length })} />
       <div className="border-b border-slate-200 bg-white px-6 pt-3">
         <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
           <DateRangeFilter startDate={startDate} endDate={endDate} onChange={(s, e) => { setStartDate(s); setEndDate(e); }} />
@@ -150,6 +162,7 @@ export default function Reports({ initialTab = "start" }) {
             {exporting ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
             {exporting ? t("exporting_btn") : t("export_ledger")}
           </button>
+          <ExplainToggle />
         </div>
       </div>
       {exportError && (
@@ -179,10 +192,7 @@ export default function Reports({ initialTab = "start" }) {
                       on ? "bg-brand-50 text-brand-800" : "text-slate-600 hover:bg-slate-50"}`}
                   >
                     <Icon size={15} className={`mt-0.5 shrink-0 ${on ? "text-brand-600" : "text-slate-300"}`} />
-                    <span className="min-w-0">
-                      <span className={`block text-[13px] leading-tight ${on ? "font-semibold" : "font-medium"}`}>{it.label}</span>
-                      {it.short && <span className="mt-0.5 block text-[10.5px] leading-tight text-slate-400">{it.short}</span>}
-                    </span>
+                    <span className={`min-w-0 text-[13px] leading-tight ${on ? "font-semibold" : "font-medium"}`}>{it.label}</span>
                   </button>
                 );
               })}
@@ -208,8 +218,7 @@ export default function Reports({ initialTab = "start" }) {
           </div>
 
       <main className="flex-1 overflow-y-auto bg-paper p-6">
-        {tab === "start" && <FinanceStart onNavigate={setTab} isAdmin={isAdmin} />}
-        {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
+        {(tab === "overview" || tab === "start") && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} isAdmin={isAdmin} />}
         {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "income" && <ReportIncomeStatement selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "inventory" && <ReportInventory selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
@@ -229,5 +238,6 @@ export default function Reports({ initialTab = "start" }) {
         </div>
       </div>
     </div>
+    </ExplainProvider>
   );
 }

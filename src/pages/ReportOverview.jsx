@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Wallet } from "lucide-react";
 import { api } from "../api.js";
+import { useLanguage } from "../i18n.jsx";
+import ToEnter from "./FinanceStart.jsx";
+import { StatementSummary } from "../components/StatementUI.jsx";
 import { queryRange, rangeKey } from "../reportQuery.js";
 // [2026-09-14] The figures moved to src/financials.js — see the six fixes
 // documented there. Re-exported from here so the pages that have always
@@ -8,11 +10,12 @@ import { queryRange, rangeKey } from "../reportQuery.js";
 // Balance Sheet, reportExport) need no change.
 import { computeFinancials, paidStatusMap } from "../financials.js";
 export { computeFinancials, paidStatusMap };
-import { SummaryStrip, SummaryCell, ReportCard, SectionLabel, Row, TotalBox, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
+import { ReportCard, SectionLabel, Row, TotalBox, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 
-export default function ReportOverview({ selectedLocationIds = [], startDate = null, endDate = null, onNavigate }) {
+export default function ReportOverview({ selectedLocationIds = [], startDate = null, endDate = null, onNavigate, isAdmin }) {
+  const { t } = useLanguage();
   const [txs, setTxs] = useState([]);
   const [stations, setStations] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
@@ -97,17 +100,10 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   const buyTx = filteredTxs.filter((t) => t.type === "BUY").length;
   const sellTx = filteredTxs.filter((t) => t.type === "SELL").length;
 
-  // [2026-09-14] Overview is a SUMMARY. The statements an accountant actually
-  // signs are their own pages, and they were reachable only from a tab row
-  // that scrolled sideways — so they shipped and stayed invisible. This puts
-  // them one click away from the page everyone lands on.
-  const STATEMENTS = [
-    ["balancesheet", "Balance Sheet", "assets, liabilities and equity as at the period end"],
-    ["income", "Income Statement", "the accountant's line order, down to net profit"],
-    ["cashflow", "Cash Flow", "operating, investing and financing"],
-    ["inventory", "Inventory", "the shed by station and consolidated"],
-    ["shareholders", "Shareholder's Records", "sales volume and value per partner"],
-  ];
+  // [2026-09-15] The panel of five links to the statements used to sit here.
+  // It was built when the statements were hidden behind a tab row that
+  // scrolled sideways. They now have their own permanent column on the left,
+  // so a second copy of that list on the page it opens onto is just words.
 
   // A failure is stated, and the zeros it would otherwise have produced are
   // not shown at all — a wrong number next to an error message still gets
@@ -115,16 +111,14 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   if (loadError) {
     return (
       <div className="rounded-xl border border-rose-200 bg-rose-50 px-5 py-4">
-        <p className="text-[14px] font-semibold text-rose-800">This report could not load its data.</p>
-        <p className="mt-1 text-[13px] leading-relaxed text-rose-700">
-          Nothing is shown rather than zeros, because a zero here would look like a real figure and would be wrong.
-        </p>
+        <p className="text-[14px] font-semibold text-rose-800">{t("ov_loadfail_t")}</p>
+        <p className="mt-1 text-[13px] leading-relaxed text-rose-700">{t("ov_loadfail_b")}</p>
         <p className="mt-2 rounded-md bg-white/70 px-3 py-2 font-mono text-[12px] text-rose-900">{loadError}</p>
         <button
           onClick={() => window.location.reload()}
           className="mt-3 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-[13px] font-medium text-rose-700 hover:bg-rose-100"
         >
-          Try again
+          {t("ov_tryagain")}
         </button>
       </div>
     );
@@ -135,113 +129,102 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
   if (!loaded) {
     return (
       <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">
-        Loading…
+        {t("loading_label")}
       </div>
     );
   }
 
+  // The caveat on the profit figure is only true while nothing has been
+  // recorded. The day the first expense goes in, it stops being printed —
+  // a warning that outlives its reason is how people learn to ignore warnings.
+  const beforeExpenses = !calc.totalExpenses;
+
   return (
     <div>
-      {onNavigate && (
-        <div className="mb-5 rounded-xl border border-brand-200 bg-brand-50/60 p-4">
-          <p className="mb-0.5 text-[13px] font-semibold text-brand-900">The full financial statements</p>
-          <p className="mb-3 text-[11.5px] text-brand-800">
-            This page is the summary. These are the statements themselves — each one works for a single station or
-            consolidates however many you select.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {STATEMENTS.map(([id, label, hint]) => (
-              <button
-                key={id}
-                onClick={() => onNavigate(id)}
-                title={hint}
-                className="rounded-lg border border-brand-300 bg-white px-3 py-2 text-left text-[12.5px] font-medium text-brand-800 hover:border-brand-500 hover:bg-brand-50"
-              >
-                {label} <span className="text-brand-500">→</span>
-              </button>
-            ))}
-          </div>
+      {/* What nobody has recorded, above the figures it would change. */}
+      <ToEnter onNavigate={onNavigate} isAdmin={isAdmin} />
+
+      {/* [2026-09-15] Five figures, the same strip every statement uses. What
+          the business is holding and what it is owed each way — read off the
+          weighbridge, so all five are real even with nothing else entered. */}
+      <StatementSummary cells={[
+        { label: t("st_inshed"), value: calc.inventoryKg, riel: false,
+          sub: t("fig_kg_stations", { n: filteredStations.length }) },
+        { label: t("fig_shedvalue"), value: calc.inventoryValue, sub: t("fig_riel_cost") },
+        { label: t("st_owedfarmers"), value: calc.accountsPayable, sub: t("st_riel") },
+        { label: t("st_owedus"), value: calc.accountsReceivable, sub: t("st_riel") },
+        { label: t("fig_profit"), value: calc.netProfit,
+          sub: beforeExpenses ? t("fig_profit_sub") : t("st_riel"),
+          tone: calc.netProfit >= 0 ? "pos" : "neg" },
+      ]} />
+
+      {/* Profit is the one figure above that is NOT complete, so it says so
+          once, here, instead of every line carrying a caveat. */}
+      {beforeExpenses && (
+        <div className="mb-4 rounded-xl border border-gold-300 bg-gold-50 px-4 py-3 text-[12.3px] leading-relaxed text-gold-700">
+          {t("fin_profitnote")}
         </div>
       )}
-
-      <SummaryStrip>
-        <SummaryCell label="Total Sales" value={`${fmt(calc.totalSell)} ៛`} sub={`${sellTx} transaction${sellTx === 1 ? "" : "s"}`} />
-        <SummaryCell label="Total Purchases" value={`${fmt(calc.totalBuy)} ៛`} sub={`${buyTx} transaction${buyTx === 1 ? "" : "s"}`} />
-        <SummaryCell
-          label="Gross Profit"
-          value={`${fmt(calc.grossProfit)} ៛`}
-          sub={calc.grossProfit >= 0 ? "sales above the cost of what sold" : "sales below the cost of what sold"}
-          tone={calc.grossProfit >= 0 ? "pos" : "neg"}
-        />
-        <SummaryCell
-          label="Net Worth (Equity)"
-          value={`${fmt(calc.equity)} ៛`}
-          sub={calc.equity >= 0 ? "assets exceed liabilities" : "liabilities exceed assets"}
-          tone={calc.equity >= 0 ? "pos" : "neg"}
-        />
-      </SummaryStrip>
 
       {/* [2026-08-31] grid-cols-1 md:grid-cols-2 instead of a flat
           grid-cols-2 — these two panels used to squeeze side by side on a
           phone screen; now stack full-width below the md breakpoint. */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <ReportCard title="Profit & Loss" subtitle={`${totalTx} transactions this range`}>
-          <Row label="Sales" value={`${fmt(calc.totalSell)} ៛`} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
+        <ReportCard title={t("ov_pl")} subtitle={t("ov_txcount", { n: totalTx })}>
+          <Row label={t("ov_sales")} value={`${fmt(calc.totalSell)} ៛`} onClick={onNavigate ? () => onNavigate("sales") : undefined} />
           {/* [2026-09-14] This line used to read "Total Purchases (COGS)" and
               show everything bought in the period. Buying paddy is not a cost
               until it is sold — what the paddy that actually SHIPPED cost is.
               Purchases are still shown, below, as the separate thing they are. */}
-          <Row label="Cost of paddy sold" value={`${fmt(-calc.costOfGoodsSold)} ៛`} />
-          <TotalBox><Row label="Gross Profit" value={`${fmt(calc.grossProfit)} ៛`} bold tone={calc.grossProfit >= 0 ? "pos" : "neg"} /></TotalBox>
-          <Row label="Operating Expenses" value={`${fmt(-calc.totalExpenses)} ៛`} />
+          <Row label={t("ov_cogs")} value={`${fmt(-calc.costOfGoodsSold)} ៛`} />
+          <TotalBox><Row label={t("ov_grossprofit")} value={`${fmt(calc.grossProfit)} ៛`} bold tone={calc.grossProfit >= 0 ? "pos" : "neg"} /></TotalBox>
+          <Row label={t("ov_opex")} value={`${fmt(-calc.totalExpenses)} ៛`} />
           {calc.stockLossValue < 0 && (
-            <Row label="Stock lost on count" value={`${fmt(calc.stockLossValue)} ៛`} tone="neg" />
+            <Row label={t("ov_stockloss")} value={`${fmt(calc.stockLossValue)} ៛`} tone="neg" />
           )}
-          <TotalBox><Row label="Net Profit" value={`${fmt(calc.netProfit)} ៛`} bold tone={calc.netProfit >= 0 ? "pos" : "neg"} /></TotalBox>
-          <SectionLabel>For reference</SectionLabel>
-          <Row label="Paddy purchased this range" value={`${fmt(calc.totalBuy)} ៛`} indent onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
+          <TotalBox><Row label={t("ov_netprofit")} value={`${fmt(calc.netProfit)} ៛`} bold tone={calc.netProfit >= 0 ? "pos" : "neg"} /></TotalBox>
+          <SectionLabel>{t("ov_reference")}</SectionLabel>
+          <Row label={t("ov_purchased")} value={`${fmt(calc.totalBuy)} ៛`} indent onClick={onNavigate ? () => onNavigate("purchases") : undefined} />
         </ReportCard>
         <ReportCard
-          title="Balance Sheet"
-          subtitle={endDate ? `As at ${endDate}` : "As of today"}
+          title={t("ov_bs")}
+          subtitle={endDate ? t("ov_asat", { date: endDate }) : t("ov_astoday")}
         >
           {onNavigate && (
-            <button onClick={() => onNavigate("balancesheet")} className="float-right -mt-8 text-[11.5px] font-medium text-brand-600 hover:underline">Full statement →</button>
+            <button onClick={() => onNavigate("balancesheet")} className="float-right -mt-8 text-[11.5px] font-medium text-brand-600 hover:underline">{t("ov_full")}</button>
           )}
-          <SectionLabel>Assets</SectionLabel>
-          <Row label="Inventory on hand" value={`${fmt(calc.inventoryValue)} ៛`} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
-          <Row label="Accounts Receivable" value={`${fmt(calc.accountsReceivable)} ៛`} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
+          <SectionLabel>{t("st_assets")}</SectionLabel>
+          <Row label={t("ov_inventory")} value={`${fmt(calc.inventoryValue)} ៛`} indent onClick={onNavigate ? () => onNavigate("stock") : undefined} />
+          <Row label={t("ov_ar")} value={`${fmt(calc.accountsReceivable)} ៛`} indent onClick={onNavigate ? () => onNavigate("receivables") : undefined} />
           {/* [2026-09-14] No longer floored at zero — an overdrawn business
               used to display as having none. */}
-          <Row label="Cash (derived)" value={`${fmt(calc.cashEstimate)} ៛`} indent tone={calc.cashEstimate < 0 ? "neg" : undefined} onClick={onNavigate ? () => onNavigate("cashflow") : undefined} />
-          <Row label="Total Assets" value={`${fmt(calc.totalAssets)} ៛`} bold />
-          <SectionLabel>Liabilities</SectionLabel>
-          <Row label="Accounts Payable" value={`${fmt(calc.accountsPayable)} ៛`} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
-          <Row label="Bank Loans" value={`${fmt(calc.bankLoansOutstanding)} ៛`} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
-          <Row label="Total Liabilities" value={`${fmt(calc.totalLiabilities)} ៛`} bold />
-          <SectionLabel>Equity</SectionLabel>
-          <Row label="Partner Capital" value={`${fmt(calc.partnerCapital)} ៛`} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
-          <Row label="Retained Earnings" value={`${fmt(calc.retainedEarnings)} ៛`} indent />
-          <TotalBox><Row label="Equity (net worth)" value={`${fmt(calc.equity)} ៛`} bold /></TotalBox>
+          <Row label={t("ov_cash")} value={`${fmt(calc.cashEstimate)} ៛`} indent tone={calc.cashEstimate < 0 ? "neg" : undefined} onClick={onNavigate ? () => onNavigate("cashflow") : undefined} />
+          <Row label={t("ov_totassets")} value={`${fmt(calc.totalAssets)} ៛`} bold />
+          <SectionLabel>{t("st_liabilities")}</SectionLabel>
+          <Row label={t("ov_ap")} value={`${fmt(calc.accountsPayable)} ៛`} indent onClick={onNavigate ? () => onNavigate("payables") : undefined} />
+          <Row label={t("ov_loans")} value={`${fmt(calc.bankLoansOutstanding)} ៛`} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
+          <Row label={t("ov_totliab")} value={`${fmt(calc.totalLiabilities)} ៛`} bold />
+          <SectionLabel>{t("st_equity")}</SectionLabel>
+          <Row label={t("ov_capital")} value={`${fmt(calc.partnerCapital)} ៛`} indent onClick={onNavigate ? () => onNavigate("capital") : undefined} />
+          <Row label={t("ov_retained")} value={`${fmt(calc.retainedEarnings)} ៛`} indent />
+          <TotalBox><Row label={t("ov_equity")} value={`${fmt(calc.equity)} ៛`} bold /></TotalBox>
           {/* [2026-09-14] Retained earnings used to be whatever made the sheet
               balance. It is now accumulated profit, so the two sides can differ
               — and the gap is reported rather than hidden inside equity. */}
           {Math.abs(calc.unreconciled) > 1 && (
             <div className="mt-3 rounded-lg border border-gold-300 bg-gold-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-gold-700">
-              <b>{fmt(calc.unreconciled)} ៛ unexplained.</b> Nothing here is plugged any more, so the two sides
-              can disagree — and this gap is almost always the cash the business held before the system
-              started, which has never been entered. Recording an opening balance closes it.
+              <b>{t("ov_unexp", { v: fmt(calc.unreconciled) })}</b> {t("ov_unexp_b")}
             </div>
           )}
         </ReportCard>
       </div>
 
       {byLocation.length > 1 && (
-        <TableCard title="By Location" className="mt-4">
+        <TableCard title={t("ov_bylocation")} className="mt-4">
           <Table>
             <thead>
               <tr>
-                <Th>Location</Th><Th num>Sales</Th><Th num>Purchases</Th><Th num>Profit</Th><Th num>Inventory</Th><Th num>Payable</Th>
+                <Th>{t("ov_th_location")}</Th><Th num>{t("ov_sales")}</Th><Th num>{t("ov_th_purchases")}</Th><Th num>{t("ov_th_profit")}</Th><Th num>{t("ov_th_inventory")}</Th><Th num>{t("ov_th_payable")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -260,11 +243,6 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
         </TableCard>
       )}
 
-      <div className="mt-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
-        <Wallet size={13} className="mt-0.5 shrink-0" />
-        Simplified model: inventory is valued at average purchase cost, and cost of goods sold is approximated from total purchases rather than matched item-by-item.
-        {onNavigate && <span className="ml-1">Tip: click any Sales, Purchases, or Balance Sheet line above to jump straight to its detail report.</span>}
-      </div>
     </div>
   );
 }

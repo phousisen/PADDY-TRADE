@@ -17,7 +17,7 @@
 import { useStatements } from "../useStatements.js";
 import { useLanguage } from "../i18n.jsx";
 import { TableCard } from "../components/ReportUI.jsx";
-import { StatementHead, StationChips, ScopeBar, Amount, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
+import { Explain, StatementHead, StationChips, ScopeBar, Amount, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
 import { AlertTriangle } from "lucide-react";
 
 const TH = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap";
@@ -138,9 +138,11 @@ export default function ReportShareholders({ selectedLocationIds = [], setSelect
                 </tbody>
               </table>
             </div>
-            <p className="border-t border-slate-100 px-4 py-3 text-[11.5px] leading-relaxed text-slate-400">
-              {t("sh_foot")}
-            </p>
+            <Explain>
+              <p className="border-t border-slate-100 px-4 py-3 text-[11.5px] leading-relaxed text-slate-400">
+                {t("sh_foot")}
+              </p>
+            </Explain>
           </TableCard>
         </div>
       )}

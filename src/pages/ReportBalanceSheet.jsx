@@ -27,7 +27,7 @@
 import { useStatements } from "../useStatements.js";
 import { ReportCard } from "../components/ReportUI.jsx";
 import { useLanguage } from "../i18n.jsx";
-import { Line, StatementHead, StatementSummary, StationChips, ScopeBar, SetupNotice, UnreconciledNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
+import { Explain, Line, StatementHead, StatementSummary, StationChips, ScopeBar, SetupNotice, UnreconciledNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportBalanceSheet({ selectedLocationIds = [], setSelectedLocationIds, startDate = null, endDate = null }) {
   const { t } = useLanguage();
@@ -112,15 +112,17 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], setSelect
 
       <UnreconciledNotice value={b.unreconciled} />
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-          <b className="font-semibold text-slate-700">{t("bs_note1_t", { v: fmt(b.cashMovement) })}</b>{" "}
-          {t("bs_note1_b")}
+      <Explain>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
+            <b className="font-semibold text-slate-700">{t("bs_note1_t", { v: fmt(b.cashMovement) })}</b>{" "}
+            {t("bs_note1_b")}
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
+            <b className="font-semibold text-slate-700">{t("bs_note2_t")}</b> {t("bs_note2_b")}
+          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-          <b className="font-semibold text-slate-700">{t("bs_note2_t")}</b> {t("bs_note2_b")}
-        </div>
-      </div>
+      </Explain>
     </div>
   );
 }

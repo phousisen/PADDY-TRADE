@@ -18,7 +18,7 @@
 import { useStatements } from "../useStatements.js";
 import { useLanguage } from "../i18n.jsx";
 import { ReportCard } from "../components/ReportUI.jsx";
-import { Line, StatementHead, StatementSummary, StationChips, ScopeBar, fmt, isKnown } from "../components/StatementUI.jsx";
+import { Explain, Line, StatementHead, StatementSummary, StationChips, ScopeBar, fmt, isKnown } from "../components/StatementUI.jsx";
 
 export default function ReportCashFlow({ selectedLocationIds = [], setSelectedLocationIds, startDate = null, endDate = null }) {
   const { t } = useLanguage();
@@ -105,9 +105,11 @@ export default function ReportCashFlow({ selectedLocationIds = [], setSelectedLo
             </div>
           )}
 
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-            <b className="font-semibold text-slate-700">{t("cf_draw_t")}</b> {t("cf_draw_b")}
-          </div>
+          <Explain>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
+              <b className="font-semibold text-slate-700">{t("cf_draw_t")}</b> {t("cf_draw_b")}
+            </div>
+          </Explain>
         </div>
       </div>
     </div>

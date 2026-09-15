@@ -16,7 +16,7 @@
 import { useStatements } from "../useStatements.js";
 import { useLanguage } from "../i18n.jsx";
 import { TableCard } from "../components/ReportUI.jsx";
-import { StatementHead, StatementSummary, StationChips, ScopeBar, fmt, fmtKg } from "../components/StatementUI.jsx";
+import { Explain, StatementHead, StatementSummary, StationChips, ScopeBar, fmt, fmtKg } from "../components/StatementUI.jsx";
 
 const TH = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 whitespace-nowrap";
 const TD = "px-4 py-2.5 text-[13px] border-b border-slate-50 whitespace-nowrap tabular-nums";
@@ -103,14 +103,16 @@ export default function ReportInventory({ selectedLocationIds = [], setSelectedL
         </div>
       </TableCard>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-          <b className="font-semibold text-slate-700">{t("inv_note1_t")}</b> {t("inv_note1_b")}
+      <Explain>
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
+            <b className="font-semibold text-slate-700">{t("inv_note1_t")}</b> {t("inv_note1_b")}
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
+            <b className="font-semibold text-slate-700">{t("inv_note2_t")}</b> {t("inv_note2_b")}
+          </div>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-[12px] leading-relaxed text-slate-500">
-          <b className="font-semibold text-slate-700">{t("inv_note2_t")}</b> {t("inv_note2_b")}
-        </div>
-      </div>
+      </Explain>
     </div>
   );
 }
