@@ -4,6 +4,7 @@ import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import AddLocationModal from "../components/AddLocationModal.jsx";
 import { api } from "../api.js";
+import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -27,6 +28,14 @@ const PERIODS = [
 ];
 
 export default function LocationsPage({ setPage, setSelectedLocationId }) {
+  // [2026-09-15] Adding or renaming a station is rare and consequential — a
+  // station's name is its identity on every ticket, every report and every
+  // printed slip, and a sixth station changes what "consolidated" means. So
+  // both are the Owner's, not something an HQ account can do in passing.
+  // The page itself stays readable for anyone who can reach it: the stock and
+  // the week's trade per station is exactly what a finance account needs.
+  const { profile } = useAuth();
+  const isOwner = !!profile?.isOwner;
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
   const [period, setPeriod] = useState("week");
@@ -193,12 +202,14 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
             >
               <Layers size={13} /> View All Combined
             </button>
-            <button
-              onClick={() => setAddingLocation(true)}
-              className="flex items-center gap-1.5 rounded-[9px] border border-brand-300 bg-white px-3.5 py-1.5 text-[12.5px] font-bold text-brand-700 hover:bg-brand-50"
-            >
-              <Plus size={13} /> Add Location
-            </button>
+            {isOwner && (
+              <button
+                onClick={() => setAddingLocation(true)}
+                className="flex items-center gap-1.5 rounded-[9px] border border-brand-300 bg-white px-3.5 py-1.5 text-[12.5px] font-bold text-brand-700 hover:bg-brand-50"
+              >
+                <Plus size={13} /> Add Location
+              </button>
+            )}
           </div>
         </div>
 
@@ -225,9 +236,11 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
                     <td className="px-5 py-3.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className={`font-semibold ${hasStock ? "text-slate-800" : "text-slate-400"}`}>{loc.name}</span>
-                        <button onClick={() => setEditingLocation(loc)} className="text-slate-300 hover:text-brand-600" title="Rename">
-                          <Pencil size={12} />
-                        </button>
+                        {isOwner && (
+                          <button onClick={() => setEditingLocation(loc)} className="text-slate-300 hover:text-brand-600" title="Rename">
+                            <Pencil size={12} />
+                          </button>
+                        )}
                         {isTop && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-gold-50 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-gold-700">
                             <Star size={9} className="fill-gold-500 text-gold-500" /> Top Station
