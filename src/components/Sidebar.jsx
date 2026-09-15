@@ -48,50 +48,50 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
     ? [
         { label: null, items: [{ id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid }] },
         {
-          label: "Overview",
+          label: t("fin_overview"),
           items: [
             { id: "stock", label: t("nav_stock"), icon: Warehouse },
             { id: "transactions", label: t("nav_transactions"), icon: Receipt },
-            { id: "daily-book", label: "Daily Book", icon: BookOpen },
-            { id: "reports", label: "Finance", icon: BarChart3 },
-            { id: "expenses", label: "Expenses", icon: Wallet },
+            { id: "daily-book", label: t("nav_daily_book"), icon: BookOpen },
+            { id: "reports", label: t("nav_finance"), icon: BarChart3 },
+            { id: "expenses", label: t("nav_expenses"), icon: Wallet },
           ],
         },
       ]
     : [
         { label: null, items: [{ id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid }] },
         {
-          label: "Operations",
+          label: t("grp_operations"),
           items: [
-            { id: "tickets", label: "Weighing Tickets", icon: Scale },
+            { id: "tickets", label: t("nav_tickets"), icon: Scale },
             { id: "transactions", label: t("nav_transactions"), icon: Receipt },
             // [2026-09-14] The same days the station already records, summed
             // by day/week/month with the shed level and the day's profit.
             // Derived only — nothing on it can be edited.
-            { id: "daily-book", label: "Daily Book", icon: BookOpen },
+            { id: "daily-book", label: t("nav_daily_book"), icon: BookOpen },
             ...(canSeeAdminNav ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
           ],
         },
         {
-          label: "Directory",
+          label: t("grp_directory"),
           // Farmers and Buyers used to be two separate nav items pointing at
           // two separate pages. They're still two separate pages/routes under
           // the hood (nothing about party detail / register / navigation logic
           // changed) — but they now share one nav entry, with a Farmers/Buyers
           // toggle living inside the page itself (SimpleListPage.jsx). This
           // link always opens on Farmers; it stays highlighted on either tab.
-          items: [{ id: "suppliers", label: "Farmers & Buyers", icon: Users }],
+          items: [{ id: "suppliers", label: t("nav_parties"), icon: Users }],
         },
         {
-          label: "Inventory & Reports",
+          label: t("grp_inventory"),
           items: [
             { id: "stock", label: t("nav_stock"), icon: Warehouse },
-            ...(canViewReports ? [{ id: "reports", label: "Finance", icon: BarChart3 }] : []),
+            ...(canViewReports ? [{ id: "reports", label: t("nav_finance"), icon: BarChart3 }] : []),
             // Its own sidebar item rather than a tab inside Financial Reports —
             // staff who log daily expenses shouldn't have to go through the
             // Reports section to reach it. Gated by the same canViewReports
             // permission as Financial Reports, since it's still financial data.
-            ...(canViewReports ? [{ id: "expenses", label: "Expenses", icon: Wallet }] : []),
+            ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet }] : []),
             // [2026-09-09] Data Check — lists any transaction that no longer
             // agrees with its own weighing ticket, plus the permanent record
             // of every change to money, weight, stock and permissions. Sits
@@ -99,12 +99,12 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
             // check, not an admin tool: the stock and weight figures on every
             // other page in this group are only as good as this list is empty.
             // See DataCheck.jsx for the Jomnoum CN 000261 story behind it.
-            ...(canViewReports ? [{ id: "data-check", label: "Data Check", icon: ShieldCheck }] : []),
+            ...(canViewReports ? [{ id: "data-check", label: t("nav_datacheck"), icon: ShieldCheck }] : []),
           ],
         },
         ...(canSeeAdminNav
           ? [{
-              label: "System",
+              label: t("grp_system"),
               items: [
                 { id: "stations", label: t("nav_stations"), icon: MapPin },
                 // [2026-09-01] One glance at all 5 stations' recent-activity
@@ -112,9 +112,9 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
                 // phone call or a missing-receipt investigation days later —
                 // see StationHealth.jsx for exactly what it does and doesn't
                 // measure (recent transactions, not a live scale connection).
-                { id: "station-health", label: "Station Health", icon: Activity },
-                { id: "users", label: "Users", icon: UserCog },
-                { id: "roles", label: "Roles", icon: ShieldCheck },
+                { id: "station-health", label: t("nav_station_health"), icon: Activity },
+                { id: "users", label: t("nav_users"), icon: UserCog },
+                { id: "roles", label: t("nav_roles"), icon: ShieldCheck },
                 { id: "settings", label: t("nav_settings"), icon: Settings },
                 // "Receipt Template" nav entry removed [2026-08-25] — that page
                 // no longer affects the printed receipt/slip design (see

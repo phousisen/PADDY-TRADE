@@ -10,6 +10,7 @@
 // one way on the Balance Sheet and another on the Income Statement.
 
 import { AlertTriangle } from "lucide-react";
+import { useLanguage } from "../i18n.jsx";
 
 export const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(Number(n) || 0));
 export const fmtKg = (n) =>
@@ -18,13 +19,14 @@ export const isKnown = (v) => v !== null && v !== undefined;
 
 // A figure. null means nobody has told the system, and that is shown as such.
 export function Amount({ v, riel = true, signed = false, bold, why }) {
+  const { t } = useLanguage();
   if (!isKnown(v)) {
     return (
       <span
-        title={why || "Nobody has entered this yet — see Reports → Finance Setup"}
+        title={why || t("st_notentered_why")}
         className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11.5px] font-semibold text-amber-700 ring-1 ring-amber-200"
       >
-        <AlertTriangle size={10} /> not entered
+        <AlertTriangle size={10} /> {t("st_notentered")}
       </span>
     );
   }
@@ -61,6 +63,57 @@ export function Line({ label, hint, value, indent, bold, total, grand, signed, r
   );
 }
 
+// The station chips from the approved sample.
+//
+// These are not a second, competing filter: they read and write the SAME
+// selection the toolbar's Location filter uses, so changing either moves both.
+// Two controls on one screen that can disagree about which stations you are
+// looking at would be worse than having no chips at all.
+//
+// Clicking a station toggles it. Clicking the last remaining one does nothing
+// — a statement of no stations is not a thing, and an empty screen is a worse
+// answer than leaving the selection alone.
+export function StationChips({ stations = [], selectedIds = [], setSelectedIds }) {
+  const { t } = useLanguage();
+  if (!setSelectedIds || stations.length < 2) return null;
+  // An empty selection means "all of them" everywhere else in Reports, so the
+  // chips show that state as every station lit rather than none.
+  const on = (id) => selectedIds.length === 0 || selectedIds.includes(id);
+  const all = selectedIds.length === 0 || selectedIds.length === stations.length;
+
+  const toggle = (id) => {
+    const current = selectedIds.length ? selectedIds : stations.map((s) => s.id);
+    const next = current.includes(id) ? current.filter((x) => x !== id) : [...current, id];
+    if (next.length === 0) return;                       // never nothing
+    setSelectedIds(next.length === stations.length ? [] : next);
+  };
+
+  const chip = (active) =>
+    `rounded-full border px-3 py-1.5 text-[12.5px] font-medium transition-colors ${
+      active ? "border-brand-700 bg-brand-700 text-white"
+             : "border-slate-200 bg-white text-slate-500 hover:border-brand-400 hover:text-brand-700"}`;
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-2">
+      <span className="mr-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{t("st_station")}</span>
+      {stations.map((s) => (
+        <button key={s.id} type="button" onClick={() => toggle(s.id)} className={chip(on(s.id))}>
+          {s.name}
+        </button>
+      ))}
+      <button
+        type="button"
+        onClick={() => setSelectedIds([])}
+        className={`rounded-full border px-3 py-1.5 text-[12.5px] font-semibold transition-colors ${
+          all ? "border-brand-950 bg-brand-950 text-white"
+              : "border-slate-200 bg-white text-slate-500 hover:border-brand-400 hover:text-brand-700"}`}
+      >
+        {t("st_allstations")}
+      </button>
+    </div>
+  );
+}
+
 // The summary strip from the approved sample: the five figures that answer
 // "how did the month go" before the reader gets into the statement itself.
 // Same component on every statement, so the top of each page reads the same
@@ -84,14 +137,15 @@ export function StatementSummary({ cells }) {
 }
 
 export function StatementHead({ title, scope, period, asAt, right }) {
+  const { t } = useLanguage();
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
       <div>
         <h2 className="text-[17px] font-bold tracking-tight text-slate-900">{title}</h2>
         <p className="mt-0.5 text-[12px] text-slate-500">
           {scope}
-          {period && <> · for <b className="font-semibold text-slate-700">{period}</b></>}
-          {asAt && <> · as at <b className="font-semibold text-slate-700">{asAt}</b></>}
+          {period && <> · {t("st_for")} <b className="font-semibold text-slate-700">{period}</b></>}
+          {asAt && <> · {t("st_asat_word")} <b className="font-semibold text-slate-700">{asAt}</b></>}
         </p>
       </div>
       {right}
@@ -102,28 +156,25 @@ export function StatementHead({ title, scope, period, asAt, right }) {
 // Says, in one line, what the reader is looking at: one station on its own, or
 // several genuinely added together.
 export function ScopeBar({ stations }) {
+  const { t } = useLanguage();
   const names = stations.map((s) => s.name);
   return (
     <div className="mb-4 rounded-lg border border-brand-100 bg-brand-50 px-4 py-2.5 text-[12.5px] text-brand-800">
-      {names.length === 0 ? "No stations selected."
+      {names.length === 0 ? t("st_nostations")
         : names.length === 1
-        ? <>Showing <b className="font-semibold">{names[0]}</b> on its own — its own partners, its own shed, its own profit.</>
-        : <>
-            Consolidating <b className="font-semibold">{names.join(" + ")}</b> into one set of figures.
-            Every line is those {names.length} stations added together, and no station is counted twice.
-          </>}
+        ? t("st_onestation_b", { name: names[0] })
+        : t("st_consolidating_b", { names: names.join(" + "), n: names.length })}
     </div>
   );
 }
 
 export function SetupNotice({ missing, what }) {
+  const { t } = useLanguage();
   if (!missing) return null;
   return (
     <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12.5px] leading-relaxed text-amber-800">
-      <b className="font-semibold">Finance Setup isn't in the database yet.</b>{" "}
-      {what || "Depreciation, fixed assets, opening cash and tax"} will read as not entered until
-      <b className="font-semibold"> migration_finance_setup.sql</b> has been run in Supabase → SQL Editor,
-      one statement at a time.
+      <b className="font-semibold">{t("st_setup_title")}</b>{" "}
+      {what || t("st_setup_what")} {t("st_setup_b")}
     </div>
   );
 }
@@ -131,13 +182,11 @@ export function SetupNotice({ missing, what }) {
 // The gap between the two sides of the balance sheet. Shown, never hidden and
 // never plugged — the number itself is the message.
 export function UnreconciledNotice({ value }) {
+  const { t } = useLanguage();
   if (!isKnown(value) || Math.abs(value) <= 1) return null;
   return (
     <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-[12.5px] leading-relaxed text-amber-800">
-      <b className="font-semibold">{fmt(value)} ៛ unexplained.</b> Assets less liabilities and equity.
-      Nothing on this sheet is adjusted to force the two sides to agree, so the difference is shown instead of
-      hidden — it is the cash the business held before the system started, which nobody has entered.
-      Recording an opening cash balance under <b className="font-semibold">Finance Setup</b> closes it.
+      <b className="font-semibold">{t("st_unexp_title", { v: fmt(value) })}</b> {t("st_unexp_b")}
     </div>
   );
 }
