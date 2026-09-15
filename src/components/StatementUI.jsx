@@ -61,6 +61,28 @@ export function Line({ label, hint, value, indent, bold, total, grand, signed, r
   );
 }
 
+// The summary strip from the approved sample: the five figures that answer
+// "how did the month go" before the reader gets into the statement itself.
+// Same component on every statement, so the top of each page reads the same
+// way and a figure means the same thing wherever it appears.
+export function StatementSummary({ cells }) {
+  return (
+    <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 md:grid-cols-3 lg:grid-cols-5">
+      {cells.map((c) => (
+        <div key={c.label} className="bg-white px-4 py-3.5">
+          <div className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{c.label}</div>
+          <div className={`mt-1.5 text-[18px] font-bold tracking-tight ${
+            !isKnown(c.value) ? "" : c.tone === "neg" || Number(c.value) < 0 ? "text-rose-600"
+            : c.tone === "pos" ? "text-brand-700" : "text-slate-900"}`}>
+            <Amount v={c.value} riel={c.riel !== false} why={c.why} />
+          </div>
+          {c.sub && <div className="mt-1 text-[11px] text-slate-400">{c.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function StatementHead({ title, scope, period, asAt, right }) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
