@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank, TrendingDown, FileText, Package, Users, SlidersHorizontal } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank, TrendingDown, FileText, Package, Users, SlidersHorizontal, BarChart3 } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -27,6 +27,10 @@ import ReportIncomeStatement from "./ReportIncomeStatement.jsx";
 import ReportInventory from "./ReportInventory.jsx";
 import ReportShareholders from "./ReportShareholders.jsx";
 import ReportFinanceSetup from "./ReportFinanceSetup.jsx";
+// [2026-09-15] The Finance section index, and the one list that defines what
+// is in this section. The sub-menu below and the Start page are built from
+// the SAME list, so a screen can never be in one and missing from the other.
+import FinanceStart, { FINANCE_SCREENS } from "./FinanceStart.jsx";
 
 
 // Cambodia's calendar today, and the first of the month it falls in — the
@@ -41,7 +45,7 @@ function monthStart() {
   return `${cambodiaToday().slice(0, 7)}-01`;
 }
 
-export default function Reports({ initialTab = "overview" }) {
+export default function Reports({ initialTab = "start" }) {
   const { t } = useLanguage();
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -95,27 +99,35 @@ export default function Reports({ initialTab = "overview" }) {
     }
   }
 
-  const tabs = [
-    { id: "overview", label: "Overview", icon: LayoutGrid },
-    // The three financial statements, in the order they are read and signed.
-    { id: "balancesheet", label: "Balance Sheet", icon: Scale },
-    { id: "income", label: "Income Statement", icon: FileText },
-    { id: "cashflow", label: "Cash Flow", icon: Landmark },
-    { id: "inventory", label: "Inventory", icon: Package },
-    { id: "shareholders", label: "Shareholder's Records", icon: Users },
-    { id: "purchases", label: "Purchases", icon: ShoppingBag },
-    { id: "sales", label: "Sales", icon: TrendingUp },
-    { id: "payables", label: "Accounts Payable", icon: HandCoins },
-    { id: "receivables", label: "Accounts Receivable", icon: Wallet },
-    { id: "stock", label: "Stock", icon: Boxes },
-    { id: "shrinkage", label: "Stock Loss", icon: TrendingDown },
-    { id: "capital", label: "Capital & Loans", icon: PiggyBank },
-    { id: "tax", label: "Tax", icon: ReceiptText },
-    // Where the figures the weighbridge cannot know get typed in. Admin only,
-    // and gated again by RLS — see migration_finance_setup.sql.
-    ...(isAdmin ? [{ id: "financesetup", label: "Finance Setup", icon: SlidersHorizontal }] : []),
-    ...(isAdmin ? [{ id: "auditlog", label: "Activity Log", icon: History }] : []),
+  // [2026-09-15] A grouped SUB-MENU down the side, not a row of seventeen tabs.
+  //
+  // The row was the reason the statements were invisible: seventeen items in
+  // one scrolling strip put the new ones off the left edge with nothing to say
+  // they existed. Five short groups in a column can all be seen at once, and
+  // each one carries a plain-words hint, so nobody has to decode "Shrinkage"
+  // to find out it means paddy lost on a count.
+  //
+  // Overview is KEPT — it is the screen that has been used every day, and
+  // removing it while the statements are still settling would be a second
+  // disruption on top of the first. It simply no longer opens by default.
+  const ICONS = {
+    start: LayoutGrid, overview: BarChart3, balancesheet: Scale, income: FileText,
+    cashflow: Landmark, inventory: Package, shareholders: Users,
+    purchases: ShoppingBag, sales: TrendingUp, payables: HandCoins,
+    receivables: Wallet, stock: Boxes, shrinkage: TrendingDown,
+    capital: PiggyBank, financesetup: SlidersHorizontal, tax: ReceiptText, auditlog: History,
+  };
+  const navGroups = [
+    { label: null, items: [
+      { id: "start", label: "Start here", short: "What is in this section" },
+      { id: "overview", label: "Overview", short: "The one-page summary" },
+    ] },
+    ...["Statements", "Ledgers", "Setup"].map((g) => ({
+      label: g,
+      items: FINANCE_SCREENS.filter((s) => s.group === g && (!s.admin || isAdmin)),
+    })),
   ];
+  const allTabs = navGroups.flatMap((g) => g.items);
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -135,25 +147,6 @@ export default function Reports({ initialTab = "overview" }) {
             {exporting ? "Exporting..." : "Export to Excel"}
           </button>
         </div>
-        {/* [2026-09-14] WRAPS instead of scrolling sideways. With the five
-            financial statements added there are seventeen tabs, and a single
-            scrolling row put the new ones off the left edge with nothing to
-            say they were there — the Income Statement and Balance Sheet were
-            shipped, installed, and invisible. Two visible rows beat one row
-            with half of it hidden. */}
-        <div className="flex flex-wrap gap-0.5">
-          {tabs.map((tb) => (
-            <button
-              key={tb.id}
-              onClick={() => setTab(tb.id)}
-              className={`flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-medium transition-colors ${
-                tab === tb.id ? "border-brand-600 text-brand-700" : "border-transparent text-slate-400 hover:text-slate-600"
-              }`}
-            >
-              <tb.icon size={14} /> {tb.label}
-            </button>
-          ))}
-        </div>
       </div>
       {exportError && (
         <div className="flex items-center justify-between gap-3 border-b border-rose-200 bg-rose-50 px-6 py-2 text-xs font-medium text-rose-600">
@@ -161,12 +154,62 @@ export default function Reports({ initialTab = "overview" }) {
           <button onClick={exportExcel} className="shrink-0 rounded-lg border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
         </div>
       )}
+      {/* The section's own two-column layout: sub-menu, then the screen.
+          The app's green sidebar is untouched — this column only exists while
+          you are inside Finance, the way a Settings section works. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        <nav className="hidden w-[218px] shrink-0 overflow-y-auto border-r border-slate-200 bg-white px-2.5 py-3 lg:block">
+          {navGroups.map((g, gi) => (
+            <div key={g.label || `g${gi}`} className={gi > 0 ? "mt-4" : ""}>
+              {g.label && (
+                <p className="mb-1 px-2.5 text-[10px] font-bold uppercase tracking-[0.11em] text-slate-300">{g.label}</p>
+              )}
+              {g.items.map((it) => {
+                const Icon = ICONS[it.id] || FileText;
+                const on = tab === it.id;
+                return (
+                  <button
+                    key={it.id}
+                    onClick={() => setTab(it.id)}
+                    className={`mb-0.5 flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                      on ? "bg-brand-50 text-brand-800" : "text-slate-600 hover:bg-slate-50"}`}
+                  >
+                    <Icon size={15} className={`mt-0.5 shrink-0 ${on ? "text-brand-600" : "text-slate-300"}`} />
+                    <span className="min-w-0">
+                      <span className={`block text-[13px] leading-tight ${on ? "font-semibold" : "font-medium"}`}>{it.label}</span>
+                      {it.short && <span className="mt-0.5 block text-[10.5px] leading-tight text-slate-400">{it.short}</span>}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+
+        {/* Below the lg breakpoint two nav columns do not fit, so the sub-menu
+            becomes one dropdown rather than being hidden with no way back. */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <div className="border-b border-slate-200 bg-white px-4 py-2.5 lg:hidden">
+            <select
+              value={tab}
+              onChange={(e) => setTab(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] font-medium text-slate-700"
+            >
+              {navGroups.map((g, gi) => (
+                <optgroup key={g.label || `g${gi}`} label={g.label || "Finance"}>
+                  {g.items.map((it) => <option key={it.id} value={it.id}>{it.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
       <main className="flex-1 overflow-y-auto bg-paper p-6">
+        {tab === "start" && <FinanceStart onNavigate={setTab} isAdmin={isAdmin} />}
         {tab === "overview" && <ReportOverview selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} onNavigate={setTab} />}
-        {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
-        {tab === "income" && <ReportIncomeStatement selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
-        {tab === "inventory" && <ReportInventory selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
-        {tab === "shareholders" && <ReportShareholders selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "balancesheet" && <ReportBalanceSheet selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "income" && <ReportIncomeStatement selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "inventory" && <ReportInventory selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "shareholders" && <ReportShareholders selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "financesetup" && isAdmin && <ReportFinanceSetup />}
         {tab === "purchases" && <ReportPurchases selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "sales" && <ReportSales selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
@@ -174,11 +217,13 @@ export default function Reports({ initialTab = "overview" }) {
         {tab === "receivables" && <ReportReceivables selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "stock" && <ReportStock selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "shrinkage" && <ReportShrinkage selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
-        {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
+        {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "capital" && <ReportCapital selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "auditlog" && isAdmin && <ReportAuditLog selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
       </main>
+        </div>
+      </div>
     </div>
   );
 }
