@@ -53,7 +53,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
             { id: "stock", label: t("nav_stock"), icon: Warehouse },
             { id: "transactions", label: t("nav_transactions"), icon: Receipt },
             { id: "daily-book", label: "Daily Book", icon: BookOpen },
-            { id: "reports", label: t("nav_reports"), icon: BarChart3 },
+            { id: "reports", label: "Finance", icon: BarChart3 },
             { id: "expenses", label: "Expenses", icon: Wallet },
           ],
         },
@@ -86,7 +86,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
           label: "Inventory & Reports",
           items: [
             { id: "stock", label: t("nav_stock"), icon: Warehouse },
-            ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
+            ...(canViewReports ? [{ id: "reports", label: "Finance", icon: BarChart3 }] : []),
             // Its own sidebar item rather than a tab inside Financial Reports —
             // staff who log daily expenses shouldn't have to go through the
             // Reports section to reach it. Gated by the same canViewReports
