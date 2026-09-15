@@ -103,7 +103,11 @@ function DiffRow({ label, current, proposed }) {
   );
 }
 
-function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject }) {
+// [2026-09-15] `isOwnRequest` is the self-approval block. Nothing stopped a
+// person approving their own request, which makes a two-person rule decorative.
+// The check is here AND on the page's approve handler, so closing this box is
+// not a way around it.
+function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, onReject }) {
   const tx = req.transactions || {};
   const p = req.proposed_data;
   const isBuy = tx.type === "BUY";
@@ -111,6 +115,8 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [rejecting, setRejecting] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const isOwnRequest = !!viewerId && req.requested_by === viewerId;
 
   const currentAmount = tx.amount;
   const proposedAmount = p
@@ -144,7 +150,7 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
     setError("");
     setRejecting(true);
     try {
-      await onReject(req);
+      await onReject(req, rejectReason.trim());
     } catch (err) {
       setError(err.message || "Couldn't reject this request — check your connection and try again.");
       setRejecting(false);
@@ -186,18 +192,40 @@ function ReviewRequestModal({ req, userEmail, t, onClose, onApprove, onReject })
             <DiffRow label="Car Plate" current={tx.car_plate || "—"} proposed={p.carPlate || "—"} />
             <DiffRow label="Truck / Driver Name" current={tx.driver_name || "—"} proposed={p.driverName || "—"} />
             <DiffRow label="Note" current={tx.note || "—"} proposed={p.note || "—"} />
+            {/* [2026-09-15] The two scale readings. Only shown when the request
+                actually carries them — an older request predates the field and
+                would otherwise render "—" as if the weight were being cleared. */}
+            {p.grossKg !== undefined && (
+              <DiffRow label={`${t("reg_weighin")} (kg)`} current={tx.gross_kg ?? "—"} proposed={p.grossKg ?? "—"} />
+            )}
+            {p.tareKg !== undefined && (
+              <DiffRow label={`${t("reg_weighout")} (kg)`} current={tx.tare_kg ?? "—"} proposed={p.tareKg ?? "—"} />
+            )}
             <DiffRow label="Total Amount" current={fmtRiel(currentAmount)} proposed={fmtRiel(proposedAmount)} />
           </div>
         )}
 
         {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4">
+          <label className="mb-1 block text-xs text-slate-500">{t("cr_reject_reason")}</label>
+          <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+            placeholder={t("cr_reject_placeholder")}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+        </div>
+
+        <div className="mt-3 flex justify-end gap-2">
           <button onClick={handleReject} disabled={saving || rejecting} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40"><X size={14} /> {rejecting ? "Rejecting…" : t("reject")}</button>
           <button onClick={onClose} disabled={saving || rejecting} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
         </div>
 
-        {p && (
+        {p && isOwnRequest && (
+          <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-rose-700">
+            <b className="font-semibold">{t("cr_self_title")}</b> {t("cr_self_body")}
+          </div>
+        )}
+
+        {p && !isOwnRequest && (
           <div className="mt-4 border-t border-slate-200 pt-4">
             <label className="mb-1 block text-xs text-slate-500">Enter your own login password to approve &amp; apply these changes to the transaction</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" name="approve-own-password-not-autofillable"
@@ -233,6 +261,11 @@ export default function ChangeRequests() {
   }, [rows, thisMonthStr]);
 
   async function approveAndApply(req) {
+    // The modal hides the approve button for your own request; this makes sure
+    // that is a rule and not just a hidden button.
+    if (req.requested_by && req.requested_by === session.user.id) {
+      throw new Error(t("cr_self_title") + " " + t("cr_self_body"));
+    }
     const tx = req.transactions;
     const p = req.proposed_data;
     const oldData = { ...tx };
@@ -252,6 +285,13 @@ export default function ChangeRequests() {
       carPlate: p.carPlate,
       driverName: p.driverName,
       partyId: p.partyId,
+      // [2026-09-15] The weighbridge readings. api.updateTransaction re-derives
+      // quantity from these when both are present, so passing them alongside
+      // quantityKg is not a contradiction — the weights win, which is the point
+      // of routing a weight fix through here. `undefined` for an older request
+      // that predates this field leaves the stored weights untouched.
+      grossKg: p.grossKg === undefined ? undefined : p.grossKg,
+      tareKg: p.tareKg === undefined ? undefined : p.tareKg,
     });
     // Same reasoning as the direct Edit Transaction flow: approving a
     // request that sets Payment Status to "Paid" should also make sure
@@ -297,18 +337,25 @@ export default function ChangeRequests() {
       newData: { ...updated, code: req.transactionCode },
       userId: session.user.id,
     });
-    await api.resolveChangeRequest(req.id, "approved");
+    await api.resolveChangeRequest(req.id, "approved", { userId: session.user.id });
     setReviewReq(null);
     load();
   }
 
-  async function reject(req) {
-    await api.resolveChangeRequest(req.id, "rejected");
+  // [2026-09-15] A rejection used to record the REQUESTER's reason — the very
+  // thing being refused — and nothing about why. The person who asked could
+  // see their request was rejected and not learn anything from it.
+  async function reject(req, rejectReason) {
+    await api.resolveChangeRequest(req.id, "rejected", { rejectReason, userId: session.user.id });
     await api.logAudit({
       action: "reject_change_request",
       tableName: "change_requests",
       recordId: req.id,
-      newData: { code: req.transactionCode, partyName: req.currentPartyName, reason: req.reason },
+      newData: {
+        code: req.transactionCode, partyName: req.currentPartyName,
+        requested_reason: req.reason,
+        rejected_reason: rejectReason || null,
+      },
       userId: session.user.id,
     });
     setReviewReq(null);
@@ -370,6 +417,7 @@ export default function ChangeRequests() {
         <ReviewRequestModal
           req={reviewReq}
           userEmail={session.user.email}
+          viewerId={session.user.id}
           t={t}
           onClose={() => setReviewReq(null)}
           onApprove={approveAndApply}

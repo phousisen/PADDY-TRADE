@@ -135,6 +135,12 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
   const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg ?? ""));
   const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg ?? ""));
+  // [2026-09-15] A Change Request could not carry a weight until now — the
+  // proposal held party, quantity, price, quality, plate, driver and note and
+  // nothing else. Which made it useless as the route for fixing the one thing
+  // that most needs a second pair of eyes.
+  const [grossKg, setGrossKg] = useState(String(tx.gross_kg ?? ""));
+  const [tareKg, setTareKg] = useState(String(tx.tare_kg ?? ""));
   const [qualityGrade, setQualityGrade] = useState(tx.quality_grade || "");
   const [paymentStatus, setPaymentStatus] = useState(tx.payment_status || (isBuy ? "pending" : "paid"));
   const [taxApplicable, setTaxApplicable] = useState(!!tx.tax_applicable);
@@ -151,8 +157,16 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const newAmount = Math.max(0, Math.max(0, (parseFloat(quantityKg) || 0) - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
-  const canSubmit = reason.trim() && parseFloat(quantityKg) > 0 && parseFloat(pricePerKg) >= 0 && partyQuery.trim() && !saving;
+  // Net is DERIVED from the two scale readings whenever both are present, in
+  // the direction this transaction runs — never typed alongside them, so the
+  // three figures cannot disagree in a proposal somebody is about to approve.
+  const gN = parseFloat(grossKg), tN = parseFloat(tareKg);
+  const weightsGiven = grossKg.trim() !== "" && tareKg.trim() !== "" && !isNaN(gN) && !isNaN(tN);
+  const derivedNet = weightsGiven ? Math.max(0, isBuy ? gN - tN : tN - gN) : null;
+  const effectiveQty = derivedNet === null ? (parseFloat(quantityKg) || 0) : derivedNet;
+
+  const newAmount = Math.max(0, Math.max(0, effectiveQty - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
+  const canSubmit = reason.trim() && effectiveQty > 0 && parseFloat(pricePerKg) >= 0 && partyQuery.trim() && !saving;
 
   async function submit() {
     setError("");
@@ -162,8 +176,12 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
       const proposedData = {
         partyId,
         partyName: partyQuery.trim(),
-        quantityKg: parseFloat(quantityKg) || 0,
+        quantityKg: effectiveQty,
         pricePerKg: parseFloat(pricePerKg) || 0,
+        // null, not 0, when blank — a transaction typed in by hand has no
+        // scale readings at all, and 0 kg is a claim rather than an absence.
+        grossKg: grossKg.trim() === "" ? null : (parseFloat(grossKg) || 0),
+        tareKg: tareKg.trim() === "" ? null : (parseFloat(tareKg) || 0),
         qualityGrade: isBuy ? (qualityGrade.trim() || null) : null,
         paymentStatus,
         taxApplicable,
@@ -211,10 +229,35 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
             )}
           </div>
 
+          <div className="rounded-lg border border-gold-300 bg-gold-50 p-3">
+            <p className="mb-2 text-xs font-semibold text-gold-700">{t("req_weigh_title")}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-[11px] text-gold-700">{t("reg_weighin")} (kg)</label>
+                <input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)}
+                  className="w-full rounded-lg border border-gold-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] text-gold-700">{t("reg_weighout")} (kg)</label>
+                <input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)}
+                  className="w-full rounded-lg border border-gold-300 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] text-gold-700">
+              {derivedNet === null ? t("req_weigh_hint") : t("req_weigh_net", { kg: fmt2(derivedNet) })}
+            </p>
+          </div>
+
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Weight (kg)</label>
-            <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            <label className="mb-1 block text-xs text-slate-500">
+              {t("req_qty")}
+              {derivedNet !== null && <span className="ml-1 font-normal text-brand-600">{t("req_qty_derived")}</span>}
+            </label>
+            <input type="number" min="0" step="0.01"
+              value={derivedNet === null ? quantityKg : fmt2(derivedNet)}
+              onChange={(e) => setQuantityKg(e.target.value)}
+              readOnly={derivedNet !== null}
+              className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${derivedNet !== null ? "bg-slate-50 text-slate-600" : ""}`} />
           </div>
           <div>
             <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
@@ -389,7 +432,22 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
   );
 }
 
-function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClose, onSubmit }) {
+// The lock marker next to a field this account may not move. One component so
+// the chip can never say one thing in one place and another somewhere else.
+function LockChip({ t }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded border border-gold-300 bg-gold-50 px-1.5 py-0.5 text-[10px] font-bold text-gold-700">
+      <Lock size={9} /> {t("lock_chip")}
+    </span>
+  );
+}
+
+// [2026-09-15] `canEditWeights` is new. Without it the weighbridge figures and
+// the price are read-only here and the account is pointed at a Change Request
+// instead — same route the stations already use, with a reason attached and a
+// second person approving. Everything else in this box stays editable, because
+// a wrong plate or a misspelt name happens daily and costs nothing to fix.
+function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEditWeights = true, onRequestChange, onClose, onSubmit }) {
   const isBuy = tx.type === "BUY";
   const [locationId, setLocationId] = useState(tx.location_id || "");
   const [partyQuery, setPartyQuery] = useState(tx.partyName || "");
@@ -645,17 +703,22 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
                 {netIsDerived && <span className="ml-1 font-normal text-brand-600">(from Weigh In/Out below)</span>}
               </label>
               <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
-                readOnly={netIsDerived}
-                title={netIsDerived ? "Calculated from Weigh-In and Weigh-Out below. Edit those two fields to change this, or clear one of them to type this in manually." : undefined}
-                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${netIsDerived ? "border-slate-200 bg-slate-50 text-slate-600" : "border-slate-200"}`} />
+                readOnly={netIsDerived || !canEditWeights}
+                title={!canEditWeights ? t("lock_money_title") : netIsDerived ? "Calculated from Weigh-In and Weigh-Out below. Edit those two fields to change this, or clear one of them to type this in manually." : undefined}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${netIsDerived || !canEditWeights ? "border-slate-200 bg-slate-50 text-slate-600" : "border-slate-200"}`} />
               {netIsDerived && (
                 <p className="mt-1 text-[11px] text-slate-400">Calculated automatically from Weigh-In and Weigh-Out below (Net Weight = {isBuy ? "Weigh-In − Weigh-Out" : "Weigh-Out − Weigh-In"}). Clear either weight field below to type this in manually instead.</p>
               )}
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
+              <label className="mb-1 flex items-center gap-1.5 text-xs text-slate-500">
+                Price per kg (៛)
+                {!canEditWeights && <LockChip t={t} />}
+              </label>
               <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                readOnly={!canEditWeights}
+                title={!canEditWeights ? t("lock_money_title") : undefined}
+                className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${!canEditWeights ? "bg-slate-50 text-slate-600" : ""}`} />
             </div>
 
             {isBuy && (
@@ -703,12 +766,26 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
           </div>
 
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-medium text-slate-500">Weigh In / Weigh Out (optional — for the printed receipt)</p>
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+              Weigh In / Weigh Out (optional — for the printed receipt)
+              {!canEditWeights && <LockChip t={t} />}
+            </p>
+            {!canEditWeights && (
+              <div className="mb-2 rounded-lg border border-gold-300 bg-gold-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-gold-700">
+                <b className="font-semibold">{t("lock_money_title")}</b> {t("lock_money_body")}
+                {onRequestChange && (
+                  <button type="button" onClick={onRequestChange}
+                    className="mt-2 block rounded-md border border-gold-300 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-gold-700 hover:bg-gold-50">
+                    {t("lock_money_cta")}
+                  </button>
+                )}
+              </div>
+            )}
             <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is. Whenever both are filled in, Quantity/Net Weight above is calculated from them automatically — edit the weights here rather than Quantity directly, so they never disagree.</p>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="mb-1 block text-[11px] text-slate-400">Weigh-In (kg)</label>
-                <input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                <input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} readOnly={!canEditWeights} title={!canEditWeights ? t("lock_money_title") : undefined} className={`w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${!canEditWeights ? "bg-slate-50 text-slate-600" : ""}`} />
               </div>
               <div>
                 <label className="mb-1 block text-[11px] text-slate-400">In Date</label>
@@ -720,7 +797,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, onClos
               </div>
               <div>
                 <label className="mb-1 block text-[11px] text-slate-400">Weigh-Out (kg)</label>
-                <input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+                <input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} readOnly={!canEditWeights} title={!canEditWeights ? t("lock_money_title") : undefined} className={`w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${!canEditWeights ? "bg-slate-50 text-slate-600" : ""}`} />
               </div>
               <div>
                 <label className="mb-1 block text-[11px] text-slate-400">Out Date</label>
@@ -1421,8 +1498,11 @@ function isUnpricedTx(tx) {
 
 export default function Transactions({ setPage }) {
   const { t } = useLanguage();
-  const { profile, session } = useAuth();
+  const { profile, session, can, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
+  // [2026-09-15] Who may move a weight or a price directly. Everyone else
+  // raises a Change Request with a reason and a second person approves it.
+  const canEditWeights = can("edit_weights") && !isViewOnly;
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
   // [2026-09-09] { transactionId: { edit_count, last_changed_at } } for the
@@ -1937,6 +2017,13 @@ export default function Transactions({ setPage }) {
         tax_rate: updated.tax_rate, moisture_pct: updated.moisture_pct, mixture_pct: updated.mixture_pct, outthrow_pct: updated.outthrow_pct,
         deduction_kg: updated.deduction_kg, staff_fee: updated.staff_fee, car_plate: updated.car_plate, driver_name: updated.driver_name,
         paper_ticket_no: updated.paper_ticket_no, note: updated.note, tx_date: updated.tx_date,
+        // [2026-09-15] These five were in oldData and NOT here, so the audit
+        // log recorded what a weight WAS and never what it BECAME — on the one
+        // edit where that matters most. A reader could see the truck weighed
+        // 17,778 kg and not what it was corrected to.
+        gross_kg: updated.gross_kg, gross_at: updated.gross_at,
+        tare_kg: updated.tare_kg, tare_at: updated.tare_at,
+        recorded_by_name: updated.recorded_by_name,
       },
       userId: session.user.id,
     });
@@ -2682,7 +2769,16 @@ export default function Transactions({ setPage }) {
         />
       )}
       {payTx && <RecordPaymentModal tx={payTx} remaining={remainingByTx[payTx.id] || 0} t={t} onClose={() => setPayTx(null)} onSubmit={submitPayment} />}
-      {editTx && <EditTransactionModal tx={editTx} locations={locations} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setEditTx(null)} onSubmit={submitEdit} />}
+      {editTx && (
+        <EditTransactionModal
+          tx={editTx} locations={locations} userEmail={session.user.email} userId={session.user.id} t={t}
+          canEditWeights={canEditWeights}
+          // Hands the same transaction straight to the request box, so a locked
+          // field is a route rather than a dead end.
+          onRequestChange={() => { const tx = editTx; setEditTx(null); setRequestTx(tx); }}
+          onClose={() => setEditTx(null)} onSubmit={submitEdit}
+        />
+      )}
       {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} onChanged={load} />}
       {photosTx && <PhotosModal tx={photosTx} onClose={() => setPhotosTx(null)} />}
       {receiptTx && (
