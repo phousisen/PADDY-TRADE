@@ -310,5 +310,39 @@ ok(near(all.inventory.total.closingValue, all.balance.inventoryValue),
    "the inventory report and the balance sheet disagree about its value");
 console.log("  11. the inventory report and the balance sheet agree about the shed");
 
+// ===========================================================================
+// 12. The Cash Flow's two expense lines add back to expenses paid
+// ===========================================================================
+// [2026-09-15] កូនដៃ was split onto its own line at SISEN's request. The one
+// way that can go wrong silently is a classification bucket nobody sums, so
+// the second line is the REMAINDER and this asserts the pair is exhaustive —
+// including the case where every expense is កូនដៃ and the case where none is.
+{
+  const cf = all.cashflow;
+  ok(near(addKnown(cf.expensesPaidIntermediary, cf.expensesPaidOther), cf.expensesPaid),
+     "the two cash-flow expense lines do not add back to expenses paid",
+     [cf.expensesPaidIntermediary, cf.expensesPaidOther, cf.expensesPaid]);
+  ok(cf.expensesPaidIntermediary >= 0, "intermediary paid went negative", cf.expensesPaidIntermediary);
+  ok(cf.expensesPaidOther >= 0, "other expenses paid went negative", cf.expensesPaidOther);
+
+  // All-កូនដៃ: the other line must be exactly zero, never a rounding crumb.
+  const onlyInt = run([ST[0]], { payments: [
+    { id: "x1", location_id: "rk", type: "expense", category: "កូនដៃ", amount: 400000, pay_date: "2026-09-10" },
+  ] });
+  ok(near(onlyInt.cashflow.expensesPaidOther, 0),
+     "other expenses is not zero when every expense is កូនដៃ", onlyInt.cashflow.expensesPaidOther);
+
+  // No កូនដៃ at all: the intermediary line must be zero and other must carry it.
+  const noInt = run([ST[0]], { payments: [
+    { id: "x2", location_id: "rk", type: "expense", category: "Fuel", amount: 250000, pay_date: "2026-09-10" },
+  ] });
+  ok(near(noInt.cashflow.expensesPaidIntermediary, 0),
+     "intermediary is not zero when no expense is កូនដៃ", noInt.cashflow.expensesPaidIntermediary);
+  ok(near(noInt.cashflow.expensesPaidOther, 250000),
+     "other expenses did not pick up the non-កូនដៃ expense", noInt.cashflow.expensesPaidOther);
+
+  console.log(`  12. cash-flow expense lines are exhaustive · ${money(all.cashflow.expensesPaidIntermediary)} កូនដៃ + ${money(all.cashflow.expensesPaidOther)} other = ${money(all.cashflow.expensesPaid)} ៛`);
+}
+
 console.log(failures === 0 ? "\nAll checks passed.\n" : `\n${failures} CHECK(S) FAILED\n`);
 process.exit(failures === 0 ? 0 : 1);
