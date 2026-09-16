@@ -51,7 +51,7 @@ import {
 } from "../expenseCategories.js";
 import {
   windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
-  stationsOn, weekdayOf, childGrain,
+  stationsOn, weekdayOf, childGrain, daysInWindow, mergeByCategory, periodLabel,
 } from "../expenseBook.js";
 
 const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(n || 0));
@@ -164,9 +164,20 @@ function DaySheet({
   const [adding, setAdding] = useState(false);
   const [reason, setReason] = useState("");
 
+  // [2026-09-16] Was: next[key] = that row's amount — which kept only the
+  // LAST of any duplicate pair. The sheet then showed one figure while the
+  // day really held two, so the total on screen was lower than the truth and
+  // saving corrected one row and left the other. Duplicates are SUMMED here,
+  // and saving collapses them (see reallySave).
+  const merged = useMemo(() => mergeByCategory(existingRows), [existingRows]);
+  const dupes = useMemo(
+    () => [...merged.values()].filter((m) => m.rows.length > 1),
+    [merged],
+  );
+
   useEffect(() => {
     const next = {};
-    for (const row of existingRows) next[categoryKey(row.category)] = String(Math.round(Number(row.amount) || 0));
+    for (const [key, m] of merged) next[key] = String(Math.round(m.amount));
     setAmounts(next);
     setReason("");
     setExtra([]);
@@ -185,10 +196,11 @@ function DaySheet({
   const total = shown.reduce((s, n) => s + (parseAmount(amounts[categoryKey(n)]) || 0), 0);
 
   // Changing a figure that is already recorded is a correction. Putting one
-  // into an empty box is not.
-  const changesExisting = existingRows.some((r) => {
-    const typed = parseAmount(amounts[categoryKey(r.category)]);
-    return typed != null && Math.round(typed) !== Math.round(Number(r.amount) || 0);
+  // into an empty box is not. Compared against the MERGED figure, so a day
+  // holding two rows for one category is judged on what it actually totals.
+  const changesExisting = [...merged.values()].some((m) => {
+    const typed = parseAmount(amounts[m.key]);
+    return typed != null && Math.round(typed) !== Math.round(m.amount);
   });
   const mustExplain = needsPassword && changesExisting;
 
@@ -280,6 +292,17 @@ function DaySheet({
             )}
           </div>
 
+          {dupes.length > 0 && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {dupes.map((d) => (
+                <p key={d.key}>
+                  <b>{d.category}</b> {t("ex_dup_two_rows").replace("{n}", d.rows.length)} — {fmt(d.amount)} ៛.
+                </p>
+              ))}
+              <p className="mt-1 text-xs text-amber-700">{t("ex_dup_merge_hint")}</p>
+            </div>
+          )}
+
           {mustExplain && (
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
               <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
@@ -334,6 +357,7 @@ export default function Expenses() {
   const [anchor, setAnchor] = useState(today);
   const [scope, setScope] = useState([]);            // [] = all locations
   const [openKey, setOpenKey] = useState(null);
+  const [alertsOpen, setAlertsOpen] = useState(false);
 
   const [sheet, setSheet] = useState(null);          // { day, locationId } | null
   const [saving, setSaving] = useState(false);
@@ -372,7 +396,22 @@ export default function Expenses() {
   const sum = useMemo(() => totals(rows), [rows]);
   const prevSum = useMemo(() => totals(prevRows), [prevRows]);
 
-  const periods = useMemo(() => byPeriod(rows, grain), [rows, grain]);
+  // [2026-09-16] byPeriod builds rows FROM the expenses, so a day nobody
+  // entered produced no row and was simply absent from the list — 1, 6, 13,
+  // 14 and 16 September were missing from a September that looked complete.
+  // That hid the exact thing this screen exists to catch. At Day grain the
+  // calendar leads and the figures hang off it.
+  const periods = useMemo(() => {
+    const found = byPeriod(rows, grain);
+    if (grain !== "day") return found;
+    const byKey = new Map(found.map((p) => [p.key, p]));
+    return daysInWindow(win.from, win.to, today).map(
+      (iso) => byKey.get(iso) || {
+        key: iso, label: periodLabel(iso, "day"), rows: [],
+        commission: 0, other: 0, total: 0, empty: true,
+      },
+    );
+  }, [rows, grain, win, today]);
   const categories = useMemo(() => byCategory(rows), [rows]);
   const stations = useMemo(() => byStation(rows, locations), [rows, locations]);
   const prevByCat = useMemo(() => {
@@ -405,7 +444,7 @@ export default function Expenses() {
       const last = lastSeen[l.id];
       if (!last) continue;
       const gap = Math.round((Date.parse(today) - Date.parse(last)) / 86400000);
-      if (gap >= 5) out.push({ k: "Missing", t: `${l.name} — nothing entered since ${last}` });
+      if (gap >= 5) out.push({ k: t("ex_alert_missing"), t: `${l.name} — ${t("ex_nothing_since")} ${last}`, day: last, locationId: l.id });
     }
     const seen = new Map();
     for (const r of rows) {
@@ -414,12 +453,20 @@ export default function Expenses() {
     }
     for (const [k, n] of seen) {
       if (n < 2) continue;
-      const [d, locId, , amt] = k.split("|");
+      const [d, locId, cat, amt] = k.split("|");
       const l = locations.find((x) => x.id === locId);
-      out.push({ k: "Twice", t: `${riel(Number(amt))} · ${l?.name || "—"} · ${d} — recorded ${n} times` });
+      // The category is named — "150,000 at Thapedey" told you nothing about
+      // WHICH expense to go and look at.
+      const row = rows.find((r) => categoryKey(r.category) === cat
+        && String(r.pay_date).slice(0, 10) === d && r.location_id === locId);
+      out.push({
+        k: t("ex_alert_twice"),
+        t: `${cleanCategory(row?.category) || "—"} · ${riel(Number(amt))} · ${l?.name || "—"} · ${d} — ${t("ex_recorded_n_times").replace("{n}", n)}`,
+        day: d, locationId: locId,
+      });
     }
     return out;
-  }, [allExpenses, marks, locations, rows, today]);
+  }, [allExpenses, marks, locations, rows, today, t]);
 
   // ── the sheet ───────────────────────────────────────────────────────────
   const sheetRows = useMemo(
@@ -439,12 +486,21 @@ export default function Expenses() {
   async function reallySave({ entries, reason }) {
     setSaving(true); setSaveError("");
     try {
-      const existing = new Map(sheetRows.map((r) => [categoryKey(r.category), r]));
+      // [2026-09-16] Keyed by category and carrying EVERY row for it, not
+      // just the last. A day holding two rows for one category is collapsed
+      // on save: the first row takes the figure, the extras are voided with
+      // a reason. Voided, never deleted — the record of them stays.
+      const existing = mergeByCategory(sheetRows);
       for (const e of entries) {
         const was = existing.get(categoryKey(e.category));
         if (was) {
-          if (Math.round(Number(was.amount) || 0) === Math.round(e.amount)) continue;
-          await api.updateExpense(was.id, { amount: e.amount, reason, userId: session.user.id });
+          const extras = was.rows.slice(1);
+          for (const x of extras) {
+            await api.voidPayment(x.id, "Merged — this day held more than one entry for this category")
+              .catch(() => {});
+          }
+          if (!extras.length && Math.round(was.amount) === Math.round(e.amount)) continue;
+          await api.updateExpense(was.rows[0].id, { amount: e.amount, reason, userId: session.user.id });
         } else {
           await api.createPayment({
             type: "expense", category: e.category, transactionId: null,
@@ -533,10 +589,28 @@ export default function Expenses() {
 
               {/* a strip, only when there is one */}
               {alerts.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 border-y border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
-                  <span className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">{alerts[0].k}</span>
-                  <span>{alerts[0].t}</span>
-                  {alerts.length > 1 && <span className="ml-auto text-xs text-amber-700">{alerts.length - 1} more to check</span>}
+                <div className="border-y border-amber-200 bg-amber-50">
+                  {/* [2026-09-16] Was one line with "2 more to check" that was
+                      not a link, no category named, and nothing clickable —
+                      it told you there was a problem and gave you nowhere to
+                      go. Every alert is listed, names its category, and opens
+                      the day it is about. */}
+                  {(alertsOpen ? alerts : alerts.slice(0, 1)).map((a, i) => (
+                    <button key={i} type="button" disabled={!a.day}
+                      onClick={() => a.day && setSheet({ day: a.day, locationId: a.locationId })}
+                      className={`flex w-full flex-wrap items-center gap-2 px-4 py-2 text-left text-sm text-amber-900 ${
+                        i ? "border-t border-amber-200/70" : ""} ${a.day ? "hover:bg-amber-100" : ""}`}>
+                      <span className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">{a.k}</span>
+                      <span>{a.t}</span>
+                      {a.day && <ChevronRight size={14} className="ml-auto text-amber-600" />}
+                    </button>
+                  ))}
+                  {alerts.length > 1 && (
+                    <button type="button" onClick={() => setAlertsOpen((v) => !v)}
+                      className="w-full border-t border-amber-200/70 px-4 py-1.5 text-left text-xs font-semibold text-amber-700 hover:bg-amber-100">
+                      {alertsOpen ? t("ex_show_less") : t("ex_more_to_check").replace("{n}", alerts.length - 1)}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -564,12 +638,13 @@ export default function Expenses() {
                           <tr onClick={() => setOpenKey(isOpen ? null : p.key)}
                             className={`cursor-pointer border-b border-slate-50 ${isOpen ? "bg-brand-50" : "hover:bg-slate-50"}`}>
                             <td className="px-4 py-2 text-slate-700">
-                              <b>{p.label}</b>
+                              <b className={p.empty ? "font-medium text-slate-400" : ""}>{p.label}</b>
                               {grain === "day" && <span className="ml-1.5 text-[11px] text-slate-400">{weekdayOf(p.key)}</span>}
+                              {p.empty && <span className="ml-2 text-[11px] text-slate-400">{t("ex_not_entered")}</span>}
                             </td>
-                            <Num v={p.commission} cls="font-semibold text-amber-700" />
-                            <Num v={p.other} cls="text-slate-600" />
-                            <Num v={p.total} cls="font-bold text-slate-800" />
+                            <Num v={p.empty ? null : p.commission} cls="font-semibold text-amber-700" />
+                            <Num v={p.empty ? null : p.other} cls="text-slate-600" />
+                            <Num v={p.empty ? null : p.total} cls="font-bold text-slate-800" />
                             <td className="px-4 text-right"><ChevronRight size={15} className={`inline text-slate-300 ${isOpen ? "rotate-90 text-brand-600" : ""}`} /></td>
                           </tr>
                           {isOpen && grain === "day" && kids.map((s) => (
