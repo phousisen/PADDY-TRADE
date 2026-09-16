@@ -73,7 +73,8 @@ for (let m = 1; m <= 9; m++) {
       });
       poolGuess -= kg;
     }
-    payments.push({ type: "expense", category: "Staff", pay_date: date, location_id: LOC, amount: 150000 });
+    payments.push({ type: "expense", category: "Salary", pay_date: date, location_id: LOC, amount: 150000 });
+    payments.push({ type: "expense", category: "ថ្លៃកូនដៃ", pay_date: date, location_id: LOC, amount: 90000 });
     if (rnd() < 0.5) payments.push({ type: "expense", category: "Fuel", pay_date: date, location_id: LOC, amount: 80000 + Math.round(rnd() * 200000) });
     if (day === 15) {
       adjustments.push({ location_id: LOC, created_at: `${date}T16:00:00+07:00`, adjustment_kg: -Math.round(rnd() * 400 * 100) / 100 });
@@ -207,6 +208,32 @@ ok(vehicleTypeOf("Truck: 3A-1890") === "truck", "vehicle prefix not parsed");
 ok(vehicleTypeOf("ក្យូន ២") === "other", "a plate with no prefix should be other, not dropped");
 ok(vehicleTypeOf("") === "other", "an empty plate should be other, not dropped");
 console.log("  vehicle types add up to the load count");
+
+// ថ្លៃកូនដៃ stands alone ------------------------------------------------------
+// [2026-09-16] The Daily Book's expense columns are ថ្លៃកូនដៃ / other / total.
+// SISEN is trying to cut the commission, which cannot be seen if it is
+// averaged in with salary — salary barely moves, commission moves with how
+// much paddy is bought.
+{
+  const D = "2026-03-02";
+  const split = buildDays({
+    txs: [], adjustments: [], locationIds: [LOC], openingKg: 0, openingValue: 0,
+    payments: [
+      { type: "expense", category: "ថ្លៃកូនដៃ", pay_date: D, location_id: LOC, amount: 100000 },
+      // The same category carrying a zero-width space — invisible on screen,
+      // and what an exact string compare used to drop into Other.
+      { type: "expense", category: "ថ្លៃកូនដៃ\u200b", pay_date: D, location_id: LOC, amount: 25000 },
+      { type: "expense", category: "Salary", pay_date: D, location_id: LOC, amount: 400000 },
+      { type: "expense", category: "Fuel", pay_date: D, location_id: LOC, amount: 60000 },
+    ],
+  }).find((d) => d.date === D);
+
+  ok(split.commission === 125000, "commission must include an invisibly-different spelling", split.commission);
+  ok(split.otherExp === 460000, "salary and fuel belong in other, not commission", split.otherExp);
+  ok(split.expenses === 585000, "the two columns must add to total expenses", split.expenses);
+  ok(split.commission + split.otherExp === split.expenses, "no expense may fall between the two columns");
+  console.log("  ថ្លៃកូនដៃ is its own column, and salary is not in it");
+}
 
 // week numbering -------------------------------------------------------------
 ok(isoWeek("2026-01-01").week === 1, "ISO week of 1 Jan 2026 should be 1", isoWeek("2026-01-01"));
