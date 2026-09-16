@@ -1,7 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import { MapPin, ChevronDown, Check } from "lucide-react";
+import { useLanguage } from "../i18n.jsx";
 
+// [2026-09-16] This control said "All Locations" in English on top of a
+// Khmer app — SISEN, on his phone: "so not clean and professional". Every
+// word in it is translated now, including the counts.
 export default function LocationFilter({ locations, selectedIds, setSelectedIds }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -19,10 +24,10 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
 
   const label =
     selectedIds.length === 0
-      ? "All Locations"
+      ? t("loc_all")
       : selectedIds.length === 1
-      ? locations.find((l) => l.id === selectedIds[0])?.name || "1 Location"
-      : `${selectedIds.length} Locations Selected`;
+      ? locations.find((l) => l.id === selectedIds[0])?.name || t("loc_one")
+      : t("loc_n_selected", { n: selectedIds.length });
 
   return (
     <div className="relative" ref={ref}>
@@ -41,7 +46,7 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
             onClick={() => setSelectedIds([])}
             className="mb-1 flex w-full items-center justify-between rounded-md px-2 py-1.5 text-sm hover:bg-slate-50"
           >
-            <span className={selectedIds.length === 0 ? "font-medium text-brand-700" : "text-slate-700"}>All Locations (combined)</span>
+            <span className={selectedIds.length === 0 ? "font-medium text-brand-700" : "text-slate-700"}>{t("loc_all_combined")}</span>
             {selectedIds.length === 0 && <Check size={14} className="text-brand-600" />}
           </button>
           <div className="my-1 border-t border-slate-100" />
