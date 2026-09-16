@@ -109,6 +109,18 @@ export default defineConfig({
         // completely offline once it's been visited here at least once.
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         navigateFallback: "/index.html",
+        // [2026-09-16] …but NOT for version.json.
+        //
+        // navigateFallback hands the app shell to any address typed in the
+        // bar, so opening /version.json in a browser showed the Dashboard and
+        // looked exactly like a failed build. The app itself was never
+        // affected — a fetch() is not a navigation request, so it always
+        // reached the real file — but a system nobody can check by hand is
+        // not one anybody should be asked to trust.
+        //
+        // With this, typing the address shows the version, on any machine,
+        // including a station's.
+        navigateFallbackDenylist: [/^\/version\.json/],
         // Make a fresh deploy take over immediately instead of waiting for
         // every open tab/window of the installed app to be fully closed
         // first — without this, a station's installed app can keep quietly
