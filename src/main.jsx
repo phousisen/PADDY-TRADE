@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.jsx";
+import ErrorBoundary from "./ErrorBoundary.jsx";
 import { startSessionWatch } from "./sessionWatch.js";
 import { ensureFreshSession } from "./supabaseClient.js";
 import { AuthProvider } from "./AuthContext.jsx";
@@ -63,12 +64,22 @@ document.addEventListener(
   { passive: true }
 );
 
+// [2026-09-16] ErrorBoundary is OUTSIDE both providers on purpose. React
+// unmounts the entire tree when anything throws while rendering, and with
+// nothing to catch it the page goes blank — which is exactly what SISEN saw
+// signing in to the new Viewer account: "the screen is plain white".
+//
+// Wrapped outermost so it also catches a crash in the language or login
+// provider itself. It renders plain Tailwind and reads no context, so it
+// cannot fail for the same reason the thing it caught did.
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <LanguageProvider>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </LanguageProvider>
+    <ErrorBoundary>
+      <LanguageProvider>
+        <AuthProvider>
+          <App />
+        </AuthProvider>
+      </LanguageProvider>
+    </ErrorBoundary>
   </React.StrictMode>
 );
