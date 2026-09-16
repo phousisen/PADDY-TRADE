@@ -35,6 +35,7 @@
 // distinction, which applies here identically.
 
 import { buildDays, rollup, SUM_FIELDS } from "./periodBook.js";
+import { categoryKey } from "./expenseCategories.js";
 
 const num = (v) => Number(v) || 0;
 const isActive = (t) => (t.hq_status || "processing") !== "cancelled";
@@ -65,7 +66,12 @@ const INTEREST = ["interest", "loan interest", "ការប្រាក់"];
 const TAXES = ["tax", "patent", "ពន្ធ"];
 
 export function classifyExpense(category) {
-  const c = String(category || "").trim().toLowerCase();
+  // [2026-09-16] Was String(category).trim().toLowerCase(), which does not
+  // see the zero-width characters a Khmer keyboard inserts — so a ថ្លៃកូនដៃ
+  // carrying one failed `.includes("កូនដៃ")` and fell into "other operating
+  // expenses", off the intermediary line entirely. categoryKey() strips them,
+  // the same normalisation the products unique index uses.
+  const c = categoryKey(category);
   if (!c) return "other";
   const hit = (list) => list.some((k) => c.includes(k));
   if (hit(INTERMEDIARY)) return "intermediary";

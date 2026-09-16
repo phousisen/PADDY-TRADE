@@ -13,6 +13,8 @@
 // is its last day's closing, not the sum of the days. Same for cost per kg and
 // stock value. buildPeriods() is the only place that knows this.
 
+import { isCommission } from "./expenseCategories.js";
+
 import { cambodiaDateStr, effectiveAdjDateStr } from "./dailyLedger.js";
 
 // Vehicle type is stored on the ticket as "Truck: 3A-1890" — the part before
@@ -37,7 +39,7 @@ export const SUM_FIELDS = [
   "buyLoads", "truck", "koyun", "tractor", "otherVeh",
   "boughtKg", "spent",
   "sellLoads", "soldKg", "received", "cogs",
-  "staff", "otherExp", "expenses",
+  "commission", "otherExp", "expenses",
   "lostKg", "lostValue",
   "shortfallKg", "shortfallValue", "resetWriteOff",
 ];
@@ -99,14 +101,31 @@ export function buildDays({ txs = [], payments = [], adjustments = [], locationI
   }
 
   // --- expenses -----------------------------------------------------------
-  // An expense is a payment of type "expense"; the Staff category is split out
-  // because wages are the one running cost a station manager thinks about
-  // separately. Voided payments are already excluded by api.getPayments.
+  // An expense is a payment of type "expense". ថ្លៃកូនដៃ is split out and
+  // everything else — salary included — goes in Other.
+  //
+  // [2026-09-16] This column was "Staff", matched with
+  //     (p.category || "") === "Staff"
+  // Two things were wrong with it.
+  //
+  //   1. ថ្លៃកូនដៃ is a commission the business pays one staff member per
+  //      station, per kilo, for bringing farmers in. SISEN is trying to cut
+  //      it. Inside a "Staff" column it sits with salary, which barely moves
+  //      month to month — so a commission rising 37% and a salary rising 2%
+  //      average out to 13% and neither can be read. SISEN: "for the staff
+  //      colum, change it to commision, which is ថ្លៃកូនដៃ."
+  //
+  //   2. The match was an exact string compare, so a category carrying a
+  //      zero-width character from a Khmer keyboard — invisible on screen —
+  //      fell silently into Other. isCommission() sees through that, the
+  //      same normalisation the products unique index uses.
+  //
+  // Voided payments are already excluded by api.getPayments.
   for (const p of payments) {
     if (p.type !== "expense" || !p.pay_date || !inScope(p.location_id)) continue;
     const b = bucket(p.pay_date);
     const amt = num(p.amount);
-    if ((p.category || "") === "Staff") b.staff += amt;
+    if (isCommission(p.category)) b.commission += amt;
     else b.otherExp += amt;
     b.expenses += amt;
   }
