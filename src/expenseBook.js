@@ -18,6 +18,7 @@
 // move. See expenseCategories.js.
 
 import { isCommission, categoryKey, cleanCategory } from "./expenseCategories.js";
+import { dmy, my, range } from "./dateFormat.js";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -42,14 +43,6 @@ export function periodKeyOf(dateStr, grain) {
   return s.slice(0, 10);
 }
 
-const MONTHS = ["January","February","March","April","May","June",
-                "July","August","September","October","November","December"];
-
-export function monthName(ym) {
-  const m = Number(String(ym).slice(5, 7));
-  return MONTHS[m - 1] || "";
-}
-
 /** The Monday and Sunday of an ISO week key, as YYYY-MM-DD. */
 export function weekRange(key) {
   const [y, w] = String(key).split("-W").map(Number);
@@ -66,24 +59,21 @@ export function weekRange(key) {
   return { from: iso(mon), to: iso(sun) };
 }
 
+// [2026-09-16] Every label here was an English month name — "15 Sep",
+// "September 2026". On a Khmer screen those are noise. They are now numbers,
+// which read the same in both languages. See src/dateFormat.js.
+//
+// SISEN: "for the expenses part how about add year also 2026" — so a day row
+// here carries its full date, unlike the Daily Book where a month picker sits
+// above the list and supplies the year.
 export function periodLabel(key, grain) {
-  if (grain === "year") return key;
-  if (grain === "month") return `${monthName(key)} ${key.slice(0, 4)}`;
+  if (grain === "year") return String(key);
+  if (grain === "month") return my(key);
   if (grain === "week") {
     const { from, to } = weekRange(key);
-    const d = (s) => Number(s.slice(8, 10));
-    const sameMonth = from.slice(0, 7) === to.slice(0, 7);
-    return sameMonth
-      ? `${d(from)}–${d(to)} ${monthName(from).slice(0, 3)}`
-      : `${d(from)} ${monthName(from).slice(0, 3)} – ${d(to)} ${monthName(to).slice(0, 3)}`;
+    return range(from, to);
   }
-  return `${Number(key.slice(8, 10))} ${monthName(key).slice(0, 3)}`;
-}
-
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-export function weekdayOf(iso) {
-  const [y, m, d] = String(iso).split("-").map(Number);
-  return WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()] || "";
+  return dmy(key);
 }
 
 // ── the window the page is looking through ────────────────────────────────
@@ -94,7 +84,9 @@ export function weekdayOf(iso) {
 // month-by-month through a list of months would be a list of one.
 
 export function windowFor(grain, anchor) {
-  if (grain === "year") return { from: null, to: null, label: "All years", unit: null };
+  // label === null means "everything" — the screen supplies the translated
+  // words, because this module must never hold a language.
+  if (grain === "year") return { from: null, to: null, label: null, unit: null };
   if (grain === "month") {
     const y = String(anchor).slice(0, 4);
     return { from: `${y}-01-01`, to: `${y}-12-31`, label: y, unit: "year" };
@@ -105,7 +97,7 @@ export function windowFor(grain, anchor) {
   return {
     from: `${ym}-01`,
     to: `${ym}-${String(last).padStart(2, "0")}`,
-    label: `${monthName(ym)} ${y}`,
+    label: my(ym),
     unit: "month",
   };
 }

@@ -998,6 +998,8 @@ export const translations = {
     ex_loading: "Loading…",
     ex_locations: "Locations",
     ex_all_locations: "All locations",
+    ex_all_years: "All years",
+    ex_nothing_in: "Nothing recorded in",
     ex_total: "Total",
     ex_period: "Period",
     ex_category: "Category",
@@ -1049,6 +1051,16 @@ export const translations = {
 
     ex_confirm_title: "Confirm it is you",
     ex_confirm_why: "You are changing a figure that is already recorded.",
+
+    // [2026-09-16] The weekday is the only word left in a date; everything
+    // else is digits. See src/dateFormat.js.
+    dow_0: "Sun",
+    dow_1: "Mon",
+    dow_2: "Tue",
+    dow_3: "Wed",
+    dow_4: "Thu",
+    dow_5: "Fri",
+    dow_6: "Sat",
   },
   km: {
     appName: "PADDYTRADE",
@@ -1989,6 +2001,8 @@ export const translations = {
     ex_loading: "កំពុងទាញយក…",
     ex_locations: "ទីតាំង",
     ex_all_locations: "ទីតាំងទាំងអស់",
+    ex_all_years: "គ្រប់ឆ្នាំ",
+    ex_nothing_in: "គ្មានកំណត់ត្រាក្នុង",
     ex_total: "សរុប",
     ex_period: "អំឡុងពេល",
     ex_category: "ប្រភេទចំណាយ",
@@ -2040,6 +2054,16 @@ export const translations = {
 
     ex_confirm_title: "បញ្ជាក់ថាជាអ្នក",
     ex_confirm_why: "អ្នកកំពុងកែចំនួនដែលបានកត់ត្រារួចហើយ។",
+
+    // [2026-09-16] The weekday is the only word left in a date; everything
+    // else is digits. See src/dateFormat.js.
+    dow_0: "អាទិត្យ",
+    dow_1: "ចន្ទ",
+    dow_2: "អង្គារ",
+    dow_3: "ពុធ",
+    dow_4: "ព្រហស្បតិ៍",
+    dow_5: "សុក្រ",
+    dow_6: "សៅរ៍",
   },
 };
 
