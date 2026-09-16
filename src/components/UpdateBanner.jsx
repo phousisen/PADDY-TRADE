@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { api } from "../api.js";
 import { APP_VERSION } from "../version.js";
+import { getDeviceId, describeDevice } from "../deviceId.js";
 import {
   watchForUpdates, trackActivity, looksBusy, reloadWhenFree,
   FORCED_RELOAD_AFTER_MS,
@@ -25,9 +26,11 @@ import {
 // It renders nothing at all until one of those happens, so on a normal day
 // this component is invisible.
 
-// Often enough that the HQ list is never more than a couple of minutes
-// stale; rare enough to be nothing on a bad line.
-const REPORT_MS = 2 * 60 * 1000;
+// [2026-09-16] Once a minute, not once every two. SISEN: "its best to know
+// in details and very fast." Three missed check-ins is what turns a station
+// amber, so the check-in itself has to be quick or "fast" means nothing. It
+// is one small call — at five stations that is a few hundred bytes a minute.
+const REPORT_MS = 60 * 1000;
 
 export default function UpdateBanner() {
   const { t } = useLanguage();
@@ -41,8 +44,17 @@ export default function UpdateBanner() {
   useEffect(() => {
     let cancelled = false;
 
+    const deviceId = getDeviceId();
+    const { platform, browser } = describeDevice();
+
     async function tick() {
-      api.reportAppVersion(APP_VERSION);
+      // One call does both jobs: it records this MACHINE, and keeps the
+      // account's own version column in step. If the database has not had
+      // device_sessions.sql run yet it returns false, and the older
+      // account-only report still happens — so an app that reaches a station
+      // before the migration does still reports something useful.
+      const ok = await api.reportDevice({ deviceId, version: APP_VERSION, platform, browser });
+      if (!ok) api.reportAppVersion(APP_VERSION);
       try {
         const control = await api.getAppControl();
         const at = control?.reload_requested_at;
