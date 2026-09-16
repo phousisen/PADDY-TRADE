@@ -1,85 +1,70 @@
-// Expenses — a day at a time, a station at a time.
+// Expenses — one table, and a day sheet behind a button.
 //
-// [2026-09-16] Rebuilt. SISEN: "each location will send us the total expenses
-// for each day everyday so the HQ finance will type the expense down."
+// [2026-09-16] Rebuilt twice in a day, and the second rebuild is the one that
+// matters. SISEN, on the first: "too many boxes, why not customize it and
+// make it more convinient" and "we focus on eevryday, week, month and year
+// data".
 //
-// That single sentence decided the whole screen. The old one recorded ONE
-// expense at a time: pick category, amount, date, station, save — repeated
-// for every line on every sheet from every station, up to thirty saves a day
-// for one person. Now a day is one sheet: pick the station once, fill only
-// the categories that had something, save, and it moves to the next station
-// that has not been entered.
+// The first version was six cards — a scope card, a total card, "On what",
+// "Where", a month grid and a checks card. Three of those were the same rows
+// grouped three ways, so they are now ONE table with a Rows-by switch, and
+// everything that steers it sits on one line across the top.
 //
-// WHAT CHANGED, AND WHY
+// WHAT THE SCREEN IS
 //
-//   * ថ្លៃកូនដៃ is its own category, never inside Staff. It is a commission
-//     paid per kilo to one staff member per station for bringing farmers in.
-//     Salary barely moves month to month; commission moves with how much
-//     paddy is bought. Averaged together neither can be read — in the month
-//     this was designed against, salary moved +2.4% and commission +36.7%,
-//     which combine to +13.4% and describe neither. SISEN is actively trying
-//     to bring it down, which is impossible to see inside a total.
+//   * A REPORT when you open it. The entry sheet only exists once you press
+//     "Enter a day" — SISEN: "the enter a day part for expense should only
+//     load up when we click on opening expense ticket."
 //
-//   * A day with nothing spent is recorded ON PURPOSE (expense_day_marks),
-//     so the grid can tell "checked, nothing" from "nobody entered it". A
-//     forgotten day makes a station look CHEAPER than it is, and nothing
-//     else in the app can catch it — there is no row to catch.
+//   * Day / Week / Month / Year, the same four grains as the Daily Book, and
+//     the same rule underneath: every level is the same rows added up, so a
+//     month can never disagree with the days inside it.
 //
-//   * Categories can be added, which the paddy types deliberately cannot.
-//     The paddy list broke because each DEVICE kept its own copy; this list
-//     lives in the database and two people use it. What is guarded is adding
-//     one that already exists under a spelling nobody can see — see
-//     nearlyTheSame() in expenseCategories.js.
+//   * ថ្លៃកូនដៃ on its own column at every level, never inside a total. It is
+//     a commission paid per kilo to one staff member per station, SISEN is
+//     cutting it, and it cannot be seen to move if it is averaged with
+//     salary. See expenseCategories.js.
 //
-//   * Correcting a figure is retyping it, not a form. The password is asked
-//     only when reaching back past today or into someone else's entry. The
-//     change is recorded either way; the password governs how far back you
-//     are reaching, not whether it is written down.
+//   * One station's day per sheet. The first attempt showed the stations as
+//     ticked chips, which read as a multi-select; SISEN: "how can we tick so
+//     many location in one ticket? because all spending for each location are
+//     different." They are now a picker where exactly one is plainly current.
+//
+//   * Opening a day loads what is already on it, so a forgotten expense goes
+//     into its empty box rather than becoming a second entry.
+//
+//   * Correcting a figure that is already there asks for a password and a
+//     reason; adding to an empty box does not. The password is about how far
+//     back you are reaching, not about whether the change is recorded — it is
+//     recorded either way, in audit_logs.
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Lock, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Check, Loader2, Lock, Plus, ChevronRight, X } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { errText } from "../errText.js";
 import {
-  categoryList, categoryKey, cleanCategory, isCommission, nearlyTheSame, splitByCategory,
+  categoryList, categoryKey, cleanCategory, isCommission, nearlyTheSame,
 } from "../expenseCategories.js";
+import {
+  windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
+  stationsOn, weekdayOf, childGrain,
+} from "../expenseBook.js";
 
-function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
-function fmtRiel(n) { return `${fmt(n)} ៛`; }
+const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(n || 0));
+const riel = (n) => `${fmt(n)} ៛`;
 
-// Cambodia's calendar date, independent of the device clock — the same
-// helper every other page uses to stamp a business date.
 function cambodiaDateStr(d = getAccurateNow()) {
-  const parts = {};
+  const p = {};
   new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
-    .formatToParts(d).forEach((p) => { parts[p.type] = p.value; });
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-function monthOf(dateStr) { return (dateStr || "").slice(0, 7); }
-function daysInMonth(ym) {
-  const [y, m] = ym.split("-").map(Number);
-  return new Date(y, m, 0).getDate();
-}
-function shiftMonth(ym, by) {
-  const [y, m] = ym.split("-").map(Number);
-  const d = new Date(y, m - 1 + by, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-function dayStr(ym, day) { return `${ym}-${String(day).padStart(2, "0")}`; }
-function weekdayOf(iso) {
-  const [y, m, d] = iso.split("-").map(Number);
-  return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
-}
-function monthLabel(ym) {
-  const [y, m] = ym.split("-").map(Number);
-  return `${["January","February","March","April","May","June","July","August","September","October","November","December"][m - 1]} ${y}`;
+    .formatToParts(d).forEach((x) => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
-// Plain digits in, grouped figure beside the box. Typing punctuation five
-// stations by six categories a day is where mistakes come from.
+// Plain digits in; the grouped figure is shown beside the box. Typing
+// punctuation five stations by six categories a day is where mistakes start.
 function parseAmount(text) {
   const cleaned = String(text ?? "").replace(/[^\d.]/g, "");
   if (!cleaned) return null;
@@ -87,35 +72,48 @@ function parseAmount(text) {
   return Number.isFinite(n) ? n : null;
 }
 
-const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
-const amountCls = `${inputCls} text-right tabular-nums`;
+// [2026-09-16] fieldBase carries no width. Appending `w-32` to a class string
+// that already has `w-full` does NOT override it — Tailwind emits `w-full`
+// after the numeric widths, so the box took the whole row and the category
+// name beside it (min-w-0, truncate) collapsed to nothing. That shipped, and
+// the sheet arrived as a column of blank rows.
+const fieldBase = "rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
+const inputCls = `w-full ${fieldBase}`;
+const amountCls = `${fieldBase} text-right tabular-nums`;
 
-// ───────────────────────────────────────────────────────────────────────────
-// Adding a category
-// ───────────────────────────────────────────────────────────────────────────
+const GRAINS = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["year", "Year"]];
+const GROUPS = [["period", "By period"], ["category", "By category"], ["station", "By station"]];
+
+// ───────────────────────────────────────────────────────────── segmented ──
+
+function Seg({ options, value, onChange }) {
+  return (
+    <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
+      {options.map(([v, label], i) => (
+        <button key={v} type="button" onClick={() => onChange(v)}
+          className={`px-3 py-1.5 text-xs font-semibold ${i ? "border-l border-slate-200" : ""} ${
+            v === value ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────── add a category ──
 
 function AddCategory({ existing, onAdd, onCancel }) {
   const [name, setName] = useState("");
   const [forced, setForced] = useState(false);
-
-  const match = useMemo(
-    () => (forced ? null : nearlyTheSame(name, existing)),
-    [name, existing, forced],
-  );
+  const match = useMemo(() => (forced ? null : nearlyTheSame(name, existing)), [name, existing, forced]);
   const clean = cleanCategory(name);
-  // An exact match is not a new category at all — it IS that category, so
-  // there is nothing to create and no "no, this is different" to offer.
   const blocked = !clean || (match && match.exact);
 
   return (
     <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
       <label className="mb-1 block text-xs font-medium text-slate-500">New category</label>
-      <input
-        autoFocus value={name}
-        onChange={(e) => { setName(e.target.value); setForced(false); }}
-        placeholder="e.g. Rent"
-        className={inputCls}
-      />
+      <input autoFocus value={name} placeholder="e.g. Police fee" className={inputCls}
+        onChange={(e) => { setName(e.target.value); setForced(false); }} />
       {match && (
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="text-sm font-medium text-amber-800">
@@ -123,12 +121,12 @@ function AddCategory({ existing, onAdd, onCancel }) {
           </p>
           <p className="mt-0.5 text-xs text-amber-700">
             {match.exact
-              ? "Use it from the list above rather than adding it twice."
+              ? "Use it from the list rather than adding it twice."
               : "Two spellings of one category sit side by side on every report from then on."}
           </p>
           {!match.exact && (
             <div className="mt-2 flex flex-wrap gap-2">
-              <button type="button" onClick={() => { onAdd(match.name); }}
+              <button type="button" onClick={() => onAdd(match.name)}
                 className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">
                 Use “{match.name}”
               </button>
@@ -142,348 +140,183 @@ function AddCategory({ existing, onAdd, onCancel }) {
       )}
       <div className="mt-2 flex gap-2">
         <button type="button" disabled={blocked} onClick={() => onAdd(clean)}
-          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
-          Add
-        </button>
+          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">Add</button>
         <button type="button" onClick={onCancel}
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">
-          Cancel
-        </button>
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
       </div>
     </div>
   );
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// One day, one station — the sheet
-// ───────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────── day sheet ──
 
 function DaySheet({
   day, setDay, locationId, setLocationId, locations, categories, existingRows,
-  onSave, onMarkEmpty, saving, error, nextStationName, doneCount, canEdit, editLocked,
+  dayStates, onSave, saving, error, canEdit, needsPassword, onClose,
 }) {
   const [amounts, setAmounts] = useState({});
-  const [extra, setExtra] = useState([]);       // categories added this session
+  const [extra, setExtra] = useState([]);
   const [adding, setAdding] = useState(false);
   const [reason, setReason] = useState("");
 
-  // Reopening a day that already has figures loads them, so correcting one
-  // is retyping it in place rather than hunting for a row in a log.
   useEffect(() => {
     const next = {};
-    for (const row of existingRows) {
-      const key = categoryKey(row.category);
-      next[key] = String(Math.round(Number(row.amount) || 0));
-    }
+    for (const row of existingRows) next[categoryKey(row.category)] = String(Math.round(Number(row.amount) || 0));
     setAmounts(next);
     setReason("");
+    setExtra([]);
   }, [day, locationId, existingRows.length]);
 
   const shown = useMemo(() => {
-    const seen = new Set();
-    const out = [];
-    const push = (name) => {
-      const key = categoryKey(name);
-      if (!key || seen.has(key)) return;
-      seen.add(key);
-      out.push(name);
-    };
-    categories.forEach(push);
-    extra.forEach(push);
-    // Anything already recorded on this day stays visible even if it is no
-    // longer on the list, or the figure would silently disappear.
+    const seen = new Set(); const out = [];
+    const push = (n) => { const k = categoryKey(n); if (k && !seen.has(k)) { seen.add(k); out.push(n); } };
+    categories.forEach(push); extra.forEach(push);
+    // A figure already on this day stays visible even if its category has
+    // since gone from the list, or it would silently vanish.
     existingRows.forEach((r) => push(r.category));
     return out;
   }, [categories, extra, existingRows]);
 
-  const total = shown.reduce((s, name) => s + (parseAmount(amounts[categoryKey(name)]) || 0), 0);
-  const anythingTyped = shown.some((name) => parseAmount(amounts[categoryKey(name)]) != null);
+  const total = shown.reduce((s, n) => s + (parseAmount(amounts[categoryKey(n)]) || 0), 0);
 
-  // Amending a day that is not today, or one somebody else entered, asks for
-  // a reason. Today's own typing does not.
-  const needsReason = editLocked && existingRows.length > 0;
+  // Changing a figure that is already recorded is a correction. Putting one
+  // into an empty box is not.
+  const changesExisting = existingRows.some((r) => {
+    const typed = parseAmount(amounts[categoryKey(r.category)]);
+    return typed != null && Math.round(typed) !== Math.round(Number(r.amount) || 0);
+  });
+  const mustExplain = needsPassword && changesExisting;
 
   function submit() {
     const entries = shown
-      .map((name) => ({ category: name, amount: parseAmount(amounts[categoryKey(name)]) }))
+      .map((n) => ({ category: n, amount: parseAmount(amounts[categoryKey(n)]) }))
       .filter((e) => e.amount != null);
-    onSave({ entries, reason: reason.trim() });
+    onSave({ entries, reason: reason.trim(), changesExisting });
   }
 
+  const cur = locations.find((l) => l.id === locationId);
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 grid gap-3 sm:grid-cols-[180px_1fr_auto] sm:items-end">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">Date</label>
-          <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className={inputCls} />
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="my-6 w-full max-w-2xl rounded-xl border border-brand-500 bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-3 rounded-t-xl border-b border-brand-100 bg-brand-50 px-5 py-3">
+          <div>
+            <h3 className="font-semibold text-slate-800">Enter a day</h3>
+            <p className="text-xs text-slate-500">
+              One station's spending at a time — this sheet is {cur?.name || "—"}'s {day}.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white"><X size={16} /></button>
         </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-slate-500">Station</label>
-          <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={inputCls}>
-            {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-        </div>
-        <p className="text-xs text-slate-400 sm:pb-2">
-          {doneCount} of {locations.length} entered
-          {nextStationName ? <> · {nextStationName} next</> : null}
-        </p>
-      </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200">
-        {shown.map((name, i) => {
-          const key = categoryKey(name);
-          const value = amounts[key] ?? "";
-          const parsed = parseAmount(value);
-          return (
-            <div key={key}
-              className={`flex items-center gap-3 px-3 py-2 ${i ? "border-t border-slate-100" : ""} ${isCommission(name) ? "bg-amber-50/60" : ""}`}>
-              <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
-                {name}
-                {isCommission(name) && (
-                  <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                    Commission
+        <div className="p-5">
+          <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-400">Which station</label>
+          <div className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            {locations.map((l) => {
+              const st = dayStates[l.id] || "blank";
+              const isCur = l.id === locationId;
+              return (
+                <button key={l.id} type="button" onClick={() => setLocationId(l.id)}
+                  className={`rounded-lg px-3 py-2 text-left ${
+                    isCur ? "border-2 border-brand-600 bg-brand-50"
+                          : st === "blank" ? "border border-slate-200 bg-white" : "border border-slate-200 bg-slate-50"}`}>
+                  <span className={`block truncate text-[13px] font-bold ${isCur ? "text-slate-800" : "text-slate-500"}`}>
+                    {l.name}{st !== "blank" && <Check size={12} className="ml-1 inline text-brand-600" />}
                   </span>
-                )}
-              </span>
-              <span className="w-24 text-right text-xs tabular-nums text-slate-400">
-                {parsed != null ? fmt(parsed) : ""}
-              </span>
-              <input
-                inputMode="numeric" value={value}
-                onChange={(e) => setAmounts((a) => ({ ...a, [key]: e.target.value }))}
-                onKeyDown={(e) => { if (e.key === "Enter" && !saving) submit(); }}
-                className={`${amountCls} w-32`} placeholder="—"
-              />
+                  <span className={`block text-[11px] ${isCur ? "font-semibold text-brand-700" : "text-slate-400"}`}>
+                    {isCur ? "Entering now" : st === "spent" ? "Entered" : st === "nothing" ? "Nothing spent" : "Not yet"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mb-4 w-48">
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-400">Date</label>
+            <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className={inputCls} />
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-slate-200">
+            {shown.map((name, i) => {
+              const key = categoryKey(name);
+              const value = amounts[key] ?? "";
+              const parsed = parseAmount(value);
+              return (
+                <div key={key}
+                  className={`flex items-center gap-3 px-3 py-2 ${i ? "border-t border-slate-100" : ""} ${isCommission(name) ? "bg-amber-50/70" : ""}`}>
+                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+                    {name}
+                    {isCommission(name) && (
+                      <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                        Commission
+                      </span>
+                    )}
+                  </span>
+                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">
+                    {parsed != null ? fmt(parsed) : ""}
+                  </span>
+                  <input inputMode="numeric" value={value} placeholder="—"
+                    onChange={(e) => setAmounts((a) => ({ ...a, [key]: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === "Enter" && !saving) submit(); }}
+                    className={`${amountCls} w-28 shrink-0`} />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-3">
+            {adding ? (
+              <AddCategory existing={shown}
+                onAdd={(n) => { setExtra((x) => [...x, n]); setAdding(false); }}
+                onCancel={() => setAdding(false)} />
+            ) : canEdit && (
+              <button type="button" onClick={() => setAdding(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-slate-50">
+                <Plus size={14} /> Add a category
+              </button>
+            )}
+          </div>
+
+          {mustExplain && (
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                <Lock size={12} /> You are changing a figure already recorded — say why
+              </label>
+              <input value={reason} onChange={(e) => setReason(e.target.value)}
+                placeholder="e.g. Station sent a corrected sheet" className={inputCls} />
             </div>
-          );
-        })}
-      </div>
+          )}
 
-      <div className="mt-3">
-        {adding ? (
-          <AddCategory
-            existing={shown}
-            onAdd={(name) => { setExtra((x) => [...x, name]); setAdding(false); }}
-            onCancel={() => setAdding(false)}
-          />
-        ) : (
-          canEdit && (
-            <button type="button" onClick={() => setAdding(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-slate-50">
-              <Plus size={14} /> Add a category
-            </button>
-          )
-        )}
-      </div>
-
-      <div className="mt-4 flex items-baseline justify-between border-t border-slate-200 pt-3">
-        <span className="text-sm font-semibold text-slate-600">Total for the day</span>
-        <span className="text-lg font-bold tabular-nums text-slate-800">{fmtRiel(total)}</span>
-      </div>
-
-      {needsReason && (
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-            <Lock size={12} /> This day is not today — say why it is changing
-          </label>
-          <input value={reason} onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. Station sent a corrected sheet" className={inputCls} />
+          {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
         </div>
-      )}
 
-      {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
-
-      {canEdit && (
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button type="button" onClick={submit}
-            disabled={saving || (needsReason && !reason.trim())}
-            className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            Save &amp; next station
-          </button>
-          {!anythingTyped && existingRows.length === 0 && (
-            <button type="button" onClick={onMarkEmpty} disabled={saving}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-              Nothing spent this day
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
+          <p className="text-sm text-slate-500">
+            Total for the day <b className="ml-1 text-base tabular-nums text-slate-800">{riel(total)}</b>
+            <span className="block text-[11px] text-slate-400">Save with every box empty to record a day with nothing spent.</span>
+          </p>
+          {canEdit && (
+            <button type="button" onClick={submit} disabled={saving || (mustExplain && !reason.trim())}
+              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+              {saving && <Loader2 size={14} className="animate-spin" />} Save &amp; next station
             </button>
           )}
-          <p className="text-xs text-slate-400">Type plain numbers. Enter saves.</p>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// The month grid — every day, every station
-// ───────────────────────────────────────────────────────────────────────────
+// ───────────────────────────────────────────────────────── the one table ──
 
-function MonthGrid({ ym, locations, rows, marks, onOpenDay }) {
-  const byCell = useMemo(() => {
-    const map = new Map();
-    for (const r of rows) {
-      const k = `${r.pay_date}|${r.location_id}`;
-      map.set(k, (map.get(k) || 0) + (Number(r.amount) || 0));
-    }
-    return map;
-  }, [rows]);
-
-  const markSet = useMemo(
-    () => new Set(marks.map((m) => `${String(m.day).slice(0, 10)}|${m.location_id}`)),
-    [marks],
-  );
-
-  const days = Array.from({ length: daysInMonth(ym) }, (_, i) => i + 1);
-  const today = cambodiaDateStr();
-  const colTotals = {};
-  let grand = 0;
-
-  const body = days.map((d) => {
-    const iso = dayStr(ym, d);
-    if (iso > today) return null;
-    let dayTotal = 0;
-    const cells = locations.map((l) => {
-      const key = `${iso}|${l.id}`;
-      const amount = byCell.get(key);
-      if (amount != null) {
-        dayTotal += amount;
-        colTotals[l.id] = (colTotals[l.id] || 0) + amount;
-      }
-      return { l, amount, marked: markSet.has(key) };
-    });
-    grand += dayTotal;
-    return { iso, d, cells, dayTotal };
-  }).filter(Boolean);
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-400">
-            <th className="py-2 pr-3 text-left font-semibold">{monthLabel(ym).split(" ")[0]}</th>
-            {locations.map((l) => <th key={l.id} className="py-2 pl-3 text-right font-semibold">{l.name}</th>)}
-            <th className="py-2 pl-3 text-right font-semibold">Day total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {body.map(({ iso, d, cells, dayTotal }) => (
-            <tr key={iso} className="border-b border-slate-50">
-              <td className="py-1.5 pr-3 text-slate-500">
-                <span className="font-semibold text-slate-700">{d}</span>{" "}
-                <span className="text-[11px] text-slate-400">{weekdayOf(iso)}</span>
-              </td>
-              {cells.map(({ l, amount, marked }) => (
-                <td key={l.id} className="py-1.5 pl-3 text-right tabular-nums">
-                  {amount != null ? (
-                    <button type="button" onClick={() => onOpenDay(iso, l.id)}
-                      className="rounded px-1 text-slate-700 hover:bg-slate-100 hover:underline">
-                      {fmt(amount)}
-                    </button>
-                  ) : marked ? (
-                    // Checked, and nothing was spent. Not the same as blank.
-                    <span className="text-slate-400" title="Nothing spent — recorded">0</span>
-                  ) : (
-                    <button type="button" onClick={() => onOpenDay(iso, l.id)}
-                      className="rounded px-1 text-slate-200 hover:bg-slate-100" title="Nobody has entered this day">
-                      —
-                    </button>
-                  )}
-                </td>
-              ))}
-              <td className="py-1.5 pl-3 text-right font-semibold tabular-nums text-slate-700">{fmt(dayTotal)}</td>
-            </tr>
-          ))}
-          <tr className="border-t-2 border-slate-300 font-bold">
-            <td className="py-2 pr-3 text-slate-700">Total</td>
-            {locations.map((l) => (
-              <td key={l.id} className="py-2 pl-3 text-right tabular-nums text-slate-800">{fmt(colTotals[l.id] || 0)}</td>
-            ))}
-            <td className="py-2 pl-3 text-right tabular-nums text-slate-900">{fmt(grand)}</td>
-          </tr>
-        </tbody>
-      </table>
-      <p className="mt-2 text-xs text-slate-400">
-        <b className="text-slate-500">0</b> — the station spent nothing and someone said so.
-        <b className="ml-2 text-slate-500">—</b> — nobody has entered it.
-      </p>
-    </div>
-  );
+function Num({ v, cls = "" }) {
+  return <td className={`py-2 pl-4 text-right tabular-nums ${cls}`}>{v == null ? <span className="text-slate-300">—</span> : fmt(v)}</td>;
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// What looks wrong
-// ───────────────────────────────────────────────────────────────────────────
-
-function buildChecks({ ym, locations, rows, marks, prevRows }) {
-  const out = [];
-  const today = cambodiaDateStr();
-
-  // 1. A station spending far more than it did last month.
-  const thisBy = {}, prevBy = {};
-  rows.forEach((r) => { thisBy[r.location_id] = (thisBy[r.location_id] || 0) + Number(r.amount || 0); });
-  prevRows.forEach((r) => { prevBy[r.location_id] = (prevBy[r.location_id] || 0) + Number(r.amount || 0); });
-  for (const l of locations) {
-    const now = thisBy[l.id] || 0;
-    const before = prevBy[l.id] || 0;
-    // Needs a real base to compare against, or every small station trips it.
-    if (before > 100000 && now > before * 1.4) {
-      out.push({
-        kind: "Up",
-        lead: `${l.name} has spent ${fmtRiel(now - before)} more than last month`,
-        why: `${fmtRiel(now)} against ${fmtRiel(before)}.`,
-      });
-    }
-  }
-
-  // 2. A station that has stopped being entered. Judged against its own
-  //    record: a station that never reports daily is not "missing".
-  const lastSeen = {};
-  rows.forEach((r) => {
-    if (!lastSeen[r.location_id] || r.pay_date > lastSeen[r.location_id]) lastSeen[r.location_id] = r.pay_date;
-  });
-  marks.forEach((m) => {
-    const day = String(m.day).slice(0, 10);
-    if (!lastSeen[m.location_id] || day > lastSeen[m.location_id]) lastSeen[m.location_id] = day;
-  });
-  for (const l of locations) {
-    const last = lastSeen[l.id];
-    if (!last) continue;
-    const gap = Math.round((Date.parse(today) - Date.parse(last)) / 86400000);
-    if (gap >= 5) {
-      out.push({
-        kind: "Missing",
-        lead: `${l.name} — nothing entered since ${last}`,
-        why: `${gap} days. An unrecorded day makes a station look cheaper than it is.`,
-      });
-    }
-  }
-
-  // 3. The same figure twice on the same day — a slow save pressed again.
-  const seen = new Map();
-  for (const r of rows) {
-    const k = `${r.pay_date}|${r.location_id}|${categoryKey(r.category)}|${Math.round(Number(r.amount) || 0)}`;
-    seen.set(k, (seen.get(k) || 0) + 1);
-  }
-  for (const [k, count] of seen) {
-    if (count < 2) continue;
-    const [date, locId, , amount] = k.split("|");
-    const l = locations.find((x) => x.id === locId);
-    out.push({
-      kind: "Twice",
-      lead: `${fmtRiel(Number(amount))} · ${l?.name || "—"} · ${date}`,
-      why: `Recorded ${count} times with the same category and amount.`,
-    });
-  }
-  return out;
-}
-
-// ───────────────────────────────────────────────────────────────────────────
 
 export default function Expenses() {
   const { session, profile, can, isViewOnly } = useAuth();
   const isOwner = !!profile?.isOwner;
-  const canRecord = isOwner || can("record_expenses");
-  const canEditAny = (isOwner || can("edit_expenses")) && !isViewOnly;
+  const canRecord = (isOwner || can("record_expenses")) && !isViewOnly;
 
   const [locations, setLocations] = useState([]);
   const [allExpenses, setAllExpenses] = useState([]);
@@ -492,9 +325,13 @@ export default function Expenses() {
   const [loadError, setLoadError] = useState("");
 
   const today = cambodiaDateStr();
-  const [ym, setYm] = useState(monthOf(today));
-  const [day, setDay] = useState(today);
-  const [locationId, setLocationId] = useState("");
+  const [grain, setGrain] = useState("day");
+  const [group, setGroup] = useState("period");
+  const [anchor, setAnchor] = useState(today);
+  const [scope, setScope] = useState([]);            // [] = all locations
+  const [openKey, setOpenKey] = useState(null);
+
+  const [sheet, setSheet] = useState(null);          // { day, locationId } | null
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [pwPrompt, setPwPrompt] = useState(null);
@@ -510,312 +347,349 @@ export default function Expenses() {
       setLocations(locs || []);
       setAllExpenses(exp || []);
       setMarks(dm || []);
-      if (!locationId && locs?.length) setLocationId(locs[0].id);
     } catch (err) {
       setLoadError(errText(null, err, "") || err.message || "Couldn't load expenses.");
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
-  const monthRows = useMemo(() => allExpenses.filter((r) => monthOf(r.pay_date) === ym), [allExpenses, ym]);
-  const prevRows = useMemo(() => allExpenses.filter((r) => monthOf(r.pay_date) === shiftMonth(ym, -1)), [allExpenses, ym]);
-  const monthMarks = useMemo(() => marks.filter((m) => String(m.day).slice(0, 7) === ym), [marks, ym]);
+  const win = useMemo(() => windowFor(grain, anchor), [grain, anchor]);
+  const prevWin = useMemo(() => windowFor(grain, shiftAnchor(grain, anchor, -1)), [grain, anchor]);
 
-  const categories = useMemo(() => categoryList(allExpenses), [allExpenses]);
-  const thisMonth = useMemo(() => splitByCategory(monthRows), [monthRows]);
-  const lastMonth = useMemo(() => splitByCategory(prevRows), [prevRows]);
+  const rows = useMemo(
+    () => filterRows(allExpenses, { from: win.from, to: win.to, locationIds: scope }),
+    [allExpenses, win, scope],
+  );
+  const prevRows = useMemo(
+    () => filterRows(allExpenses, { from: prevWin.from, to: prevWin.to, locationIds: scope }),
+    [allExpenses, prevWin, scope],
+  );
 
-  const prevByKey = useMemo(() => {
+  const sum = useMemo(() => totals(rows), [rows]);
+  const prevSum = useMemo(() => totals(prevRows), [prevRows]);
+
+  const periods = useMemo(() => byPeriod(rows, grain), [rows, grain]);
+  const categories = useMemo(() => byCategory(rows), [rows]);
+  const stations = useMemo(() => byStation(rows, locations), [rows, locations]);
+  const prevByCat = useMemo(() => {
     const m = new Map();
-    lastMonth.categories.forEach((c) => m.set(categoryKey(c.category), c.amount));
+    byCategory(prevRows).forEach((c) => m.set(c.key, c.amount));
     return m;
-  }, [lastMonth]);
+  }, [prevRows]);
+  const prevByStn = useMemo(() => {
+    const m = new Map();
+    byStation(prevRows, locations).forEach((s) => m.set(s.id, s.total));
+    return m;
+  }, [prevRows, locations]);
 
-  const byStation = useMemo(() => {
-    const now = {}, before = {};
-    monthRows.forEach((r) => { now[r.location_id] = (now[r.location_id] || 0) + Number(r.amount || 0); });
-    prevRows.forEach((r) => { before[r.location_id] = (before[r.location_id] || 0) + Number(r.amount || 0); });
-    return locations
-      .map((l) => ({ l, now: now[l.id] || 0, before: before[l.id] || 0 }))
-      .sort((a, b) => b.now - a.now);
-  }, [locations, monthRows, prevRows]);
+  const catList = useMemo(() => categoryList(allExpenses), [allExpenses]);
 
-  // Today's progress across the stations — what the person typing needs.
-  const todayState = useMemo(() => {
-    const entered = new Set(allExpenses.filter((r) => r.pay_date === today).map((r) => r.location_id));
-    const nothing = new Set(marks.filter((m) => String(m.day).slice(0, 10) === today).map((m) => m.location_id));
-    return locations.map((l) => ({
-      l,
-      state: entered.has(l.id) ? "done" : nothing.has(l.id) ? "zero" : "todo",
-    }));
-  }, [locations, allExpenses, marks, today]);
+  // What is missing, and what looks duplicated. Shown as a strip, and only
+  // when there is something — never as an empty box.
+  const alerts = useMemo(() => {
+    const out = [];
+    const lastSeen = {};
+    allExpenses.forEach((r) => {
+      const d = String(r.pay_date).slice(0, 10);
+      if (!lastSeen[r.location_id] || d > lastSeen[r.location_id]) lastSeen[r.location_id] = d;
+    });
+    marks.forEach((m) => {
+      const d = String(m.day).slice(0, 10);
+      if (!lastSeen[m.location_id] || d > lastSeen[m.location_id]) lastSeen[m.location_id] = d;
+    });
+    for (const l of locations) {
+      const last = lastSeen[l.id];
+      if (!last) continue;
+      const gap = Math.round((Date.parse(today) - Date.parse(last)) / 86400000);
+      if (gap >= 5) out.push({ k: "Missing", t: `${l.name} — nothing entered since ${last}` });
+    }
+    const seen = new Map();
+    for (const r of rows) {
+      const k = `${String(r.pay_date).slice(0, 10)}|${r.location_id}|${categoryKey(r.category)}|${Math.round(Number(r.amount) || 0)}`;
+      seen.set(k, (seen.get(k) || 0) + 1);
+    }
+    for (const [k, n] of seen) {
+      if (n < 2) continue;
+      const [d, locId, , amt] = k.split("|");
+      const l = locations.find((x) => x.id === locId);
+      out.push({ k: "Twice", t: `${riel(Number(amt))} · ${l?.name || "—"} · ${d} — recorded ${n} times` });
+    }
+    return out;
+  }, [allExpenses, marks, locations, rows, today]);
 
-  const nextStation = todayState.find((s) => s.state === "todo" && s.l.id !== locationId)?.l;
-  const doneCount = todayState.filter((s) => s.state !== "todo").length;
-
+  // ── the sheet ───────────────────────────────────────────────────────────
   const sheetRows = useMemo(
-    () => allExpenses.filter((r) => r.pay_date === day && r.location_id === locationId),
-    [allExpenses, day, locationId],
+    () => (sheet ? allExpenses.filter((r) => String(r.pay_date).slice(0, 10) === sheet.day && r.location_id === sheet.locationId) : []),
+    [allExpenses, sheet],
   );
+  const dayStates = useMemo(() => {
+    if (!sheet) return {};
+    const out = {};
+    stationsOn(sheet.day, locations, allExpenses, marks).forEach((s) => { out[s.id] = s.state; });
+    return out;
+  }, [sheet, locations, allExpenses, marks]);
 
-  // Reaching back past today, or into a day someone else entered, is what
-  // asks for a password. Today's own typing does not.
-  const editLocked = day !== today
-    || sheetRows.some((r) => r.created_by && r.created_by !== session?.user?.id);
-
-  const checks = useMemo(
-    () => buildChecks({ ym, locations, rows: monthRows, marks: monthMarks, prevRows }),
-    [ym, locations, monthRows, monthMarks, prevRows],
-  );
+  const needsPassword = !!sheet && (sheet.day !== today
+    || sheetRows.some((r) => r.created_by && r.created_by !== session?.user?.id));
 
   async function reallySave({ entries, reason }) {
     setSaving(true); setSaveError("");
     try {
-      const existingByKey = new Map(sheetRows.map((r) => [categoryKey(r.category), r]));
-      for (const entry of entries) {
-        const key = categoryKey(entry.category);
-        const existing = existingByKey.get(key);
-        if (existing) {
-          if (Math.round(Number(existing.amount) || 0) === Math.round(entry.amount)) continue;
-          await api.updateExpense(existing.id, {
-            amount: entry.amount, reason, userId: session.user.id,
-          });
+      const existing = new Map(sheetRows.map((r) => [categoryKey(r.category), r]));
+      for (const e of entries) {
+        const was = existing.get(categoryKey(e.category));
+        if (was) {
+          if (Math.round(Number(was.amount) || 0) === Math.round(e.amount)) continue;
+          await api.updateExpense(was.id, { amount: e.amount, reason, userId: session.user.id });
         } else {
           await api.createPayment({
-            type: "expense", category: entry.category, transactionId: null,
-            locationId, amount: entry.amount, method: "cash", payDate: day,
-            memo: null, userId: session.user.id,
+            type: "expense", category: e.category, transactionId: null,
+            locationId: sheet.locationId, amount: e.amount, method: "cash",
+            payDate: sheet.day, memo: null, userId: session.user.id,
           });
         }
       }
-      // Money on a day contradicts "nothing spent" — the money wins.
-      if (entries.length) {
-        await api.clearExpenseDayMark({ locationId, day }).catch(() => {});
-      }
+      if (entries.length) await api.clearExpenseDayMark({ locationId: sheet.locationId, day: sheet.day }).catch(() => {});
+      else await api.markExpenseDayEmpty({ locationId: sheet.locationId, day: sheet.day, userId: session.user.id });
+
       await load();
-      if (nextStation) setLocationId(nextStation.id);
+      // On to the next station that has not been entered for this day.
+      const states = stationsOn(sheet.day, locations, allExpenses, marks);
+      const next = states.find((s) => s.state === "blank" && s.id !== sheet.locationId);
+      if (next) setSheet({ day: sheet.day, locationId: next.id });
+      else setSheet(null);
     } catch (err) {
       setSaveError(errText(null, err, "") || err.message || "Could not save.");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   }
 
   function handleSave(payload) {
-    if (!payload.entries.length) { setSaveError("Nothing to save. Use “Nothing spent this day” if that is the case."); return; }
-    if (editLocked) { setPwPrompt(payload); return; }
+    if (payload.changesExisting && needsPassword) { setPwPrompt(payload); return; }
     reallySave(payload);
   }
 
-  async function markEmpty() {
-    setSaving(true); setSaveError("");
-    try {
-      await api.markExpenseDayEmpty({ locationId, day, userId: session.user.id });
-      await load();
-      if (nextStation) setLocationId(nextStation.id);
-    } catch (err) {
-      setSaveError(err.message || "Could not record that.");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const scopeLabel = !scope.length ? "All locations"
+    : scope.length === 1 ? (locations.find((l) => l.id === scope[0])?.name || "1 station")
+    : `${scope.length} stations`;
 
-  const monthTotal = thisMonth.total;
-  const prevTotal = lastMonth.total;
+  const headers = group === "period" ? ["Period"] : group === "category" ? ["Category"] : ["Station"];
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Expenses" subtitle="A day at a time, a station at a time" />
+      <Topbar title="Expenses" subtitle="Day, week, month and year — ថ្លៃកូនដៃ on its own line" />
       <main className="flex-1 overflow-y-auto bg-paper p-6">
-        <div className="mx-auto max-w-5xl space-y-6">
+        <div className="mx-auto max-w-4xl">
 
-          {loadError && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{loadError}</div>
-          )}
-          {loading && (
-            <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Loading…</div>
-          )}
+          {loadError && <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{loadError}</div>}
+          {loading && <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
 
           {!loading && (
-            <>
-              {/* ── Today ─────────────────────────────────────────────── */}
-              <section>
-                <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Today</h2>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex flex-wrap gap-2">
-                    {todayState.map(({ l, state }) => (
-                      <button key={l.id} type="button"
-                        onClick={() => { setDay(today); setLocationId(l.id); }}
-                        className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${
-                          l.id === locationId ? "border-slate-800 text-slate-800"
-                          : state === "done" ? "border-brand-500 text-brand-700"
-                          : state === "zero" ? "border-slate-300 text-slate-500"
-                          : "border-slate-200 text-slate-400"}`}>
-                        {l.name}
-                        {state === "done" && <Check size={13} className="ml-1.5 inline" />}
-                        {state === "zero" && <span className="ml-1.5 tabular-nums">0</span>}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-2.5 text-xs text-slate-400">
-                    {today} · <b className="text-slate-500">{doneCount} of {locations.length} entered</b>
-                  </p>
-                </div>
-              </section>
+            <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
-              {/* ── The sheet ─────────────────────────────────────────── */}
-              <section>
-                <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-                  {sheetRows.length ? "This day" : "Enter a day"}
-                </h2>
-                {locationId && (
-                  <DaySheet
-                    day={day} setDay={setDay}
-                    locationId={locationId} setLocationId={setLocationId}
-                    locations={locations} categories={categories} existingRows={sheetRows}
-                    onSave={handleSave} onMarkEmpty={markEmpty}
-                    saving={saving} error={saveError}
-                    nextStationName={nextStation?.name} doneCount={doneCount}
-                    canEdit={canRecord && !isViewOnly} editLocked={editLocked && !canEditAny ? false : editLocked}
-                  />
+              {/* one line of controls */}
+              <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-4">
+                <select value={scope.length === 1 ? scope[0] : ""} onChange={(e) => setScope(e.target.value ? [e.target.value] : [])}
+                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 outline-none focus:border-brand-400"
+                  aria-label="Locations">
+                  <option value="">All locations</option>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+                <Seg options={GRAINS} value={grain} onChange={(g) => { setGrain(g); setOpenKey(null); }} />
+                <Seg options={GROUPS} value={group} onChange={(g) => { setGroup(g); setOpenKey(null); }} />
+                {win.unit && (
+                  <div className="ml-auto flex items-center gap-1">
+                    <button type="button" onClick={() => setAnchor(shiftAnchor(grain, anchor, -1))}
+                      className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-500 hover:bg-slate-50">‹</button>
+                    <span className="min-w-[110px] text-center text-xs font-semibold text-slate-600">{win.label}</span>
+                    <button type="button" onClick={() => setAnchor(shiftAnchor(grain, anchor, 1))}
+                      className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-500 hover:bg-slate-50">›</button>
+                  </div>
                 )}
-                {!canRecord && (
-                  <p className="mt-2 text-xs text-slate-400">Your account can view expenses but not record them.</p>
+                {canRecord && (
+                  <button type="button" onClick={() => setSheet({ day: today, locationId: locations[0]?.id })}
+                    className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">
+                    + Enter a day
+                  </button>
                 )}
-              </section>
-
-              {/* ── Month header ──────────────────────────────────────── */}
-              <section>
-                <div className="mb-2 flex items-center justify-between">
-                  <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">{monthLabel(ym)}</h2>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => setYm(shiftMonth(ym, -1))}
-                      className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50"><ChevronLeft size={14} /></button>
-                    <button type="button" disabled={ym >= monthOf(today)} onClick={() => setYm(shiftMonth(ym, 1))}
-                      className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-500 hover:bg-slate-50 disabled:opacity-30"><ChevronRight size={14} /></button>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="text-3xl font-bold tabular-nums text-slate-800">{fmtRiel(monthTotal)}</p>
-                  <p className="mt-1 text-sm text-slate-500 tabular-nums">
-                    {prevTotal
-                      ? <>{fmtRiel(Math.abs(monthTotal - prevTotal))} {monthTotal >= prevTotal ? "more" : "less"} than {monthLabel(shiftMonth(ym, -1)).split(" ")[0]}</>
-                      : <>Nothing recorded the month before</>}
-                  </p>
-                </div>
-              </section>
-
-              {/* ── On what / Where ───────────────────────────────────── */}
-              <div className="grid gap-6 md:grid-cols-2">
-                <section>
-                  <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">On what</h2>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {thisMonth.categories.map((c) => (
-                          <tr key={c.category} className="border-b border-slate-50 last:border-0">
-                            <td className="py-2 pr-3 text-slate-700">
-                              {c.category}
-                              {isCommission(c.category) && (
-                                <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                                  Commission
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-2 text-right tabular-nums text-slate-800">
-                              {fmt(c.amount)}
-                              <span className="block text-[11px] text-slate-400">
-                                prev {fmt(prevByKey.get(categoryKey(c.category)) || 0)}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                        {!thisMonth.categories.length && (
-                          <tr><td className="py-3 text-sm text-slate-400">Nothing recorded this month.</td></tr>
-                        )}
-                        <tr className="border-t-2 border-slate-300 font-bold">
-                          <td className="py-2 pr-3 text-slate-700">Total</td>
-                          <td className="py-2 text-right tabular-nums text-slate-900">{fmt(thisMonth.total)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
-
-                <section>
-                  <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Where</h2>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <table className="w-full text-sm">
-                      <tbody>
-                        {byStation.map(({ l, now, before }) => (
-                          <tr key={l.id} className="border-b border-slate-50 last:border-0">
-                            <td className="py-2 pr-3 text-slate-700">{l.name}</td>
-                            <td className="py-2 text-right tabular-nums text-slate-800">
-                              {fmt(now)}
-                              <span className="block text-[11px] text-slate-400">prev {fmt(before)}</span>
-                            </td>
-                          </tr>
-                        ))}
-                        <tr className="border-t-2 border-slate-300 font-bold">
-                          <td className="py-2 pr-3 text-slate-700">Total</td>
-                          <td className="py-2 text-right tabular-nums text-slate-900">{fmt(monthTotal)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </section>
               </div>
 
-              {/* ── The grid ──────────────────────────────────────────── */}
-              <section>
-                <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">Every day, every station</h2>
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <MonthGrid
-                    ym={ym} locations={locations} rows={monthRows} marks={monthMarks}
-                    onOpenDay={(iso, locId) => { setDay(iso); setLocationId(locId); window.scrollTo({ top: 0, behavior: "smooth" }); }}
-                  />
-                </div>
-              </section>
+              {/* one figure */}
+              <div className="flex flex-wrap items-baseline gap-3 px-4 pb-3">
+                <span className="text-2xl font-bold tabular-nums text-slate-800">{riel(sum.total)}</span>
+                <span className="text-sm text-slate-500">
+                  <b className="font-semibold tabular-nums text-amber-700">ថ្លៃកូនដៃ {fmt(sum.commission)}</b>
+                  {" · other "}<span className="tabular-nums">{fmt(sum.other)}</span>
+                </span>
+                <span className="ml-auto text-xs tabular-nums text-slate-400">
+                  {prevSum.total
+                    ? `${fmt(Math.abs(sum.total - prevSum.total))} ៛ ${sum.total >= prevSum.total ? "more" : "less"} than ${prevWin.label}`
+                    : `${scopeLabel}`}
+                </span>
+              </div>
 
-              {/* ── Checks ────────────────────────────────────────────── */}
-              {checks.length > 0 && (
-                <section>
-                  <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-                    Check these <span className="text-slate-300">· {checks.length}</span>
-                  </h2>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    {checks.map((c, i) => (
-                      <div key={i} className={`flex gap-3 py-3 ${i ? "border-t border-slate-50" : ""}`}>
-                        <span className="h-fit rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">{c.kind}</span>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-700">{c.lead}</p>
-                          <p className="text-xs text-slate-500">{c.why}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
+              {/* a strip, only when there is one */}
+              {alerts.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 border-y border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+                  <span className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">{alerts[0].k}</span>
+                  <span>{alerts[0].t}</span>
+                  {alerts.length > 1 && <span className="ml-auto text-xs text-amber-700">{alerts.length - 1} more to check</span>}
+                </div>
               )}
-            </>
+
+              {/* one table */}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-400">
+                      <th className="px-4 py-2 text-left font-bold">{headers[0]}</th>
+                      <th className="py-2 pl-4 text-right font-bold">ថ្លៃកូនដៃ</th>
+                      <th className="py-2 pl-4 text-right font-bold">{group === "period" || group === "station" ? "Other" : prevWin.label}</th>
+                      <th className="py-2 pl-4 text-right font-bold">Total</th>
+                      <th className="w-10 px-4" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {group === "period" && periods.map((p) => {
+                      const isOpen = openKey === p.key;
+                      const kids = !isOpen ? null
+                        : grain === "day"
+                          ? stationsOn(p.key, locations, rows, marks)
+                          : byPeriod(p.rows, childGrain(grain));
+                      return (
+                        <Fragmented key={p.key}>
+                          <tr onClick={() => setOpenKey(isOpen ? null : p.key)}
+                            className={`cursor-pointer border-b border-slate-50 ${isOpen ? "bg-brand-50" : "hover:bg-slate-50"}`}>
+                            <td className="px-4 py-2 text-slate-700">
+                              <b>{p.label}</b>
+                              {grain === "day" && <span className="ml-1.5 text-[11px] text-slate-400">{weekdayOf(p.key)}</span>}
+                            </td>
+                            <Num v={p.commission} cls="font-semibold text-amber-700" />
+                            <Num v={p.other} cls="text-slate-600" />
+                            <Num v={p.total} cls="font-bold text-slate-800" />
+                            <td className="px-4 text-right"><ChevronRight size={15} className={`inline text-slate-300 ${isOpen ? "rotate-90 text-brand-600" : ""}`} /></td>
+                          </tr>
+                          {isOpen && grain === "day" && kids.map((s) => (
+                            <tr key={s.id} className="border-b border-slate-50 bg-slate-50/70 text-[13px]">
+                              <td className="py-1.5 pl-10 pr-4 text-slate-600">
+                                {s.name}
+                                {s.state === "nothing" && <span className="ml-2 text-[11px] text-slate-400">nothing spent</span>}
+                                {s.state === "blank" && <span className="ml-2 text-[11px] text-slate-400">not entered</span>}
+                              </td>
+                              <Num v={s.state === "blank" ? null : s.commission} cls={s.state === "spent" ? "text-amber-700" : "text-slate-400"} />
+                              <Num v={s.state === "blank" ? null : s.other} cls="text-slate-500" />
+                              <Num v={s.state === "blank" ? null : s.total} cls="text-slate-700" />
+                              <td className="px-4 text-right">
+                                {canRecord && (
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); setSheet({ day: p.key, locationId: s.id }); }}
+                                    className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-white">
+                                    {s.state === "blank" ? "Enter" : "Open"}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                          {isOpen && grain !== "day" && kids.map((c) => (
+                            <tr key={c.key} className="border-b border-slate-50 bg-slate-50/70 text-[13px]">
+                              <td className="py-1.5 pl-10 pr-4 text-slate-600">{c.label}</td>
+                              <Num v={c.commission} cls="text-amber-700" />
+                              <Num v={c.other} cls="text-slate-500" />
+                              <Num v={c.total} cls="text-slate-700" />
+                              <td />
+                            </tr>
+                          ))}
+                        </Fragmented>
+                      );
+                    })}
+
+                    {group === "category" && categories.map((c) => {
+                      const before = prevByCat.get(c.key) || 0;
+                      const diff = c.amount - before;
+                      return (
+                        <tr key={c.key} className="border-b border-slate-50">
+                          <td className="px-4 py-2 text-slate-700">
+                            <b className={isCommission(c.category) ? "text-amber-800" : ""}>{c.category}</b>
+                            {isCommission(c.category) && (
+                              <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">Commission</span>
+                            )}
+                          </td>
+                          <Num v={isCommission(c.category) ? c.amount : null} cls="font-semibold text-amber-700" />
+                          <Num v={before} cls="text-slate-500" />
+                          <Num v={c.amount} cls="font-bold text-slate-800" />
+                          <td className={`px-4 text-right text-[11px] tabular-nums ${diff < 0 ? "text-brand-700" : "text-slate-400"}`}>
+                            {diff === 0 ? "" : `${diff > 0 ? "+" : "−"}${fmt(Math.abs(diff))}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {group === "station" && stations.map((s) => {
+                      const before = prevByStn.get(s.id) || 0;
+                      const diff = s.total - before;
+                      return (
+                        <tr key={s.id} className="border-b border-slate-50">
+                          <td className="px-4 py-2 font-medium text-slate-700">{s.name}</td>
+                          <Num v={s.commission} cls="font-semibold text-amber-700" />
+                          <Num v={s.other} cls="text-slate-600" />
+                          <Num v={s.total} cls="font-bold text-slate-800" />
+                          <td className={`px-4 text-right text-[11px] tabular-nums ${diff < 0 ? "text-brand-700" : "text-slate-400"}`}>
+                            {before === 0 ? "" : `${diff > 0 ? "+" : "−"}${fmt(Math.abs(diff))}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {!rows.length && (
+                      <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">
+                        Nothing recorded in {win.label}.
+                      </td></tr>
+                    )}
+
+                    {rows.length > 0 && (
+                      <tr className="border-t-2 border-slate-300 font-bold">
+                        <td className="px-4 py-2 text-slate-700">{win.label}</td>
+                        <Num v={sum.commission} cls="text-amber-700" />
+                        <Num v={group === "category" ? prevSum.total : sum.other} cls="text-slate-600" />
+                        <Num v={sum.total} cls="text-slate-900" />
+                        <td />
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <p className="border-t border-slate-100 px-4 py-2.5 text-xs text-slate-400">
+                <b className="text-slate-500">Open a day to add to it</b> — a forgotten expense goes into its empty box, not a second entry.
+                Days sum to weeks sum to months sum to the year.
+              </p>
+            </div>
           )}
         </div>
       </main>
 
-      {pwPrompt && (
-        <ConfirmPassword
-          onCancel={() => setPwPrompt(null)}
-          onConfirmed={() => { const p = pwPrompt; setPwPrompt(null); reallySave(p); }}
+      {sheet && (
+        <DaySheet
+          day={sheet.day} setDay={(d) => setSheet((s) => ({ ...s, day: d }))}
+          locationId={sheet.locationId} setLocationId={(id) => setSheet((s) => ({ ...s, locationId: id }))}
+          locations={locations} categories={catList} existingRows={sheetRows} dayStates={dayStates}
+          onSave={handleSave} saving={saving} error={saveError}
+          canEdit={canRecord} needsPassword={needsPassword}
+          onClose={() => { setSheet(null); setSaveError(""); }}
         />
+      )}
+
+      {pwPrompt && (
+        <ConfirmPassword onCancel={() => setPwPrompt(null)}
+          onConfirmed={() => { const p = pwPrompt; setPwPrompt(null); reallySave(p); }} />
       )}
     </div>
   );
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Password, only for reaching back
-// ───────────────────────────────────────────────────────────────────────────
+// A named wrapper rather than <>…</> so the guard can see the grouping, and
+// so a key can sit on it.
+function Fragmented({ children }) { return <>{children}</>; }
+
+// ──────────────────────────────────────────────── password, only to reach back ──
 
 function ConfirmPassword({ onCancel, onConfirmed }) {
   const { session } = useAuth();
@@ -828,33 +702,29 @@ function ConfirmPassword({ onCancel, onConfirmed }) {
     setBusy(true); setError("");
     try {
       // Re-authenticating in place, the same check used before a weight is
-      // changed. Deliberately NOT a second login — the session is untouched.
-      const { error: authErr } = await supabase.auth.signInWithPassword({
-        email: session.user.email, password,
-      });
+      // changed. Not a second login — the session is untouched.
+      const { error: authErr } = await supabase.auth.signInWithPassword({ email: session.user.email, password });
       if (authErr) { setError("That password is not right."); setBusy(false); return; }
       onConfirmed();
     } catch (err) {
-      setError(err.message || "Could not confirm.");
-      setBusy(false);
+      setError(err.message || "Could not confirm."); setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
           <Lock size={16} className="text-slate-400" /> Confirm it is you
         </h3>
         <p className="mb-3 text-xs text-slate-400">
-          You are changing a day that is not today, or one somebody else entered.
+          You are changing a figure that is already recorded, on a day that is not today or that somebody else entered.
         </p>
         <input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)}
           placeholder="Your password" className={inputCls} />
         {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onCancel}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={onCancel} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
           <button type="submit" disabled={busy || !password}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
             {busy ? "Checking…" : "Confirm"}
