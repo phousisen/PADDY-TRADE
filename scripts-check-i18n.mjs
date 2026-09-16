@@ -45,7 +45,7 @@ const BASELINE = {
   "src/pages/ChangeRequests.jsx": 22,
   "src/pages/DailyBook.jsx": 2,
   "src/pages/DataCheck.jsx": 21,
-  "src/pages/Expenses.jsx": 3,
+  "src/pages/Expenses.jsx": 1,
   "src/pages/LocationDetail.jsx": 15,
   "src/pages/LocationsPage.jsx": 19,
   "src/pages/Login.jsx": 1,

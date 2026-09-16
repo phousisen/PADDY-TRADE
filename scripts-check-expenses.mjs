@@ -308,6 +308,34 @@ check("every alert can open the day it is about",
 check("the duplicate alert names its category",
   /cleanCategory\(row\?\.category\)/.test(src2));
 
+
+console.log("\n9. A written figure is locked\n");
+
+const src3 = fs.readFileSync(path.join("src", "pages", "Expenses.jsx"), "utf8");
+check("a figure already saved renders locked, not as an open box",
+  /const locked = !!saved && !unlocked;/.test(src3));
+check("an EMPTY box stays open — adding is not editing",
+  /!!saved && !unlocked/.test(src3) && !/const locked = !unlocked;/.test(src3));
+check("unlocking asks for the password",
+  /onUnlock=\{\(\) => setPwPrompt\(\{ unlockOnly: true \}\)\}/.test(src3));
+check("unlocking alone changes nothing — it opens the boxes",
+  /if \(p\.unlockOnly\) setUnlocked\(true\);/.test(src3));
+check("who changed it and when is shown beside the figure",
+  /ex_changed_by/.test(src3) && /edit\.by/.test(src3) && /edit\.at/.test(src3));
+check("a change still needs a reason",
+  /const mustExplain = changesExisting;/.test(src3));
+check("saving no longer jumps to another station",
+  !/setSheet\(\{ day: sheet\.day, locationId: next\.id \}\)/.test(src3)
+  && /setJustSaved\(true\)/.test(src3));
+check("the lock resets when the sheet moves to another day or station",
+  /setJustSaved\(false\); setUnlocked\(false\);/.test(src3));
+
+const apiSrc3 = fs.readFileSync(path.join("src", "api.js"), "utf8");
+check("who edited is read from audit_logs, nothing new stored",
+  /getExpenseEdits/.test(apiSrc3) && /\.eq\("action", "edit_expense"\)/.test(apiSrc3));
+check("the newest edit per row wins",
+  /if \(out\[row\.record_id\]\) continue;/.test(apiSrc3));
+
 console.log(
   failures === 0
     ? `\nAll checks passed. Commission stands alone; a category is only new when it is.\n`
