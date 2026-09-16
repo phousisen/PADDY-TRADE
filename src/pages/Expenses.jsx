@@ -157,6 +157,7 @@ function AddCategory({ existing, onAdd, onCancel }) {
 function DaySheet({
   day, setDay, locationId, setLocationId, locations, categories, existingRows,
   dayStates, onSave, saving, error, canEdit, needsPassword, onClose,
+  edits, justSaved, unlocked, onUnlock,
 }) {
   const { t } = useLanguage();
   const [amounts, setAmounts] = useState({});
@@ -202,7 +203,9 @@ function DaySheet({
     const typed = parseAmount(amounts[m.key]);
     return typed != null && Math.round(typed) !== Math.round(m.amount);
   });
-  const mustExplain = needsPassword && changesExisting;
+  // Unlocking is the password step now, so what a change still needs is a
+  // reason — kept in audit_logs beside the before and after.
+  const mustExplain = changesExisting;
 
   function submit() {
     const entries = shown
@@ -258,15 +261,35 @@ function DaySheet({
               const key = categoryKey(name);
               const value = amounts[key] ?? "";
               const parsed = parseAmount(value);
+              const saved = merged.get(key);
+              // [2026-09-16] A figure already written is LOCKED — SISEN:
+              // "make sure the written amount are locked if they need to edit
+              // it, it will requires a password". An EMPTY box stays open:
+              // adding a forgotten expense is not editing a recorded one.
+              const locked = !!saved && !unlocked;
+              const edit = saved ? edits?.[saved.rows[0].id] : null;
               return (
                 <div key={key}
                   className={`flex items-center gap-3 px-3 py-2 ${i ? "border-t border-slate-100" : ""} ${isCommission(name) ? "bg-amber-50/70" : ""}`}>
-                  <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
-                    {name}
+                  <span className="min-w-0 flex-1 text-sm text-slate-700">
+                    <span className="truncate">{name}</span>
                     {isCommission(name) && (
                       <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">{t("ex_commission")}</span>
                     )}
+                    {edit && (
+                      <span className="block text-[11px] text-slate-400">
+                        {t("ex_changed_by")} {edit.by} · {new Date(edit.at).toLocaleString("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        {edit.from != null && <> · {fmt(edit.from)} → {fmt(edit.to)}</>}
+                      </span>
+                    )}
                   </span>
+                  {locked ? (
+                    <span className="flex w-28 shrink-0 items-center justify-end gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold tabular-nums text-slate-700">
+                      <Lock size={11} className="text-slate-400" />
+                      {fmt(saved.amount)}
+                    </span>
+                  ) : (
+                  <>
                   <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">
                     {parsed != null ? fmt(parsed) : ""}
                   </span>
@@ -274,6 +297,8 @@ function DaySheet({
                     onChange={(e) => setAmounts((a) => ({ ...a, [key]: e.target.value }))}
                     onKeyDown={(e) => { if (e.key === "Enter" && !saving) submit(); }}
                     className={`${amountCls} w-28 shrink-0`} />
+                  </>
+                  )}
                 </div>
               );
             })}
@@ -306,7 +331,7 @@ function DaySheet({
           {mustExplain && (
             <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
               <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-                <Lock size={12} /> You are changing a figure already recorded — say why
+                <Lock size={12} /> {t("ex_say_why")}
               </label>
               <input value={reason} onChange={(e) => setReason(e.target.value)}
                 placeholder={t("ex_reason_ph")} className={inputCls} />
@@ -321,12 +346,25 @@ function DaySheet({
             {t("ex_total_for_day")} <b className="ml-1 text-base tabular-nums text-slate-800">{riel(total)}</b>
             <span className="block text-[11px] text-slate-400">{t("ex_save_empty_hint")}</span>
           </p>
-          {canEdit && (
-            <button type="button" onClick={submit} disabled={saving || (mustExplain && !reason.trim())}
-              className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
-              {saving && <Loader2 size={14} className="animate-spin" />} {t("ex_save_next")}
-            </button>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {justSaved && !saving && (
+              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-700">
+                <Check size={15} /> {t("ex_saved")}
+              </span>
+            )}
+            {canEdit && merged.size > 0 && !unlocked && (
+              <button type="button" onClick={onUnlock}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                <Lock size={13} /> {t("ex_unlock_to_edit")}
+              </button>
+            )}
+            {canEdit && (
+              <button type="button" onClick={submit} disabled={saving || (mustExplain && !reason.trim())}
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+                {saving && <Loader2 size={14} className="animate-spin" />} {t("ex_save")}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -363,6 +401,9 @@ export default function Expenses() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [pwPrompt, setPwPrompt] = useState(null);
+  const [justSaved, setJustSaved] = useState(false);
+  const [edits, setEdits] = useState({});
+  const [unlocked, setUnlocked] = useState(false);
 
   async function load() {
     setLoading(true); setLoadError("");
@@ -469,10 +510,22 @@ export default function Expenses() {
   }, [allExpenses, marks, locations, rows, today, t]);
 
   // ── the sheet ───────────────────────────────────────────────────────────
+  useEffect(() => { setJustSaved(false); setUnlocked(false); }, [sheet?.day, sheet?.locationId]);
+
   const sheetRows = useMemo(
     () => (sheet ? allExpenses.filter((r) => String(r.pay_date).slice(0, 10) === sheet.day && r.location_id === sheet.locationId) : []),
     [allExpenses, sheet],
   );
+  // Who last changed each figure on this day, for the lock line beside it.
+  useEffect(() => {
+    if (!sheet || !sheetRows.length) { setEdits({}); return; }
+    let alive = true;
+    api.getExpenseEdits(sheetRows.map((r) => r.id))
+      .then((e) => { if (alive) setEdits(e || {}); })
+      .catch(() => { if (alive) setEdits({}); });
+    return () => { alive = false; };
+  }, [sheet?.day, sheet?.locationId, sheetRows.length]);
+
   const dayStates = useMemo(() => {
     if (!sheet) return {};
     const out = {};
@@ -513,11 +566,15 @@ export default function Expenses() {
       else await api.markExpenseDayEmpty({ locationId: sheet.locationId, day: sheet.day, userId: session.user.id });
 
       await load();
-      // On to the next station that has not been entered for this day.
-      const states = stationsOn(sheet.day, locations, allExpenses, marks);
-      const next = states.find((s) => s.state === "blank" && s.id !== sheet.locationId);
-      if (next) setSheet({ day: sheet.day, locationId: next.id });
-      else setSheet(null);
+      // [2026-09-16] It used to jump to the next station that had not been
+      // entered. SISEN: "why does it bring me to next station for what?"
+      //
+      // It made sense only for the daily round of five. Opening one day from
+      // the table to correct one figure and being thrown to a different
+      // station is disorienting, and it is the commoner case. The sheet now
+      // stays where it is; the picker above shows who is still to do, so the
+      // next station is one tap away when that IS what you are doing.
+      setJustSaved(true);
     } catch (err) {
       setSaveError(errText(null, err, "") || err.message || "Could not save.");
     } finally { setSaving(false); }
@@ -752,13 +809,24 @@ export default function Expenses() {
           locations={locations} categories={catList} existingRows={sheetRows} dayStates={dayStates}
           onSave={handleSave} saving={saving} error={saveError}
           canEdit={canRecord} needsPassword={needsPassword}
+          edits={edits} justSaved={justSaved} unlocked={unlocked}
+          onUnlock={() => setPwPrompt({ unlockOnly: true })}
           onClose={() => { setSheet(null); setSaveError(""); }}
         />
       )}
 
       {pwPrompt && (
-        <ConfirmPassword onCancel={() => setPwPrompt(null)}
-          onConfirmed={() => { const p = pwPrompt; setPwPrompt(null); reallySave(p); }} />
+        <ConfirmPassword
+          unlockOnly={!!pwPrompt.unlockOnly}
+          onCancel={() => setPwPrompt(null)}
+          onConfirmed={() => {
+            const p = pwPrompt;
+            setPwPrompt(null);
+            // Unlocking only opens the boxes; the change is saved — and
+            // recorded — when they press Save.
+            if (p.unlockOnly) setUnlocked(true);
+            else reallySave(p);
+          }} />
       )}
     </div>
   );
@@ -770,7 +838,7 @@ function Fragmented({ children }) { return <>{children}</>; }
 
 // ──────────────────────────────────────────────── password, only to reach back ──
 
-function ConfirmPassword({ onCancel, onConfirmed }) {
+function ConfirmPassword({ onCancel, onConfirmed, unlockOnly }) {
   const { t } = useLanguage();
   const { session } = useAuth();
   const [password, setPassword] = useState("");
@@ -795,11 +863,9 @@ function ConfirmPassword({ onCancel, onConfirmed }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
       <form onSubmit={submit} className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
-          <Lock size={16} className="text-slate-400" /> Confirm it is you
+          <Lock size={16} className="text-slate-400" /> {unlockOnly ? t("ex_unlock_title") : t("ex_confirm_title")}
         </h3>
-        <p className="mb-3 text-xs text-slate-400">
-          You are changing a figure that is already recorded, on a day that is not today or that somebody else entered.
-        </p>
+        <p className="mb-3 text-xs text-slate-400">{unlockOnly ? t("ex_unlock_why") : t("ex_confirm_why")}</p>
         <input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)}
           placeholder={t("ex_your_password")} className={inputCls} />
         {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
@@ -807,7 +873,7 @@ function ConfirmPassword({ onCancel, onConfirmed }) {
           <button type="button" onClick={onCancel} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("ex_cancel")}</button>
           <button type="submit" disabled={busy || !password}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
-            {busy ? t("ex_checking") : t("ex_confirm")}
+            {busy ? t("ex_checking") : unlockOnly ? t("ex_unlock_btn") : t("ex_confirm")}
           </button>
         </div>
       </form>
