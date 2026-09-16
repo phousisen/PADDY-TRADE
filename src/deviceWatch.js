@@ -105,11 +105,18 @@ export function deviceFlags(device, { profile, newestVersion, now = Date.now() }
     if (device?.platform && device.platform !== "PC") flags.push("not_a_pc");
     const first = ms(device?.first_seen_at);
     if (first !== null && now - first < NEW_DEVICE_MS) flags.push("new_device");
+    // [2026-09-16] A station PC sits on one connection all day. An address it
+    // has never used before is the honest version of "where is this" — far
+    // more use than a city, which in Cambodia usually names the internet
+    // provider rather than the building. See src/deviceNet.js.
+    if (device?.first_ip && device?.last_ip && device.first_ip !== device.last_ip) {
+      flags.push("new_network");
+    }
   }
   return flags;
 }
 
-const SEVERITY = { gone: 4, behind: 3, not_a_pc: 3, new_device: 2, quiet: 1 };
+const SEVERITY = { gone: 4, behind: 3, not_a_pc: 3, new_network: 3, new_device: 2, quiet: 1 };
 const worst = (flags) => flags.reduce((n, f) => Math.max(n, SEVERITY[f] || 0), 0);
 
 /**

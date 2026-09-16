@@ -482,18 +482,42 @@ const rawApi = {
   // row AND keeps profiles.app_version / last_seen_at in step, so everything
   // that already reads those is unaffected. Returns false if the database has
   // not had device_sessions.sql run yet, and the caller falls back.
-  async reportDevice({ deviceId, version, platform, browser }) {
+  async reportDevice({ deviceId, version, platform, browser, city, region, country }) {
     try {
-      const { error } = await supabase.rpc("report_device", {
+      const { data, error } = await supabase.rpc("report_device", {
         p_device_id: deviceId,
         p_version: version || null,
         p_platform: platform || null,
         p_browser: browser || null,
+        p_city: city || null,
+        p_region: region || null,
+        p_country: country || null,
       });
-      return !error;
+      // true means HQ has asked for THIS machine to be signed out. The
+      // database clears the request as it answers, so this can never loop.
+      if (error) return { ok: false, signOut: false };
+      return { ok: true, signOut: data === true };
     } catch {
-      return false;
+      return { ok: false, signOut: false };
     }
+  },
+
+  // [2026-09-16] Owner only, enforced in the database. The machine finds out
+  // on its next check-in, so it takes up to a minute — and anything typed
+  // there and not yet saved is lost, which is why the screen says so before
+  // asking.
+  async signOutDevice(deviceId, userId) {
+    const { error } = await supabase.rpc("sign_out_device", {
+      p_device_id: deviceId, p_user_id: userId,
+    });
+    if (error) throw error;
+  },
+
+  // Every machine one account is signed in on.
+  async signOutAccount(userId) {
+    const { data, error } = await supabase.rpc("sign_out_account", { p_user_id: userId });
+    if (error) throw error;
+    return data;
   },
 
   // Every machine seen in the last day. Read-only, and it carries no address
@@ -502,7 +526,7 @@ const rawApi = {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
       .from("device_sessions")
-      .select("device_id, user_id, location_id, app_version, platform, browser, first_seen_at, last_seen_at")
+      .select("device_id, user_id, location_id, app_version, platform, browser, first_seen_at, last_seen_at, first_ip, last_ip, ip_changed_at, city, region, country, signout_requested_at, signed_out_at, signout_by")
       .gte("last_seen_at", since)
       .order("last_seen_at", { ascending: false });
     // Not migrated yet reads as "nothing to show", never as an error — the
