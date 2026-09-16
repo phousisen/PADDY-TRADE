@@ -56,4 +56,6 @@ export const CAP = {
   editTransactions: "edit_transactions",
   editWeights: "edit_weights",
   cancelTransactions: "cancel_transactions",
+  recordExpenses: "record_expenses",
+  editExpenses: "edit_expenses",
 };

@@ -2133,6 +2133,91 @@ const rawApi = {
     return data;
   },
 
+  // [2026-09-16] Amending a recorded expense.
+  //
+  // updatePayment above changes the amount and nothing else, which is right
+  // for a payment against a purchase — the category and the note are not
+  // things a payment has. An expense has both, and a daily sheet arrives
+  // with a figure against the wrong category often enough to matter.
+  //
+  // WHY THE REASON IS NOT A NEW COLUMN
+  //
+  // `payments` has no column for "why was this changed", and adding one to a
+  // live table that every station writes to is exactly the sort of change
+  // that stopped all five stations on 15 September. It is not needed:
+  // audit_logs already carries user, action, the row's id, and the whole
+  // before/after. The reason rides in new_data alongside what changed, so
+  // one record holds who, when, from what, to what, and why.
+  //
+  // Only the fields actually passed are written — an amendment that changes
+  // the amount leaves the category and the note exactly as they were.
+  async updateExpense(id, { amount, category, memo, reason, userId } = {}) {
+    const { data: before, error: readErr } = await supabase
+      .from("payments").select("*").eq("id", id).single();
+    if (readErr) throw readErr;
+
+    const patch = {};
+    if (amount !== undefined) patch.amount = amount;
+    if (category !== undefined) patch.category = category;
+    if (memo !== undefined) patch.memo = memo;
+    if (!Object.keys(patch).length) return before;
+
+    const { data, error } = await supabase
+      .from("payments").update(patch).eq("id", id).select().single();
+    if (error) throw error;
+
+    // Fire-and-forget, like every other logAudit call: the amendment has
+    // already succeeded, and a slow audit write must not turn it into a
+    // visible failure.
+    api.logAudit({
+      action: "edit_expense",
+      tableName: "payments",
+      recordId: id,
+      oldData: { amount: before.amount, category: before.category, memo: before.memo },
+      newData: { ...patch, reason: (reason || "").trim() || null },
+      userId,
+    });
+    return data;
+  },
+
+  // [2026-09-16] "This station spent nothing on this day."
+  //
+  // On the month grid a blank cell and a genuine zero mean opposite things:
+  // one is a day nobody entered, the other is a day that was checked. A
+  // forgotten day makes a station look cheaper than it is, and nothing else
+  // in the app can notice it because there is no row to notice.
+  //
+  // See expense_day_marks.sql. A zero-amount expense could not carry this —
+  // it would need a category, and would then appear as a phantom line in
+  // every category total.
+  async getExpenseDayMarks({ from, to } = {}) {
+    let query = supabase.from("expense_day_marks").select("*");
+    if (from) query = query.gte("day", from);
+    if (to) query = query.lte("day", to);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+  },
+
+  async markExpenseDayEmpty({ locationId, day, userId }) {
+    const { data, error } = await supabase
+      .from("expense_day_marks")
+      .upsert({ location_id: locationId, day, marked_by: userId, marked_at: new Date().toISOString() },
+              { onConflict: "location_id,day" })
+      .select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Recording a real expense on a day that was marked empty clears the mark —
+  // the two statements contradict each other, and the money is the truth.
+  async clearExpenseDayMark({ locationId, day }) {
+    const { error } = await supabase
+      .from("expense_day_marks").delete()
+      .eq("location_id", locationId).eq("day", day);
+    if (error) throw error;
+  },
+
   // [2026-09-09] Voiding a payment.
   //
   // Until now a payment entered wrong had no clean way back: you could

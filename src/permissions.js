@@ -24,6 +24,12 @@ export const PERMISSION_GROUPS = [
     permissions: [
       { key: "record_payments", label: "Record payments to/from parties" },
       { key: "edit_payments", label: "Correct a mistaken payment amount" },
+      // [2026-09-16] Expenses arrive as a daily sheet from each station and
+      // are typed in at HQ, so recording and correcting them is a different
+      // job from paying a farmer — and a mistyped expense is corrected far
+      // more often than a payment is.
+      { key: "record_expenses", label: "Record daily expenses" },
+      { key: "edit_expenses", label: "Correct a recorded expense" },
     ],
   },
   {
