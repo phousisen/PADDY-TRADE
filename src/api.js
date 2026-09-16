@@ -1431,7 +1431,7 @@ const rawApi = {
   // (first seen live at Jomnoum). Folding the weight into the same
   // request means a ticket that reaches the server always already has
   // one; there's no window where it can exist without it.
-  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg }) {
+  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg, note }) {
     const hasGross = grossKg != null;
     const row = {
       ...(id ? { id } : {}),
@@ -1456,6 +1456,14 @@ const rawApi = {
       paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("weighing_tickets", locationId, paperTicketNo),
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
+      // [2026-09-15] weighing_tickets.note — text, nullable, verified against
+      // information_schema before this line was written, NOT against a file
+      // in the repo. That mistake took all five stations down this morning.
+      //
+      // Set only when staff picked the "Other" paddy type and said what the
+      // rice is. Every other ticket sends null, which is what the column
+      // already held for every row.
+      note: note || null,
     };
     try {
       return await insertWithFreshCodeOnCollision("weighing_tickets", row, genTicketCode);

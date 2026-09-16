@@ -905,6 +905,18 @@ export const translations = {
     cr_reject_reason: "Why are you rejecting it? (optional)",
     cr_reject_placeholder: "e.g. paper ticket shows 17,778 — no correction needed",
 
+
+    // [2026-09-15] Paddy type dropdown — one shared list from the products
+    // table, replacing the per-device list that made every station different.
+    wt_select_paddy_type: "Select paddy type…",
+    wt_loading_paddy_types: "Loading paddy types…",
+    wt_other_paddy_type: "Other",
+    wt_add_new_type: "Add new type…",
+    wt_back_to_list: "Back to list",
+    wt_type_new_paddy_type: "Type the new paddy type",
+    wt_other_paddy_note_placeholder: "What is it? e.g. IR 504",
+    wt_other_paddy_note_hint: "Saved on the ticket so it can be moved to the right paddy type later.",
+    err_need_other_paddy_note: "Please say what the paddy is before saving.",
   },
   km: {
     appName: "PADDYTRADE",
@@ -1753,6 +1765,17 @@ export const translations = {
     cr_reject_reason: "ហេតុអ្វីបានជាបដិសេធ? (ស្រេចចិត្ត)",
     cr_reject_placeholder: "ឧ. សំបុត្រក្រដាសបង្ហាញ ១៧,៧៧៨ — មិនចាំបាច់កែតម្រូវទេ",
 
+
+    // [2026-09-15] Paddy type dropdown — see the English block.
+    wt_select_paddy_type: "ជ្រើសរើសប្រភេទស្រូវ…",
+    wt_loading_paddy_types: "កំពុងទាញយកប្រភេទស្រូវ…",
+    wt_other_paddy_type: "ផ្សេងៗ",
+    wt_add_new_type: "បន្ថែមប្រភេទថ្មី…",
+    wt_back_to_list: "ត្រឡប់ទៅបញ្ជី",
+    wt_type_new_paddy_type: "សរសេរប្រភេទស្រូវថ្មី",
+    wt_other_paddy_note_placeholder: "ស្រូវអ្វី? ឧ. IR 504",
+    wt_other_paddy_note_hint: "រក្សាទុកក្នុងវិក្កយបត្រ ដើម្បីអាចផ្លាស់ទៅប្រភេទត្រឹមត្រូវពេលក្រោយ។",
+    err_need_other_paddy_note: "សូមបញ្ជាក់ថាជាស្រូវអ្វី មុននឹងរក្សាទុក។",
   },
 };
 

@@ -2047,7 +2047,7 @@ export async function resolveProductIdOffline(typedName) {
 // apart from a ticket that was ever going to get one. Now there is only
 // ever one save, so a ticket either exists with its weight already on it,
 // or it doesn't exist yet at all.
-export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg }) {
+export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg, note }) {
   assertNotViewOnly();
   const id = newId();
   const code = genLocalTicketCode();
@@ -2078,11 +2078,15 @@ export function createTicketOffline({ type, locationId, locationName, locationAd
     deduction_kg: 0, price_per_kg: null, staff_fee: 0, tax_applicable: false, tax_rate: 10,
     price_note: null, priced_at: null, priced_by: null, pricedByName: null,
     tare_kg: null, tare_at: null, tare_by: null, tareByName: null,
-    transaction_id: null, note: null,
+    // [2026-09-15] `note` now carries one thing: when staff pick the "Other"
+    // paddy type, what they say the rice actually is. Everything else about
+    // the ticket is unchanged, and a ticket with a real paddy type still
+    // saves note as null exactly as before.
+    transaction_id: null, note: note || null,
     created_by: userId, createdByName: null, created_at: nowIso,
   };
   upsertCachedTicket(ticket);
-  enqueueStrict({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg: hasGross ? grossKg : undefined } });
+  enqueueStrict({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg: hasGross ? grossKg : undefined, note: note || undefined } });
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
