@@ -223,6 +223,56 @@ export function stationsOn(day, locations, rows, marks) {
 }
 
 /**
+ * Every day in a window, up to and including `upTo`.
+ *
+ * [2026-09-16] byPeriod() builds its rows FROM the expense rows, so a day
+ * nobody entered produces no row and simply is not listed. That made the
+ * whole "nothing spent" versus "nobody entered" distinction invisible on the
+ * screen it was built for — a forgotten day cannot be seen, and a forgotten
+ * day makes a station look cheaper than it is.
+ *
+ * The Day grain lists the calendar instead, and hangs whatever was recorded
+ * off it. Future days are excluded: an empty 30 September in the middle of
+ * the month is not a gap, it just has not happened.
+ */
+export function daysInWindow(from, to, upTo) {
+  const out = [];
+  if (!from || !to) return out;
+  const last = upTo && upTo < to ? upTo : to;
+  const [y, m, d] = String(from).split("-").map(Number);
+  const cur = new Date(Date.UTC(y, m - 1, d));
+  while (true) {
+    const iso = cur.toISOString().slice(0, 10);
+    if (iso > last) break;
+    out.push(iso);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return out.reverse();   // newest first, like every other grain
+}
+
+/**
+ * Rows on a day, grouped by category, so two rows of ONE category read as
+ * one line with one figure.
+ *
+ * [2026-09-16] The day sheet used to key existing rows by category into a
+ * Map, which silently kept only the LAST of any duplicate pair. The sheet
+ * then showed one figure, the day's real total was higher than what it
+ * displayed, and saving updated one row and left the other — so a duplicate
+ * could never be corrected from the screen that reported it.
+ */
+export function mergeByCategory(rows) {
+  const map = new Map();
+  for (const r of rows || []) {
+    const key = categoryKey(r?.category);
+    const at = map.get(key) || { key, category: r?.category, amount: 0, rows: [] };
+    at.amount += num(r?.amount);
+    at.rows.push(r);
+    map.set(key, at);
+  }
+  return map;
+}
+
+/**
  * What to show when a period row is opened.
  *
  * A day opens into its stations — that is where the Open button lives, and

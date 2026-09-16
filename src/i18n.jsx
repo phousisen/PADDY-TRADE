@@ -1028,6 +1028,15 @@ export const translations = {
     ex_week: "Week",
     ex_month: "Month",
     ex_year: "Year",
+
+    ex_dup_two_rows: "was recorded {n} times on this day",
+    ex_dup_merge_hint: "Saving will keep one entry with this figure and void the extras — nothing is deleted.",
+    ex_more_to_check: "{n} more to check",
+    ex_show_less: "Show less",
+    ex_alert_missing: "Missing",
+    ex_alert_twice: "Twice",
+    ex_nothing_since: "nothing entered since",
+    ex_recorded_n_times: "recorded {n} times",
   },
   km: {
     appName: "PADDYTRADE",
@@ -1998,6 +2007,15 @@ export const translations = {
     ex_week: "សប្តាហ៍",
     ex_month: "ខែ",
     ex_year: "ឆ្នាំ",
+
+    ex_dup_two_rows: "ត្រូវបានកត់ត្រា {n} ដងនៅថ្ងៃនេះ",
+    ex_dup_merge_hint: "ការរក្សាទុកនឹងទុកតែមួយជាមួយចំនួននេះ ហើយលុបចោលចំនួនលើស — គ្មានអ្វីត្រូវបានលុបចេញទេ។",
+    ex_more_to_check: "នៅសល់ {n} ត្រូវពិនិត្យ",
+    ex_show_less: "បង្ហាញតិច",
+    ex_alert_missing: "បាត់",
+    ex_alert_twice: "ពីរដង",
+    ex_nothing_since: "គ្មានការបញ្ចូលតាំងពី",
+    ex_recorded_n_times: "កត់ត្រា {n} ដង",
   },
 };
 
