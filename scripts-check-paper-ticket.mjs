@@ -331,7 +331,6 @@ for (const [what, needle] of [
   ["mixture %", "value={mixturePct}"],
   ["outthrow %", "value={outthrowPct}"],
   ["deduction kg", "value={deductionKg}"],
-  ["staff fee", "value={staffFee}"],
   ["VAT", "checked={taxApplicable}"],
   ["VAT rate", "value={taxRate}"],
   ["note", "value={note}"],
@@ -343,6 +342,38 @@ for (const [what, needle] of [
     failed++;
   }
 }
+
+// [2026-09-16] The staff / carrying fee is the ONE field deliberately taken
+// off this form. SISEN: "staff fee and ថ្លៃកូនដៃ should be the same. we dont
+// need staff fee anymore because it will be typed in the expenses instead."
+//
+// It was the same money written down twice — deducted from the farmer here,
+// and typed again as ថ្លៃកូនដៃ on Expenses. So the check inverts: the box
+// must NOT come back, and a new transaction must send a hard 0 rather than
+// silently omitting the field, because omitting it would leave the amount
+// formula reading `undefined` and quietly stop subtracting on old code.
+ok("the staff fee box is gone from the new-transaction form",
+   !form.includes("value={staffFee}") && !form.includes("setStaffFee"));
+ok("a new transaction still sends staffFee: 0 explicitly",
+   form.includes("staffFee: 0"));
+
+// The column, the arithmetic and every old record are untouched. A ticket
+// or receipt that already carries a fee must still print it.
+for (const [file, label] of [
+  ["src/pages/Receipt.jsx", "the receipt"],
+  ["src/pages/WeighingTickets.jsx", "the ticket slip"],
+]) {
+  const src = readFileSync(file, "utf8");
+  ok(`${label} still prints a fee that an older record actually has`,
+     /Number\((?:tx|ticket)\.staff_fee\) > 0/.test(src));
+}
+const txs = readFileSync("src/pages/Transactions.jsx", "utf8");
+ok("editing an old record cannot silently drop its fee",
+   txs.includes("const hadStaffFee = Number(tx.staff_fee) > 0;")
+   && txs.includes("staffFee: isBuy ? (parseFloat(staffFee) || 0) : 0,"));
+ok("the fee box only appears on a record that already has one",
+   (txs.match(/isBuy && hadStaffFee &&/g) || []).length === 2
+   && !txs.includes("Staff / Carrying Fee (optional)"));
 // A closed fold with something typed in it must say so, or a number
 // entered and then folded away is invisible at the moment of saving.
 ok("a closed fold shows a dot when something inside it is filled in",
