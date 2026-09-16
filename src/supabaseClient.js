@@ -122,6 +122,29 @@ function fetchWithTimeout(url, options = {}) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   global: { fetch: fetchWithTimeout },
+  // [2026-09-16] SISEN, on his parents' phones: "it always logged them out and
+  // or sometimes the data is all 0 that they need to log out and log back in
+  // to see it back. its never auto." … "how to make sure that we wont have to
+  // log in and log out anymore."
+  //
+  // These three are the library's defaults. They are written out anyway,
+  // because they are the difference between a login that survives a phone
+  // being put in a pocket overnight and one that does not, and a default is
+  // a thing that can change underneath you without anyone noticing.
+  //
+  //   persistSession    — keep the login on the device, not just in memory.
+  //   autoRefreshToken  — renew it before it expires, without anyone asking.
+  //   detectSessionInUrl — finish a password-reset / magic link properly.
+  //
+  // Renewal runs on a timer, and a phone stops timers for an app it has put
+  // to sleep. So the timer is not enough on its own: src/sessionWatch.js
+  // renews on the way back IN, before anything asks the database. Both
+  // together are what make this stop happening.
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
 });
 
 // [2026-08-28] Guards against a real incident at the Thapedey station: a

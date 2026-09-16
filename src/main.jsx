@@ -2,6 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
 import App from "./App.jsx";
+import { startSessionWatch } from "./sessionWatch.js";
+import { ensureFreshSession } from "./supabaseClient.js";
 import { AuthProvider } from "./AuthContext.jsx";
 import { LanguageProvider } from "./i18n.jsx";
 import "./index.css";
@@ -35,6 +37,15 @@ registerSW({
     window.__paddytradeSW = registration || null;
   },
 });
+
+// [2026-09-16] A phone suspends an app it has put in a pocket, which stops the
+// login token renewing itself, and the page that comes back is the same page —
+// it does not reload and nothing on it re-asks. SISEN's parents saw that as
+// being logged out, or as every figure reading 0.
+//
+// This renews the login the moment the app returns, BEFORE anything asks the
+// database, and then tells the screens to ask again. See sessionWatch.js.
+startSessionWatch({ ensureFresh: ensureFreshSession });
 
 // Stops the mouse scroll wheel from silently changing the value of a
 // focused number field — a common browser quirk where scrolling the page
