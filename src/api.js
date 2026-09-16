@@ -474,6 +474,43 @@ const rawApi = {
     }
   },
 
+  // [2026-09-16] One row per machine, so HQ can count devices and see which
+  // stations have gone quiet. SISEN: "we just want to track who is actually
+  // in the system."
+  //
+  // This replaces reportAppVersion on the heartbeat — it writes the device
+  // row AND keeps profiles.app_version / last_seen_at in step, so everything
+  // that already reads those is unaffected. Returns false if the database has
+  // not had device_sessions.sql run yet, and the caller falls back.
+  async reportDevice({ deviceId, version, platform, browser }) {
+    try {
+      const { error } = await supabase.rpc("report_device", {
+        p_device_id: deviceId,
+        p_version: version || null,
+        p_platform: platform || null,
+        p_browser: browser || null,
+      });
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  // Every machine seen in the last day. Read-only, and it carries no address
+  // or hardware detail — only the random id each browser gave itself.
+  async getDeviceSessions() {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data, error } = await supabase
+      .from("device_sessions")
+      .select("device_id, user_id, location_id, app_version, platform, browser, first_seen_at, last_seen_at")
+      .gte("last_seen_at", since)
+      .order("last_seen_at", { ascending: false });
+    // Not migrated yet reads as "nothing to show", never as an error — the
+    // panel then falls back to the account-level view it had before.
+    if (error) return null;
+    return data || [];
+  },
+
   // The moment HQ last pressed "Update all stations now", plus nothing else.
   // Returns null when the table does not exist yet, which reads the same as
   // "nobody has ever pushed" — so an un-migrated database simply behaves the
@@ -2819,6 +2856,10 @@ const ALWAYS_ALLOWED = new Set([
   // on the HQ version list — otherwise the one screen that says who is
   // behind would have a blind spot exactly where nobody is watching.
   "reportAppVersion",
+  // Same reasoning: a view-only account is still a machine somebody is signed
+  // in on, and the one screen that says who is in the system must not have a
+  // blind spot exactly where nobody is watching.
+  "reportDevice",
 ]);
 
 function isReadOnlyMethodName(name) {
