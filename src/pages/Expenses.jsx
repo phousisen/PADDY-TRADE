@@ -43,6 +43,7 @@ import { Check, Loader2, Lock, Plus, ChevronRight, X } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
+import { useLanguage } from "../i18n.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { errText } from "../errText.js";
 import {
@@ -81,19 +82,21 @@ const fieldBase = "rounded-lg border border-slate-200 px-3 py-2 text-sm outline-
 const inputCls = `w-full ${fieldBase}`;
 const amountCls = `${fieldBase} text-right tabular-nums`;
 
-const GRAINS = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["year", "Year"]];
-const GROUPS = [["period", "By period"], ["category", "By category"], ["station", "By station"]];
+const GRAINS = [["day", "ex_day"], ["week", "ex_week"], ["month", "ex_month"], ["year", "ex_year"]];
+const GROUPS = [["period", "ex_by_period"], ["category", "ex_by_category"], ["station", "ex_by_station"]];
 
 // ───────────────────────────────────────────────────────────── segmented ──
 
-function Seg({ options, value, onChange }) {
+// options are [value, i18n key] — the label is translated here so no
+// screen has to hold an English word to pass in.
+function Seg({ options, value, onChange, t }) {
   return (
     <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
       {options.map(([v, label], i) => (
         <button key={v} type="button" onClick={() => onChange(v)}
           className={`px-3 py-1.5 text-xs font-semibold ${i ? "border-l border-slate-200" : ""} ${
             v === value ? "bg-brand-50 text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
-          {label}
+          {t(label)}
         </button>
       ))}
     </div>
@@ -103,6 +106,7 @@ function Seg({ options, value, onChange }) {
 // ─────────────────────────────────────────────────────── add a category ──
 
 function AddCategory({ existing, onAdd, onCancel }) {
+  const { t } = useLanguage();
   const [name, setName] = useState("");
   const [forced, setForced] = useState(false);
   const match = useMemo(() => (forced ? null : nearlyTheSame(name, existing)), [name, existing, forced]);
@@ -111,8 +115,8 @@ function AddCategory({ existing, onAdd, onCancel }) {
 
   return (
     <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
-      <label className="mb-1 block text-xs font-medium text-slate-500">New category</label>
-      <input autoFocus value={name} placeholder="e.g. Police fee" className={inputCls}
+      <label className="mb-1 block text-xs font-medium text-slate-500">{t("ex_new_category")}</label>
+      <input autoFocus value={name} placeholder={t("ex_new_cat_ph")} className={inputCls}
         onChange={(e) => { setName(e.target.value); setForced(false); }} />
       {match && (
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
@@ -140,9 +144,9 @@ function AddCategory({ existing, onAdd, onCancel }) {
       )}
       <div className="mt-2 flex gap-2">
         <button type="button" disabled={blocked} onClick={() => onAdd(clean)}
-          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">Add</button>
+          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">{t("ex_add")}</button>
         <button type="button" onClick={onCancel}
-          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+          className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">{t("ex_cancel")}</button>
       </div>
     </div>
   );
@@ -154,6 +158,7 @@ function DaySheet({
   day, setDay, locationId, setLocationId, locations, categories, existingRows,
   dayStates, onSave, saving, error, canEdit, needsPassword, onClose,
 }) {
+  const { t } = useLanguage();
   const [amounts, setAmounts] = useState({});
   const [extra, setExtra] = useState([]);
   const [adding, setAdding] = useState(false);
@@ -201,7 +206,7 @@ function DaySheet({
       <div className="my-6 w-full max-w-2xl rounded-xl border border-brand-500 bg-white shadow-xl">
         <div className="flex items-center justify-between gap-3 rounded-t-xl border-b border-brand-100 bg-brand-50 px-5 py-3">
           <div>
-            <h3 className="font-semibold text-slate-800">Enter a day</h3>
+            <h3 className="font-semibold text-slate-800">{t("ex_enter_a_day")}</h3>
             <p className="text-xs text-slate-500">
               One station's spending at a time — this sheet is {cur?.name || "—"}'s {day}.
             </p>
@@ -210,7 +215,7 @@ function DaySheet({
         </div>
 
         <div className="p-5">
-          <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-400">Which station</label>
+          <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-400">{t("ex_which_station")}</label>
           <div className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {locations.map((l) => {
               const st = dayStates[l.id] || "blank";
@@ -232,7 +237,7 @@ function DaySheet({
           </div>
 
           <div className="mb-4 w-48">
-            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-400">Date</label>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-slate-400">{t("ex_date")}</label>
             <input type="date" value={day} onChange={(e) => setDay(e.target.value)} className={inputCls} />
           </div>
 
@@ -247,9 +252,7 @@ function DaySheet({
                   <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
                     {name}
                     {isCommission(name) && (
-                      <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-                        Commission
-                      </span>
+                      <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">{t("ex_commission")}</span>
                     )}
                   </span>
                   <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">
@@ -272,7 +275,7 @@ function DaySheet({
             ) : canEdit && (
               <button type="button" onClick={() => setAdding(true)}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-slate-50">
-                <Plus size={14} /> Add a category
+                <Plus size={14} /> {t("ex_add_category")}
               </button>
             )}
           </div>
@@ -283,7 +286,7 @@ function DaySheet({
                 <Lock size={12} /> You are changing a figure already recorded — say why
               </label>
               <input value={reason} onChange={(e) => setReason(e.target.value)}
-                placeholder="e.g. Station sent a corrected sheet" className={inputCls} />
+                placeholder={t("ex_reason_ph")} className={inputCls} />
             </div>
           )}
 
@@ -292,13 +295,13 @@ function DaySheet({
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3">
           <p className="text-sm text-slate-500">
-            Total for the day <b className="ml-1 text-base tabular-nums text-slate-800">{riel(total)}</b>
-            <span className="block text-[11px] text-slate-400">Save with every box empty to record a day with nothing spent.</span>
+            {t("ex_total_for_day")} <b className="ml-1 text-base tabular-nums text-slate-800">{riel(total)}</b>
+            <span className="block text-[11px] text-slate-400">{t("ex_save_empty_hint")}</span>
           </p>
           {canEdit && (
             <button type="button" onClick={submit} disabled={saving || (mustExplain && !reason.trim())}
               className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
-              {saving && <Loader2 size={14} className="animate-spin" />} Save &amp; next station
+              {saving && <Loader2 size={14} className="animate-spin" />} {t("ex_save_next")}
             </button>
           )}
         </div>
@@ -314,6 +317,7 @@ function Num({ v, cls = "" }) {
 }
 
 export default function Expenses() {
+  const { t } = useLanguage();
   const { session, profile, can, isViewOnly } = useAuth();
   const isOwner = !!profile?.isOwner;
   const canRecord = (isOwner || can("record_expenses")) && !isViewOnly;
@@ -472,16 +476,16 @@ export default function Expenses() {
     : scope.length === 1 ? (locations.find((l) => l.id === scope[0])?.name || "1 station")
     : `${scope.length} stations`;
 
-  const headers = group === "period" ? ["Period"] : group === "category" ? ["Category"] : ["Station"];
+  const headers = group === "period" ? [t("ex_period")] : group === "category" ? [t("ex_category")] : [t("ex_station")];
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Expenses" subtitle="Day, week, month and year — ថ្លៃកូនដៃ on its own line" />
+      <Topbar title={t("ex_title")} subtitle={t("ex_subtitle")} />
       <main className="flex-1 overflow-y-auto bg-paper p-6">
         <div className="mx-auto max-w-4xl">
 
           {loadError && <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{loadError}</div>}
-          {loading && <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> Loading…</div>}
+          {loading && <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />{t("ex_loading")}</div>}
 
           {!loading && (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -490,12 +494,12 @@ export default function Expenses() {
               <div className="flex flex-wrap items-center gap-2 px-4 pb-3 pt-4">
                 <select value={scope.length === 1 ? scope[0] : ""} onChange={(e) => setScope(e.target.value ? [e.target.value] : [])}
                   className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 outline-none focus:border-brand-400"
-                  aria-label="Locations">
-                  <option value="">All locations</option>
+                  aria-label={t("ex_locations")}>
+                  <option value="">{t("ex_all_locations")}</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
-                <Seg options={GRAINS} value={grain} onChange={(g) => { setGrain(g); setOpenKey(null); }} />
-                <Seg options={GROUPS} value={group} onChange={(g) => { setGroup(g); setOpenKey(null); }} />
+                <Seg t={t} options={GRAINS} value={grain} onChange={(g) => { setGrain(g); setOpenKey(null); }} />
+                <Seg t={t} options={GROUPS} value={group} onChange={(g) => { setGroup(g); setOpenKey(null); }} />
                 {win.unit && (
                   <div className="ml-auto flex items-center gap-1">
                     <button type="button" onClick={() => setAnchor(shiftAnchor(grain, anchor, -1))}
@@ -508,7 +512,7 @@ export default function Expenses() {
                 {canRecord && (
                   <button type="button" onClick={() => setSheet({ day: today, locationId: locations[0]?.id })}
                     className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">
-                    + Enter a day
+                    + {t("ex_enter_a_day")}
                   </button>
                 )}
               </div>
@@ -543,8 +547,8 @@ export default function Expenses() {
                     <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-400">
                       <th className="px-4 py-2 text-left font-bold">{headers[0]}</th>
                       <th className="py-2 pl-4 text-right font-bold">ថ្លៃកូនដៃ</th>
-                      <th className="py-2 pl-4 text-right font-bold">{group === "period" || group === "station" ? "Other" : prevWin.label}</th>
-                      <th className="py-2 pl-4 text-right font-bold">Total</th>
+                      <th className="py-2 pl-4 text-right font-bold">{group === "period" || group === "station" ? t("ex_other") : prevWin.label}</th>
+                      <th className="py-2 pl-4 text-right font-bold">{t("ex_total")}</th>
                       <th className="w-10 px-4" />
                     </tr>
                   </thead>
@@ -572,8 +576,8 @@ export default function Expenses() {
                             <tr key={s.id} className="border-b border-slate-50 bg-slate-50/70 text-[13px]">
                               <td className="py-1.5 pl-10 pr-4 text-slate-600">
                                 {s.name}
-                                {s.state === "nothing" && <span className="ml-2 text-[11px] text-slate-400">nothing spent</span>}
-                                {s.state === "blank" && <span className="ml-2 text-[11px] text-slate-400">not entered</span>}
+                                {s.state === "nothing" && <span className="ml-2 text-[11px] text-slate-400">{t("ex_nothing_spent")}</span>}
+                                {s.state === "blank" && <span className="ml-2 text-[11px] text-slate-400">{t("ex_not_entered")}</span>}
                               </td>
                               <Num v={s.state === "blank" ? null : s.commission} cls={s.state === "spent" ? "text-amber-700" : "text-slate-400"} />
                               <Num v={s.state === "blank" ? null : s.other} cls="text-slate-500" />
@@ -582,7 +586,7 @@ export default function Expenses() {
                                 {canRecord && (
                                   <button type="button" onClick={(e) => { e.stopPropagation(); setSheet({ day: p.key, locationId: s.id }); }}
                                     className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-white">
-                                    {s.state === "blank" ? "Enter" : "Open"}
+                                    {s.state === "blank" ? t("ex_enter") : t("ex_open")}
                                   </button>
                                 )}
                               </td>
@@ -609,7 +613,7 @@ export default function Expenses() {
                           <td className="px-4 py-2 text-slate-700">
                             <b className={isCommission(c.category) ? "text-amber-800" : ""}>{c.category}</b>
                             {isCommission(c.category) && (
-                              <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">Commission</span>
+                              <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">{t("ex_commission")}</span>
                             )}
                           </td>
                           <Num v={isCommission(c.category) ? c.amount : null} cls="font-semibold text-amber-700" />
@@ -658,7 +662,7 @@ export default function Expenses() {
               </div>
 
               <p className="border-t border-slate-100 px-4 py-2.5 text-xs text-slate-400">
-                <b className="text-slate-500">Open a day to add to it</b> — a forgotten expense goes into its empty box, not a second entry.
+                <b className="text-slate-500">{t("ex_open_day_hint")}</b> — a forgotten expense goes into its empty box, not a second entry.
                 Days sum to weeks sum to months sum to the year.
               </p>
             </div>
@@ -692,6 +696,7 @@ function Fragmented({ children }) { return <>{children}</>; }
 // ──────────────────────────────────────────────── password, only to reach back ──
 
 function ConfirmPassword({ onCancel, onConfirmed }) {
+  const { t } = useLanguage();
   const { session } = useAuth();
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -721,13 +726,13 @@ function ConfirmPassword({ onCancel, onConfirmed }) {
           You are changing a figure that is already recorded, on a day that is not today or that somebody else entered.
         </p>
         <input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)}
-          placeholder="Your password" className={inputCls} />
+          placeholder={t("ex_your_password")} className={inputCls} />
         {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={onCancel} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("ex_cancel")}</button>
           <button type="submit" disabled={busy || !password}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
-            {busy ? "Checking…" : "Confirm"}
+            {busy ? t("ex_checking") : t("ex_confirm")}
           </button>
         </div>
       </form>

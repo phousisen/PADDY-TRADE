@@ -11,6 +11,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import LocationFilter from "../components/LocationFilter.jsx";
 import Topbar from "../components/Topbar.jsx";
+import { useLanguage } from "../i18n.jsx";
 import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
 
 const GRAINS = [
@@ -20,6 +21,8 @@ const GRAINS = [
   ["year", "Year total"],
 ];
 
+// Month names come from the dictionary now, so a Khmer session says កញ្ញា.
+const MONTH_KEYS = ["mon_1","mon_2","mon_3","mon_4","mon_5","mon_6","mon_7","mon_8","mon_9","mon_10","mon_11","mon_12"];
 const MONTHS = ["January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"];
 const MS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -72,7 +75,11 @@ const BUY = "bg-brand-600/[0.03]";
 const SELL = "bg-orange-600/[0.03]";
 const STK = "bg-sky-700/[0.04]";
 
-function LedgerRow({ label, sub, t, variant, onClick, onLoads, open }) {
+// [2026-09-16] `t` here was the row's TOTALS. Renamed to `tot` so the
+// translator can be called `t` in this file like every other screen —
+// a bulk i18n pass put t("…") in here and would have called the totals
+// object as a function.
+function LedgerRow({ label, sub, tot, variant, onClick, onLoads, open, t }) {
   const tot = variant === "total";
   const D = tot;   // dark row — placeholders need a lighter grey to be seen
   const wk = variant === "week";
@@ -98,33 +105,34 @@ function LedgerRow({ label, sub, t, variant, onClick, onLoads, open }) {
         </span>
       </td>
 
-      <td className={`${cls(BUY)} text-center`}><Loads n={t.buyLoads} title={`${t.truck} truck · ${t.koyun} koyun · ${t.tractor} tractor${t.otherVeh ? ` · ${t.otherVeh} other` : ""} — click to see them`} /></td>
-      <td className={cls(BUY)}><Kg v={t.boughtKg} dark={D} /></td>
-      <td className={cls(BUY)}>{t.buyPricePerKg ? t.buyPricePerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(BUY)}><Riel v={t.spent} dark={D} /></td>
+      <td className={`${cls(BUY)} text-center`}><Loads n={tot.buyLoads} title={`${tot.truck} ${t("db_truck")} · ${tot.koyun} ${t("db_koyun")} · ${tot.tractor} ${t("db_tractor")}${tot.otherVeh ? ` · ${tot.otherVeh} ${t("db_other_veh")}` : ""} — ${t("db_click_to_see")}`} /></td>
+      <td className={cls(BUY)}><Kg v={tot.boughtKg} dark={D} /></td>
+      <td className={cls(BUY)}>{tot.buyPricePerKg ? tot.buyPricePerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(BUY)}><Riel v={tot.spent} dark={D} /></td>
 
-      <td className={`${cls(SELL)} text-center border-l border-slate-200`}><Loads n={t.sellLoads} title="click to see the loads" /></td>
-      <td className={cls(SELL)}><Kg v={t.soldKg} dark={D} /></td>
-      <td className={cls(SELL)}><Riel v={t.received} dark={D} /></td>
+      <td className={`${cls(SELL)} text-center border-l border-slate-200`}><Loads n={tot.sellLoads} title={t("db_click_loads")} /></td>
+      <td className={cls(SELL)}><Kg v={tot.soldKg} dark={D} /></td>
+      <td className={cls(SELL)}><Riel v={tot.received} dark={D} /></td>
 
-      <td className={`${cls()} border-l border-slate-200`}><Riel v={t.commission} dark={D} /></td>
-      <td className={cls()}><Riel v={t.otherExp} dark={D} /></td>
-      <td className={cls()}><Riel v={t.expenses} dark={D} /></td>
+      <td className={`${cls()} border-l border-slate-200`}><Riel v={tot.commission} dark={D} /></td>
+      <td className={cls()}><Riel v={tot.otherExp} dark={D} /></td>
+      <td className={cls()}><Riel v={tot.expenses} dark={D} /></td>
 
-      <td className={`${cls(STK)} border-l border-slate-200`}>{t.lostKg ? <Signed v={t.lostKg} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(STK)}>{t.lostValue ? <Signed v={t.lostValue} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(STK)}><Kg v={t.closingKg} dark={D} /></td>
-      <td className={cls(STK)}>{t.costPerKg ? t.costPerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(STK)}><Riel v={t.closingValue} dark={D} /></td>
+      <td className={`${cls(STK)} border-l border-slate-200`}>{tot.lostKg ? <Signed v={tot.lostKg} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}>{tot.lostValue ? <Signed v={tot.lostValue} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}><Kg v={tot.closingKg} dark={D} /></td>
+      <td className={cls(STK)}>{tot.costPerKg ? tot.costPerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}><Riel v={tot.closingValue} dark={D} /></td>
 
-      <td className={`${cls()} border-l border-slate-200`}><Signed v={t.profit} dark={D} /></td>
-      <td className={cls()}><Signed v={t.cash} dark={D} /></td>
+      <td className={`${cls()} border-l border-slate-200`}><Signed v={tot.profit} dark={D} /></td>
+      <td className={cls()}><Signed v={tot.cash} dark={D} /></td>
     </tr>
   );
 }
 
 // ---- the day drawer -------------------------------------------------------
 function DayDrawer({ day, txs, payments }) {
+  const { t } = useLanguage();
   const dayTxs = txs.filter((tx) => tx.tx_date === day.date && (tx.hq_status || "processing") !== "cancelled");
   const buys = dayTxs.filter((t) => t.type === "BUY");
   const sells = dayTxs.filter((t) => t.type === "SELL");
@@ -149,12 +157,12 @@ function DayDrawer({ day, txs, payments }) {
     <div className="overflow-x-auto">
       <table className="w-full text-[13px]">
         <thead><tr className="bg-slate-50/60">
-          <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">Ticket</th>
-          <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">Vehicle</th>
+          <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("db_ticket")}</th>
+          <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("db_vehicle")}</th>
           <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">{who}</th>
-          <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-400">Net kg</th>
-          <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-400">Price</th>
-          <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-400">Amount ៛</th>
+          <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("db_net_kg")}</th>
+          <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("db_price")}</th>
+          <th className="px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("db_amount_r")}</th>
         </tr></thead>
         <tbody>
           {rows.map((tx) => (
@@ -183,41 +191,41 @@ function DayDrawer({ day, txs, payments }) {
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Mini title="What moved through the shed">
-          <Line label="Opening — last night's closing" a={<Kg v={day.openingKg} />} b={<><Riel v={day.openingValue} /> ៛</>} />
+        <Mini title={t("db_shed_moved")}>
+          <Line label={t("db_opening")} a={<Kg v={day.openingKg} />} b={<><Riel v={day.openingValue} /> ៛</>} />
           <Line label={`+ Bought · ${day.buyLoads} loads`} a={<>+ <Kg v={day.boughtKg} /></>} b={<>+ <Riel v={day.spent} /> ៛</>} tone="g" />
           <Line label={`− Sold · ${day.sellLoads} loads at ${day.costPerKg ? day.costPerKg.toFixed(2) : "—"} cost`} a={<>− <Kg v={day.soldKg} /></>} b={<>− <Riel v={day.cogs} /> ៛</>} tone="r" />
           <Line label={`± Counted difference · ${day.counted ? "count taken" : "no count taken"}`}
             a={day.lostKg ? <Signed v={day.lostKg} /> : <span className="text-slate-300">—</span>}
             b={day.lostValue ? <Signed v={day.lostValue} /> : <span className="text-slate-300">—</span>} />
           <div className="flex items-center gap-3 bg-slate-50 px-4 py-2.5 text-[13px]">
-            <span className="flex-1 font-semibold text-slate-900">Overnight in the shed</span>
+            <span className="flex-1 font-semibold text-slate-900">{t("db_overnight")}</span>
             <span className="tabular-nums font-semibold text-slate-900"><Kg v={day.closingKg} /> kg</span>
             <span className="w-40 text-right tabular-nums font-semibold text-slate-900"><Riel v={day.closingValue} /> ៛</span>
           </div>
         </Mini>
 
-        <Mini title="Profit, and the cash behind it">
-          <Line label="Sales" a={<>+ <Riel v={day.received} /> ៛</>} tone="g" />
-          <Line label="Cost of the paddy that left the shed" a={<>− <Riel v={day.cogs} /> ៛</>} tone="r" />
+        <Mini title={t("db_profit_and_cash")}>
+          <Line label={t("db_sales")} a={<>+ <Riel v={day.received} /> ៛</>} tone="g" />
+          <Line label={t("db_cogs")} a={<>− <Riel v={day.cogs} /> ៛</>} tone="r" />
           <Line label="ថ្លៃកូនដៃ" a={day.commission ? <>− <Riel v={day.commission} /> ៛</> : "—"} tone={day.commission ? "r" : ""} />
-          <Line label="Other expenses" a={day.otherExp ? <>− <Riel v={day.otherExp} /> ៛</> : "—"} tone={day.otherExp ? "r" : ""} />
-          <Line label="Stock lost — counted" a={day.lostValue < 0 ? <>− <Riel v={-day.lostValue} /> ៛</> : "—"} tone={day.lostValue < 0 ? "r" : ""} />
+          <Line label={t("db_other_expenses")} a={day.otherExp ? <>− <Riel v={day.otherExp} /> ៛</> : "—"} tone={day.otherExp ? "r" : ""} />
+          <Line label={t("db_stock_lost")} a={day.lostValue < 0 ? <>− <Riel v={-day.lostValue} /> ៛</> : "—"} tone={day.lostValue < 0 ? "r" : ""} />
           <div className="flex items-center gap-3 bg-brand-700 px-4 py-2.5 text-[13px] text-white">
-            <span className="flex-1 font-semibold">Profit</span>
+            <span className="flex-1 font-semibold">{t("db_profit")}</span>
             <span className="tabular-nums font-semibold">{day.profit >= 0 ? "+" : "−"} {Math.abs(Math.round(day.profit)).toLocaleString("en-US")} ៛</span>
           </div>
-          <Line label="Cash — received less paid less expenses" a={<>{day.cash >= 0 ? "+" : "−"} <Riel v={Math.abs(day.cash)} /> ៛</>} />
-          <Line label="The difference is paddy bought and not yet sold" a={<>{day.profit - day.cash >= 0 ? "+" : "−"} <Riel v={Math.abs(day.profit - day.cash)} /> ៛</>} />
+          <Line label={t("db_cash_line")} a={<>{day.cash >= 0 ? "+" : "−"} <Riel v={Math.abs(day.cash)} /> ៛</>} />
+          <Line label={t("db_cash_diff")} a={<>{day.profit - day.cash >= 0 ? "+" : "−"} <Riel v={Math.abs(day.profit - day.cash)} /> ៛</>} />
         </Mini>
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <Mini title={`Buy — ${day.buyLoads} loads${mix ? ` · ${mix}` : ""}`}>
-          {buys.length ? <TicketTable rows={buys} who="Seller" /> : <p className="px-4 py-5 text-[13px] text-slate-400">Nothing bought this day.</p>}
+          {buys.length ? <TicketTable rows={buys} who="Seller" /> : <p className="px-4 py-5 text-[13px] text-slate-400">{t("db_nothing_bought")}</p>}
         </Mini>
         <Mini title={`Sell — ${day.sellLoads} loads`}>
-          {sells.length ? <TicketTable rows={sells} who="Buyer" /> : <p className="px-4 py-5 text-[13px] text-slate-400">Nothing sold this day.</p>}
+          {sells.length ? <TicketTable rows={sells} who="Buyer" /> : <p className="px-4 py-5 text-[13px] text-slate-400">{t("db_nothing_sold")}</p>}
         </Mini>
       </div>
 
@@ -237,6 +245,7 @@ function DayDrawer({ day, txs, payments }) {
 
 // ---- the page -------------------------------------------------------------
 export default function DailyBook() {
+  const { t } = useLanguage();
   const today = cambodiaToday();
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
@@ -307,12 +316,12 @@ export default function DailyBook() {
   return (
     <div className="flex h-screen min-w-0 flex-1 flex-col overflow-hidden">
       <Topbar
-        title="Daily Book"
-        subtitle="Every day's buying, selling, expenses and shed level — read from what is already recorded"
+        title={t("db_title")}
+        subtitle={t("db_subtitle")}
       />
 
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-3 md:px-6">
-        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Show</span>
+        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{t("db_show")}</span>
         <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white">
           {GRAINS.map(([g, label]) => (
             <button key={g} onClick={() => { setGrain(g); setOpen(null); }}
@@ -322,7 +331,7 @@ export default function DailyBook() {
             </button>
           ))}
         </div>
-        <span className="ml-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">Period</span>
+        <span className="ml-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{t("db_period")}</span>
         <select value={month} onChange={(e) => { setMonth(e.target.value); setOpen(null); }}
           disabled={grain === "year"}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-700 disabled:opacity-50">
@@ -339,7 +348,7 @@ export default function DailyBook() {
 
       <main className="min-w-0 flex-1 overflow-y-auto bg-paper p-4 md:p-6">
         {error && <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>}
-        {loading && <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">Loading…</div>}
+        {loading && <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">{t("db_loading")}</div>}
 
         {!loading && !periods.length && (
           <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">
@@ -354,31 +363,31 @@ export default function DailyBook() {
                 <thead>
                   <tr>
                     <th className="sticky left-0 z-[3] border-r border-slate-200 bg-white" />
-                    <th className={`${GH} ${BUY} text-brand-700`} colSpan={4}>Buy</th>
-                    <th className={`${GH} ${SELL} border-l border-slate-200 text-orange-700`} colSpan={3}>Sell</th>
-                    <th className={`${GH} border-l border-slate-200`} colSpan={3}>Expenses</th>
-                    <th className={`${GH} ${STK} border-l border-slate-200 text-sky-800`} colSpan={5}>Stock</th>
-                    <th className={`${GH} border-l border-slate-200`} colSpan={2}>Result</th>
+                    <th className={`${GH} ${BUY} text-brand-700`} colSpan={4}>{t("db_buy")}</th>
+                    <th className={`${GH} ${SELL} border-l border-slate-200 text-orange-700`} colSpan={3}>{t("db_sell")}</th>
+                    <th className={`${GH} border-l border-slate-200`} colSpan={3}>{t("db_expenses")}</th>
+                    <th className={`${GH} ${STK} border-l border-slate-200 text-sky-800`} colSpan={5}>{t("db_stock")}</th>
+                    <th className={`${GH} border-l border-slate-200`} colSpan={2}>{t("db_result")}</th>
                   </tr>
                   <tr>
-                    <th className="sticky left-0 z-[3] border-b border-r border-slate-200 bg-white px-3.5 pb-2.5 text-left text-[10px] font-semibold text-slate-400">Period</th>
-                    <th className={`${TH} ${BUY} border-b border-slate-200 text-center`}>Loads</th>
-                    <th className={`${TH} ${BUY} border-b border-slate-200`}>Weight kg</th>
-                    <th className={`${TH} ${BUY} border-b border-slate-200`}>Price ៛</th>
-                    <th className={`${TH} ${BUY} border-b border-slate-200`}>Spent ៛</th>
-                    <th className={`${TH} ${SELL} border-b border-slate-200 border-l text-center`}>Loads</th>
-                    <th className={`${TH} ${SELL} border-b border-slate-200`}>Weight kg</th>
-                    <th className={`${TH} ${SELL} border-b border-slate-200`}>Received ៛</th>
+                    <th className="sticky left-0 z-[3] border-b border-r border-slate-200 bg-white px-3.5 pb-2.5 text-left text-[10px] font-semibold text-slate-400">{t("db_period")}</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200 text-center`}>{t("db_loads")}</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200`}>{t("db_weight_kg")}</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200`}>{t("db_price_r")}</th>
+                    <th className={`${TH} ${BUY} border-b border-slate-200`}>{t("db_spent_r")}</th>
+                    <th className={`${TH} ${SELL} border-b border-slate-200 border-l text-center`}>{t("db_loads")}</th>
+                    <th className={`${TH} ${SELL} border-b border-slate-200`}>{t("db_weight_kg")}</th>
+                    <th className={`${TH} ${SELL} border-b border-slate-200`}>{t("db_received_r")}</th>
                     <th className={`${TH} border-b border-l border-slate-200`}>ថ្លៃកូនដៃ ៛</th>
-                    <th className={`${TH} border-b border-slate-200`}>Other ៛</th>
-                    <th className={`${TH} border-b border-slate-200`}>Total ៛</th>
-                    <th className={`${TH} ${STK} border-b border-l border-slate-200`}>Lost kg</th>
-                    <th className={`${TH} ${STK} border-b border-slate-200`}>Value ៛</th>
-                    <th className={`${TH} ${STK} border-b border-slate-200`}>Closing kg</th>
-                    <th className={`${TH} ${STK} border-b border-slate-200`}>Cost ៛/kg</th>
-                    <th className={`${TH} ${STK} border-b border-slate-200`}>Value ៛</th>
-                    <th className={`${TH} border-b border-l border-slate-200`}>Profit ៛</th>
-                    <th className={`${TH} border-b border-slate-200`}>Cash ៛</th>
+                    <th className={`${TH} border-b border-slate-200`}>{t("db_other_r")}</th>
+                    <th className={`${TH} border-b border-slate-200`}>{t("db_total_r")}</th>
+                    <th className={`${TH} ${STK} border-b border-l border-slate-200`}>{t("db_lost_kg")}</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>{t("db_value_r")}</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>{t("db_closing_kg")}</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>{t("db_cost_per_kg")}</th>
+                    <th className={`${TH} ${STK} border-b border-slate-200`}>{t("db_value_r")}</th>
+                    <th className={`${TH} border-b border-l border-slate-200`}>{t("db_profit_r")}</th>
+                    <th className={`${TH} border-b border-slate-200`}>{t("db_cash_r")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -398,7 +407,7 @@ export default function DailyBook() {
                     return (
                       <Fragment key={p.key}>
                         <LedgerRow
-                          label={main} sub={sub} t={p.totals}
+                          label={main} sub={sub} tot={p.totals} t={t}
                           open={isOpen}
                           onClick={isDay ? () => setOpen(isOpen ? null : p.key)
                             : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
@@ -413,24 +422,24 @@ export default function DailyBook() {
                         )}
                         {weekDays && weekDays.length > 1 && (
                           <LedgerRow variant="week"
-                            label={`Week ${isoWeek(p.key).week}`} sub={`${weekDays.length} trading days`}
-                            t={rollup(weekDays)} />
+                            label={`${t("db_week")} ${isoWeek(p.key).week}`} sub={`${weekDays.length} ${t("db_trading_days")}`}
+                            tot={rollup(weekDays)} t={t} />
                         )}
                       </Fragment>
                     );
                   })}
                   <LedgerRow variant="total"
-                    label={month ? `${MONTHS[Number(month.slice(5, 7)) - 1]} total` : `${year} total`}
-                    sub={`${totals.days} trading days`} t={totals} />
+                    label={month ? `${t(MONTH_KEYS[Number(month.slice(5, 7)) - 1])} ${t("db_total")}` : `${year} ${t("db_total")}`}
+                    sub={`${totals.days} ${t("db_trading_days")}`} tot={totals} t={t} />
                 </tbody>
               </table>
             </div>
 
             <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-[11.5px] text-slate-400">
-              <span><b className="font-semibold text-slate-600">Loads</b> is how many trucks came in — click the number for the vehicles and their tickets</span>
-              <span><b className="font-semibold text-slate-600">Price</b> is what was paid that day · <b className="font-semibold text-slate-600">Cost ៛/kg</b> is what the whole shed cost — the same number on a day the shed empties</span>
-              <span><b className="font-semibold text-slate-600">Profit</b> = sales − cost of the paddy sold − expenses · <b className="font-semibold text-slate-600">Cash</b> = received − paid − expenses</span>
-              <span><b className="font-semibold text-slate-600">Closing kg</b> is a level — it never adds up down the column</span>
+              <span><b className="font-semibold text-slate-600">{t("db_loads")}</b>{t("db_hint_loads")}</span>
+              <span><b className="font-semibold text-slate-600">{t("db_price")}</b>{t("db_hint_spent")}<b className="font-semibold text-slate-600">{t("db_cost_per_kg")}</b>{t("db_hint_cost")}</span>
+              <span><b className="font-semibold text-slate-600">{t("db_profit")}</b> = sales − cost of the paddy sold − expenses · <b className="font-semibold text-slate-600">{t("db_cash")}</b> = received − paid − expenses</span>
+              <span><b className="font-semibold text-slate-600">{t("db_closing_kg")}</b>{t("db_hint_closing")}</span>
             </div>
           </div>
         )}
