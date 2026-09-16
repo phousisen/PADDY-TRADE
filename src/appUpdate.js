@@ -210,6 +210,70 @@ export function trackActivity(target) {
   };
 }
 
+// How long to wait for the service worker to pick up the new bundle before
+// reloading anyway. Long enough for a slow line at a weighbridge, short
+// enough that nobody watches a banner sit there.
+export const SW_UPDATE_WAIT_MS = 8000;
+
+/**
+ * Resolve when a NEW service worker has taken control, or when the wait runs
+ * out. Reloading before this is what produced the repeat-update loop.
+ */
+function waitForNewWorker(waitMs) {
+  return new Promise((resolve) => {
+    const sw = typeof navigator !== "undefined" ? navigator.serviceWorker : null;
+    if (!sw) { resolve(); return; }
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      sw.removeEventListener("controllerchange", finish);
+      resolve();
+    };
+    sw.addEventListener("controllerchange", finish);
+    setTimeout(finish, waitMs);
+  });
+}
+
+// ── the loop breaker ──────────────────────────────────────────────────────
+//
+// Even with the wait above, a reload can fail to land on the new code — a
+// browser that refuses to drop a worker, a proxy holding the old bundle.
+// Reloading again achieves nothing and is what the station actually sees:
+// the screen turning over by itself, repeatedly, while they are working.
+//
+// So the version a reload was made FOR is remembered for this tab. Come back
+// still not running it and the app stops reloading itself; the strip stays
+// up saying so, and a human closes and reopens the app, which always works.
+const RELOAD_KEY = "paddytrade_reloaded_for";
+
+export function rememberReloadFor(version, storage) {
+  try {
+    const s = storage || (typeof sessionStorage === "undefined" ? null : sessionStorage);
+    if (s) s.setItem(RELOAD_KEY, String(version || ""));
+  } catch { /* private window — the worst case is the old behaviour */ }
+}
+
+export function readReloadedFor(storage) {
+  try {
+    const s = storage || (typeof sessionStorage === "undefined" ? null : sessionStorage);
+    return s ? s.getItem(RELOAD_KEY) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * May the app reload ITSELF for this version?
+ *
+ * No, if it already reloaded for exactly this version and is still not
+ * running it — that reload did not take, and a second one will not either.
+ */
+export function mayAutoReload({ served, reloadedFor }) {
+  if (!served) return false;
+  return served !== reloadedFor;
+}
+
 /**
  * Reload once the station is free — or, for a reload HQ asked for, after the
  * deadline whether it is free or not.
@@ -233,14 +297,38 @@ export function reloadWhenFree({
   let freeSince = null;
   let done = false;
 
-  const go = () => {
+  const go = async () => {
     if (done) return;
     done = true;
     clearInterval(timer);
+
+    // [2026-09-16] WAIT for the service worker before reloading.
+    //
+    // SISEN: "everytime we upload new zip. the sytem will ask to update like
+    // 3-4 times on repeat then it sometimes crash".
+    //
+    // registration.update() returns a PROMISE and this code fired the reload
+    // on the next line without waiting for it. So the page reloaded while the
+    // service worker was still fetching the new bundle, came back on the OLD
+    // precached shell, compared its old __APP_VERSION__ against the new
+    // version.json, decided it was out of date — and put the strip up again.
+    // Round and round, three or four times, until the worker happened to
+    // finish between two reloads.
+    //
+    // Now: ask it to update, and wait for the new worker to actually take
+    // control before reloading. Capped, because a station on a bad line must
+    // still get its reload rather than sitting here forever; a reload after
+    // the cap is exactly the old behaviour, no worse.
     try {
       const r = registration && typeof registration.update === "function"
         ? registration.update() : null;
-      if (r && typeof r.catch === "function") r.catch(() => {});
+      if (r && typeof r.then === "function") {
+        await Promise.race([
+          r.catch(() => {}),
+          new Promise((res) => setTimeout(res, SW_UPDATE_WAIT_MS)),
+        ]);
+      }
+      await waitForNewWorker(SW_UPDATE_WAIT_MS);
     } catch {
       // Offline, or the browser refused. Reload anyway — the precache is
       // already on the disk, and a reload is the only way to leave old code.

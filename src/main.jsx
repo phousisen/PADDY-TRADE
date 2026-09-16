@@ -4,6 +4,7 @@ import { registerSW } from "virtual:pwa-register";
 import App from "./App.jsx";
 import ErrorBoundary from "./ErrorBoundary.jsx";
 import { startSessionWatch } from "./sessionWatch.js";
+import { startChunkGuard } from "./chunkGuard.js";
 import { ensureFreshSession } from "./supabaseClient.js";
 import { AuthProvider } from "./AuthContext.jsx";
 import { LanguageProvider } from "./i18n.jsx";
@@ -47,6 +48,18 @@ registerSW({
 // This renews the login the moment the app returns, BEFORE anything asks the
 // database, and then tells the screens to ask again. See sessionWatch.js.
 startSessionWatch({ ensureFresh: ensureFreshSession });
+
+// [2026-09-16] A page open since before the last deploy is holding the OLD
+// file names, and every one of them changed. The first screen it opens that
+// it has not opened before asks for a file that is gone, the import rejects,
+// and the app dies mid-render — top bar drawn, nothing under it. SISEN saw
+// exactly that: "then it sometimes crash like this".
+//
+// ErrorBoundary cannot catch it: that is a promise rejecting in the module
+// loader, not a component throwing while rendering. This catches it and
+// reloads ONCE, which fetches the file names that exist now. See
+// chunkGuard.js for why once.
+startChunkGuard();
 
 // Stops the mouse scroll wheel from silently changing the value of a
 // focused number field — a common browser quirk where scrolling the page

@@ -12,6 +12,8 @@ export const translations = {
     // [2026-09-16] SISEN, looking at the Daily Book on his phone with the
     // Khmer app showing English controls: "so not clean and professional".
     db_by_day: "By day", db_by_week: "By week", db_by_month: "By month", db_year_total: "Year total",
+    upd_stuck: "Please close the app and open it again",
+    upd_stuck_why: "The update could not install by itself",
     db_shed: "The shed", db_open_short: "Opening", db_counted_short: "± Counted",
     db_tonight: "In the shed tonight", db_profit_from: "Where the profit came from",
     db_cogs_short: "Cost of the paddy sold", db_cash_short: "Cash in / out",
@@ -1160,6 +1162,8 @@ export const translations = {
     email: "អុីមែល", password: "ពាក្យសម្ងាត់", sign_in: "ចូល", signing_in: "កំពុងចូល...",
     login_name: "ឈ្មោះចូលប្រើ", login_name_hint: "boss ឬ 012934050",
     db_by_day: "តាមថ្ងៃ", db_by_week: "តាមសប្តាហ៍", db_by_month: "តាមខែ", db_year_total: "សរុបឆ្នាំ",
+    upd_stuck: "សូមបិទកម្មវិធី រួចបើកម្តងទៀត",
+    upd_stuck_why: "ការធ្វើបច្ចុប្បន្នភាពមិនអាចដំឡើងដោយខ្លួនឯងបានទេ",
     db_shed: "ឃ្លាំង", db_open_short: "ដើមដំបូង", db_counted_short: "± រាប់ឃើញ",
     db_tonight: "សល់យប់នេះ", db_profit_from: "ចំណេញមកពីណា",
     db_cogs_short: "តម្លៃដើមស្រូវដែលលក់", db_cash_short: "សាច់ប្រាក់ចូល / ចេញ",
