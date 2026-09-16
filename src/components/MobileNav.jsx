@@ -52,11 +52,16 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
   // same as every other page this account can reach that isn't one of
   // its 3 constant-use tabs. Sample-approved design (the Claude Design
   // canvas's "Phone 6 — More" artboard).
+  // [2026-09-16] SISEN, on the account his parents use: "i think whats
+  // important for them is the dashboard, dailybook and expenses".
+  //
+  // Three pages, so three tabs and nothing behind a More button — the whole
+  // account fits on the bottom bar. See moreItems below.
   const primaryTabs = isViewOnly
     ? [
         { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
-        { id: "stock", label: t("nav_stock"), icon: Warehouse },
-        { id: "transactions", label: t("nav_transactions"), icon: Receipt },
+        { id: "daily-book", label: t("nav_daily_book"), icon: BookOpen },
+        { id: "expenses", label: t("nav_expenses"), icon: Wallet },
       ]
     : [
         { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
@@ -71,11 +76,10 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
   // now that Reports no longer has one of its own. `label: "Expenses"`
   // literal (not t()) matches Sidebar.jsx's own Expenses entry — that page
   // was added without its own i18n key either.
+  // Empty for a view-only account: all three of its pages are tabs above, so
+  // there is nothing left to put behind More, and the button hides itself.
   const moreItems = isViewOnly
-    ? [
-        { id: "reports", label: t("nav_reports"), icon: BarChart3 },
-        { id: "expenses", label: "Expenses", icon: Wallet },
-      ]
+    ? []
     : [
         { id: "buyers", label: t("nav_buyers"), icon: ShoppingCart },
         ...(canApproveRequests ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
@@ -143,6 +147,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
             </button>
           );
         })}
+        {(moreItems.length > 0 || systemItems.length > 0) && (
         <button
           onClick={() => setMoreOpen(true)}
           className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold ${isMoreActive || moreOpen ? "bg-white/10 text-white" : "text-brand-300/70"}`}
@@ -150,6 +155,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
           <Menu size={22} className={isMoreActive || moreOpen ? "text-brand-400" : ""} />
           {t("more_tab")}
         </button>
+        )}
       </nav>
 
       {/* Full-screen "More" sheet — everything that isn't one of the 4

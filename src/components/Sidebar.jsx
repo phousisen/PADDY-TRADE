@@ -54,16 +54,22 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
   // sidebar reads like an organized product's nav rather than a dumped
   // list of every page in the order they were built. No page, permission
   // check, or route changed — only grouping/order/labels.
+  // [2026-09-16] Trimmed from six pages to three. SISEN, setting up an
+  // account for his parents to follow the business from their phones: "i
+  // think whats important for them is the dashboard, dailybook and expenses".
+  //
+  // Stock Inventory, Transactions and Financial Reports are gone from this
+  // account. Transactions in particular was every ticket with every farmer's
+  // name and phone number on it — detail nobody watching from a phone needs,
+  // and names that did not need to travel. Nothing was taken away from any
+  // other kind of account.
   const navGroups = isViewOnly
     ? [
         { label: null, items: [{ id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid }] },
         {
           label: t("fin_overview"),
           items: [
-            { id: "stock", label: t("nav_stock"), icon: Warehouse },
-            { id: "transactions", label: t("nav_transactions"), icon: Receipt },
             { id: "daily-book", label: t("nav_daily_book"), icon: BookOpen },
-            { id: "reports", label: t("nav_finance"), icon: BarChart3 },
             { id: "expenses", label: t("nav_expenses"), icon: Wallet },
           ],
         },
