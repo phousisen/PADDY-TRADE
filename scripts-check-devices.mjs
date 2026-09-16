@@ -256,8 +256,65 @@ for (const forbidden of ["touch_last_seen", "report_app_version", "request_stati
 
 console.log("\n8. Wired in, and harmless on a database that has not been migrated");
 
-ok("the api can report a machine", api.includes("async reportDevice({ deviceId, version, platform, browser })"));
-ok("reporting never throws", /async reportDevice[\s\S]{0,600}catch \{\s*\n\s*return false;/.test(api));
+ok("the api can report a machine", /async reportDevice\(\{ deviceId, version, platform, browser/.test(api));
+ok("reporting never throws",
+   /async reportDevice[\s\S]{0,900}catch \{\s*\n\s*return \{ ok: false, signOut: false \};/.test(api));
+
+// ── the network, and signing a machine out ───────────────────────────────
+//
+// [2026-09-16] SISEN: "are we able to have access to their ip location etc"
+// → "how about all". The honest split matters and is asserted here: the
+// ADDRESS is read server-side from the request, so a browser cannot claim to
+// be somewhere it is not; the CITY comes from the browser and is therefore a
+// hint, kept in its own column and shown as approximate.
+
+const net = readFileSync("src/deviceNet.js", "utf8");
+const netSql = readFileSync("device_network.sql", "utf8");
+
+ok("the address is read from the request, not from the browser",
+   /current_setting\('request\.headers'/.test(netSql) && !/p_ip/.test(netSql));
+ok("the first address a machine used is never overwritten",
+   /first_ip\s*=\s*coalesce\(public\.device_sessions\.first_ip/.test(netSql));
+ok("a changed address is stamped with when it changed",
+   /ip_changed_at = case/.test(netSql));
+ok("a station machine on a new network is flagged",
+   w.deviceFlags({ ...pcNow, first_ip: "1.2.3.4", last_ip: "9.9.9.9" },
+     { profile: stationStaff, newestVersion: "2026.09.16-1734", now: NOW }).includes("new_network"));
+ok("the same address is not a new network",
+   !w.deviceFlags({ ...pcNow, first_ip: "1.2.3.4", last_ip: "1.2.3.4" },
+     { profile: stationStaff, newestVersion: "2026.09.16-1734", now: NOW }).includes("new_network"));
+ok("a manager on a new network is NOT flagged — they move around",
+   !w.deviceFlags({ ...pcNow, first_ip: "1.2.3.4", last_ip: "9.9.9.9" },
+     { profile: manager, newestVersion: "2026.09.16-1734", now: NOW }).includes("new_network"));
+
+ok("no GPS permission is ever requested", !/geolocation/i.test(net));
+ok("the city lookup is cached, not called on every check-in",
+   net.includes("isFresh") && /REFRESH_MS = 6 \* 60 \* 60 \* 1000/.test(net));
+for (const [what, f] of [
+  ["a dead lookup service", async () => { throw new Error("down"); }],
+  ["a rate limit", async () => ({ ok: false, json: async () => ({}) })],
+  ["a refusal", async () => ({ ok: true, json: async () => ({ success: false }) })],
+  ["nonsense back", async () => ({ ok: true, json: async () => ({ city: 42 }) })],
+]) {
+  ok(`${what} leaves the check-in alone`,
+     (await (await import("./src/deviceNet.js")).getPlace({ storage: null, fetchFn: f })) === null);
+}
+ok("a good answer is read",
+   JSON.stringify(await (await import("./src/deviceNet.js")).getPlace({
+     storage: null,
+     fetchFn: async () => ({ ok: true, json: async () => ({ success: true, city: "Battambang", region: "Battambang", country: "Cambodia" }) }),
+   })) === JSON.stringify({ city: "Battambang", region: "Battambang", country: "Cambodia" }));
+
+ok("signing out is owner only, enforced in the database",
+   netSql.includes("raise exception 'Only the owner can sign a machine out'"));
+ok("the sign-out request is read and cleared at once, so it cannot loop",
+   /set signout_requested_at = null,[\s\S]{0,120}signout_requested_at is not null/.test(netSql));
+ok("who pressed it is recorded", netSql.includes("signout_by = auth.uid()"));
+ok("signing back in clears the note", /signed_out_at = null/.test(netSql));
+ok("the browser signs itself out when told", banner.includes("supabase.auth.signOut()"));
+ok("the screen names the person and the machine before asking",
+   panel.includes("st_confirm_title") && panel.includes("st_confirm_warn"));
+ok("only the owner sees a sign-out button", panel.includes("const canSignOut = !!profile?.isOwner;"));
 ok("a view-only account still reports its machine",
    /ALWAYS_ALLOWED[\s\S]{0,900}"reportDevice"/.test(api));
 ok("an un-migrated database reads as 'nothing to show', not an error",
