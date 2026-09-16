@@ -9,6 +9,7 @@ import { supabase } from "../supabaseClient.js";
 import { onSyncStatusChange } from "../offlineQueue.js";
 import {
   watchForUpdates, trackActivity, looksBusy, reloadWhenFree,
+  mayAutoReload, rememberReloadFor, readReloadedFor,
   FORCED_RELOAD_AFTER_MS,
 } from "../appUpdate.js";
 
@@ -40,6 +41,8 @@ export default function UpdateBanner() {
   const [newVersion, setNewVersion] = useState(null);
   const [pushed, setPushed] = useState(false);
   const [reloading, setReloading] = useState(false);
+  // Reloaded for this version already and still not running it.
+  const [stuck, setStuck] = useState(false);
   const activity = useRef(null);
   const openedAt = useRef(Date.now());
 
@@ -128,6 +131,27 @@ export default function UpdateBanner() {
   // because something needs to reach the stations now.
   useEffect(() => {
     if (!newVersion && !pushed) return undefined;
+
+    // [2026-09-16] THE LOOP BREAKER. SISEN: "everytime we upload new zip. the
+    // sytem will ask to update like 3-4 times on repeat".
+    //
+    // The main cause was reloading before the service worker had the new
+    // bundle (fixed in appUpdate.js, which now waits for it). This is the
+    // backstop for when a reload still fails to land — a browser that will
+    // not drop its old worker, a proxy serving stale files. Reloading again
+    // would achieve nothing except turning the screen over under someone's
+    // hands, over and over, which is precisely what was reported.
+    //
+    // So: reload itself at most ONCE per version. Come back still not
+    // running it and the strip stays up with a sentence a person can act on,
+    // and closing and reopening the app — which always works — is left to
+    // them. A push from HQ is exempt: SISEN pressed the button on purpose.
+    if (!pushed && !mayAutoReload({ served: newVersion, reloadedFor: readReloadedFor() })) {
+      setStuck(true);
+      return undefined;
+    }
+    rememberReloadFor(newVersion || "");
+
     setReloading(true);
     const cancel = reloadWhenFree({
       // No tracker means "cannot tell", and cannot-tell must read as busy —
@@ -158,10 +182,16 @@ export default function UpdateBanner() {
       <div className="pointer-events-auto flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border border-brand-700 bg-brand-600 px-4 py-2.5 text-white shadow-xl">
         <RefreshCw size={15} className={`shrink-0 ${reloading ? "animate-spin" : ""}`} />
         <div className="min-w-0">
+          {/* [2026-09-16] `stuck` means this tab already reloaded itself for
+              this version and came back still not running it. Saying "waiting
+              for a free moment" then would be a lie — nothing is coming. It
+              says what actually works instead. */}
           <p className="truncate text-sm font-semibold">
-            {pushed ? t("upd_pushed") : t("upd_available")}
+            {stuck ? t("upd_stuck") : pushed ? t("upd_pushed") : t("upd_available")}
           </p>
-          <p className="truncate text-[11px] text-brand-100/80">{t("upd_waiting")}</p>
+          <p className="truncate text-[11px] text-brand-100/80">
+            {stuck ? t("upd_stuck_why") : t("upd_waiting")}
+          </p>
         </div>
         <button
           type="button"
