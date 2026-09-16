@@ -17,6 +17,8 @@ import {
   onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
   suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline, forgetPendingTransaction, createPaymentOffline,
 } from "../offlineQueue.js";
+import { paddyTypeOptions, isOtherPaddyType } from "../paddyTypes.js";
+import { usePaddyTypes } from "../usePaddyTypes.js";
 
 // Same reasoning as the offline queue's own lookups: don't let a slow/no
 // internet connection make a background phone lookup hang and, worse,
@@ -39,47 +41,29 @@ const BOARD_LOAD_TIMEOUT_MS = 12000;
 // PHONE_LOOKUP_TIMEOUT_MS on a slow connection before falling back.
 const STOCK_LOOKUP_TIMEOUT_MS = 8000;
 
-// The ONLY paddy types shown by default — deliberately just these 5, in
-// this order, not whatever else happens to already be sitting in the
-// products table from earlier testing/history. Each option is labeled
-// "1. សែន ក្រអូប" etc. so staff can jump straight to one just by pressing
-// its number key while the list is focused (standard dropdown behavior:
-// typing a character jumps to the option whose label starts with it) —
-// the full name is still right there next to the number, never hidden.
-// A type typed in via "+ Add new type…" (see productOptions below) is
-// remembered on this device and appended after these as 6, 7, ... — see
-// addCustomPaddyType/getCustomPaddyTypes.
-const PADDY_TYPE_SEED = ["សែន ក្រអូប", "ផ្កា ម្លីះ", "ស្រង៉ែ", "ផ្កា រំដួល", "5451"];
+// [2026-09-15] The paddy type list used to live here, as a hardcoded array
+// of 5 names plus a per-device localStorage list of anything staff had typed
+// in. That is what made every station's dropdown different, and what let the
+// same rice become a separate paddy type at each station — 51 transactions
+// and 52 tickets had to be merged back by hand.
+//
+// It now comes from the products table, the one list all five stations
+// share. See src/paddyTypes.js for the whole story. Options are still
+// labeled "1. សែន ក្រអូប" so staff can jump to one by pressing its number,
+// and the order is still stable — but nothing on this screen can invent a
+// paddy type any more.
+//
+// Vehicle types below are UNCHANGED and keep the old growable-list pattern:
+// a made-up vehicle type costs nothing, a made-up paddy type costs a
+// negative stock balance.
 
-// A staff-typed paddy type that isn't one of the 5 above still gets saved
-// as a real product record on the server (via resolveProductIdOffline,
-// unchanged) — but the dropdown itself intentionally does NOT pull in
-// every product that's ever existed in that table (old test data, one-off
-// typos, etc. would otherwise clutter it right back up). Instead, this
-// device remembers just the types actually added here, so the list stays
-// exactly "the 5, plus whatever's genuinely been typed in since."
-const CUSTOM_PADDY_TYPES_KEY = "ptw_custom_paddy_types_v1";
-function getCustomPaddyTypes() {
-  try {
-    const raw = localStorage.getItem(CUSTOM_PADDY_TYPES_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-function addCustomPaddyType(name) {
-  const trimmed = (name || "").trim();
-  if (!trimmed) return;
-  try {
-    const list = getCustomPaddyTypes();
-    if (!list.some((n) => n.toLowerCase() === trimmed.toLowerCase())) {
-      list.push(trimmed);
-      localStorage.setItem(CUSTOM_PADDY_TYPES_KEY, JSON.stringify(list));
-    }
-  } catch {
-    // Storage full/unavailable — worst case this device just re-offers
-    // "+ Add new type…" again next time instead of remembering it.
-  }
+// One dropdown option's label. The catch-all type's own name is Khmer, so
+// in English it carries a gloss ("ផ្សេងៗ · Other"); in Khmer the gloss IS
+// the name, so it is not repeated.
+function paddyOptionLabel(name, t) {
+  if (!isOtherPaddyType(name)) return name;
+  const gloss = t("wt_other_paddy_type");
+  return gloss && gloss !== name ? `${name} · ${gloss}` : name;
 }
 
 // Vehicle type on the New Ticket form — same growable-list pattern as
@@ -414,24 +398,21 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // it can ride along with the ticket from the very start instead of
   // waiting until Finish Ticket to show up.
   const [savedBank, setSavedBank] = useState(null);
-  const { session } = useAuth();
-  // Paddy types to choose from: exactly the 5-item starter list, plus
-  // anything staff have typed in via "+ Add new type…" on this device
-  // (see addCustomPaddyType above) — deliberately NOT everything that
-  // happens to already exist in the products table.
-  const [productOptions] = useState(() => {
-    const seen = new Set(PADDY_TYPE_SEED.map((n) => n.toLowerCase()));
-    const extras = getCustomPaddyTypes().filter((name) => {
-      const key = (name || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return [...PADDY_TYPE_SEED, ...extras];
-  });
-  // Whether the Product field is showing the dropdown list, or a text box
-  // for typing a brand new type not already on it.
+  const { session, profile } = useAuth();
+  // The paddy types, from the products table — the same list at all five
+  // stations. See src/paddyTypes.js.
+  const { types: paddyTypes, loaded: paddyTypesLoaded } = usePaddyTypes();
+  const productOptions = useMemo(() => paddyTypeOptions(paddyTypes), [paddyTypes]);
+  // Only the Owner may create a paddy type. Everyone else picks from the
+  // list, or takes the truck through "Other" — which never creates one.
+  const canAddPaddyType = !!profile?.isOwner;
+  // Whether the Product field is showing the dropdown list, or (Owner only)
+  // a text box for typing a brand new type not already on it.
   const [productIsCustom, setProductIsCustom] = useState(false);
+  // When "Other" is picked, what the rice actually is, in staff's own words.
+  // Saved onto the ticket's note so the Owner can re-assign it later; the
+  // paddy type itself stays "Other" and no new type is created.
+  const [otherNote, setOtherNote] = useState("");
   // Which staff member actually filled in this ticket — separate from the
   // logged-in account, since a station's login is often shared by several
   // people during a shift.
@@ -707,6 +688,12 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       setError(t(isBuyTicket ? "err_need_ticket_fields_buy" : "err_need_ticket_fields_sell"));
       return;
     }
+    // "Other" without saying what it is would be untraceable later — the
+    // whole point of Other is that the Owner can re-assign it afterwards.
+    if (isBuyTicket && isOtherPaddyType(productName) && !otherNote.trim()) {
+      setError(t("err_need_other_paddy_note"));
+      return;
+    }
     // Truck keeps the original required-plate rule. Koyun/Tractor (and any
     // custom type someone adds later) use a bag count instead, which is
     // optional — a station may just not have counted bags for every load.
@@ -769,10 +756,9 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     try {
       const partyId = await resolvePartyIdOffline(partyName, type === "BUY" ? "supplier" : "buyer", locationId, { phone });
       const productId = await resolveProductIdOffline(productName);
-      // Remember a brand new paddy type on this device so it shows up as
-      // its own numbered option next time (see PADDY_TYPE_SEED above) —
-      // a no-op if it was already picked from the list.
-      if (productIsCustom) addCustomPaddyType(productName);
+      // [2026-09-15] No addCustomPaddyType here any more. A paddy type is
+      // only ever created by the Owner picking "+ Add new type…", and it is
+      // created in the products table — never remembered on one device.
       // Same for a newly-typed vehicle type and a newly-typed "Buyer"/"Seller" name.
       if (vehicleTypeIsCustom) addCustomVehicleType(vehicleType);
       if (recordedByIsCustom) addRecordedByName(locationId, recordedByName);
@@ -794,6 +780,9 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         carPlate, driverName, productId, productName: productName.trim(), userId: session.user.id,
         paperTicketNo: paperTicketNo.trim(),
         recordedByName: recordedByName.trim(),
+        // Only set when "Other" was picked — what the rice actually is, so
+        // the Owner can re-assign the ticket to a real type later.
+        note: isOtherPaddyType(productName) && otherNote.trim() ? otherNote.trim() : undefined,
         bankName: savedBank?.bankName || undefined,
         bankAccount: savedBank?.bankAccount || undefined,
         bankQrUrl: savedBank?.bankQrUrl || undefined,
@@ -953,14 +942,14 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                   value={productName}
                   onChange={(e) => setProductName(e.target.value)}
                   className={fieldCls}
-                  placeholder="Type the new paddy type"
+                  placeholder={t("wt_type_new_paddy_type")}
                 />
                 <button
                   type="button"
                   onClick={() => { setProductIsCustom(false); setProductName(""); }}
                   className="mt-1 text-xs font-medium text-brand-600 hover:underline"
                 >
-                  ← Back to list
+                  ← {t("wt_back_to_list")}
                 </button>
               </div>
             ) : (
@@ -969,13 +958,36 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 onChange={(e) => {
                   if (e.target.value === "__other__") { setProductIsCustom(true); setProductName(""); }
                   else setProductName(e.target.value);
+                  setOtherNote("");
                 }}
                 className={fieldCls}
               >
-                <option value="" disabled>Select paddy type…</option>
-                {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
-                <option value="__other__">+ Add new type…</option>
+                <option value="" disabled>
+                  {productOptions.length || paddyTypesLoaded ? t("wt_select_paddy_type") : t("wt_loading_paddy_types")}
+                </option>
+                {productOptions.map((name, i) => (
+                  <option key={name} value={name}>
+                    {i + 1}. {paddyOptionLabel(name, t)}
+                  </option>
+                ))}
+                {/* [2026-09-15] Owner only. A station adding its own type is
+                    exactly what made five different lists. */}
+                {canAddPaddyType && <option value="__other__">+ {t("wt_add_new_type")}</option>}
               </select>
+            )}
+            {/* Picked Other — say what it actually is, so it can be
+                re-assigned to a real type later instead of being lost. */}
+            {!productIsCustom && isOtherPaddyType(productName) && (
+              <div className="mt-2">
+                <input
+                  autoFocus
+                  value={otherNote}
+                  onChange={(e) => setOtherNote(e.target.value)}
+                  className={fieldCls}
+                  placeholder={t("wt_other_paddy_note_placeholder")}
+                />
+                <p className="mt-1 text-xs text-slate-500">{t("wt_other_paddy_note_hint")}</p>
+              </div>
             )}
           </div>
         )}
@@ -1095,26 +1107,19 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
   // (nothing to warn about until they actually change it), same rule
   // submit() below already used.
   const [liveDupHint, setLiveDupHint] = useState(null);
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
 
-  // Same seed-list + "whatever's been typed on this device before" approach
-  // as NewTicketModal, plus the ticket's own current product tacked on if
-  // it isn't already one of those — otherwise the dropdown would open with
-  // nothing selected even though the ticket clearly has a product on it.
-  const [productOptions] = useState(() => {
-    const seen = new Set(PADDY_TYPE_SEED.map((n) => n.toLowerCase()));
-    const extras = getCustomPaddyTypes().filter((name) => {
-      const key = (name || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    const all = [...PADDY_TYPE_SEED, ...extras];
-    const current = (ticket.product_name || "").trim();
-    if (current && !all.some((n) => n.toLowerCase() === current.toLowerCase())) all.push(current);
-    return all;
-  });
-  const [productIsCustom, setProductIsCustom] = useState(() => !productOptions.includes((ticket.product_name || "").trim()));
+  // The shared list, same as NewTicketModal, plus this ticket's OWN current
+  // paddy type if it is no longer one of them — otherwise editing an old
+  // ticket would silently blank a type it plainly has. paddyTypeOptions
+  // handles that, and appends Other.
+  const { types: paddyTypes } = usePaddyTypes();
+  const productOptions = useMemo(
+    () => paddyTypeOptions(paddyTypes, ticket.product_name),
+    [paddyTypes, ticket.product_name],
+  );
+  const canAddPaddyType = !!profile?.isOwner;
+  const [productIsCustom, setProductIsCustom] = useState(false);
 
   const partyOptions = useMemo(() => {
     const matchType = isBuy ? "supplier" : "buyer";
@@ -1189,7 +1194,6 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
     try {
       const partyId = await resolvePartyIdOffline(partyName, isBuy ? "supplier" : "buyer", ticket.location_id, { phone });
       const productId = await resolveProductIdOffline(productName);
-      if (productIsCustom) addCustomPaddyType(productName);
       const updated = editTicketOffline(ticket.id, {
         partyId, partyName: partyName.trim(), phone,
         carPlate, driverName, productId, productName: productName.trim(),
@@ -1249,8 +1253,8 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
           <label className={labelCls}>Product (paddy type)<span className="font-khmer block text-brand-600">ផលិតផល (ប្រភេទស្រូវ)</span></label>
           {productIsCustom ? (
             <div>
-              <input autoFocus value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder="Type the paddy type" />
-              <button type="button" onClick={() => setProductIsCustom(false)} className="mt-1 text-xs font-medium text-brand-600 hover:underline">← Back to list</button>
+              <input autoFocus value={productName} onChange={(e) => setProductName(e.target.value)} className={inputCls} placeholder={t("wt_type_new_paddy_type")} />
+              <button type="button" onClick={() => setProductIsCustom(false)} className="mt-1 text-xs font-medium text-brand-600 hover:underline">← {t("wt_back_to_list")}</button>
             </div>
           ) : (
             <select
@@ -1261,9 +1265,13 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
               }}
               className={inputCls}
             >
-              <option value="" disabled>Select paddy type…</option>
-              {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
-              <option value="__other__">+ Add new type…</option>
+              <option value="" disabled>{t("wt_select_paddy_type")}</option>
+              {productOptions.map((name, i) => (
+                <option key={name} value={name}>
+                  {i + 1}. {paddyOptionLabel(name, t)}
+                </option>
+              ))}
+              {canAddPaddyType && <option value="__other__">+ {t("wt_add_new_type")}</option>}
             </select>
           )}
         </div>
@@ -1322,19 +1330,18 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   // New Ticket (see NewTicketModal's own comment on this), since a Sell
   // draws from stock rather than creating it, so it makes more sense to
   // choose once it's actually known what's on hand. Falls back to the same
-  // growable local list New Ticket/Edit Ticket use if nothing loads.
+  // shared products list New Ticket/Edit Ticket use if nothing loads.
+  //
+  // [2026-09-15] Other reaches this screen the same way any other type
+  // does — through inStockProducts. So Other paddy can be SOLD if some was
+  // bought and not yet re-assigned, and cannot be conjured up if none was.
   const [productName, setProductName] = useState(ticket.product_name || "");
   const [productIsCustom, setProductIsCustom] = useState(false);
-  const [productOptions] = useState(() => {
-    const seen = new Set(PADDY_TYPE_SEED.map((n) => n.toLowerCase()));
-    const extras = getCustomPaddyTypes().filter((name) => {
-      const key = (name || "").trim().toLowerCase();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    return [...PADDY_TYPE_SEED, ...extras];
-  });
+  const { types: paddyTypes } = usePaddyTypes();
+  const productOptions = useMemo(
+    () => paddyTypeOptions(paddyTypes, ticket.product_name),
+    [paddyTypes, ticket.product_name],
+  );
   // null = still loading; [] = loaded, nothing currently in stock at this
   // station (falls back to productOptions above, with a warning shown).
   const [inStockProducts, setInStockProducts] = useState(null);
@@ -1373,7 +1380,9 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   // ticket (audit #11).
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState("");
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
+  // Owner only — see NewTicketModal.
+  const canAddPaddyType = !!profile?.isOwner;
 
   // Cash-or-bank-transfer, and the actual bank details/QR, aren't known
   // until now — the farmer only decides during the paper quality/price
@@ -1492,7 +1501,6 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // below builds the real transaction from the ticket's own fields.
       if (!isBuy) {
         const productId = await resolveProductIdOffline(productName);
-        if (productIsCustom) addCustomPaddyType(productName);
         editTicketOffline(ticket.id, { productId, productName: productName.trim(), userId: session.user.id });
       }
       const finalBankQrUrl = isBuy && bankName && bankName !== "Cash" ? bankQrUrl : null;
@@ -1661,9 +1669,9 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
             {productIsCustom ? (
               <div>
                 <NewTicketFieldLabel icon="🌱" en="Paddy Type" km="ផលិតផល" lang={lang} />
-                <input autoFocus value={productName} onChange={(e) => setProductName(e.target.value)} className={fieldCls} placeholder="Type the paddy type" />
+                <input autoFocus value={productName} onChange={(e) => setProductName(e.target.value)} className={fieldCls} placeholder={t("wt_type_new_paddy_type")} />
                 <button type="button" onClick={() => { setProductIsCustom(false); setProductName(""); }} className="mt-1 text-xs font-medium text-rose-600 hover:underline">
-                  ← Back to list
+                  ← {t("wt_back_to_list")}
                 </button>
               </div>
             ) : inStockProducts === null ? (
@@ -1684,7 +1692,9 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                 >
                   <option value="" disabled>Select from what's in stock…</option>
                   {inStockProducts.map((p) => <option key={p.id} value={p.name}>{p.name} — {fmt2(p.kg)} kg in stock</option>)}
-                  <option value="__other__">Something else / not listed…</option>
+                  {/* [2026-09-15] Owner only. Selling a type that is not in
+                      stock here is a stock error, not a new paddy type. */}
+                  {canAddPaddyType && <option value="__other__">+ {t("wt_add_new_type")}</option>}
                 </select>
               </div>
             ) : (
@@ -1699,9 +1709,13 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                   }}
                   className={fieldCls}
                 >
-                  <option value="" disabled>Select paddy type…</option>
-                  {productOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
-                  <option value="__other__">+ Add new type…</option>
+                  <option value="" disabled>{t("wt_select_paddy_type")}</option>
+                  {productOptions.map((name, i) => (
+                    <option key={name} value={name}>
+                      {i + 1}. {paddyOptionLabel(name, t)}
+                    </option>
+                  ))}
+                  {canAddPaddyType && <option value="__other__">+ {t("wt_add_new_type")}</option>}
                 </select>
               </div>
             )}

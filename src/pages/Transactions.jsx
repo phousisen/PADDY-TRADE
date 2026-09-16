@@ -14,6 +14,8 @@ import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { onSyncStatusChange, getCachedTransactions, mergeServerTransactions, isTransactionPendingSync, getCachedPayments, mergeServerPayments, withTimeout } from "../offlineQueue.js";
 import { downloadLedgerWorkbook } from "../ledgerExport.js";
 import { cambodiaTimestamp } from "../reportExport.js";
+import { paddyTypeOptions, paddyTypeNames, isOtherPaddyType } from "../paddyTypes.js";
+import { cleanProductName, findProductByName } from "../productName.js";
 import Receipt from "./Receipt.jsx";
 
 // Bounds how long a fresh load waits on the server before giving up and
@@ -114,20 +116,28 @@ async function resolvePartyId(typedName, originalName, originalPartyId, type) {
 }
 
 // Same idea as resolvePartyId above, for the paddy type (product) field in
-// Edit Transaction — keep the original product if untouched, reuse an
-// existing product on an exact name match, or create a new one. Mirrors
-// resolveProductIdOffline in offlineQueue.js (the New Buy/Sell form's own
-// version of this), just as a direct online call rather than going through
-// the offline queue — Edit Transaction is already an online-only,
-// password-confirmed action.
+// Edit Transaction — keep the original paddy type if untouched, otherwise
+// find the one that was chosen. Two things changed here on 2026-09-15:
+//
+//   1. IT NO LONGER CREATES A PADDY TYPE. It used to end with
+//      `api.createProduct(trimmed)`, so editing a transaction and mistyping
+//      the product minted a new type on the spot. The field above is now a
+//      dropdown over the existing types, so a miss should be impossible —
+//      this throws rather than inventing one if it somehow happens.
+//
+//   2. Matching was `.trim().toLowerCase()`, which does not see the
+//      zero-width characters a Khmer keyboard inserts, so it could fail to
+//      find a type that was plainly already there — and then create a second
+//      copy of it. findProductByName uses the same key the database's unique
+//      index uses. See src/productName.js.
 async function resolveProductId(typedName, originalName, originalProductId) {
-  const trimmed = (typedName || "").trim();
-  if (trimmed === (originalName || "").trim()) return originalProductId;
+  const wanted = cleanProductName(typedName);
+  if (!wanted) return originalProductId;
+  if (wanted === cleanProductName(originalName)) return originalProductId;
   const all = await api.getProducts().catch(() => []);
-  const exact = (all || []).find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
-  if (exact) return exact.id;
-  const created = await api.createProduct(trimmed);
-  return created.id;
+  const match = findProductByName(all, wanted);
+  if (match) return match.id;
+  throw new Error(`"${wanted}" is not one of the paddy types. Pick one from the list.`);
 }
 
 function RequestChangeModal({ tx, t, onClose, onSubmit }) {
@@ -460,6 +470,13 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
   const [productQuery, setProductQuery] = useState(initialProductName);
   const [products, setProducts] = useState([]);
   useEffect(() => { api.getProducts().then(setProducts).catch(() => {}); }, []);
+  // [2026-09-15] The shared paddy type list, with this transaction's own
+  // current type kept on it even if that type no longer exists — otherwise
+  // opening an old transaction would show a blank paddy type.
+  const paddyOptions = useMemo(
+    () => paddyTypeOptions(paddyTypeNames(products), initialProductName),
+    [products, initialProductName],
+  );
   const [quantityKg, setQuantityKg] = useState(String(tx.quantity_kg ?? ""));
   const [pricePerKg, setPricePerKg] = useState(String(tx.price_per_kg ?? ""));
   const [qualityGrade, setQualityGrade] = useState(tx.quality_grade || "");
@@ -652,15 +669,26 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
 
             <div className="col-span-2">
               <label className="mb-1 block text-xs text-slate-500">{t("product")}</label>
-              <input list="et-product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)}
-                placeholder="Type or pick a product"
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-              <datalist id="et-product-options">
-                {products.map((p) => <option key={p.id} value={p.name} />)}
-              </datalist>
+              {/* [2026-09-15] Was a free-text box. Editing a transaction and
+                  mistyping the paddy type created a new type — see
+                  resolveProductId above. A dropdown cannot. */}
+              <select
+                value={paddyOptions.includes(productQuery) ? productQuery : ""}
+                onChange={(e) => setProductQuery(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              >
+                <option value="" disabled>{t("wt_select_paddy_type")}</option>
+                {paddyOptions.map((name) => (
+                  <option key={name} value={name}>
+                    {isOtherPaddyType(name) && t("wt_other_paddy_type") !== name
+                      ? `${name} · ${t("wt_other_paddy_type")}`
+                      : name}
+                  </option>
+                ))}
+              </select>
               {productQuery.trim() && productQuery.trim() !== initialProductName.trim() && (
                 <p className="mt-1 text-[11px] text-slate-400">
-                  Will be matched to an existing product with this name, or added as new, when saved.
+                  This transaction will move to {productQuery.trim()} when saved.
                 </p>
               )}
             </div>

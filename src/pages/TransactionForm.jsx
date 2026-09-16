@@ -15,6 +15,7 @@ import {
   suggestNextPaperTicketNo, recordPaperTicketNo, getCachedTransactions,
   incrementTicketNo, getCachedTickets,
 } from "../offlineQueue.js";
+import { paddyTypeOptions, paddyTypeNames, isOtherPaddyType } from "../paddyTypes.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -77,6 +78,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [stations, setStations] = useState([]);
   const [stationsLoaded, setStationsLoaded] = useState(false);
   const [products, setProducts] = useState([]);
+  // [2026-09-15] The paddy types to offer, from the shared list — same
+  // options here as at the weighbridge. This form only ever creates a new
+  // transaction, so there is no existing value to preserve on the list.
+  // `products` above is still loaded for everything else that uses it.
+  const paddyOptions = useMemo(() => paddyTypeOptions(paddyTypeNames(products)), [products]);
   const [parties, setParties] = useState([]);
   const [settings, setSettings] = useState({});
   const [stationId, setStationId] = useState("");
@@ -684,10 +690,25 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               <div className={`mt-3 grid grid-cols-1 gap-3 ${isBuy ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                 <div>
                   <label className={labelCls}>{t("product")}</label>
-                  <input list="product-options" value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Type or pick" className={inputCls} />
-                  <datalist id="product-options">
-                    {products.map((p) => <option key={p.id} value={p.name} />)}
-                  </datalist>
+                  {/* [2026-09-15] Was a free-text box with a datalist. A
+                      datalist SUGGESTS; it does not constrain — anything
+                      typed here became a brand new paddy type. Now it is a
+                      real dropdown over the shared list, same as the
+                      weighbridge form. */}
+                  <select
+                    value={paddyOptions.includes(productQuery) ? productQuery : ""}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="" disabled>{t("wt_select_paddy_type")}</option>
+                    {paddyOptions.map((name) => (
+                      <option key={name} value={name}>
+                        {isOtherPaddyType(name) && t("wt_other_paddy_type") !== name
+                          ? `${name} · ${t("wt_other_paddy_type")}`
+                          : name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 {isBuy && (
                   <div>
