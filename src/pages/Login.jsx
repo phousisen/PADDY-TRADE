@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Warehouse, Languages } from "lucide-react";
 import { useAuth } from "../AuthContext.jsx";
 import { useLanguage } from "../i18n.jsx";
-import { toLoginEmail } from "../loginName.js";
+import { loginCandidates } from "../loginName.js";
 
 export default function Login() {
   const { login } = useAuth();
@@ -19,9 +19,19 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const err = await login(toLoginEmail(email), password);
+    // [2026-09-16] A typed name can belong to either house domain — the
+    // new accounts on paddytrade.com, or older ones like
+    // boss@paddytrade.local. Try each until one is accepted, so nobody has
+    // to know which era their account comes from. A real address, and a
+    // correct password on the first domain, both stop at one attempt.
+    const candidates = loginCandidates(email);
+    let err = null;
+    for (const address of candidates) {
+      err = await login(address, password);
+      if (!err) break;
+    }
     setLoading(false);
-    if (err) setError(t("login_error"));
+    if (err || candidates.length === 0) setError(t("login_error"));
   }
 
   return (
