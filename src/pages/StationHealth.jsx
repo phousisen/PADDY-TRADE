@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import StationVersions from "../components/StationVersions.jsx";
 import { api } from "../api.js";
 import { getAccurateNow } from "../supabaseClient.js";
 
@@ -85,6 +86,13 @@ export default function StationHealth() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title="Station Health" subtitle="How recently each station has recorded activity" />
       <main className="flex-1 overflow-y-auto bg-paper p-6">
+        {/* [2026-09-16] Which version each station is running, and the
+            button that pushes a new one to all of them. It sits above the
+            activity cards because "are they on the new code?" is the
+            question that had no answer at all until today — a station can
+            look perfectly active here and still be three days behind, which
+            is exactly what Reang Kesey was. */}
+        <StationVersions />
         <div className="mb-5 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
           <Activity size={14} className="mt-0.5 shrink-0 text-slate-300" />
           <span>

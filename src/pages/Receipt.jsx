@@ -164,7 +164,11 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone }) {
             <div className="card-h">តម្លៃ និង ការទូទាត់ · Price &amp; Payment</div>
             <div className="row price"><span className="k">Price / kg</span><span className="v">{tx.price_per_kg != null ? fmtRiel(tx.price_per_kg) : "—"}</span></div>
             <div className="row"><span className="k">Bank</span><span className="v">—</span></div>
-            {isBuy && <div className="row"><span className="k">Staff Fee</span><span className="v">{tx.staff_fee ? fmtRiel(tx.staff_fee) : "—"}</span></div>}
+            {/* [2026-09-16] Only on a record that actually carries one. The fee
+                stopped being collected on 16 Sept — it is typed as ថ្លៃកូនដៃ on
+                Expenses now — but every receipt printed before that must still
+                reprint exactly as it was issued. */}
+            {isBuy && Number(tx.staff_fee) > 0 && <div className="row"><span className="k">Staff Fee</span><span className="v">{fmtRiel(tx.staff_fee)}</span></div>}
             <div className="row"><span className="k">Account</span><span className="v">—</span></div>
           </div>
           <div className="payment-qr">

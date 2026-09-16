@@ -159,6 +159,17 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   const [outthrowPct, setOutthrowPct] = useState(String(tx.outthrow_pct ?? ""));
   const [deductionKg, setDeductionKg] = useState(String(tx.deduction_kg ?? ""));
   const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
+  // [2026-09-16] The staff / carrying fee is no longer collected on new
+  // records — SISEN: "staff fee and ថ្លៃកូនដៃ should be the same. we dont
+  // need staff fee anymore because it will be typed in the expenses
+  // instead." It is the same money, and it was being written down twice.
+  //
+  // The box stays visible on a record that ALREADY has one, and the value
+  // is still sent on every save. That is deliberate: this form recomputes
+  // the amount, so quietly dropping an old record's fee would change what
+  // the books say we paid a farmer months ago, just because somebody fixed
+  // a truck plate. History is never rewritten by an unrelated edit.
+  const hadStaffFee = Number(tx.staff_fee) > 0;
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
   const [note, setNote] = useState(tx.note || "");
@@ -312,12 +323,12 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
           </div>
         </div>
 
-        {isBuy && (
-          <div className="mt-3 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
+        {isBuy && hadStaffFee && (
+          <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+            <p className="mb-2 text-xs font-medium text-amber-800">Staff / Carrying Fee — old record</p>
             <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
               className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-            <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.</p>
+            <p className="mt-1.5 text-[11px] text-amber-700">This transaction was recorded before the fee moved to Expenses, and this amount still comes off what the seller was paid. New transactions have no such fee — ថ្លៃកូនដៃ is typed on the Expenses screen instead.</p>
           </div>
         )}
 
@@ -487,6 +498,17 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
   const [outthrowPct, setOutthrowPct] = useState(String(tx.outthrow_pct ?? ""));
   const [deductionKg, setDeductionKg] = useState(String(tx.deduction_kg ?? ""));
   const [staffFee, setStaffFee] = useState(String(tx.staff_fee ?? ""));
+  // [2026-09-16] The staff / carrying fee is no longer collected on new
+  // records — SISEN: "staff fee and ថ្លៃកូនដៃ should be the same. we dont
+  // need staff fee anymore because it will be typed in the expenses
+  // instead." It is the same money, and it was being written down twice.
+  //
+  // The box stays visible on a record that ALREADY has one, and the value
+  // is still sent on every save. That is deliberate: this form recomputes
+  // the amount, so quietly dropping an old record's fee would change what
+  // the books say we paid a farmer months ago, just because somebody fixed
+  // a truck plate. History is never rewritten by an unrelated edit.
+  const hadStaffFee = Number(tx.staff_fee) > 0;
   const [carPlate, setCarPlate] = useState(tx.car_plate || "");
   const [driverName, setDriverName] = useState(tx.driver_name || "");
   const [paperTicketNo, setPaperTicketNo] = useState(tx.paper_ticket_no || "");
@@ -837,12 +859,12 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
             </div>
           </div>
 
-          {isBuy && (
-            <div className="mt-3 rounded-lg border border-slate-200 p-3">
-              <p className="mb-2 text-xs font-medium text-slate-500">Staff / Carrying Fee (optional)</p>
+          {isBuy && hadStaffFee && (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
+              <p className="mb-2 text-xs font-medium text-amber-800">Staff / Carrying Fee — old record</p>
               <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
                 className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-              <p className="mt-1.5 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — comes off what they're paid.</p>
+              <p className="mt-1.5 text-[11px] text-amber-700">This transaction was recorded before the fee moved to Expenses, and this amount still comes off what the seller was paid. New transactions have no such fee — ថ្លៃកូនដៃ is typed on the Expenses screen instead.</p>
             </div>
           )}
 

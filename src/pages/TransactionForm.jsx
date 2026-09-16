@@ -153,7 +153,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const [mixturePct, setMixturePct] = useState("");
   const [outthrowPct, setOutthrowPct] = useState("");
   const [deductionKg, setDeductionKg] = useState("");
-  const [staffFee, setStaffFee] = useState("");
   const [note, setNote] = useState("");
   const [receiptPhotoUrl, setReceiptPhotoUrl] = useState(null);
   const [paymentProofUrl, setPaymentProofUrl] = useState(null);
@@ -284,15 +283,16 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   // voluntarily; it's just no longer a blocker.
   const showPaymentProofUpload = !isBuy && (paymentStatus === "paid" || paymentStatus === "deposit");
   const total = payableKg * (parseFloat(pricePerKg) || 0);
-  // Staff/carrying fee — rare, only when our own staff carries the paddy
-  // for a farmer with no labor of their own — comes off the goods amount
-  // before VAT, the same way the weight deduction above comes off before
-  // pricing.
-  const staffFeeAmt = isBuy ? (parseFloat(staffFee) || 0) : 0;
-  const netSubtotal = Math.max(0, total - staffFeeAmt);
+  // [2026-09-16] The staff / carrying fee used to come off the goods amount
+  // here. SISEN: "staff fee and ថ្លៃកូនដៃ should be the same. we dont need
+  // staff fee anymore because it will be typed in the expenses instead." It
+  // was the same money recorded twice — deducted from the farmer here, and
+  // typed again as ថ្លៃកូនដៃ on Expenses. The farmer is now paid the full
+  // weight × price and the fee is our own cost, recorded once, in Expenses.
+  const netSubtotal = Math.max(0, total);
   const taxAmount = taxApplicable ? Math.round(netSubtotal * (parseFloat(taxRate) || 0)) / 100 : 0;
   const totalWithTax = netSubtotal + taxAmount;
-  const hasBreakdown = taxApplicable || staffFeeAmt > 0;
+  const hasBreakdown = taxApplicable;
   const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
   const effectiveLocationId = isAdmin ? stationId : profile?.location_id;
 
@@ -475,7 +475,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         taxApplicable, taxRate: parseFloat(taxRate) || 0,
         moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
-        staffFee: staffFeeAmt,
+        staffFee: 0,
         note: note.trim() || null,
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
@@ -908,14 +908,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               <p className="mt-2 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.</p>
             </Fold>
 
-            {isBuy && (
-              <Fold title="Staff / carrying fee" hint="only if our men unloaded for them" filled={!!staffFee}>
-                <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
-                  className={`max-w-[200px] ${inputCls}`} />
-                <p className="mt-2 text-[11px] text-slate-400">Only if our staff had to carry the paddy for this seller because they had no labor of their own — this amount is charged to them and comes off what they're paid.</p>
-              </Fold>
-            )}
-
             <Fold
               title="VAT & photos"
               hint="tax, receipt photo, payment proof"
@@ -963,12 +955,6 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <p className="mt-2 text-xs text-brand-100/70">{fmt2(payableKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
                 {hasBreakdown && (
                   <div className="mt-3 space-y-1 border-t border-white/20 pt-3">
-                    {staffFeeAmt > 0 && (
-                      <div className="flex justify-between text-xs text-brand-100/80">
-                        <span>Staff / Carrying Fee</span>
-                        <span>-{fmtRiel(staffFeeAmt)}</span>
-                      </div>
-                    )}
                     {taxApplicable && (
                       <div className="flex justify-between text-xs text-brand-100/80">
                         <span>VAT ({taxRate || 0}%)</span>

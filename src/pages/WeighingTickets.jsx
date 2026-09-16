@@ -1355,7 +1355,6 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   // relying on staff just leaving the box empty — it also blanks/locks the
   // price field so nobody accidentally types a placeholder number in.
   const [priceNotGiven, setPriceNotGiven] = useState(false);
-  const [staffFee, setStaffFee] = useState("");
   const [taxApplicable, setTaxApplicable] = useState(false);
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
@@ -1441,8 +1440,21 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     ? (ticket.gross_kg || 0) - (parseFloat(tareWeight) || 0)
     : (parseFloat(tareWeight) || 0) - (ticket.gross_kg || 0));
   const payableKg = Math.max(0, netKg - (parseFloat(deductionKg) || 0));
-  const staffFeeAmt = isBuy ? (parseFloat(staffFee) || 0) : 0;
-  const subtotal = Math.max(0, payableKg * (priceNotGiven ? 0 : (parseFloat(pricePerKg) || 0)) - staffFeeAmt);
+  // [2026-09-16] THE STAFF / CARRYING FEE IS GONE FROM NEW TICKETS.
+  //
+  // SISEN: "staff fee and ថ្លៃកូនដៃ should be the same. we dont need staff fee
+  // anymore because it will be typed in the expenses instead."
+  //
+  // It was the same money written down twice — taken off the farmer's payment
+  // here, and typed again as ថ្លៃកូនដៃ on the Expenses screen. From today a
+  // ticket pays the farmer the full weight × price, and the fee is our own
+  // cost, recorded once, in Expenses.
+  //
+  // NOTHING IS REWRITTEN. The column stays, the arithmetic stays, and every
+  // ticket that already carries a fee still prints and totals exactly as it
+  // did. New tickets simply send 0, which makes the subtraction a no-op. A
+  // fee line only appears on a document that actually has one.
+  const subtotal = Math.max(0, payableKg * (priceNotGiven ? 0 : (parseFloat(pricePerKg) || 0)));
   const taxAmount = taxApplicable ? Math.round(subtotal * (parseFloat(taxRate) || 0)) / 100 : 0;
   const total = subtotal + taxAmount;
 
@@ -1514,7 +1526,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       setTicketPriceOffline(ticket.id, {
         qualityGrade, moisturePct: parseFloat(moisturePct) || 0, mixturePct: parseFloat(mixturePct) || 0,
         outthrowPct: parseFloat(outthrowPct) || 0, deductionKg: parseFloat(deductionKg) || 0,
-        pricePerKg: finalPricePerKg, staffFee: parseFloat(staffFee) || 0,
+        pricePerKg: finalPricePerKg, staffFee: 0,
         taxApplicable, taxRate: parseFloat(taxRate) || 0, priceNote, userId: session.user.id, decline: false,
         bankName, bankAccount, bankQrUrl: finalBankQrUrl,
       });
@@ -1741,9 +1753,6 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           )}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-3">
-          {isBuy && (
-            <div><NewTicketFieldLabel icon="💰" en="Staff / Carrying Fee (optional)" km="ថ្លៃសេវា (ស្រេចចិត្ត)" lang={lang} /><input type="number" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} className={fieldCls} /></div>
-          )}
           <div>
             <NewTicketFieldLabel icon="⭐" en="Paddy Quality (optional)" km="ថ្នាក់គុណភាព (ស្រេចចិត្ត)" lang={lang} />
             {/* [2026-09-11] A / B / C, not 1 / 2 / 3.
@@ -2259,7 +2268,7 @@ function TicketSlip({ ticket, onClose }) {
                 <div className="card-h">តម្លៃ និង ការទូទាត់ · Price &amp; Payment</div>
                 <div className="row price"><span className="k">Price / kg</span><span className="v">{ticket.price_per_kg != null ? fmtRiel(ticket.price_per_kg) : "—"}</span></div>
                 <div className="row"><span className="k">Bank</span><span className="v">{ticket.bank_name || "—"}</span></div>
-                {isBuy && <div className="row"><span className="k">Staff Fee</span><span className="v">{ticket.staff_fee ? fmtRiel(ticket.staff_fee) : "—"}</span></div>}
+                {isBuy && Number(ticket.staff_fee) > 0 && <div className="row"><span className="k">Staff Fee</span><span className="v">{fmtRiel(ticket.staff_fee)}</span></div>}
                 <div className="row"><span className="k">Account</span><span className="v">{ticket.bank_account || "—"}</span></div>
               </div>
               <div className="payment-qr">

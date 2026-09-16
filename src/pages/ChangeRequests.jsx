@@ -62,7 +62,11 @@ function summarizeChanges(req) {
     { label: "Payment Status", cur: tx.payment_status, next: p.paymentStatus },
     { label: "VAT", cur: tx.tax_applicable ? `${tx.tax_rate}%` : "No", next: p.taxApplicable ? `${p.taxRate}%` : "No" },
     { label: "Deduction (kg)", cur: fmt2(tx.deduction_kg), next: fmt2(p.deductionKg) },
-    ...(isBuy ? [{ label: "Staff/Carrying Fee", cur: fmtRiel(tx.staff_fee || 0), next: fmtRiel(p.staffFee || 0) }] : []),
+    // [2026-09-16] Only where a fee actually exists on one side or the
+    // other. New transactions have none — it is typed as ថ្លៃកូនដៃ on the
+    // Expenses screen instead — but a request raised against an older
+    // transaction must still show it.
+    ...(isBuy && (Number(tx.staff_fee) > 0 || Number(p.staffFee) > 0) ? [{ label: "Staff/Carrying Fee", cur: fmtRiel(tx.staff_fee || 0), next: fmtRiel(p.staffFee || 0) }] : []),
     { label: "Moisture/Mixture/Outthrow %", cur: `${tx.moisture_pct || 0}/${tx.mixture_pct || 0}/${tx.outthrow_pct || 0}`, next: `${p.moisturePct || 0}/${p.mixturePct || 0}/${p.outthrowPct || 0}` },
     { label: "Car Plate", cur: tx.car_plate || "—", next: p.carPlate || "—" },
     { label: "Truck/Driver Name", cur: tx.driver_name || "—", next: p.driverName || "—" },
@@ -185,7 +189,7 @@ function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, o
             <DiffRow label="Payment Status" current={tx.payment_status} proposed={p.paymentStatus} />
             <DiffRow label="VAT" current={tx.tax_applicable ? `${tx.tax_rate}%` : "No"} proposed={p.taxApplicable ? `${p.taxRate}%` : "No"} />
             <DiffRow label="Deduction (kg)" current={fmt2(tx.deduction_kg)} proposed={fmt2(p.deductionKg)} />
-            {isBuy && <DiffRow label="Staff / Carrying Fee" current={fmtRiel(tx.staff_fee || 0)} proposed={fmtRiel(p.staffFee || 0)} />}
+            {isBuy && (Number(tx.staff_fee) > 0 || Number(p.staffFee) > 0) && <DiffRow label="Staff / Carrying Fee" current={fmtRiel(tx.staff_fee || 0)} proposed={fmtRiel(p.staffFee || 0)} />}
             <DiffRow label="Moisture / Mixture / Outthrow %" current={`${tx.moisture_pct || 0} / ${tx.mixture_pct || 0} / ${tx.outthrow_pct || 0}`} proposed={`${p.moisturePct || 0} / ${p.mixturePct || 0} / ${p.outthrowPct || 0}`} />
             <DiffRow label="Car Plate" current={tx.car_plate || "—"} proposed={p.carPlate || "—"} />
             <DiffRow label="Truck / Driver Name" current={tx.driver_name || "—"} proposed={p.driverName || "—"} />
