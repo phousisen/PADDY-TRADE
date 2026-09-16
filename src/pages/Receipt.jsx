@@ -3,6 +3,7 @@ import { Printer, ArrowLeft, AlertTriangle } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { api } from "../api.js";
 import { isTransactionPendingSync, onSyncStatusChange } from "../offlineQueue.js";
+import { dmy, hm } from "../dateFormat.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -19,19 +20,11 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 // date instead of borrowing the transaction's.
 function splitCambodiaTimestamp(iso) {
   if (!iso) return { date: "—", time: "—" };
-  const d = new Date(iso);
-  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
-  const parts = {};
-  new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "2-digit", year: "numeric" })
-    .formatToParts(d)
-    .forEach((p) => { parts[p.type] = p.value; });
-  const date = `${parts.day}-${parts.month}-${parts.year}`;
-  return { date, time };
+  return { date: dmy(iso), time: hm(iso) };
 }
 function ddmmyyyy(dateStr) {
   if (!dateStr) return "—";
-  const [y, m, d] = dateStr.split("-");
-  return `${d}-${m}-${y}`;
+  return dmy(dateStr);
 }
 
 // ---------------------------------------------------------------------------

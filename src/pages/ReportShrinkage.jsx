@@ -4,6 +4,7 @@ import { api } from "../api.js";
 // whole tab threw a ReferenceError before it painted anything.
 import { queryRangeAdj, rangeKey } from "../reportQuery.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
+import { dmy, hm } from "../dateFormat.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -57,10 +58,7 @@ function cambodiaDateOnly(iso) {
 
 function fmtDateTime(iso) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  const date = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "short", day: "2-digit" }).format(d);
-  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }).format(d);
-  return `${date} · ${time}`;
+  return `${dmy(iso)} · ${hm(iso)}`;
 }
 
 // Stock Loss report — a plain, honest record of how much paddy each

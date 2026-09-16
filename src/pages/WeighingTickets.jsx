@@ -19,6 +19,7 @@ import {
 } from "../offlineQueue.js";
 import { paddyTypeOptions, isOtherPaddyType } from "../paddyTypes.js";
 import { usePaddyTypes } from "../usePaddyTypes.js";
+import { dmy, dmy2, hm } from "../dateFormat.js";
 
 // Same reasoning as the offline queue's own lookups: don't let a slow/no
 // internet connection make a background phone lookup hang and, worse,
@@ -162,10 +163,7 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 // same way.
 function splitCambodiaTimestamp(iso) {
   if (!iso) return { date: "—", time: "—" };
-  const d = new Date(iso);
-  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "2-digit" }).format(d);
-  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
-  return { date, time };
+  return { date: dmy2(iso), time: hm(iso) };
 }
 
 // These are the underlying stages a ticket moves through in the database
@@ -331,7 +329,7 @@ function SanityWarningModal({ warning, onBack, onConfirm, confirming }) {
     <Modal title={`Heads up — Ticket #${warning.ticketNo} already used`} onClose={onBack}>
       <p className="mb-4 text-sm text-slate-500">
         This Quality Ticket No. is already recorded here{warning.match?.party_name ? ` for ${warning.match.party_name}` : ""}
-        {warning.match?.created_at ? ` on ${new Date(warning.match.created_at).toLocaleDateString()}` : ""}. Double-check the number on the paper slip. If it really is the same number used twice, you can still save — it'll be flagged for an admin to look into.
+        {warning.match?.created_at ? ` · ${dmy(warning.match.created_at)}` : ""}. Double-check the number on the paper slip. If it really is the same number used twice, you can still save — it'll be flagged for an admin to look into.
       </p>
       <div className="flex justify-end gap-2">
         <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
@@ -838,7 +836,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           {liveDupHint && (
             <p className="mt-1 text-xs font-semibold text-amber-600">
               ⚠ Already used{liveDupHint.match?.party_name ? ` — ${liveDupHint.match.party_name}` : ""}
-              {liveDupHint.match?.created_at ? `, ${new Date(liveDupHint.match.created_at).toLocaleDateString()}` : ""}
+              {liveDupHint.match?.created_at ? ` · ${dmy(liveDupHint.match.created_at)}` : ""}
             </p>
           )}
         </div>
@@ -1230,7 +1228,7 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
           {liveDupHint && (
             <p className="mt-1 text-xs font-semibold text-amber-600">
               ⚠ Already used{liveDupHint.match?.party_name ? ` — ${liveDupHint.match.party_name}` : ""}
-              {liveDupHint.match?.created_at ? `, ${new Date(liveDupHint.match.created_at).toLocaleDateString()}` : ""}
+              {liveDupHint.match?.created_at ? ` · ${dmy(liveDupHint.match.created_at)}` : ""}
             </p>
           )}
         </div>
@@ -2545,7 +2543,7 @@ export default function WeighingTickets() {
                         </span>
                         {t.code}
                       </p>
-                      <p className="text-xs text-slate-400">{t.stationName}{t.tare_at ? ` · finished ${new Date(t.tare_at).toLocaleTimeString("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}` : ""}</p>
+                      <p className="text-xs text-slate-400">{t.stationName}{t.tare_at ? ` · ${hm(t.tare_at)}` : ""}</p>
                     </div>
                     <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
                   </div>
@@ -2592,7 +2590,7 @@ export default function WeighingTickets() {
                     ) : <span />}
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-slate-300">
-                        {t.gross_at ? new Date(t.gross_at).toLocaleTimeString("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" }) : ""}
+                        {t.gross_at ? hm(t.gross_at) : ""}
                       </span>
                       {tab === "waiting" && !isViewOnly && (
                         <button onClick={() => setEditTicket(t)} className="text-slate-400 hover:text-brand-600" title="Edit ticket info"><Pencil size={14} /></button>

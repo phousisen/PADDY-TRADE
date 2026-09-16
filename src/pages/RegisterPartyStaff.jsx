@@ -22,6 +22,7 @@ import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
 import { getCachedParties, addCachedParty, setCachedParties, enqueue, trySync, newId, logAuditOffline } from "../offlineQueue.js";
 import { useLanguage } from "../i18n.jsx";
+import { dmyTime } from "../dateFormat.js";
 
 const inputCls = "w-full rounded-lg border border-slate-300 px-4 py-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1.5 block text-sm font-medium text-slate-600";
@@ -348,7 +349,7 @@ export default function RegisterPartyStaff() {
             {pendingBank && (
               <div className="col-span-2 rounded-lg border-2 border-amber-300 bg-amber-50 p-3 text-sm">
                 <p className="font-bold text-amber-800">⚠ Bank change requested via QR page — not applied yet</p>
-                <p className="mt-1 text-amber-800">Requested: <span className="font-mono">{pendingBank.name || "—"} · {pendingBank.account || "—"}</span>{pendingBank.at ? ` · ${new Date(pendingBank.at).toLocaleString()}` : ""}</p>
+                <p className="mt-1 text-amber-800">Requested: <span className="font-mono">{pendingBank.name || "—"} · {pendingBank.account || "—"}</span>{pendingBank.at ? ` · ${dmyTime(pendingBank.at)}` : ""}</p>
                 <p className="mt-1 text-xs text-amber-700">Only apply this if you have confirmed it with the farmer in person or by calling the number on file. Anyone holding a receipt could have submitted it.</p>
                 <div className="mt-2 flex gap-2">
                   <button type="button" onClick={() => { set("bankName", pendingBank.name); setBankIsOther(!!pendingBank.name && !BANK_OPTIONS.includes(pendingBank.name)); set("bankAccount", pendingBank.account); if (pendingBank.qr) set("bankQrUrl", pendingBank.qr); setPendingBank({ ...pendingBank, applied: true }); }}

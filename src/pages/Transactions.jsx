@@ -17,6 +17,7 @@ import { cambodiaTimestamp } from "../reportExport.js";
 import { paddyTypeOptions, paddyTypeNames, isOtherPaddyType } from "../paddyTypes.js";
 import { cleanProductName, findProductByName } from "../productName.js";
 import Receipt from "./Receipt.jsx";
+import { dm, dmy, hm } from "../dateFormat.js";
 
 // Bounds how long a fresh load waits on the server before giving up and
 // falling back to whatever's cached on this device (see load() below) —
@@ -45,9 +46,7 @@ function fmtTime(t) {
 // timezone, same reasoning as every other date helper in this file.
 function fmtWeighTime(iso) {
   if (!iso) return "";
-  return new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit",
-  }).format(new Date(iso));
+  return `${dm(iso)} ${hm(iso)}`;
 }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
 // viewing device's own timezone/clock setting.
@@ -715,7 +714,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
                 <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
                   <p className="text-xs text-amber-800">
                     <strong>Heads up:</strong> "{dupWarning.ticketNo}" is already recorded here{dupWarning.match?.party_name ? ` for ${dupWarning.match.party_name}` : ""}
-                    {dupWarning.match?.created_at ? ` on ${new Date(dupWarning.match.created_at).toLocaleDateString()}` : ""}. Double-check the paper slip — if it's really the same number twice, you can still save; it'll be flagged for an admin to look into.
+                    {dupWarning.match?.created_at ? ` · ${dmy(dupWarning.match.created_at)}` : ""}. Double-check the paper slip — if it's really the same number twice, you can still save; it'll be flagged for an admin to look into.
                   </p>
                   <button type="button" disabled={saving} onClick={doSave}
                     className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60">
@@ -982,7 +981,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                         {p.pay_date}
                         {p.created_at && (
                           <span className="ml-1 text-slate-400">
-                            {new Date(p.created_at).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })}
+                            {hm(p.created_at)}
                           </span>
                         )}
                         {voided && (

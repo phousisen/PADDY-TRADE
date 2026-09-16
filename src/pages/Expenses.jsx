@@ -51,8 +51,9 @@ import {
 } from "../expenseCategories.js";
 import {
   windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
-  stationsOn, weekdayOf, childGrain, daysInWindow, mergeByCategory, periodLabel,
+  stationsOn, childGrain, daysInWindow, mergeByCategory, periodLabel,
 } from "../expenseBook.js";
+import { dmyTime, weekday } from "../dateFormat.js";
 
 const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(n || 0));
 const riel = (n) => `${fmt(n)} ៛`;
@@ -278,7 +279,7 @@ function DaySheet({
                     )}
                     {edit && (
                       <span className="block text-[11px] text-slate-400">
-                        {t("ex_changed_by")} {edit.by} · {new Date(edit.at).toLocaleString("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        {t("ex_changed_by")} {edit.by} · {dmyTime(edit.at)}
                         {edit.from != null && <> · {fmt(edit.from)} → {fmt(edit.to)}</>}
                       </span>
                     )}
@@ -617,7 +618,7 @@ export default function Expenses() {
                   <div className="ml-auto flex items-center gap-1">
                     <button type="button" onClick={() => setAnchor(shiftAnchor(grain, anchor, -1))}
                       className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-500 hover:bg-slate-50">‹</button>
-                    <span className="min-w-[110px] text-center text-xs font-semibold text-slate-600">{win.label}</span>
+                    <span className="min-w-[110px] text-center text-xs font-semibold text-slate-600">{win.label || t("ex_all_years")}</span>
                     <button type="button" onClick={() => setAnchor(shiftAnchor(grain, anchor, 1))}
                       className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-500 hover:bg-slate-50">›</button>
                   </div>
@@ -696,7 +697,7 @@ export default function Expenses() {
                             className={`cursor-pointer border-b border-slate-50 ${isOpen ? "bg-brand-50" : "hover:bg-slate-50"}`}>
                             <td className="px-4 py-2 text-slate-700">
                               <b className={p.empty ? "font-medium text-slate-400" : ""}>{p.label}</b>
-                              {grain === "day" && <span className="ml-1.5 text-[11px] text-slate-400">{weekdayOf(p.key)}</span>}
+                              {grain === "day" && <span className="ml-1.5 text-[11px] text-slate-400">{weekday(p.key, t)}</span>}
                               {p.empty && <span className="ml-2 text-[11px] text-slate-400">{t("ex_not_entered")}</span>}
                             </td>
                             <Num v={p.empty ? null : p.commission} cls="font-semibold text-amber-700" />
@@ -776,13 +777,13 @@ export default function Expenses() {
 
                     {!rows.length && (
                       <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">
-                        Nothing recorded in {win.label}.
+                        {t("ex_nothing_in")} {win.label || t("ex_all_years")}
                       </td></tr>
                     )}
 
                     {rows.length > 0 && (
                       <tr className="border-t-2 border-slate-300 font-bold">
-                        <td className="px-4 py-2 text-slate-700">{win.label}</td>
+                        <td className="px-4 py-2 text-slate-700">{win.label || t("ex_all_years")}</td>
                         <Num v={sum.commission} cls="text-amber-700" />
                         <Num v={group === "category" ? prevSum.total : sum.other} cls="text-slate-600" />
                         <Num v={sum.total} cls="text-slate-900" />

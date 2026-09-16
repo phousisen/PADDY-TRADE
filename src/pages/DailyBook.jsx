@@ -12,6 +12,7 @@ import { api } from "../api.js";
 import LocationFilter from "../components/LocationFilter.jsx";
 import Topbar from "../components/Topbar.jsx";
 import { useLanguage } from "../i18n.jsx";
+import { dayWithWeekday, range, my } from "../dateFormat.js";
 import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
 
 const GRAINS = [
@@ -21,12 +22,9 @@ const GRAINS = [
   ["year", "Year total"],
 ];
 
-// Month names come from the dictionary now, so a Khmer session says កញ្ញា.
-const MONTH_KEYS = ["mon_1","mon_2","mon_3","mon_4","mon_5","mon_6","mon_7","mon_8","mon_9","mon_10","mon_11","mon_12"];
-const MONTHS = ["January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December"];
-const MS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+// [2026-09-16] The English month and weekday arrays that used to sit here are
+// gone. Dates are digits now — 15/09/2026 — and the weekday is the only word,
+// translated. See src/dateFormat.js.
 
 // ---- formatting -----------------------------------------------------------
 // Decimals sit in a lighter grey so the eye lands on the whole kilos.
@@ -49,24 +47,17 @@ function Signed({ v, dark }) {
   );
 }
 
-function labelFor(period, grain) {
+function labelFor(period, grain, t) {
+  const days = `${period.days.length} ${t("db_trading_days")}`;
   if (grain === "days") {
-    const [y, m, d] = period.key.split("-").map(Number);
-    const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
-    return { main: `${DW[dow]} ${String(d).padStart(2, "0")} ${MS[m - 1]}`, sub: "" };
+    return { main: dayWithWeekday(period.key, t), sub: "" };
   }
   if (grain === "weeks") {
     const f = period.days[0], l = period.days[period.days.length - 1];
-    const fd = Number(f.date.slice(8)), ld = Number(l.date.slice(8));
-    return {
-      main: `Week ${period.key.slice(6)}`,
-      sub: `${fd} ${MS[Number(f.date.slice(5, 7)) - 1]} – ${ld} ${MS[Number(l.date.slice(5, 7)) - 1]} · ${period.days.length} trading days`,
-    };
+    return { main: range(f.date, l.date), sub: days };
   }
-  if (grain === "months") {
-    return { main: `${MONTHS[Number(period.key.slice(5, 7)) - 1]} ${period.key.slice(0, 4)}`, sub: `${period.days.length} trading days` };
-  }
-  return { main: period.key, sub: `${period.days.length} trading days` };
+  if (grain === "months") return { main: my(period.key), sub: days };
+  return { main: period.key, sub: days };
 }
 
 // ---- the row --------------------------------------------------------------
@@ -340,7 +331,7 @@ export default function DailyBook() {
           disabled={grain === "year"}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-700 disabled:opacity-50">
           <option value="">Whole year {year}</option>
-          {months.map((m) => <option key={m} value={m}>{MONTHS[Number(m.slice(5, 7)) - 1]} {m.slice(0, 4)}</option>)}
+          {months.map((m) => <option key={m} value={m}>{my(m)}</option>)}
         </select>
         <span className="rounded-md bg-gold-50 px-2 py-0.5 text-[10.5px] font-semibold text-gold-700 ring-1 ring-gold-300">
           Auto-generated · read only
@@ -396,7 +387,7 @@ export default function DailyBook() {
                 </thead>
                 <tbody>
                   {periods.map((p, i) => {
-                    const { main, sub } = labelFor(p, grain);
+                    const { main, sub } = labelFor(p, grain, t);
                     const isDay = grain === "days";
                     const day = isDay ? p.days[0] : null;
                     const isOpen = isDay && open === p.key;
@@ -433,7 +424,7 @@ export default function DailyBook() {
                     );
                   })}
                   <LedgerRow variant="total"
-                    label={month ? `${t(MONTH_KEYS[Number(month.slice(5, 7)) - 1])} ${t("db_total")}` : `${year} ${t("db_total")}`}
+                    label={month ? `${my(month)} ${t("db_total")}` : `${year} ${t("db_total")}`}
                     sub={`${totals.days} ${t("db_trading_days")}`} sums={totals} t={t} />
                 </tbody>
               </table>

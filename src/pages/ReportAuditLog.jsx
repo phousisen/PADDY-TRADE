@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { rangeKey } from "../reportQuery.js";
 import { TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
+import { dmyTime } from "../dateFormat.js";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 // Every timestamp elsewhere in PaddyTrade is shown in Cambodia's own
@@ -11,10 +12,7 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 // different time to anyone viewing from outside Cambodia's timezone.
 function fmtCambodiaDateTime(iso) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(d);
-  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
-  return `${date}, ${time}`;
+  return dmyTime(iso);
 }
 
 const ACTION_META = {

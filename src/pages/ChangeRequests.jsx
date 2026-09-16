@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
+import { dmy, dmyTime } from "../dateFormat.js";
 
 // [2026-09-01] "Ticket Queue" design (Option B) — status carried by a
 // colored left edge on each row/card instead of a filled pill background,
@@ -32,14 +33,11 @@ function cambodiaDateStr(d = getAccurateNow()) {
 // from outside Cambodia's timezone.
 function fmtCambodiaDateTime(iso) {
   if (!iso) return "—";
-  const d = new Date(iso);
-  const date = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(d);
-  const time = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
-  return `${date}, ${time}`;
+  return dmyTime(iso);
 }
 function fmtCambodiaDate(iso) {
   if (!iso) return "—";
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso));
+  return dmy(iso);
 }
 
 // [2026-09-01] Powers the redesigned list's "What They're Trying to

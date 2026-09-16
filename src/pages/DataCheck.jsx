@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ShieldCheck, Search, AlertTriangle, History, RefreshCw, CheckCircle2 } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
+import { dmyTime } from "../dateFormat.js";
 
 // [2026-09-09] Data Check — the screen that would have caught CN 000261 on
 // the day instead of six days later.
@@ -99,12 +100,7 @@ function fmtValue(v) {
   // Timestamps are shown in Cambodia time, same as every other screen.
   if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
     const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) {
-      return new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "2-digit", year: "numeric",
-        hour: "2-digit", minute: "2-digit", hour12: false,
-      }).format(d);
-    }
+    if (!Number.isNaN(d.getTime())) return dmyTime(d);
   }
   return s.length > 60 ? `${s.slice(0, 60)}…` : s;
 }
@@ -113,10 +109,7 @@ function fmtWhen(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(d);
+  return dmyTime(d);
 }
 
 // What actually changed between the two snapshots. An INSERT has no
