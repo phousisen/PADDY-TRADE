@@ -3,9 +3,13 @@ import { createContext, useContext, useEffect, useState } from "react";
 export const translations = {
   en: {
     appName: "PaddyTrade",
-    login_title: "Sign in to PaddyTrade", login_subtitle: "Enter your email and password",
+    login_title: "Sign in to PaddyTrade", login_subtitle: "Enter your name and password",
     email: "Email", password: "Password", sign_in: "Sign In", signing_in: "Signing in...",
-    login_error: "Incorrect email or password.",
+    // [2026-09-16] A login is stored as an email address because that is all
+    // the database will hold, but nobody has to type the "@" part — see
+    // loginName.js. So the box is labelled for what people actually enter.
+    login_name: "Name", login_name_hint: "boss, or 012934050",
+    login_error: "Incorrect name or password.",
     nav_dashboard: "Dashboard", nav_stock: "Stock Inventory", nav_transactions: "Transactions",
     nav_suppliers: "Farmers", nav_buyers: "Buyers", nav_stations: "Locations",
     nav_reports: "Finance", nav_settings: "Settings", nav_help: "Help", nav_requests: "Change Requests",
@@ -1140,9 +1144,10 @@ export const translations = {
   },
   km: {
     appName: "PADDYTRADE",
-    login_title: "ចូលទៅកាន់ PaddyTrade", login_subtitle: "បញ្ចូលអុីមែល និងពាក្យសម្ងាត់របស់អ្នក",
+    login_title: "ចូលទៅកាន់ PaddyTrade", login_subtitle: "បញ្ចូលឈ្មោះ និងពាក្យសម្ងាត់របស់អ្នក",
     email: "អុីមែល", password: "ពាក្យសម្ងាត់", sign_in: "ចូល", signing_in: "កំពុងចូល...",
-    login_error: "អុីមែល ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ។",
+    login_name: "ឈ្មោះចូលប្រើ", login_name_hint: "boss ឬ 012934050",
+    login_error: "ឈ្មោះ ឬពាក្យសម្ងាត់មិនត្រឹមត្រូវ។",
     nav_dashboard: "ផ្ទាំងគ្រប់គ្រង", nav_stock: "ស្តុកទំនិញ", nav_transactions: "ប្រតិបត្តិការ",
     nav_suppliers: "កសិករ", nav_buyers: "អ្នកទិញ", nav_stations: "ទីតាំង", nav_reports: "ហិរញ្ញវត្ថុ",
     nav_settings: "ការកំណត់", nav_help: "ជំនួយ", nav_requests: "សំណើផ្លាស់ប្តូរ", logout: "ចាកចេញ",
