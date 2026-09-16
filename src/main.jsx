@@ -1,7 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
-import { startUpdateChecks } from "./appUpdate.js";
 import App from "./App.jsx";
 import { AuthProvider } from "./AuthContext.jsx";
 import { LanguageProvider } from "./i18n.jsx";
@@ -17,17 +16,23 @@ import "./index.css";
 // A station PC with the installed app open all week therefore never checks,
 // and quietly runs whatever version it had when it was last opened —
 // Reang Kesey was still on pre-merge code days later and kept re-creating a
-// paddy type that had been merged away three times. See appUpdate.js.
+// paddy type that had been merged away three times.
 //
-// The registration now asks once an hour while the app sits open. What
-// happens when an update IS found is unchanged — autoUpdate + skipWaiting
-// already reload the page — but the asking is skipped while someone is
-// typing or a window is open over the page, so the reload can never land
-// mid-ticket. See appUpdate.js.
+// What DECIDES that an update exists, and when the page turns over, now
+// lives in appUpdate.js and UpdateBanner.jsx — a plain fetch of version.json
+// that no cache can swallow, and a reload that waits until nobody is
+// mid-ticket. This registration is unchanged and deliberately so: when the
+// reload happens, autoUpdate + skipWaiting are what make it land on the new
+// code instead of serving the old one back.
+//
+// The registration is parked on window so the banner can ask the service
+// worker to update just before it reloads. Nothing else reads it, and the
+// app works without it — a browser with no service worker at all (an old
+// phone, a private window) still gets the version check and the reload.
 registerSW({
   immediate: true,
   onRegisteredSW(_url, registration) {
-    startUpdateChecks(registration);
+    window.__paddytradeSW = registration || null;
   },
 });
 

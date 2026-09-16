@@ -459,6 +459,43 @@ const rawApi = {
     if (error) throw error;
   },
 
+  // [2026-09-16] Reports the version this browser is actually running, on the
+  // same heartbeat that already marks it active. That one string is what lets
+  // HQ answer "is Reang Kesey on the new code?" without walking there.
+  //
+  // Silent on failure, always. A station on a bad line, or one whose database
+  // has not had app_version_control.sql run yet, must carry on weighing paddy
+  // — a version report is the least important thing this app does.
+  async reportAppVersion(version) {
+    try {
+      await supabase.rpc("report_app_version", { p_version: version || null });
+    } catch {
+      // Not yet migrated, or offline. Try again on the next heartbeat.
+    }
+  },
+
+  // The moment HQ last pressed "Update all stations now", plus nothing else.
+  // Returns null when the table does not exist yet, which reads the same as
+  // "nobody has ever pushed" — so an un-migrated database simply behaves the
+  // way it did before this feature existed.
+  async getAppControl() {
+    const { data, error } = await supabase
+      .from("app_control")
+      .select("reload_requested_at, updated_at")
+      .limit(1)
+      .maybeSingle();
+    if (error) return null;
+    return data || null;
+  },
+
+  // Owner only — enforced in the database, not here. Tells every station's
+  // browser to take the new code as soon as its screen is free.
+  async requestStationReload() {
+    const { data, error } = await supabase.rpc("request_station_reload");
+    if (error) throw error;
+    return data;
+  },
+
   // Called by a user's own browser once it has acted on a forced logout,
   // so the flag doesn't linger and re-trigger on a future login.
   async acknowledgeLogout() {
@@ -2777,6 +2814,11 @@ const ALWAYS_ALLOWED = new Set([
   // by an admin).
   "touchLastSeen",
   "acknowledgeLogout",
+  // [2026-09-16] Reporting which version this browser is running is device
+  // presence, not business data, and a view-only account must still appear
+  // on the HQ version list — otherwise the one screen that says who is
+  // behind would have a blind spot exactly where nobody is watching.
+  "reportAppVersion",
 ]);
 
 function isReadOnlyMethodName(name) {

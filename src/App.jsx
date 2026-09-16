@@ -7,6 +7,7 @@ import Login from "./pages/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import DailyBook from "./pages/DailyBook.jsx";
 import MobileNav from "./components/MobileNav.jsx";
+import UpdateBanner from "./components/UpdateBanner.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import StockInventory from "./pages/StockInventory.jsx";
 import Transactions from "./pages/Transactions.jsx";
@@ -266,6 +267,13 @@ export default function App() {
           added to every page's own scroll area so this doesn't cover
           content. */}
       <MobileNav page={page} setPage={setPage} pendingRequests={pendingRequests} />
+      {/* [2026-09-16] Renders nothing on a normal day. It appears only when
+          this browser is running an older version than the server is
+          serving, or when HQ has pressed "Update all stations now" — and it
+          reloads the page itself once nobody is mid-ticket. See
+          src/appUpdate.js for why a station could otherwise sit on old code
+          for days without anyone knowing. */}
+      <UpdateBanner />
     </div>
   );
 }

@@ -12,83 +12,165 @@
 //   before any of the fixes, holding a paddy list from before the merge, and
 //   faithfully re-creating what it remembered.
 //
-// Uploading to GitHub does not reach a browser that is already open. Nothing
-// shipped can fix a station that never asks whether anything shipped.
+// Uploading to GitHub does not reach a browser that is already open.
 //
-// ── What this does ───────────────────────────────────────────────────────
+// SISEN: "everything i make an update for the system, each location doesnt
+// know or there system wont auto update until they refresh their app or
+// close and open again. how to fix this. i need a professional version of
+// the system. like top level."
 //
-// Asks, roughly once an hour, while the app sits open. The registration is
-// already configured with registerType "autoUpdate" and workbox skipWaiting
-// (see vite.config.js), so when a check finds new code the page reloads
-// itself. That behaviour is unchanged and deliberately untouched — only the
-// asking is new.
+// ── The three things a top-level version needs ───────────────────────────
 //
-// ── Why the check is gated ───────────────────────────────────────────────
+//   1. IT KNOWS. The running app compares its own stamped version against
+//      version.json on the server every few minutes. That is a plain fetch,
+//      not a service-worker question, so the answer is exact and cannot be
+//      swallowed by a cache.
 //
-// Because the reload follows the check, gating the check gates the reload.
+//   2. IT SAYS SO, AND ACTS. A strip appears at the top of the screen, and
+//      the page reloads itself as soon as the station is not in the middle
+//      of anything. Nobody has to know what a service worker is.
+//
+//   3. HQ CAN SEE AND PUSH. Every browser reports its version on the
+//      heartbeat it already sends, so one screen lists all five stations and
+//      what each is running. One button tells them all to take the new code
+//      now. See api.reportAppVersion / requestStationReload.
+//
+// ── Why the reload waits ─────────────────────────────────────────────────
+//
 // A reload discards whatever is typed and not yet saved. At 06:00 with a
 // truck on the scale and a half-entered ticket, losing that is worse than
-// running yesterday's code for another hour.
+// running yesterday's code for another ten minutes.
 //
-// So a check is skipped whenever somebody is plainly in the middle of
-// something — a field focused, or a window open over the page. Skipping
-// costs nothing: it asks again an hour later, and again when the tab is
-// brought back, and again when the connection returns. What it can never do
-// is pull the page out from under someone mid-ticket.
+// So "busy" means a field is focused or a window is open over the page AND
+// somebody has actually touched the keyboard or mouse in the last minute. A
+// screen left sitting with the cursor parked in a search box is not busy —
+// that was the flaw in the first version of this file, which could skip
+// every check for a whole working day and never say why.
+//
+// Nothing here can lose a ticket that was already typed and saved: the
+// offline queue lives in localStorage and survives a reload, which is why
+// the reload does not wait for it to drain. A station with no internet would
+// otherwise never update at all.
 
-// Frequent enough that a station can never be more than about an hour behind
-// a fix; rare enough to be invisible on a bad connection.
-export const UPDATE_CHECK_MS = 60 * 60 * 1000;
+import { APP_VERSION } from "./version.js";
+
+// Frequent enough that a station can never be far behind a fix; light
+// enough to be invisible — version.json is a few dozen bytes.
+export const VERSION_CHECK_MS = 5 * 60 * 1000;
+
+// How long the screen must be left alone before a reload is allowed.
+export const IDLE_BEFORE_RELOAD_MS = 20 * 1000;
+
+// After this long staring at the strip, a reload happens even if someone is
+// still poking at the screen. Only used for a reload HQ actually asked for —
+// an automatic one is never forced.
+export const FORCED_RELOAD_AFTER_MS = 5 * 60 * 1000;
+
+// Somebody counts as present for this long after their last keystroke.
+const ACTIVITY_WINDOW_MS = 60 * 1000;
+
+/** Where the build writes the version it produced. See vite.config.js. */
+export const VERSION_URL = "/version.json";
+
+/**
+ * Ask the server which version it is serving.
+ *
+ * Deliberately tolerant: a station with no connection fails this every few
+ * minutes for as long as it is offline, and that must be silent and must
+ * never affect anything else. The scale keeps working with no internet —
+ * that is what the offline queue is for.
+ *
+ * Returns the version string, or null if it could not be read.
+ */
+export async function fetchServerVersion(fetchFn, url = VERSION_URL) {
+  // Wrapped, not passed by reference: an unbound `fetch` can be rejected as
+  // an illegal invocation in some browsers, and this is the one call the
+  // whole update mechanism rests on — it must not fail quietly on one
+  // station's browser and nowhere else.
+  const f = fetchFn || (typeof fetch === "function" ? ((...a) => fetch(...a)) : null);
+  if (!f) return null;
+  try {
+    // no-store, and a changing query, because the whole point is to bypass
+    // every cache between here and the server.
+    const res = await f(`${url}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res || !res.ok) return null;
+    const body = await res.json();
+    const v = body && typeof body.version === "string" ? body.version : null;
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Is the server serving something other than what this page is running?
+ *
+ * "dev" and a missing answer both mean "cannot tell", and cannot-tell is
+ * never treated as an update — a station must not be nagged, or reloaded,
+ * because a fetch failed.
+ */
+export function isOutdated(running, served) {
+  if (!served || !running) return false;
+  if (running === "dev" || served === "dev") return false;
+  return running !== served;
+}
 
 /**
  * Is somebody in the middle of something?
  *
- * Deliberately cautious — when in doubt it answers "yes" and the check waits
- * for the next hour. The cost of waiting is an hour of old code; the cost of
- * being wrong is a lost ticket.
+ * Two conditions, both required:
+ *   - the screen is in a state that could hold unsaved typing (a focused
+ *     field, or a modal open over the page), AND
+ *   - a human has touched this machine in the last minute.
+ *
+ * A station PC left with the cursor in a search box overnight satisfies the
+ * first and not the second, and is correctly judged free.
  */
-export function looksBusy(doc = typeof document === "undefined" ? null : document) {
-  if (!doc) return true;
-  const el = doc.activeElement;
+export function looksBusy({ doc, lastActivityAt, now = Date.now() } = {}) {
+  const d = doc || (typeof document === "undefined" ? null : document);
+  if (!d) return true;
+  const recent = typeof lastActivityAt === "number"
+    && now - lastActivityAt < ACTIVITY_WINDOW_MS;
+  if (!recent) return false;
+  const el = d.activeElement;
   const tag = el && el.tagName ? el.tagName.toUpperCase() : "";
-  // Someone is typing.
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
   if (el && el.isContentEditable) return true;
-  // A modal is open over the page. Every modal in this app is a fixed,
-  // full-screen overlay — New Ticket, Finish Ticket, Edit, Void, Change
-  // Request, the password prompt. If the markup for those ever changes, the
-  // focus check above still covers the case that matters most.
-  if (doc.querySelector(".fixed.inset-0")) return true;
+  // Every modal in this app is a fixed, full-screen overlay — New Ticket,
+  // Finish Ticket, Edit, Void, Change Request, the password prompt.
+  if (typeof d.querySelector === "function" && d.querySelector(".fixed.inset-0")) return true;
   return false;
 }
 
 /**
- * Ask the browser to check for new code, on a timer and at the moments a
- * station PC naturally reaches without the page ever reloading.
+ * Watch for a new version and report it.
  *
- * Tolerant by design: a station with no connection fails this check every
- * hour for as long as it is offline, and that must be silent and must never
- * affect anything else. The scale keeps working with no internet — that is
- * what the offline queue is for.
+ * This module never reloads anything by itself. It tells the caller an
+ * update exists; UpdateBanner.jsx decides when the page turns over, because
+ * that decision belongs next to what is on screen.
  *
- * Returns a function that stops the checks.
+ * @returns {() => void} stop watching
  */
-export function startUpdateChecks(registration, {
-  intervalMs = UPDATE_CHECK_MS,
-  isBusy = looksBusy,
+export function watchForUpdates({
+  onUpdate,
+  running = APP_VERSION,
+  intervalMs = VERSION_CHECK_MS,
+  fetchVersion = fetchServerVersion,
 } = {}) {
-  if (!registration || typeof registration.update !== "function") return () => {};
+  let stopped = false;
+  let found = null;
 
-  const tick = () => {
-    if (isBusy()) return;
-    try {
-      const r = registration.update();
-      if (r && typeof r.catch === "function") r.catch(() => {});
-    } catch {
-      // Offline, or the browser refused. Try again next hour.
+  const tick = async () => {
+    if (stopped || found) return;
+    const served = await fetchVersion();
+    if (stopped || !served) return;
+    if (isOutdated(running, served)) {
+      found = served;
+      if (typeof onUpdate === "function") onUpdate(served);
     }
   };
 
+  tick();
   const timer = setInterval(tick, intervalMs);
 
   // Coming back to a machine that was asleep, and reconnecting after an
@@ -101,8 +183,81 @@ export function startUpdateChecks(registration, {
   if (typeof window !== "undefined") window.addEventListener("online", tick);
 
   return () => {
+    stopped = true;
     clearInterval(timer);
     if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible);
     if (typeof window !== "undefined") window.removeEventListener("online", tick);
   };
+}
+
+/**
+ * Track when a human last touched this machine.
+ *
+ * @returns {{ lastActivityAt: () => number, stop: () => void }}
+ */
+export function trackActivity(target) {
+  const el = target || (typeof window === "undefined" ? null : window);
+  let last = Date.now();
+  if (!el || typeof el.addEventListener !== "function") {
+    return { lastActivityAt: () => last, stop: () => {} };
+  }
+  const mark = () => { last = Date.now(); };
+  const events = ["keydown", "pointerdown", "wheel", "touchstart"];
+  for (const e of events) el.addEventListener(e, mark, { passive: true, capture: true });
+  return {
+    lastActivityAt: () => last,
+    stop: () => { for (const e of events) el.removeEventListener(e, mark, { capture: true }); },
+  };
+}
+
+/**
+ * Reload once the station is free — or, for a reload HQ asked for, after the
+ * deadline whether it is free or not.
+ *
+ * The service worker is asked to update first, so the reload picks up the
+ * new precached bundle rather than serving the old one back and bringing
+ * the strip straight back (see vite.config.js: autoUpdate + skipWaiting).
+ *
+ * @returns {() => void} cancel
+ */
+export function reloadWhenFree({
+  isBusy,
+  reload,
+  registration,
+  idleMs = IDLE_BEFORE_RELOAD_MS,
+  deadlineMs = null,
+  pollMs = 2000,
+  now = () => Date.now(),
+} = {}) {
+  const startedAt = now();
+  let freeSince = null;
+  let done = false;
+
+  const go = () => {
+    if (done) return;
+    done = true;
+    clearInterval(timer);
+    try {
+      const r = registration && typeof registration.update === "function"
+        ? registration.update() : null;
+      if (r && typeof r.catch === "function") r.catch(() => {});
+    } catch {
+      // Offline, or the browser refused. Reload anyway — the precache is
+      // already on the disk, and a reload is the only way to leave old code.
+    }
+    if (typeof reload === "function") reload();
+    else if (typeof window !== "undefined") window.location.reload();
+  };
+
+  const tick = () => {
+    if (done) return;
+    const t = now();
+    if (deadlineMs != null && t - startedAt >= deadlineMs) { go(); return; }
+    if (typeof isBusy === "function" && isBusy()) { freeSince = null; return; }
+    if (freeSince === null) freeSince = t;
+    else if (t - freeSince >= idleMs) go();
+  };
+
+  const timer = setInterval(tick, pollMs);
+  return () => { done = true; clearInterval(timer); };
 }
