@@ -54,6 +54,7 @@ import {
   stationsOn, childGrain, daysInWindow, mergeByCategory, periodLabel,
 } from "../expenseBook.js";
 import { dmyTime, weekday } from "../dateFormat.js";
+import { useRefetchSignal } from "../useRefetchSignal.js";
 
 const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(n || 0));
 const riel = (n) => `${fmt(n)} ៛`;
@@ -405,6 +406,7 @@ export default function Expenses() {
   const [justSaved, setJustSaved] = useState(false);
   const [edits, setEdits] = useState({});
   const [unlocked, setUnlocked] = useState(false);
+  const refetch = useRefetchSignal();
 
   async function load() {
     setLoading(true); setLoadError("");
@@ -421,7 +423,12 @@ export default function Expenses() {
       setLoadError(errText(null, err, "") || err.message || "Couldn't load expenses.");
     } finally { setLoading(false); }
   }
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  // [2026-09-16] `refetch` goes up when the app comes back to the foreground
+  // after being away, or after the login had to be renewed. On a phone the
+  // page is still the same page when it is reopened — nothing reloads and
+  // nothing re-asks — which is how SISEN's parents ended up looking at
+  // figures from hours earlier, or at zeros. See src/sessionWatch.js.
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [refetch]);
 
   const win = useMemo(() => windowFor(grain, anchor), [grain, anchor]);
   const prevWin = useMemo(() => windowFor(grain, shiftAnchor(grain, anchor, -1)), [grain, anchor]);

@@ -14,6 +14,7 @@ import Topbar from "../components/Topbar.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { dayWithWeekday, range, my } from "../dateFormat.js";
 import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
+import { useRefetchSignal } from "../useRefetchSignal.js";
 
 const GRAINS = [
   ["days", "By day"],
@@ -256,7 +257,13 @@ export default function DailyBook() {
   const to = `${year}-12-31`;
   const locKey = selectedLocationIds.join(",");
 
-  useEffect(() => { api.getLocations().then(setLocations).catch(() => {}); }, []);
+  // [2026-09-16] `refetch` goes up when the app comes back to the foreground
+  // after being away, or after the login had to be renewed. On a phone the
+  // page is still the same page when it is reopened — nothing reloads and
+  // nothing re-asks — which is how SISEN's parents ended up looking at
+  // figures from hours earlier, or at zeros. See src/sessionWatch.js.
+  const refetch = useRefetchSignal();
+  useEffect(() => { api.getLocations().then(setLocations).catch(() => {}); }, [refetch]);
 
   useEffect(() => {
     let alive = true;
@@ -274,7 +281,7 @@ export default function DailyBook() {
       .catch((e) => { if (alive) setError(e.message || "Could not load the Daily Book."); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [locKey, from, to]);
+  }, [locKey, from, to, refetch]);
 
   const days = useMemo(
     () => buildDays({ ...raw, locationIds: selectedLocationIds }),

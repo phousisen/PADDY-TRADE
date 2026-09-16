@@ -6,6 +6,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import { useRefetchSignal } from "../useRefetchSignal.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
@@ -116,6 +117,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   const [settleLoc, setSettleLoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const refetch = useRefetchSignal();
 
   async function load({ isRetry = false } = {}) {
     setLoading(true);
@@ -262,10 +264,15 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // (AuthContext's PROFILE_TIMEOUT_MS path, for a slow connection) can let
   // that happen slightly before the Supabase client's session is fully
   // attached — this re-fires load() once session actually shows up.
+  // [2026-09-16] `refetch` goes up when the app comes back to the foreground
+  // after being away, or after the login had to be renewed. On a phone the
+  // page is still the same page when it is reopened — nothing reloads and
+  // nothing re-asks — which is how SISEN's parents ended up looking at
+  // figures from hours earlier, or at zeros. See src/sessionWatch.js.
   useEffect(() => {
     if (authLoading || !session?.user?.id) return;
     load();
-  }, [authLoading, session?.user?.id, rangeStart, rangeEnd]);
+  }, [authLoading, session?.user?.id, rangeStart, rangeEnd, refetch]);
 
   const periodTxs = useMemo(
     () => txs.filter((t) => t.tx_date >= rangeStart && t.tx_date <= rangeEnd),
