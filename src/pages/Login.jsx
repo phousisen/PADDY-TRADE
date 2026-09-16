@@ -2,10 +2,14 @@ import { useState } from "react";
 import { Warehouse, Languages } from "lucide-react";
 import { useAuth } from "../AuthContext.jsx";
 import { useLanguage } from "../i18n.jsx";
+import { toLoginEmail } from "../loginName.js";
 
 export default function Login() {
   const { login } = useAuth();
   const { lang, setLang, t } = useLanguage();
+  // Named `email` because that is what the database column is called. What
+  // a person types here is a NAME — "boss", "012934050" — and toLoginEmail
+  // puts the domain on. See loginName.js.
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -15,7 +19,7 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const err = await login(email.trim(), password);
+    const err = await login(toLoginEmail(email), password);
     setLoading(false);
     if (err) setError(t("login_error"));
   }
@@ -36,14 +40,23 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label className="mb-1 block text-xs text-slate-500">{t("email")}</label>
+              <label className="mb-1 block text-xs text-slate-500">{t("login_name")}</label>
+              {/* [2026-09-16] A plain text box, deliberately. Given the email
+                  input type the browser itself refuses to submit a value with
+                  no "@" in it, before any of our code gets to run — so a bare
+                  name would be impossible however loginName.js behaves.
+                  Guarded by scripts-check-login.mjs. */}
               <input
-                type="email"
+                type="text"
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                placeholder="you@paddytrade.local"
+                placeholder={t("login_name_hint")}
               />
             </div>
             <div>
