@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { registerSW } from "virtual:pwa-register";
+import { startUpdateChecks } from "./appUpdate.js";
 import App from "./App.jsx";
 import { AuthProvider } from "./AuthContext.jsx";
 import { LanguageProvider } from "./i18n.jsx";
@@ -11,7 +12,24 @@ import "./index.css";
 // (tickets, transactions, etc.) still needs a live connection to sync,
 // same as before. `immediate: true` activates the offline copy right
 // away instead of waiting for the next full page reload.
-registerSW({ immediate: true });
+//
+// [2026-09-16] A service worker only looks for new code when the page LOADS.
+// A station PC with the installed app open all week therefore never checks,
+// and quietly runs whatever version it had when it was last opened —
+// Reang Kesey was still on pre-merge code days later and kept re-creating a
+// paddy type that had been merged away three times. See appUpdate.js.
+//
+// The registration now asks once an hour while the app sits open. What
+// happens when an update IS found is unchanged — autoUpdate + skipWaiting
+// already reload the page — but the asking is skipped while someone is
+// typing or a window is open over the page, so the reload can never land
+// mid-ticket. See appUpdate.js.
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    startUpdateChecks(registration);
+  },
+});
 
 // Stops the mouse scroll wheel from silently changing the value of a
 // focused number field — a common browser quirk where scrolling the page
