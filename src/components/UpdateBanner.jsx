@@ -4,6 +4,8 @@ import { useLanguage } from "../i18n.jsx";
 import { api } from "../api.js";
 import { APP_VERSION } from "../version.js";
 import { getDeviceId, describeDevice } from "../deviceId.js";
+import { getPlace } from "../deviceNet.js";
+import { supabase } from "../supabaseClient.js";
 import {
   watchForUpdates, trackActivity, looksBusy, reloadWhenFree,
   FORCED_RELOAD_AFTER_MS,
@@ -53,8 +55,22 @@ export default function UpdateBanner() {
       // device_sessions.sql run yet it returns false, and the older
       // account-only report still happens — so an app that reaches a station
       // before the migration does still reports something useful.
-      const ok = await api.reportDevice({ deviceId, version: APP_VERSION, platform, browser });
+      // The city is a hint from a free lookup, cached for hours and silent on
+      // failure; the ADDRESS is read server-side from the request itself, so
+      // nothing here can claim to be somewhere it is not. See deviceNet.js.
+      const place = await getPlace();
+      const { ok, signOut } = await api.reportDevice({
+        deviceId, version: APP_VERSION, platform, browser,
+        city: place?.city, region: place?.region, country: place?.country,
+      });
       if (!ok) api.reportAppVersion(APP_VERSION);
+
+      // HQ has signed this machine out. The database cleared the request as
+      // it answered, so this happens once and cannot loop.
+      if (signOut) {
+        try { await supabase.auth.signOut(); } catch { /* already gone */ }
+        return;
+      }
       try {
         const control = await api.getAppControl();
         const at = control?.reload_requested_at;

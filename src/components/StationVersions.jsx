@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  RefreshCw, CheckCircle2, AlertTriangle, WifiOff, Clock, Monitor, Smartphone, Info,
+  RefreshCw, CheckCircle2, WifiOff, Clock, Monitor, Smartphone, Info, LogOut, X,
 } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -9,6 +9,7 @@ import { APP_VERSION, shortVersion } from "../version.js";
 import { dmyTime, hm } from "../dateFormat.js";
 import { deviceLabel, describeDevice } from "../deviceId.js";
 import { buildBoard } from "../deviceWatch.js";
+import { placeLabel } from "../deviceNet.js";
 import { getAccurateNow } from "../supabaseClient.js";
 
 // Everything about a station, on one line.
@@ -41,9 +42,10 @@ const CONN = {
 const RAIL = { ok: "bg-brand-600", quiet: "bg-amber-500", gone: "bg-rose-600", none: "bg-slate-300" };
 
 // One chip per device at most — five chips on a row is noise, not information.
-const FLAG_ORDER = ["behind", "shared_login", "not_a_pc", "new_device"];
+const FLAG_ORDER = ["behind", "new_network", "shared_login", "not_a_pc", "new_device"];
 const FLAG_KEY = {
   behind: "sh_behind",
+  new_network: "st_new_network",
   shared_login: "sh_shared_login",
   not_a_pc: "sh_not_a_pc",
   new_device: "sh_new_device",
@@ -69,22 +71,90 @@ function ago(iso, now, t) {
   return t("st_ago_day").replace("{n}", String(Math.round(h / 24)));
 }
 
-function DeviceLine({ d, t, now }) {
+function DeviceLine({ d, t, canSignOut, onSignOut }) {
   const Icon = d.platform === "Phone" || d.platform === "Tablet" ? Smartphone : Monitor;
   const flag = topFlag(d.flags);
+  const place = placeLabel(d);
+  const leaving = !!d.signout_requested_at;
   return (
-    <div className="flex flex-wrap items-center gap-2 py-[3px] text-[12px] text-slate-400">
+    <div className={`flex flex-wrap items-center gap-2 py-[3px] text-[12px] text-slate-400 ${leaving ? "opacity-60" : ""}`}>
       <Icon size={12} className="shrink-0 text-slate-300" />
       <span className="font-semibold text-slate-600">{d.name}</span>
       <span>{deviceLabel(d.device_id)}</span>
+      {/* The address is read server-side from the request; the place beside
+          it is a guess from a free lookup, and says so. See deviceNet.js. */}
+      {d.last_ip && <span className="font-mono text-[11px] text-slate-400">{d.last_ip}</span>}
+      {place && <span className="text-[11px] text-slate-300" title={t("st_place_hint")}>{place}</span>}
       {flag && (
         <span className="rounded border border-amber-200 bg-amber-50 px-1.5 text-[10.5px] font-semibold text-amber-700">
           {t(FLAG_KEY[flag])}
         </span>
       )}
-      <span className="ml-auto text-[11px]">
-        {d.reach === "ok" ? t("sh_just_now") : `${t("st_last_heard")} ${hm(d.last_seen_at)}`}
+      <span className="ml-auto flex items-center gap-2.5">
+        {leaving ? (
+          <span className="text-[11px] font-semibold text-rose-600">{t("st_signing_out")} · {t("st_within_a_minute")}</span>
+        ) : d.signed_out_at ? (
+          <span className="text-[11px] text-slate-400">{t("st_signed_out_at")} {hm(d.signed_out_at)}</span>
+        ) : (
+          <span className="text-[11px]">
+            {d.reach === "ok" ? t("sh_just_now") : `${t("st_last_heard")} ${hm(d.last_seen_at)}`}
+          </span>
+        )}
+        {canSignOut && !leaving && (
+          <button
+            type="button"
+            onClick={() => onSignOut(d)}
+            className={`shrink-0 rounded-md border px-2 py-px text-[11px] font-semibold ${
+              flag ? "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100"
+                : "border-slate-200 text-slate-400 hover:bg-slate-50"}`}
+          >
+            {t("st_sign_out")}
+          </button>
+        )}
       </span>
+    </div>
+  );
+}
+
+// Nothing happens until this has been read and agreed to. A sign-out is not
+// undoable and it can lose a half-typed ticket, so the person and the machine
+// are named rather than left to be remembered from whichever row was clicked.
+function ConfirmSignOut({ device, t, busy, onCancel, onConfirm }) {
+  const place = placeLabel(device);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+      <div className="w-full max-w-[430px] overflow-hidden rounded-xl bg-white shadow-2xl">
+        <div className="flex items-start gap-3 px-4 pb-3 pt-4">
+          <div className="min-w-0 flex-1">
+            <h4 className="text-base font-semibold text-slate-800">{t("st_confirm_title")}</h4>
+            <p className="mt-1 text-[13.5px] text-slate-500">{t("st_confirm_body")}</p>
+          </div>
+          <button type="button" onClick={onCancel} className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="mx-4 mb-3 rounded-lg bg-slate-50 px-3 py-2.5 text-[13px]">
+          <b className="font-semibold text-slate-800">{device.name}</b>
+          <div className="mt-0.5 text-[12px] text-slate-500">
+            {deviceLabel(device.device_id)}
+            {device.last_ip ? ` · ${device.last_ip}` : ""}
+            {place ? ` · ${place}` : ""}
+          </div>
+        </div>
+        <div className="mx-4 mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] text-slate-600">
+          {t("st_confirm_warn")}
+        </div>
+        <div className="flex justify-end gap-2 border-t border-slate-100 px-4 py-3">
+          <button type="button" onClick={onCancel}
+            className="rounded-lg border border-slate-200 px-3.5 py-2 text-[13px] font-semibold text-slate-600 hover:bg-slate-50">
+            {t("st_cancel")}
+          </button>
+          <button type="button" onClick={onConfirm} disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+            <LogOut size={13} />{t("st_sign_out")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -105,6 +175,8 @@ export default function StationVersions() {
   // is not for them, so it disappears.
   const [hidden, setHidden] = useState(false);
   const [tick, setTick] = useState(0);
+  const [confirming, setConfirming] = useState(null);
+  const [kicking, setKicking] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -181,9 +253,25 @@ export default function StationVersions() {
     }
   }
 
+  async function signOut(device) {
+    setKicking(true);
+    setError("");
+    try {
+      await api.signOutDevice(device.device_id, device.user_id);
+      setConfirming(null);
+      await load();
+    } catch (err) {
+      setError(err.message || "Couldn't sign that machine out.");
+      setConfirming(null);
+    } finally {
+      setKicking(false);
+    }
+  }
+
   if (hidden) return null;
 
-  const { stations, newest, current, deviceCount, silent } = board;
+  const { stations, newest, current, deviceCount, silent, roaming } = board;
+  const canSignOut = !!profile?.isOwner;
   const attention = stations.filter(
     (s) => s.reach === "gone" || s.behind > 0 || s.flags.some((f) => FLAG_KEY[f]),
   ).length;
@@ -299,7 +387,8 @@ export default function StationVersions() {
                     <tr>
                       <td colSpan={5} className="px-4 pb-2 pl-[38px] pt-0">
                         {s.devices.map((dv) => (
-                          <DeviceLine key={`${dv.device_id}:${dv.user_id}`} d={dv} t={t} now={now} />
+                          <DeviceLine key={`${dv.device_id}:${dv.user_id}`} d={dv} t={t}
+                            canSignOut={canSignOut} onSignOut={setConfirming} />
                         ))}
                       </td>
                     </tr>
@@ -310,6 +399,27 @@ export default function StationVersions() {
           </tbody>
         </table>
       </div>
+
+      {/* ── everyone who is not tied to a station: you, managers, registrars,
+              viewers. Listed so "how many machines is this account on" has an
+              answer for them too, never flagged — they move around by design. ── */}
+      {roaming.length > 0 && (
+        <div className="border-t border-slate-100 px-4 py-2.5">
+          <p className="mb-1 text-[9.5px] font-bold uppercase tracking-[.11em] text-slate-400">{t("st_others")}</p>
+          {roaming.map((dv) => (
+            <DeviceLine key={`${dv.device_id}:${dv.user_id}`} d={dv} t={t}
+              canSignOut={canSignOut} onSignOut={setConfirming} />
+          ))}
+        </div>
+      )}
+
+      {confirming && (
+        <ConfirmSignOut
+          device={confirming} t={t} busy={kicking}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => signOut(confirming)}
+        />
+      )}
 
       {/* ── footer: the build, the rhythm, and you ── */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-4 py-2.5 text-[11.5px] text-slate-400">
