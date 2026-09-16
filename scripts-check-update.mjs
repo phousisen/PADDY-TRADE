@@ -61,6 +61,11 @@ ok("version.json is not precached by the service worker",
    !/json/.test(glob), `globPatterns: ${glob.trim()}`);
 
 // The proven reload path must stay exactly as it was.
+// A person must be able to open /version.json and read it. Without this the
+// navigation fallback hands them the app shell instead, which looks exactly
+// like a build that never happened.
+ok("version.json is reachable by typing the address",
+   /navigateFallbackDenylist:\s*\[\/\^\\\/version\\\.json/.test(vite));
 ok('registerType is still "autoUpdate"', vite.includes('registerType: "autoUpdate"'));
 ok("skipWaiting is still on", /skipWaiting:\s*true/.test(vite));
 ok("clientsClaim is still on", /clientsClaim:\s*true/.test(vite));
@@ -198,7 +203,12 @@ ok("an un-migrated database reads as \"never pushed\", not an error",
    /async getAppControl\(\)[\s\S]{0,400}if \(error\) return null;/.test(api));
 ok("api can push", api.includes("async requestStationReload()"));
 
-ok("the HQ screen lists versions per station", versions.includes("sh_versions"));
+// [2026-09-16] Was tied to the panel's heading key, which moved when the two
+// station panels were merged into one table. A guard tied to a label punishes
+// renaming the label; this checks the thing that actually matters — that the
+// screen shows a version PER STATION, not one number for the whole company.
+ok("the HQ screen shows a version column per station",
+   versions.includes('t("st_col_version")') && versions.includes("shortVersion(shown)"));
 ok("the push button is owner-only on screen too", versions.includes("profile?.isOwner"));
 
 // ── 5. the SQL adds, and never alters ────────────────────────────────────
