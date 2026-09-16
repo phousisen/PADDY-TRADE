@@ -375,8 +375,23 @@ function DaySheet({
 
 // ───────────────────────────────────────────────────────── the one table ──
 
-function Num({ v, cls = "" }) {
-  return <td className={`py-2 pl-4 text-right tabular-nums ${cls}`}>{v == null ? <span className="text-slate-300">—</span> : fmt(v)}</td>;
+// [2026-09-16] `hide` drops a column below sm.
+//
+// SISEN: "customize to fit different phone size to make it readable." This
+// table was min-w-[560px] inside a sideways scroller on a 390pt phone, so
+// the Total column — the one anyone opens this screen for — was off the
+// edge of every row.
+//
+// Rather than rebuild a table with three grouping modes and expandable
+// rows, the middle column stands down on a phone. It is the one figure
+// here that can be worked out from the other two (total − ថ្លៃកូនដៃ), so
+// it is the only one that can be spared. The desktop table is unchanged.
+function Num({ v, cls = "", hide = false }) {
+  return (
+    <td className={`py-2 pl-2.5 text-right tabular-nums sm:pl-4 ${hide ? "hidden sm:table-cell" : ""} ${cls}`}>
+      {v == null ? <span className="text-slate-300">—</span> : fmt(v)}
+    </td>
+  );
 }
 
 export default function Expenses() {
@@ -681,12 +696,12 @@ export default function Expenses() {
 
               {/* one table */}
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
+                <table className="w-full min-w-0 text-sm sm:min-w-[560px]">
                   <thead>
                     <tr className="border-b border-slate-200 text-[10px] uppercase tracking-wider text-slate-400">
-                      <th className="px-4 py-2 text-left font-bold">{headers[0]}</th>
+                      <th className="px-2.5 py-2 text-left font-bold sm:px-4">{headers[0]}</th>
                       <th className="py-2 pl-4 text-right font-bold">ថ្លៃកូនដៃ</th>
-                      <th className="py-2 pl-4 text-right font-bold">{group === "period" || group === "station" ? t("ex_other") : prevWin.label}</th>
+                      <th className="hidden py-2 pl-4 text-right font-bold sm:table-cell">{group === "period" || group === "station" ? t("ex_other") : prevWin.label}</th>
                       <th className="py-2 pl-4 text-right font-bold">{t("ex_total")}</th>
                       <th className="w-10 px-4" />
                     </tr>
@@ -708,7 +723,7 @@ export default function Expenses() {
                               {p.empty && <span className="ml-2 text-[11px] text-slate-400">{t("ex_not_entered")}</span>}
                             </td>
                             <Num v={p.empty ? null : p.commission} cls="font-semibold text-amber-700" />
-                            <Num v={p.empty ? null : p.other} cls="text-slate-600" />
+                            <Num v={p.empty ? null : p.other} cls="text-slate-600" hide />
                             <Num v={p.empty ? null : p.total} cls="font-bold text-slate-800" />
                             <td className="px-4 text-right"><ChevronRight size={15} className={`inline text-slate-300 ${isOpen ? "rotate-90 text-brand-600" : ""}`} /></td>
                           </tr>
@@ -720,7 +735,7 @@ export default function Expenses() {
                                 {s.state === "blank" && <span className="ml-2 text-[11px] text-slate-400">{t("ex_not_entered")}</span>}
                               </td>
                               <Num v={s.state === "blank" ? null : s.commission} cls={s.state === "spent" ? "text-amber-700" : "text-slate-400"} />
-                              <Num v={s.state === "blank" ? null : s.other} cls="text-slate-500" />
+                              <Num v={s.state === "blank" ? null : s.other} cls="text-slate-500" hide />
                               <Num v={s.state === "blank" ? null : s.total} cls="text-slate-700" />
                               <td className="px-4 text-right">
                                 {canRecord && (
@@ -736,7 +751,7 @@ export default function Expenses() {
                             <tr key={c.key} className="border-b border-slate-50 bg-slate-50/70 text-[13px]">
                               <td className="py-1.5 pl-10 pr-4 text-slate-600">{c.label}</td>
                               <Num v={c.commission} cls="text-amber-700" />
-                              <Num v={c.other} cls="text-slate-500" />
+                              <Num v={c.other} cls="text-slate-500" hide />
                               <Num v={c.total} cls="text-slate-700" />
                               <td />
                             </tr>
@@ -773,7 +788,7 @@ export default function Expenses() {
                         <tr key={s.id} className="border-b border-slate-50">
                           <td className="px-4 py-2 font-medium text-slate-700">{s.name}</td>
                           <Num v={s.commission} cls="font-semibold text-amber-700" />
-                          <Num v={s.other} cls="text-slate-600" />
+                          <Num v={s.other} cls="text-slate-600" hide />
                           <Num v={s.total} cls="font-bold text-slate-800" />
                           <td className={`px-4 text-right text-[11px] tabular-nums ${diff < 0 ? "text-brand-700" : "text-slate-400"}`}>
                             {before === 0 ? "" : `${diff > 0 ? "+" : "−"}${fmt(Math.abs(diff))}`}
@@ -792,7 +807,7 @@ export default function Expenses() {
                       <tr className="border-t-2 border-slate-300 font-bold">
                         <td className="px-4 py-2 text-slate-700">{win.label || t("ex_all_years")}</td>
                         <Num v={sum.commission} cls="text-amber-700" />
-                        <Num v={group === "category" ? prevSum.total : sum.other} cls="text-slate-600" />
+                        <Num v={group === "category" ? prevSum.total : sum.other} cls="text-slate-600" hide />
                         <Num v={sum.total} cls="text-slate-900" />
                         <td />
                       </tr>

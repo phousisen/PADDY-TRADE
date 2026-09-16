@@ -492,9 +492,21 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                 {rangeLabel} · {t("dash_locations_count", { n: locations.length })}
               </span>
             </div>
-            {/* overflow-x-auto: the table scrolls sideways on its own on a
-                narrow phone instead of pushing the whole page wider. */}
-            <div className="overflow-x-auto">
+            {/* [2026-09-16] On a phone these rows are CARDS, not a table.
+                SISEN: "customize to fit different phone size to make it
+                readable", and on widths: "make sure it fit based on any
+                size of the screen".
+
+                This table is min-w-[640px] on a 390pt screen. overflow-x-auto
+                below meant it scrolled sideways rather than breaking the
+                page — correct, and useless: nobody scrolls a table sideways,
+                so every column past Bought was never read by anyone. Not
+                hidden, just never looked at, which is worse, because the
+                figures were there the whole time.
+
+                Below md the cards render instead; nothing about the table
+                changes on a computer. See LocationCards further down. */}
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-right text-[10px] uppercase tracking-[0.09em] text-slate-400">
@@ -613,6 +625,83 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                   free — it is one more thing that can disagree with itself. */}
             </table>
             </div>
+
+            {/* ---- the same rows, on a phone ---- */}
+            <div className="md:hidden">
+              {locationPerformance.map(({ loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status }) => (
+                <div
+                  key={loc.id}
+                  onClick={canOpenLocation ? () => { setSelectedLocationId(loc.id); setPage("station-detail"); } : undefined}
+                  className={`border-b border-slate-100 px-4 py-3 last:border-0 ${canOpenLocation ? "cursor-pointer active:bg-brand-50" : ""}`}
+                >
+                  {/* Station and On hand share the top line. On hand is what
+                      the row is FOR, so it gets the size — and it is the only
+                      figure here whose colour means anything. */}
+                  <div className="flex items-center justify-between gap-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${
+                        status === "attn" ? "bg-amber-500 ring-[3px] ring-amber-100"
+                        : status === "trading" ? "bg-brand-600"
+                        : "bg-slate-300"}`} />
+                      <span className="truncate font-semibold text-slate-700">{loc.name}</span>
+                    </div>
+                    {/* shrink-0 + nowrap: a weight may lose the station name
+                        beside it, never a digit of itself. */}
+                    <div className="flex shrink-0 items-baseline gap-1.5">
+                      <span className="text-[10px] uppercase tracking-wide text-slate-400">{t("col_on_hand")}</span>
+                      <span className={`whitespace-nowrap text-[18px] font-extrabold tracking-tight tabular-nums ${
+                        onHandKg < -0.01 ? "text-rose-600" : onHandKg === 0 ? "text-slate-400" : "text-slate-800"}`}>
+                        {onHandKg < 0 ? `−${fmt(Math.abs(onHandKg))}` : fmt(onHandKg)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* How it got there. auto-fit re-flows this on its own —
+                      four across on a normal phone, two rows of two on a very
+                      narrow one, four again on a Fold. No width is written
+                      down, so a screen size nobody has yet still works. */}
+                  <div
+                    className="mt-2.5 grid gap-px overflow-hidden rounded-lg border border-slate-100 bg-slate-100"
+                    style={{ gridTemplateColumns: "repeat(auto-fit, minmax(76px, 1fr))" }}
+                  >
+                    {[
+                      { k: "col_opening", v: fmt(openingKg), cls: openingKg < -0.01 ? "text-rose-600" : "text-slate-600", bg: "bg-white" },
+                      { k: "col_bought", v: boughtKg > 0 ? fmt(boughtKg) : "—", cls: boughtKg > 0 ? "text-brand-700" : "text-slate-300", bg: "bg-slate-50/70" },
+                      { k: "col_sold", v: soldKg > 0 ? `−${fmt(soldKg)}` : "—", cls: soldKg > 0 ? "text-rose-600" : "text-slate-300", bg: "bg-slate-50/70" },
+                      { k: "col_adjusted", v: adjustedKg !== 0 ? `${adjustedKg < 0 ? "−" : "+"}${fmt(Math.abs(adjustedKg))}` : "—",
+                        cls: adjustedKg === 0 ? "text-slate-300" : adjustedKg < 0 ? "text-rose-600" : "text-brand-700", bg: "bg-slate-50/70" },
+                    ].map((cell) => (
+                      <div key={cell.k} className={`min-w-0 px-2 py-1.5 text-right ${cell.bg}`}>
+                        <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-400">{t(cell.k)}</p>
+                        <p className={`whitespace-nowrap text-[12.5px] font-semibold tabular-nums ${cell.cls}`}>{cell.v}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Full width here rather than squeezed into a column — on a
+                      phone this is a thumb target, and it only ever appears
+                      against a negative shed, which cannot be real. */}
+                  {canSettleHere && onHandKg < -0.005 && (
+                    canSettle(onHandKg, ticketFloor.get(loc.id)) ? (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
+                        className="mt-2.5 w-full rounded-lg border border-brand-200 bg-brand-50 py-2 text-[12.5px] font-bold text-brand-700 active:bg-brand-100"
+                      >
+                        {t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })}
+                      </button>
+                    ) : (
+                      <p className="mt-2.5 rounded-lg border border-slate-200 bg-white py-2 text-center text-[12.5px] font-semibold text-slate-400">
+                        {t("perf_settle_blocked")}
+                      </p>
+                    )
+                  )}
+                </div>
+              ))}
+              {loading && locations.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
+              {locations.length === 0 && !loading && !loadError && <p className="px-5 py-10 text-center text-sm text-slate-400">{t("dash_no_locations")}</p>}
+            </div>
+
             {locationPerformance.length > 0 && (
               <>
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-slate-100 bg-slate-50/70 px-5 py-3 text-[11.5px] text-slate-500">

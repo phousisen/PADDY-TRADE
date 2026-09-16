@@ -126,6 +126,126 @@ function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t }) {
   );
 }
 
+// ---- the same row, as a card ---------------------------------------------
+//
+// [2026-09-16] SISEN: "customize to fit different phone size to make it
+// readable. especially for daily book" — then, on the widths: "what about
+// if its iphone or sth. make sure it fit based on any size of the screen".
+//
+// The ledger is SEVENTEEN columns — about 1,100px. On a 390pt phone that
+// is a sideways scroller, and nobody scrolls a table sideways, so every
+// column past "Bought kg" was never seen by anyone. Not hidden; just never
+// looked at, which is worse, because the figures were there all along.
+//
+// Same numbers, same order, same colours, read downward instead of across.
+// Nothing here is sized to a phone model:
+//
+//   · No fixed widths anywhere. The card fills whatever it is given —
+//     a 320pt iPhone SE, a folded Galaxy, a 717pt unfolded one, a browser
+//     window being dragged. A phone that does not exist yet is handled
+//     too, because no width is written down.
+//   · ONE element per line may shrink: the middle "8,240 kg × 700".
+//     min-w-0 + truncate is what allows that. The loads badge and the
+//     riel amount are shrink-0 and whitespace-nowrap, because losing a
+//     digit off money is the one failure that would make the row LIE.
+//     What the middle loses can be read off the numbers either side.
+//   · The closing strip re-flows itself — auto-fit at a 96px minimum, so
+//     three cells across on a normal phone, two on a very narrow one,
+//     three again on a Fold. No breakpoint decides that; the content does.
+//
+// md: and up this is not rendered at all — the table is untouched.
+function LedgerCard({ label, sub, sums, variant, onClick, t }) {
+  const tot = variant === "total";
+  const wk = variant === "week";
+  const money = (v) => Math.abs(Math.round(v || 0)).toLocaleString("en-US");
+  const kg = (v) => (Number(v) || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+  const signed = (v) => `${(v || 0) < 0 ? "−" : "+"}${money(v)}`;
+
+  const Cell = ({ label: l, value, tone }) => (
+    <div className={`min-w-0 px-2.5 py-1.5 ${tot ? "bg-brand-700" : tone === "stk" ? "bg-sky-50" : "bg-white"}`}>
+      <p className={`truncate text-[9px] font-semibold uppercase tracking-wide ${tot ? "text-brand-200" : "text-slate-400"}`}>{l}</p>
+      <p className={`whitespace-nowrap text-[12.5px] font-bold tabular-nums ${
+        tot ? "text-white" : tone === "stk" ? "text-sky-800" : "text-slate-700"}`}>{value}</p>
+    </div>
+  );
+
+  // A movement line. `n` null means this row has no loads at all — shown
+  // as a plain dash rather than a zero, which would read as a real figure.
+  const Move = ({ kind, n, weight, price, amount }) => (
+    <div className={`flex min-w-0 items-center gap-1.5 px-3 py-1.5 text-[12.5px] ${
+      kind === "buy" ? "bg-brand-600/[0.04]" : "bg-orange-600/[0.045]"}`}>
+      <span className={`shrink-0 rounded px-1 py-[3px] text-[8.5px] font-extrabold tracking-wide ${
+        kind === "buy" ? "bg-brand-100 text-brand-700" : "bg-orange-100 text-orange-700"}`}>
+        {kind === "buy" ? t("db_buy") : t("db_sell")}
+      </span>
+      <span className="inline-flex h-[19px] min-w-[21px] shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-1 text-[11px] font-bold tabular-nums text-slate-900">
+        {n || "—"}
+      </span>
+      <span className="min-w-0 flex-1 truncate tabular-nums text-slate-500">
+        {n ? <><b className="font-semibold text-slate-700">{kg(weight)}</b> kg{price ? ` × ${Number(price).toFixed(2)}` : ""}</> : <span className="text-slate-300">—</span>}
+      </span>
+      <span className={`shrink-0 whitespace-nowrap text-[12.5px] font-bold tabular-nums ${
+        n ? (kind === "buy" ? "text-brand-700" : "text-orange-700") : "text-slate-300"}`}>
+        {n ? money(amount) : "—"}
+      </span>
+    </div>
+  );
+
+  return (
+    <div
+      onClick={onClick}
+      className={`border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer active:bg-brand-50" : ""} ${
+        tot ? "bg-brand-700" : wk ? "bg-slate-50" : "bg-white"}`}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2 pt-2.5">
+        <div className="min-w-0 flex-1">
+          <b className={`block whitespace-nowrap text-[14px] font-bold tracking-tight tabular-nums ${
+            tot ? "text-white" : wk ? "text-[12.5px] uppercase tracking-wide text-slate-500" : "text-slate-900"}`}>{label}</b>
+          {sub && <small className={`block truncate text-[10.5px] ${tot ? "text-brand-200" : "text-slate-400"}`}>{sub}</small>}
+        </div>
+        {/* Profit leads. It is what the row exists to say, and the only
+            figure whose colour tells you something. */}
+        <div className="flex shrink-0 items-baseline gap-1.5">
+          <i className={`text-[9.5px] font-semibold uppercase not-italic tracking-wide ${tot ? "text-brand-200" : "text-slate-400"}`}>{t("db_profit")}</i>
+          <b className={`whitespace-nowrap text-[16px] font-extrabold tracking-tight tabular-nums ${
+            tot ? "text-white" : (sums.profit || 0) < 0 ? "text-rose-600" : "text-brand-700"}`}>
+            {signed(sums.profit)}<u className={`ml-px text-[10px] font-semibold no-underline ${tot ? "text-brand-200" : "text-slate-400"}`}>៛</u>
+          </b>
+        </div>
+      </div>
+
+      {/* Week and month rows are summaries — they have no single price, so
+          the movement lines would print a meaningless average. They get the
+          strip only. */}
+      {!tot && !wk && (
+        <>
+          <Move kind="buy" n={sums.buyLoads} weight={sums.boughtKg} price={sums.buyPricePerKg} amount={sums.spent} />
+          <Move kind="sell" n={sums.sellLoads} weight={sums.soldKg} price={sums.soldKg ? (sums.received / sums.soldKg) : 0} amount={sums.received} />
+        </>
+      )}
+
+      <div
+        className="grid gap-px border-t border-slate-100 bg-slate-100"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))" }}
+      >
+        {tot || wk ? (
+          <>
+            <Cell label={t("db_buy")} value={`${kg(sums.boughtKg)} kg`} />
+            <Cell label={t("db_sell")} value={`${kg(sums.soldKg)} kg`} />
+            <Cell label={t("db_cash")} value={signed(sums.cash)} />
+          </>
+        ) : (
+          <>
+            <Cell label={t("db_expenses")} value={money(sums.expenses)} />
+            <Cell label={t("db_closing_kg")} value={`${kg(sums.closingKg)} kg`} tone="stk" />
+            <Cell label={t("db_cash")} value={signed(sums.cash)} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ---- the day drawer -------------------------------------------------------
 function DayDrawer({ day, txs, payments }) {
   const { t } = useLanguage();
@@ -136,11 +256,17 @@ function DayDrawer({ day, txs, payments }) {
   const mix = [day.truck && `${day.truck} truck`, day.koyun && `${day.koyun} koyun`,
     day.tractor && `${day.tractor} tractor`, day.otherVeh && `${day.otherVeh} other`].filter(Boolean).join(" · ");
 
+  // [2026-09-16] `w-40` on the money column was 160px of fixed width, which
+  // on a 320pt phone left the label about 90px and pushed the row off the
+  // side. Now min-w-0 + truncate on the label (the part you can afford to
+  // lose — you know what line you are on) and shrink-0 + nowrap on both
+  // figures, which you cannot. The money column only reserves its width
+  // from sm: up, where there is room for the columns to line up.
   const Line = ({ label, a, b, tone }) => (
-    <div className="flex items-center gap-3 border-b border-slate-50 px-4 py-2.5 text-[13px] last:border-0">
-      <span className="flex-1 text-slate-600">{label}</span>
-      <span className={`tabular-nums font-semibold ${tone === "g" ? "text-brand-700" : tone === "r" ? "text-orange-700" : "text-slate-900"}`}>{a}</span>
-      {b !== undefined && <span className="w-40 text-right tabular-nums font-semibold text-slate-900">{b}</span>}
+    <div className="flex items-center gap-2.5 border-b border-slate-50 px-4 py-2.5 text-[13px] last:border-0">
+      <span className="min-w-0 flex-1 truncate text-slate-600">{label}</span>
+      <span className={`shrink-0 whitespace-nowrap tabular-nums font-semibold ${tone === "g" ? "text-brand-700" : tone === "r" ? "text-orange-700" : "text-slate-900"}`}>{a}</span>
+      {b !== undefined && <span className="shrink-0 whitespace-nowrap text-right tabular-nums font-semibold text-slate-900 sm:w-40">{b}</span>}
     </div>
   );
   const Mini = ({ title, children }) => (
@@ -150,7 +276,35 @@ function DayDrawer({ day, txs, payments }) {
     </div>
   );
   const TicketTable = ({ rows, who }) => (
-    <div className="overflow-x-auto">
+    <>
+    {/* ---- tickets, on a phone ----
+        Six columns — ticket, vehicle, name, kg, price, amount — do not fit
+        on a phone, and the two that matter are the name and the amount. So
+        those take the top line and the rest drops to a quieter second one.
+        Nothing is dropped; it is reordered by what gets read first. */}
+    <div className="md:hidden">
+      {rows.map((tx) => (
+        <div key={tx.id} className="flex items-start gap-2.5 border-b border-slate-100 px-4 py-2.5 last:border-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate text-[13px] font-semibold text-slate-800">{tx.parties?.name || "—"}</span>
+              <span className="shrink-0 whitespace-nowrap text-[13.5px] font-bold tabular-nums text-slate-900"><Riel v={Number(tx.amount) || 0} /></span>
+            </div>
+            <div className="mt-0.5 flex items-baseline justify-between gap-2 text-[11px]">
+              <span className="truncate tabular-nums text-slate-400">
+                {tx.paper_ticket_no || tx.code || "—"}{tx.car_plate ? ` · ${tx.car_plate}` : ""}
+              </span>
+              <span className="shrink-0 whitespace-nowrap tabular-nums text-slate-500">
+                <b className="font-semibold text-slate-700"><Kg v={Number(tx.quantity_kg) || 0} /></b> kg
+                {Number(tx.price_per_kg) ? ` × ${Number(tx.price_per_kg).toFixed(2)}` : ""}
+              </span>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div className="hidden overflow-x-auto md:block">
       <table className="w-full text-[13px]">
         <thead><tr className="bg-slate-50/60">
           <th className="px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wide text-slate-400">{t("db_ticket")}</th>
@@ -174,6 +328,7 @@ function DayDrawer({ day, txs, payments }) {
         </tbody>
       </table>
     </div>
+    </>
   );
 
   return (
@@ -360,7 +515,42 @@ export default function DailyBook() {
 
         {!loading && periods.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-            <div className="overflow-x-auto">
+            {/* ---- the same ledger, on a phone ----
+                Seventeen columns is about 1,100px. Below md every period is
+                a card instead — see LedgerCard. The table is untouched. */}
+            <div className="md:hidden">
+              {periods.map((p, i) => {
+                const { main, sub } = labelFor(p, grain, t);
+                const isDay = grain === "days";
+                const day = isDay ? p.days[0] : null;
+                const isOpen = isDay && open === p.key;
+                const nextP = periods[i + 1];
+                const endsWeek = isDay && nextP && isoWeek(p.key).key !== isoWeek(nextP.key).key;
+                const lastOfAll = isDay && !nextP;
+                const weekDays = (endsWeek || lastOfAll)
+                  ? scoped.filter((d) => isoWeek(d.date).key === isoWeek(p.key).key) : null;
+                return (
+                  <Fragment key={p.key}>
+                    <LedgerCard
+                      label={main} sub={sub} sums={p.totals} t={t}
+                      onClick={isDay ? () => setOpen(isOpen ? null : p.key)
+                        : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
+                    />
+                    {isOpen && <DayDrawer day={day} txs={raw.txs} payments={raw.payments} />}
+                    {weekDays && weekDays.length > 1 && (
+                      <LedgerCard variant="week"
+                        label={`${t("db_week")} ${isoWeek(p.key).week}`} sub={`${weekDays.length} ${t("db_trading_days")}`}
+                        sums={rollup(weekDays)} t={t} />
+                    )}
+                  </Fragment>
+                );
+              })}
+              <LedgerCard variant="total"
+                label={month ? `${my(month)} ${t("db_total")}` : `${year} ${t("db_total")}`}
+                sub={`${totals.days} ${t("db_trading_days")}`} sums={totals} t={t} />
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full border-separate border-spacing-0 text-[12.5px] tabular-nums">
                 <thead>
                   <tr>
