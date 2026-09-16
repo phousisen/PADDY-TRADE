@@ -159,7 +159,18 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
             </button>
           );
         })}
-        {(moreItems.length > 0 || systemItems.length > 0) && (
+        {/* [2026-09-16] ALWAYS shown. It was briefly hidden when a view-only
+            account had no pages left to put behind it — which was true, and
+            entirely beside the point: the sheet is also the ONLY place on a
+            phone holding the language switch and Log out. Hiding the button
+            left SISEN's parents' account with no way to read the app in
+            Khmer and no way to sign out.
+
+                "where where to change language wtf. so not professional"
+
+            The sheet already draws its sections conditionally, so with no
+            pages in it, it opens straight onto the account, the language
+            and Log out — which is exactly what that account needs from it. */}
         <button
           onClick={() => setMoreOpen(true)}
           className={`flex flex-1 flex-col items-center justify-center gap-1 rounded-xl py-2 text-[11px] font-bold ${isMoreActive || moreOpen ? "bg-white/10 text-white" : "text-brand-300/70"}`}
@@ -167,7 +178,6 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
           <Menu size={22} className={isMoreActive || moreOpen ? "text-brand-400" : ""} />
           {t("more_tab")}
         </button>
-        )}
       </nav>
 
       {/* Full-screen "More" sheet — everything that isn't one of the 4
