@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Eye } from "lucide-react";
 import { api } from "../api.js";
+import { toLoginEmail, isRealAddress, LOGIN_DOMAIN } from "../loginName.js";
 
 export default function AddUserModal({ roles, locations, isOwner, onClose, onCreated }) {
   const pickableRoles = isOwner ? roles : roles.filter((r) => r.scope === "own_location");
@@ -43,11 +44,26 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
   async function submit(e) {
     e.preventDefault();
     if (!fullName.trim() || !email.trim()) {
-      setError("Fill in a name and email.");
+      setError("Fill in a full name and a login name.");
+      return;
+    }
+    // [2026-09-16] The login the database will actually store. A bare name
+    // gets the house domain put on it here, ONCE, so what is created is
+    // exactly what Login.jsx will later produce from the same typing.
+    const loginEmail = toLoginEmail(email);
+    if (!loginEmail) {
+      setError("That login name has no letters or numbers in it.");
       return;
     }
     if (mode === "password" && password.length < 6) {
-      setError("Fill in a name, email, and a password of at least 6 characters.");
+      setError("Fill in a full name, a login name, and a password of at least 6 characters.");
+      return;
+    }
+    // An invite is a real email. Sending one to boss@paddytrade.local means
+    // someone waits forever for a message that was never deliverable — so
+    // this path, and only this path, insists on a genuine address.
+    if (mode === "invite" && !isRealAddress(email)) {
+      setError("An invite needs a real email address. Use “Set a password now” for a login name.");
       return;
     }
     setSaving(true);
@@ -58,13 +74,13 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
         // Reuses the exact same account-creation path as "Set a password
         // now" below, just with a made-up password nobody uses -- see
         // api.inviteUserAccount for the full explanation.
-        await api.inviteUserAccount({ email: email.trim(), fullName: fullName.trim(), roleId, locationId: locationForRole, viewOnly });
-        setNotice(`Invite sent to ${email.trim()}. They'll get an email with a link to set their own password and sign in.`);
+        await api.inviteUserAccount({ email: loginEmail, fullName: fullName.trim(), roleId, locationId: locationForRole, viewOnly });
+        setNotice(`Invite sent to ${loginEmail}. They'll get an email with a link to set their own password and sign in.`);
         setTimeout(() => onCreated(), 3500);
         return;
       }
       const result = await api.createUserAccount({
-        email: email.trim(), password, fullName: fullName.trim(), roleId,
+        email: loginEmail, password, fullName: fullName.trim(), roleId,
         locationId: locationForRole, viewOnly,
       });
       if (!result.emailConfirmed) {
@@ -106,9 +122,28 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} autoFocus
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-            <label className="mb-1 block text-xs text-slate-500">Email</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            <label className="mb-1 block text-xs text-slate-500">
+              {mode === "invite" ? "Email address" : "Login name"}
+            </label>
+            {/* [2026-09-16] SISEN typed a phone number in here and asked
+                whether it had to be an email. It never did — boss@paddytrade.local
+                is a name with a domain stuck on it. type="text" so the browser
+                stops refusing a bare name. Guarded by scripts-check-login.mjs. */}
+            <input type="text" value={email} onChange={(e) => setEmail(e.target.value)}
+              autoCapitalize="none" autoCorrect="off" spellCheck={false}
+              placeholder={mode === "invite" ? "them@gmail.com" : "boss, or 012934050"}
+              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+            {/* Shows the whole login being built as it is typed, so whoever
+                creates the account knows what to hand over — and can see that
+                a real address is being left alone. */}
+            <p className="mb-3 mt-1 text-[11.5px] text-slate-400">
+              {mode === "invite"
+                ? "They'll receive the invite here, so it has to be a real address."
+                : email.trim()
+                  ? <>They sign in by typing <span className="font-medium text-slate-600">{email.trim()}</span>.{" "}
+                    {toLoginEmail(email) !== email.trim() && <>Stored as {toLoginEmail(email)}</>}</>
+                  : <>A name or a phone number is fine — no “@{LOGIN_DOMAIN}” to type.</>}
+            </p>
 
             {mode === "password" ? (
               <>
