@@ -31,15 +31,32 @@
 // Pure on purpose: no React, no database, so scripts-check-login.mjs can
 // run every rule in this file directly in node.
 
-// The domain put on the end of a bare name. Not a real domain — it is
-// reserved by standard (RFC 6761) precisely so it can never be routed
-// anywhere, which is the honest choice for an address that is not meant
-// to receive mail.
-export const LOGIN_DOMAIN = "paddytrade.local";
+// The domain put on the end of a bare name when an account is CREATED.
+//
+// [2026-09-16] This was `paddytrade.local` for about an hour, which was
+// the tidier choice on paper — `.local` is reserved by standard so it can
+// never route anywhere, which is honest for an address not meant to
+// receive mail. Supabase refuses it outright:
+//
+//     Email address "012934050@paddytrade.local" is invalid
+//
+// Its account system checks the domain ending against real ones. `.local`
+// is not real, so it is rejected — and no amount of app code can talk it
+// round. `boss@paddytrade.local` exists only because it was made before
+// that check did.
+//
+// `paddytrade.com` is accepted, and already proven: cnregister@,
+// baitang@ and baitanghq@ have all been signing in on it for months.
+// Nothing is ever sent there.
+export const LOGIN_DOMAIN = "paddytrade.com";
 
-// Domains already in use for the same purpose before this file existed.
-// Their accounts must keep working and must keep reading as names.
-const HOUSE_DOMAINS = [LOGIN_DOMAIN, "paddytrade.com"];
+// The domain the older accounts were made on. New ones are never created
+// here, but `boss` must still sign in, so it stays in the list below.
+export const LEGACY_LOGIN_DOMAIN = "paddytrade.local";
+
+// Every domain that means "this is a name, not an address". Their
+// accounts must keep working and must keep reading as names.
+const HOUSE_DOMAINS = [LOGIN_DOMAIN, LEGACY_LOGIN_DOMAIN];
 
 /**
  * Is what someone typed a name, or an address?
@@ -66,6 +83,28 @@ export function toLoginEmail(input) {
   if (!raw) return "";
   if (looksLikeEmail(raw)) return raw.toLowerCase();
   return `${cleanName(raw)}@${LOGIN_DOMAIN}`;
+}
+
+/**
+ * Every address a typed name could belong to, best first.
+ *
+ * [2026-09-16] Accounts exist on TWO house domains — the ones made today
+ * on `paddytrade.com`, and the older ones like `boss@paddytrade.local`.
+ * Someone typing `boss` should not have to know which era their account
+ * comes from, and rewriting `boss` in the database to match would mean
+ * SISEN changing his own login for a reason that is none of his business.
+ *
+ * So the sign-in screen tries each of these in turn. A real address is a
+ * list of one. The second attempt only ever happens when the first was
+ * refused, so a correct password still signs in on the first try.
+ */
+export function loginCandidates(input) {
+  const raw = String(input || "").trim();
+  if (!raw) return [];
+  if (looksLikeEmail(raw)) return [raw.toLowerCase()];
+  const name = cleanName(raw);
+  if (!name) return [];
+  return HOUSE_DOMAINS.map((d) => `${name}@${d}`);
 }
 
 /**
