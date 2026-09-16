@@ -20,6 +20,10 @@ import {
   COMMISSION_CATEGORY, SEED_CATEGORIES, categoryKey, categoryList,
   isCommission, nearlyTheSame, splitByCategory,
 } from "./src/expenseCategories.js";
+import {
+  windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
+  stationsOn, periodKeyOf, isoWeekKey, childGrain,
+} from "./src/expenseBook.js";
 
 let failures = 0;
 function check(label, cond, detail) {
@@ -124,7 +128,97 @@ check("a category used but not seeded still appears",
 check("commission is on the list before anything is recorded",
   categoryList([]).some(isCommission));
 
-console.log("\n4. The screen keeps its promises\n");
+console.log("\n4. Day, week, month, year — and they must agree\n");
+
+// 90 days of expenses across three stations, some commission some not.
+const LOCS = [{ id: "L1", name: "JOMNOUM" }, { id: "L2", name: "PING PONG" }, { id: "L3", name: "PONG RO" }];
+const book = [];
+let seed = 20260916;
+const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+for (let i = 0; i < 90; i += 1) {
+  const d = new Date(Date.UTC(2026, 5, 1 + i)).toISOString().slice(0, 10);
+  for (const l of LOCS) {
+    if (rnd() < 0.12) continue;                       // some days nobody entered
+    book.push({ pay_date: d, location_id: l.id, category: COMMISSION_CATEGORY, amount: Math.round(rnd() * 40 + 10) * 1000 });
+    book.push({ pay_date: d, location_id: l.id, category: rnd() < 0.5 ? "Fuel" : "Salary", amount: Math.round(rnd() * 90 + 20) * 1000 });
+  }
+}
+
+const whole = totals(book);
+const sumOf = (ps) => ps.reduce((a, p) => ({
+  commission: a.commission + p.commission, other: a.other + p.other, total: a.total + p.total,
+}), { commission: 0, other: 0, total: 0 });
+
+const days = byPeriod(book, "day");
+const weeks = byPeriod(book, "week");
+const months = byPeriod(book, "month");
+const years = byPeriod(book, "year");
+
+for (const [name, ps] of [["days", days], ["weeks", weeks], ["months", months], ["years", years]]) {
+  const s2 = sumOf(ps);
+  check(`${name} add up to the same total`, s2.total === whole.total, `${s2.total} vs ${whole.total}`);
+  check(`${name} keep commission apart correctly`, s2.commission === whole.commission, `${s2.commission} vs ${whole.commission}`);
+}
+check("commission plus other is the total, at every grain",
+  days.every((d) => d.commission + d.other === d.total)
+  && weeks.every((w) => w.commission + w.other === w.total)
+  && months.every((m) => m.commission + m.other === m.total));
+check("grouping by category loses nothing",
+  byCategory(book).reduce((a, c) => a + c.amount, 0) === whole.total);
+check("grouping by station loses nothing",
+  sumOf(byStation(book, LOCS)).total === whole.total);
+check("periods come back newest first",
+  months[0].key > months[months.length - 1].key, JSON.stringify(months.map((m) => m.key)));
+
+// Week keys: 1 Jan 2026 is a Thursday, so it belongs to ISO week 1.
+check("ISO week of 1 Jan 2026 is week 1", isoWeekKey("2026-01-01") === "2026-W01", isoWeekKey("2026-01-01"));
+// 1 Jan 2023 was a Sunday — ISO puts it in the LAST week of 2022.
+check("1 Jan 2023 belongs to 2022's last week", isoWeekKey("2023-01-01") === "2022-W52", isoWeekKey("2023-01-01"));
+check("period keys are the right shape",
+  periodKeyOf("2026-09-16", "day") === "2026-09-16"
+  && periodKeyOf("2026-09-16", "month") === "2026-09"
+  && periodKeyOf("2026-09-16", "year") === "2026");
+
+console.log("\n5. The window the arrows move\n");
+
+const wDay = windowFor("day", "2026-09-16");
+check("day and week grains are read one month at a time",
+  wDay.from === "2026-09-01" && wDay.to === "2026-09-30", JSON.stringify(wDay));
+check("February is 28 days in 2026, not 30",
+  windowFor("day", "2026-02-10").to === "2026-02-28", windowFor("day", "2026-02-10").to);
+check("a leap February is 29",
+  windowFor("day", "2024-02-10").to === "2024-02-29", windowFor("day", "2024-02-10").to);
+check("the month grain is read one year at a time",
+  windowFor("month", "2026-09-16").from === "2026-01-01" && windowFor("month", "2026-09-16").to === "2026-12-31");
+check("the year grain has no window and no arrows",
+  windowFor("year", "2026-09-16").from === null && windowFor("year", "2026-09-16").unit === null);
+check("stepping back from January lands in December",
+  shiftAnchor("day", "2026-01-15", -1).slice(0, 7) === "2025-12", shiftAnchor("day", "2026-01-15", -1));
+check("stepping a month grain moves a whole year",
+  shiftAnchor("month", "2026-06-01", -1).slice(0, 4) === "2025");
+check("filtering by window and station both bite",
+  filterRows(book, { from: "2026-06-01", to: "2026-06-30", locationIds: ["L1"] })
+    .every((r) => r.pay_date <= "2026-06-30" && r.location_id === "L1"));
+
+console.log("\n6. A blank day is not a zero day\n");
+
+const DAY = "2026-06-02";
+const st = stationsOn(DAY, LOCS,
+  [{ pay_date: DAY, location_id: "L1", category: "Fuel", amount: 50000 }],
+  [{ day: DAY, location_id: "L2" }]);
+check("a station that spent money reads as spent",
+  st.find((x) => x.id === "L1").state === "spent");
+check("a station marked empty reads as nothing, not blank",
+  st.find((x) => x.id === "L2").state === "nothing");
+check("a station nobody entered reads as blank",
+  st.find((x) => x.id === "L3").state === "blank");
+check("every station appears, including the ones with nothing",
+  st.length === LOCS.length);
+check("opening a day shows stations; opening bigger shows the grain below",
+  childGrain("day") === null && childGrain("week") === "day"
+  && childGrain("month") === "day" && childGrain("year") === "month");
+
+console.log("\n7. The screen keeps its promises\n");
 
 const src = fs.readFileSync(path.join("src", "pages", "Expenses.jsx"), "utf8");
 const apiSrc = fs.readFileSync(path.join("src", "api.js"), "utf8");
@@ -133,15 +227,27 @@ check("a day with nothing spent is recorded, not left blank",
   /markExpenseDayEmpty/.test(src) && /markExpenseDayEmpty/.test(apiSrc));
 check("recording money on a day clears the 'nothing spent' mark",
   /clearExpenseDayMark/.test(src) && /clearExpenseDayMark/.test(apiSrc));
-check("the grid tells a real zero from a day nobody entered",
-  /Nothing spent — recorded/.test(src) && /Nobody has entered this day/.test(src));
+check("the table tells a real zero from a day nobody entered",
+  /nothing spent/.test(src) && /not entered/.test(src)
+  && /s\.state === "blank" \? null/.test(src));
 check("reaching back past today asks for a password",
-  /editLocked/.test(src) && /ConfirmPassword/.test(src));
+  /needsPassword/.test(src) && /ConfirmPassword/.test(src)
+  && /sheet\.day !== today/.test(src));
+check("adding to an empty box does NOT ask for a password",
+  /payload\.changesExisting && needsPassword/.test(src));
 check("an amendment is written to the audit log with its reason",
   /action:\s*"edit_expense"/.test(apiSrc) && /reason:\s*\(reason \|\| ""\)/.test(apiSrc));
 check("amending only writes the fields actually passed",
   /if \(amount !== undefined\) patch\.amount/.test(apiSrc)
   && /if \(category !== undefined\) patch\.category/.test(apiSrc));
+check("the amount box has no width class that can be beaten",
+  /const fieldBase = "rounded-lg/.test(src) && !/const inputCls = "w-full rounded-lg[\s\S]*?amountCls = `\$\{inputCls\}/.test(src));
+check("the entry sheet is behind a button, not on the page",
+  /\+ Enter a day/.test(src) && /sheet && \(/.test(src));
+check("the table can be grouped three ways",
+  /GROUPS = \[\["period"/.test(src));
+check("all four grains are offered",
+  /GRAINS = \[\["day", "Day"\], \["week", "Week"\], \["month", "Month"\], \["year", "Year"\]\]/.test(src));
 check("recording and correcting are separate permissions",
   /record_expenses/.test(fs.readFileSync(path.join("src", "permissions.js"), "utf8"))
   && /edit_expenses/.test(fs.readFileSync(path.join("src", "permissions.js"), "utf8")));
