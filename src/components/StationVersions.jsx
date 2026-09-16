@@ -35,11 +35,13 @@ const REFRESH_MS = 30000;
 
 const CONN = {
   ok:    { cls: "bg-brand-50 text-brand-700", Icon: CheckCircle2, key: "st_connected" },
+  // Heard from, and struggling. A flat green here was the thing SISEN caught.
+  patchy: { cls: "bg-amber-50 text-amber-700 border border-amber-200", Icon: WifiOff, key: "st_patchy" },
   quiet: { cls: "bg-amber-50 text-amber-700 border border-amber-200", Icon: Clock, key: "st_quiet" },
   gone:  { cls: "bg-rose-100 text-rose-700", Icon: WifiOff, key: "st_unreachable" },
   none:  { cls: "bg-slate-100 text-slate-500 font-medium", Icon: Clock, key: "st_not_reported" },
 };
-const RAIL = { ok: "bg-brand-600", quiet: "bg-amber-500", gone: "bg-rose-600", none: "bg-slate-300" };
+const RAIL = { ok: "bg-brand-600", patchy: "bg-amber-500", quiet: "bg-amber-500", gone: "bg-rose-600", none: "bg-slate-300" };
 
 // One chip per device at most — five chips on a row is noise, not information.
 const FLAG_ORDER = ["behind", "new_network", "shared_login", "not_a_pc", "new_device"];
@@ -51,6 +53,16 @@ const FLAG_KEY = {
   new_device: "sh_new_device",
 };
 const topFlag = (flags) => FLAG_ORDER.find((f) => flags.includes(f)) || null;
+
+// Khmer has no plural form, so the choice is made by KEY rather than by a
+// rule — "1 tickets" and "2 of 5 needs attention" were both on screen at the
+// same moment, and one of them was describing the two stations that had done
+// exactly what was asked.
+function plural(t, key, n, extra) {
+  let out = t(n === 1 ? `${key}_one` : key).replace("{n}", String(n));
+  for (const [k, v] of Object.entries(extra || {})) out = out.replace(`{${k}}`, String(v));
+  return out;
+}
 
 /** Minutes of silence, for the "· 14 min" on a connection chip. */
 function minutesSince(iso, now) {
@@ -292,9 +304,9 @@ export default function StationVersions() {
               : (
                 <>
                   <span className="font-semibold text-rose-600">
-                    {t("st_attention").replace("{n}", String(attention)).replace("{all}", String(stations.length))}
+                    {plural(t, "st_attention", attention, { all: stations.length })}
                   </span>
-                  {deviceCount > 0 && <> · <b className="font-semibold text-slate-700">{t("st_machines").replace("{n}", String(deviceCount))}</b></>}
+                  {deviceCount > 0 && <> · <b className="font-semibold text-slate-700">{plural(t, "st_machines", deviceCount)}</b></>}
                 </>
               )}
         </span>
@@ -356,7 +368,8 @@ export default function StationVersions() {
                       </span>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${meta.cls}`}>
+                      <span title={s.reach === "patchy" ? t("st_patchy_why") : ""}
+                        className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${meta.cls}`}>
                         <Icon size={11} />
                         {t(meta.key)}
                         {(s.reach === "gone" || s.reach === "quiet") && mins != null
@@ -374,7 +387,7 @@ export default function StationVersions() {
                     <td className="whitespace-nowrap px-4 py-2.5 text-[12.5px] text-slate-600 tabular-nums">
                       {trade.count > 0 || trade.lastAt ? (
                         <>
-                          {t("st_n_tickets").replace("{n}", String(trade.count))}
+                          {plural(t, "st_n_tickets", trade.count)}
                           {trade.lastAt && <span className="text-slate-300"> · {ago(trade.lastAt, now, t)}</span>}
                         </>
                       ) : <span className="text-slate-300">{t("st_no_trading")}</span>}

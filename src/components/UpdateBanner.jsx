@@ -6,6 +6,7 @@ import { APP_VERSION } from "../version.js";
 import { getDeviceId, describeDevice } from "../deviceId.js";
 import { getPlace } from "../deviceNet.js";
 import { supabase } from "../supabaseClient.js";
+import { onSyncStatusChange } from "../offlineQueue.js";
 import {
   watchForUpdates, trackActivity, looksBusy, reloadWhenFree,
   FORCED_RELOAD_AFTER_MS,
@@ -49,6 +50,22 @@ export default function UpdateBanner() {
     const deviceId = getDeviceId();
     const { platform, browser } = describeDevice();
 
+    // [2026-09-16] SISEN, looking at Pong Ro's screen saying it could not
+    // reach the server while HQ's screen said Connected: "and its funny how
+    // it says connected in the station health."
+    //
+    // He was right. "Connected" only ever meant "this machine checked in
+    // within three minutes", which on a patchy line is entirely compatible
+    // with a page read failing ten seconds later.
+    //
+    // A machine cannot report trouble WHILE it is having it — but it can
+    // report it the moment the line comes back. So every check-in now
+    // carries how many attempts failed before this one got through, and what
+    // the offline queue is holding.
+    let missed = 0;
+    let sync = { pending: 0, stuck: false };
+    const stopSync = onSyncStatusChange((st) => { sync = st || sync; });
+
     async function tick() {
       // One call does both jobs: it records this MACHINE, and keeps the
       // account's own version column in step. If the database has not had
@@ -62,8 +79,15 @@ export default function UpdateBanner() {
       const { ok, signOut } = await api.reportDevice({
         deviceId, version: APP_VERSION, platform, browser,
         city: place?.city, region: place?.region, country: place?.country,
+        missed, pending: sync.pending || 0, stuck: !!sync.stuck,
       });
-      if (!ok) api.reportAppVersion(APP_VERSION);
+      if (!ok) {
+        // Count it and say so on the next one that gets through.
+        missed += 1;
+        api.reportAppVersion(APP_VERSION);
+      } else {
+        missed = 0;
+      }
 
       // HQ has signed this machine out. The database cleared the request as
       // it answered, so this happens once and cannot loop.
@@ -84,7 +108,7 @@ export default function UpdateBanner() {
 
     tick();
     const timer = setInterval(tick, REPORT_MS);
-    return () => { cancelled = true; clearInterval(timer); };
+    return () => { cancelled = true; clearInterval(timer); stopSync?.(); };
   }, []);
 
   // ── 2. watch for a newer build ─────────────────────────────────────────
