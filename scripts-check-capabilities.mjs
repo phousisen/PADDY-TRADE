@@ -153,5 +153,43 @@ ok(!/page === "daily-book"\) return [^<]*\?/.test(app),
    "the Daily Book route grew a permission check a view-only account may fail");
 console.log(`  5. view-only scope · ${VIEW_ONLY_PAGES.join(", ")} — same on phone and desktop`);
 
+// ===========================================================================
+// 6. "View only" can be a property of the role
+//
+// [2026-09-16] SISEN: "i think i want to create a role for a viewer instead.
+// so i can create an account for that one."
+//
+// It was a tick box on each PERSON, so every viewer account depended on
+// somebody remembering it — and forgetting was silent: a full working account
+// with every edit button live. The failure mode is the dangerous direction,
+// which is why it is checked rather than trusted.
+// ===========================================================================
+const auth = readFileSync("src/AuthContext.jsx", "utf8");
+const rolesPage = readFileSync("src/pages/RolesPage.jsx", "utf8");
+const apiSrc = readFileSync("src/api.js", "utf8");
+
+ok(auth.includes("!!profile?.view_only || !!profile?.roles?.view_only"),
+   "a role marked view-only does not make its people view-only");
+ok(auth.includes("!!profile?.view_only ||"),
+   "the per-person view-only tick stopped being honoured");
+for (const [file, src] of [["AuthContext.jsx", auth], ["api.js", apiSrc]]) {
+  ok(/roles\(id, name, scope, permissions, view_only\)/.test(src),
+     `${file} does not fetch the role's view_only column`);
+}
+ok(rolesPage.includes("const [viewOnly, setViewOnly] = useState(!!role.view_only);"),
+   "the Roles screen cannot set view-only on a role");
+ok(/createRole\(\{[^}]*viewOnly[^}]*\}\)/.test(rolesPage)
+   && /updateRole\(role\.id, \{[^}]*viewOnly[^}]*\}\)/.test(rolesPage),
+   "the Roles screen does not save view-only");
+ok(/if \(viewOnly !== undefined\) row\.view_only/.test(apiSrc)
+   && /if \(viewOnly !== undefined\) patch\.view_only/.test(apiSrc),
+   "view_only is sent even when the caller did not set it");
+const vsql = readFileSync("viewer_role.sql", "utf8");
+ok(/add column if not exists view_only boolean not null default false/.test(vsql),
+   "the migration does not add the column safely");
+ok(!/insert into public\.roles/i.test(vsql),
+   "the migration guesses at how permissions are stored by seeding a role");
+console.log("  6. view-only is a role property, and still a person property");
+
 console.log(failures === 0 ? "\nAll checks passed.\n" : `\n${failures} CHECK(S) FAILED\n`);
 process.exit(failures === 0 ? 0 : 1);
