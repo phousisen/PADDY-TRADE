@@ -228,7 +228,7 @@ check("a day with nothing spent is recorded, not left blank",
 check("recording money on a day clears the 'nothing spent' mark",
   /clearExpenseDayMark/.test(src) && /clearExpenseDayMark/.test(apiSrc));
 check("the table tells a real zero from a day nobody entered",
-  /nothing spent/.test(src) && /not entered/.test(src)
+  /ex_nothing_spent/.test(src) && /ex_not_entered/.test(src)
   && /s\.state === "blank" \? null/.test(src));
 check("reaching back past today asks for a password",
   /needsPassword/.test(src) && /ConfirmPassword/.test(src)
@@ -243,11 +243,16 @@ check("amending only writes the fields actually passed",
 check("the amount box has no width class that can be beaten",
   /const fieldBase = "rounded-lg/.test(src) && !/const inputCls = "w-full rounded-lg[\s\S]*?amountCls = `\$\{inputCls\}/.test(src));
 check("the entry sheet is behind a button, not on the page",
-  /\+ Enter a day/.test(src) && /sheet && \(/.test(src));
+  /ex_enter_a_day/.test(src) && /sheet && \(/.test(src));
 check("the table can be grouped three ways",
   /GROUPS = \[\["period"/.test(src));
 check("all four grains are offered",
-  /GRAINS = \[\["day", "Day"\], \["week", "Week"\], \["month", "Month"\], \["year", "Year"\]\]/.test(src));
+  /GRAINS = \[\["day", "ex_day"\], \["week", "ex_week"\], \["month", "ex_month"\], \["year", "ex_year"\]\]/.test(src));
+// [2026-09-16] The assertions above used to match the English words on
+// screen, and broke the moment the page was translated — a guard tied to
+// interface text punishes translating it. They match i18n keys now.
+// Whether any English is LEFT on this screen is scripts-check-i18n.mjs's
+// job; it has a detector tuned for it and a per-file ratchet.
 check("recording and correcting are separate permissions",
   /record_expenses/.test(fs.readFileSync(path.join("src", "permissions.js"), "utf8"))
   && /edit_expenses/.test(fs.readFileSync(path.join("src", "permissions.js"), "utf8")));
