@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import { dm } from "../dateFormat.js";
 
 // [2026-09-09 v4] The daily count, on the board the station staff already
 // live on.
@@ -56,12 +57,9 @@ function cambodiaToday() {
 
 function dayLabel(dateStr, today, t) {
   if (dateStr === today) return t("day_today");
-  const d = new Date(`${dateStr}T00:00:00+07:00`);
   const y = new Date(`${today}T00:00:00+07:00`);
   y.setDate(y.getDate() - 1);
-  const pretty = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short",
-  }).format(d);
+  const pretty = dm(dateStr);
   const isYesterday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Phnom_Penh" }).format(y) === dateStr;
   return isYesterday ? `${t("day_yesterday")} · ${pretty}` : pretty;
 }

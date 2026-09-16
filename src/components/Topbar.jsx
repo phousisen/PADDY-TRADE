@@ -6,6 +6,7 @@ import { onSyncStatusChange, listStuckOps, discardStuckOps, recoverStuckOps } fr
 import NeedsAttentionModal from "./NeedsAttentionModal.jsx";
 import { api } from "../api.js";
 import { getAccurateNow, supabase } from "../supabaseClient.js";
+import { hm } from "../dateFormat.js";
 
 // Global "unsynced changes" banner — lives here (not in individual pages)
 // specifically because Topbar is rendered on every real page in the app.
@@ -103,7 +104,7 @@ function SyncStatusBanner({ onSignInAgain }) {
             {t("sync_stuck", {
               n: status.pending,
               time: status.stuckSince
-                ? new Date(status.stuckSince).toLocaleTimeString([], { timeZone: "Asia/Phnom_Penh", hour: "numeric", minute: "2-digit" })
+                ? hm(status.stuckSince)
                 : t("sync_earlier"),
             })}
           </div>

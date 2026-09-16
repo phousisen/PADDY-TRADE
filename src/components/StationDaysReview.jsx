@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Loader2, Inbox } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
+import { dm } from "../dateFormat.js";
 
 // [2026-09-09 v4] The second signature — HQ's.
 //
@@ -20,9 +21,7 @@ import { useAuth } from "../AuthContext.jsx";
 
 function fmtDay(iso) {
   if (!iso) return "—";
-  const d = new Date(`${iso}T00:00:00+07:00`);
-  if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short" }).format(d);
+  return dm(iso);
 }
 
 export default function StationDaysReview() {

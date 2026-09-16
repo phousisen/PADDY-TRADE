@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pencil, X, Loader2 } from "lucide-react";
 import { api } from "../api.js";
+import { dmyTime } from "../dateFormat.js";
 
 // [2026-09-09] The "edited" mark on a transaction whose weight, money or
 // business date was changed after it was finished.
@@ -45,10 +46,7 @@ function fmtWhen(iso) {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(d);
+  return dmyTime(d);
 }
 
 function changedFields(entry) {

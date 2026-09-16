@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import StationDaysReview from "./StationDaysReview.jsx";
+import { dmy } from "../dateFormat.js";
 
 // [2026-09-09] Monthly Close — the screen for what used to be two SQL
 // commands typed into Supabase.
@@ -19,8 +20,6 @@ import StationDaysReview from "./StationDaysReview.jsx";
 // Supabase editor. That is the wrong shape for a job that belongs to whoever
 // does the books.
 
-const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-
 // Cambodia time, same as every other date on every other screen.
 function cambodiaToday() {
   const parts = {};
@@ -32,13 +31,13 @@ function cambodiaToday() {
 function pad(n) { return String(n).padStart(2, "0"); }
 function firstOf(y, m) { return `${y}-${pad(m)}-01`; }
 function lastOf(y, m) { return `${y}-${pad(m)}-${pad(new Date(Date.UTC(y, m, 0)).getUTCDate())}`; }
-function label(y, m) { return `${MONTH_NAMES[m - 1]} ${y}`; }
+function label(y, m) { return `${pad(m)}/${y}`; }
 
 function fmtDate(iso) {
   if (!iso) return "—";
   const d = new Date(iso.length <= 10 ? `${iso}T00:00:00Z` : iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", day: "2-digit", month: "short", year: "numeric" }).format(d);
+  return dmy(d);
 }
 
 // The last 6 finished months plus the one running now, newest first.
@@ -291,7 +290,7 @@ export default function MonthlyClosePanel() {
                           disabled={closing === month.to}
                           className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
                         >
-                          {closing === month.to ? "Closing…" : `Close ${MONTH_NAMES[month.m - 1]}`}
+                          {closing === month.to ? "Closing…" : `Close ${pad(month.m)}/${month.y}`}
                         </button>
                       )}
 
