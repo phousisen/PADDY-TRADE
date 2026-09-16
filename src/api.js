@@ -482,7 +482,7 @@ const rawApi = {
   // row AND keeps profiles.app_version / last_seen_at in step, so everything
   // that already reads those is unaffected. Returns false if the database has
   // not had device_sessions.sql run yet, and the caller falls back.
-  async reportDevice({ deviceId, version, platform, browser, city, region, country }) {
+  async reportDevice({ deviceId, version, platform, browser, city, region, country, missed, pending, stuck }) {
     try {
       const { data, error } = await supabase.rpc("report_device", {
         p_device_id: deviceId,
@@ -492,6 +492,13 @@ const rawApi = {
         p_city: city || null,
         p_region: region || null,
         p_country: country || null,
+        // [2026-09-16] What the STATION itself knows about its line. A machine
+        // cannot report trouble while it is having it, but it can report it
+        // the moment the line comes back — which is the honest version of
+        // "Connected". See device_trouble.sql.
+        p_missed: missed || 0,
+        p_pending: pending || 0,
+        p_stuck: !!stuck,
       });
       // true means HQ has asked for THIS machine to be signed out. The
       // database clears the request as it answers, so this can never loop.
@@ -526,7 +533,7 @@ const rawApi = {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
       .from("device_sessions")
-      .select("device_id, user_id, location_id, app_version, platform, browser, first_seen_at, last_seen_at, first_ip, last_ip, ip_changed_at, city, region, country, signout_requested_at, signed_out_at, signout_by")
+      .select("device_id, user_id, location_id, app_version, platform, browser, first_seen_at, last_seen_at, first_ip, last_ip, ip_changed_at, city, region, country, signout_requested_at, signed_out_at, signout_by, missed_checkins, pending_ops, stuck")
       .gte("last_seen_at", since)
       .order("last_seen_at", { ascending: false });
     // Not migrated yet reads as "nothing to show", never as an error — the

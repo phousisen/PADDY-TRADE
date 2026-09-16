@@ -59,6 +59,25 @@ const ms = (v) => {
   return Number.isNaN(t) ? null : t;
 };
 
+/**
+ * Is this machine's line actually healthy, or just audible?
+ *
+ * [2026-09-16] "Connected" used to mean only "checked in recently". Pong Ro
+ * was showing "Couldn't reach the server just now" on its own screen at the
+ * same moment HQ showed it green. Both were true about different instants;
+ * HQ's was the one that misled.
+ *
+ * A machine now reports what IT knows — how many check-ins it missed before
+ * this one got through, and what its offline queue is holding. Any of that is
+ * enough to say "patchy" rather than a flat green.
+ */
+export function hasTrouble(device) {
+  if (!device) return false;
+  return (device.missed_checkins || 0) > 0
+    || (device.pending_ops || 0) > 0
+    || !!device.stuck;
+}
+
 /** 'ok' | 'quiet' | 'gone' — how long since this device last said anything. */
 export function reachability(lastSeen, now = Date.now()) {
   const t = ms(lastSeen);
@@ -103,8 +122,16 @@ export function deviceFlags(device, { profile, newestVersion, now = Date.now() }
   // The rest only apply to an account that belongs to one station.
   if (isStationAccount(profile)) {
     if (device?.platform && device.platform !== "PC") flags.push("not_a_pc");
-    const first = ms(device?.first_seen_at);
-    if (first !== null && now - first < NEW_DEVICE_MS) flags.push("new_device");
+    // [2026-09-16] "new machine" is NOT every machine's first day.
+    //
+    // On the rollout it fired on all of them, so the two stations that had
+    // done exactly what was asked were the only two marked as needing
+    // attention. Wrong signal entirely.
+    //
+    // A first machine is just a machine. What is worth pointing at is a
+    // SECOND one appearing later for an account that already had one — which
+    // is what being handed a login looks like. That needs to know about the
+    // account's other devices, so it is decided in buildBoard, not here.
     // [2026-09-16] A station PC sits on one connection all day. An address it
     // has never used before is the honest version of "where is this" — far
     // more use than a city, which in Cambodia usually names the internet
@@ -141,7 +168,11 @@ export function buildBoard({
   // Only what is recent enough to describe today.
   const live = sessions.filter((s) => {
     const t = ms(s?.last_seen_at);
-    return t !== null && now - t < STALE_AFTER_MS;
+    if (t === null || now - t >= STALE_AFTER_MS) return false;
+    // Signed out and gone quiet since. Keeping it would leave a dead tab
+    // sitting on the screen all day under "signed in", which it is not.
+    if (s?.signed_out_at && reachability(s.last_seen_at, now) === "gone") return false;
+    return true;
   });
 
   // The newest build anyone has seen, this browser included. No release list
@@ -158,7 +189,10 @@ export function buildBoard({
     perAccount.set(s.user_id, (perAccount.get(s.user_id) || 0) + 1);
     const row = {
       ...s,
-      name: profile?.full_name || "—",
+      // An account with no full name shows the part before the @ rather than
+      // the whole address — "boss@paddytrade.local" read back at SISEN as a
+      // stranger who was signed in.
+      name: profile?.full_name || String(profile?.email || "").split("@")[0] || "—",
       profile,
       reach: reachability(s.last_seen_at, now),
       flags: deviceFlags(s, { profile, newestVersion: newest, now }),
@@ -177,8 +211,14 @@ export function buildBoard({
   // so it is added here rather than in deviceFlags.
   for (const rows of devicesOf.values()) {
     for (const r of rows) {
-      if ((perAccount.get(r.user_id) || 0) > 1 && !r.flags.includes("shared_login")) {
-        r.flags.push("shared_login");
+      const count = perAccount.get(r.user_id) || 0;
+      if (count > 1 && !r.flags.includes("shared_login")) r.flags.push("shared_login");
+      // A machine that turned up in the last day, for an account that was
+      // already using another one. One machine appearing on its own is a
+      // station being set up; a second one appearing beside it is not.
+      const first = ms(r.first_seen_at);
+      if (count > 1 && first !== null && now - first < NEW_DEVICE_MS && !r.flags.includes("new_device")) {
+        r.flags.push("new_device");
       }
     }
   }
@@ -187,21 +227,24 @@ export function buildBoard({
     const devices = (devicesOf.get(loc.id) || [])
       .sort((a, b) => worst(b.flags) - worst(a.flags) || ms(b.last_seen_at) - ms(a.last_seen_at));
     const reach = devices.length ? bestOf(devices.map((d) => d.reach)) : "none";
+    // Heard from, but having a bad time of it. Not green, not red.
+    const patchy = reach === "ok" && devices.some(hasTrouble);
     const behind = devices.filter((d) => d.app_version && newest && d.app_version !== newest);
     const flags = [...new Set(devices.flatMap((d) => d.flags))];
     return {
       id: loc.id,
       name: loc.name,
       devices,
-      reach,
+      reach: patchy ? "patchy" : reach,
       behind: behind.length,
       upToDate: devices.length > 0 && behind.length === 0 && reach !== "gone",
       flags,
       rank: reach === "none" ? 3
         : reach === "gone" ? 5
           : behind.length ? 4
-            : flags.length ? 2
-              : 1,
+            : patchy ? 2.5
+              : flags.length ? 2
+                : 1,
     };
   }).sort((a, b) => b.rank - a.rank || a.name.localeCompare(b.name));
 
@@ -209,7 +252,7 @@ export function buildBoard({
     newest,
     stations,
     roaming: roaming.sort((a, b) => ms(b.last_seen_at) - ms(a.last_seen_at)),
-    reachable: stations.filter((s) => s.reach === "ok" || s.reach === "quiet").length,
+    reachable: stations.filter((s) => ["ok", "patchy", "quiet"].includes(s.reach)).length,
     current: stations.filter((s) => s.upToDate).length,
     deviceCount: live.length,
     // Nothing has reported yet — a fresh install, or the migration has not

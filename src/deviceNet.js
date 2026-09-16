@@ -32,6 +32,9 @@ const ENDPOINT = "https://ipwho.is/";
 // a machine moved to a different building is noticed the same day.
 export const REFRESH_MS = 6 * 60 * 60 * 1000;
 
+// Three seconds and no more. See getPlace().
+export const TIMEOUT_MS = 3000;
+
 function read(store) {
   try {
     const raw = store?.getItem(KEY);
@@ -89,17 +92,25 @@ export async function getPlace({
   const f = fetchFn || (typeof fetch === "function" ? ((...a) => fetch(...a)) : null);
   if (!f) return cached?.place || null;
 
+  // A hard stop. Pong Ro is on a line that drops; a lookup that hangs would
+  // hold up the check-in behind it, and a station that cannot say "I am here"
+  // because it was waiting on a CITY would be an absurd way to go quiet.
+  const stop = typeof AbortController === "function" ? new AbortController() : null;
+  const timer = stop ? setTimeout(() => stop.abort(), TIMEOUT_MS) : null;
   try {
-    const res = await f(ENDPOINT, { cache: "no-store" });
+    const res = await f(ENDPOINT, { cache: "no-store", signal: stop?.signal });
     if (!res || !res.ok) return cached?.place || null;
     const place = placeFrom(await res.json());
     if (!place) return cached?.place || null;
     write(store, { at: now, place });
     return place;
   } catch {
-    // Offline, blocked, rate-limited, or the service is down. The check-in
-    // goes ahead without a city; the address still reaches the database.
+    // Offline, blocked, rate-limited, timed out, or the service is down. The
+    // check-in goes ahead without a city; the address still reaches the
+    // database, because that is read server-side and does not depend on this.
     return cached?.place || null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
