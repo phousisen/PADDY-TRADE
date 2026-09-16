@@ -104,10 +104,43 @@ const flags = (dev, profile, newest = "2026.09.16-1734") =>
 ok("old code is flagged", flags({ app_version: "2026.09.13-0904" }, stationStaff).includes("behind"));
 ok("a phone at a station is flagged", flags({ platform: "Phone" }, stationStaff).includes("not_a_pc"));
 ok("a tablet at a station is flagged", flags({ platform: "Tablet" }, stationStaff).includes("not_a_pc"));
-ok("a machine first seen an hour ago is flagged as new",
-   flags({ first_seen_at: agoMs(60) }, stationStaff).includes("new_device"));
-ok("a machine first seen two days ago is not new any more",
-   !flags({ first_seen_at: agoMs(60 * 48) }, stationStaff).includes("new_device"));
+// [2026-09-16] "new machine" used to fire on a machine's first day. On the
+// rollout that meant EVERY machine, so the two stations that had done exactly
+// what was asked were the only two the screen marked as needing attention.
+//
+// A first machine is just a machine. A SECOND one appearing a day later,
+// beside one already in use, is what being handed a login looks like — so the
+// flag now needs the account to have another machine, and is decided in
+// buildBoard where that is known.
+ok("one machine on its own is never called new, however fresh",
+   !flags({ first_seen_at: agoMs(1) }, stationStaff).includes("new_device"));
+
+const fixProfiles = [stationStaff, manager, owner];
+const fixLocations = [{ id: "L1", name: "REANG KESEY" }, { id: "L2", name: "PING PONG" }];
+
+const secondToday = w.buildBoard({
+  sessions: [
+    { ...pcNow, device_id: "old", first_seen_at: agoMs(60 * 24 * 7) },
+    { ...pcNow, device_id: "fresh", first_seen_at: agoMs(60) },
+  ],
+  profiles: fixProfiles, locations: fixLocations, runningVersion: "2026.09.16-1734", now: NOW,
+});
+const rkNew = secondToday.stations.find((s) => s.name === "REANG KESEY");
+ok("a second machine that appeared today IS flagged as new",
+   rkNew.devices.find((x) => x.device_id === "fresh").flags.includes("new_device"));
+ok("the machine that was already there is not called new",
+   !rkNew.devices.find((x) => x.device_id === "old").flags.includes("new_device"));
+
+const secondOld = w.buildBoard({
+  sessions: [
+    { ...pcNow, device_id: "old", first_seen_at: agoMs(60 * 24 * 7) },
+    { ...pcNow, device_id: "alsoold", first_seen_at: agoMs(60 * 24 * 3) },
+  ],
+  profiles: fixProfiles, locations: fixLocations, runningVersion: "2026.09.16-1734", now: NOW,
+});
+ok("two machines that have both been around a while are not new",
+   secondOld.stations.find((s) => s.name === "REANG KESEY")
+     .devices.every((x) => !x.flags.includes("new_device")));
 ok("silence is flagged", flags({ last_seen_at: agoMs(30) }, stationStaff).includes("gone"));
 
 // THE RULE SISEN SET. The manager's phone is the manager doing their job.
@@ -184,6 +217,25 @@ ok("the push button is disabled while nothing has reported",
    panel.includes("disabled={pushing || silent}"));
 
 // Yesterday's rows must not describe today.
+// A machine that was signed out and has gone quiet since is not somebody who
+// is signed in — leaving it would park a dead tab on the screen all day.
+ok("a signed-out machine that has gone quiet drops off the list",
+   w.buildBoard({
+     sessions: [{ ...pcNow, signed_out_at: agoMs(40), last_seen_at: agoMs(40) }],
+     profiles, locations, now: NOW,
+   }).deviceCount === 0);
+ok("a machine signed out but still checking in is still shown",
+   w.buildBoard({
+     sessions: [{ ...pcNow, signed_out_at: agoMs(40), last_seen_at: agoMs(0.5) }],
+     profiles, locations, now: NOW,
+   }).deviceCount === 1);
+ok("an account with no name shows the part before the @, not the address",
+   w.buildBoard({
+     sessions: [pcNow],
+     profiles: [{ id: "u1", email: "boss@paddytrade.local", location_id: "L1", roleObj: { scope: "own_location" } }],
+     locations, now: NOW,
+   }).stations.find((s) => s.name === "REANG KESEY").devices[0].name === "boss");
+
 ok("a machine last seen two days ago is left out entirely",
    w.buildBoard({
      sessions: [{ ...pcNow, last_seen_at: agoMs(60 * 48) }],
@@ -258,7 +310,7 @@ console.log("\n8. Wired in, and harmless on a database that has not been migrate
 
 ok("the api can report a machine", /async reportDevice\(\{ deviceId, version, platform, browser/.test(api));
 ok("reporting never throws",
-   /async reportDevice[\s\S]{0,900}catch \{\s*\n\s*return \{ ok: false, signOut: false \};/.test(api));
+   /async reportDevice[\s\S]{0,1600}catch \{\s*\n\s*return \{ ok: false, signOut: false \};/.test(api));
 
 // ── the network, and signing a machine out ───────────────────────────────
 //
@@ -315,13 +367,74 @@ ok("the browser signs itself out when told", banner.includes("supabase.auth.sign
 ok("the screen names the person and the machine before asking",
    panel.includes("st_confirm_title") && panel.includes("st_confirm_warn"));
 ok("only the owner sees a sign-out button", panel.includes("const canSignOut = !!profile?.isOwner;"));
+
+// ── the station reports its own trouble ──────────────────────────────────
+//
+// [2026-09-16] SISEN, with Pong Ro's screen saying "Couldn't reach the server
+// just now" while HQ showed it green: "and its funny how it says connected in
+// the station health."
+//
+// "Connected" meant only "checked in within three minutes", which on a bad
+// line is entirely compatible with a read failing ten seconds later. A
+// machine cannot report trouble while it is having it — but it can report it
+// the moment the line returns, and that is what these assert.
+
+const troubleSql = readFileSync("device_trouble.sql", "utf8");
+
+ok("a clean machine is not called troubled", !w.hasTrouble({ ...pcNow }));
+ok("a missed check-in is trouble", w.hasTrouble({ ...pcNow, missed_checkins: 1 }));
+ok("work waiting in the queue is trouble", w.hasTrouble({ ...pcNow, pending_ops: 3 }));
+ok("a stuck queue is trouble", w.hasTrouble({ ...pcNow, stuck: true }));
+ok("nothing at all is not trouble", !w.hasTrouble(null));
+
+const patchy = w.buildBoard({
+  sessions: [{ ...pcNow, missed_checkins: 2 }],
+  profiles: fixProfiles, locations: fixLocations, runningVersion: "2026.09.16-1734", now: NOW,
+});
+ok("a station heard from but struggling reads as patchy, not green",
+   patchy.stations.find((s) => s.name === "REANG KESEY").reach === "patchy");
+ok("patchy still counts as reachable — it IS answering",
+   patchy.reachable === 1);
+const mixed = w.buildBoard({
+  sessions: [
+    { ...pcNow, location_id: "L1", missed_checkins: 2 },
+    { ...pcNow, device_id: "clean", location_id: "L2", user_id: "u9" },
+  ],
+  profiles: [stationStaff, { id: "u9", full_name: "Vanna", location_id: "L2", roleObj: { scope: "own_location" } }],
+  locations: fixLocations, runningVersion: "2026.09.16-1734", now: NOW,
+});
+ok("patchy sorts above a healthy station",
+   mixed.stations[0].name === "REANG KESEY" && mixed.stations[0].reach === "patchy",
+   mixed.stations.map((x) => `${x.name}:${x.reach}`).join(" → "));
+ok("a clean station stays green",
+   w.buildBoard({ sessions: [pcNow], profiles: fixProfiles, locations: fixLocations,
+     runningVersion: "2026.09.16-1734", now: NOW })
+     .stations.find((s) => s.name === "REANG KESEY").reach === "ok");
+
+ok("the station sends what it knows about its own line",
+   banner.includes("missed, pending: sync.pending || 0, stuck: !!sync.stuck"));
+ok("a failed check-in is counted and reported on the next one that works",
+   /if \(!ok\) \{[\s\S]{0,200}missed \+= 1;[\s\S]{0,120}\} else \{\s*\n\s*missed = 0;/.test(banner));
+ok("the trouble columns are added, not replacing anything",
+   /add column if not exists missed_checkins/.test(troubleSql)
+   && /add column if not exists pending_ops/.test(troubleSql)
+   && /add column if not exists stuck/.test(troubleSql));
+ok("the rebuilt check-in still reads the address from the request",
+   /current_setting\('request\.headers'/.test(troubleSql));
+ok("the rebuilt check-in still clears the sign-out request as it answers",
+   /set signout_requested_at = null,[\s\S]{0,140}signout_requested_at is not null/.test(troubleSql));
+
+// The city lookup must never hold up a check-in on a bad line.
+ok("the city lookup gives up after 3 seconds", net.includes("TIMEOUT_MS = 3000"));
+ok("the timeout is actually wired to the request",
+   net.includes("signal: stop?.signal") && net.includes("stop.abort()"));
 ok("a view-only account still reports its machine",
    /ALWAYS_ALLOWED[\s\S]{0,900}"reportDevice"/.test(api));
 ok("an un-migrated database reads as 'nothing to show', not an error",
    /async getDeviceSessions\(\)[\s\S]{0,700}if \(error\) return null;/.test(api));
-ok("only the last day is fetched", /async getDeviceSessions\(\)[\s\S]{0,400}gte\("last_seen_at"/.test(api));
+ok("only the last day is fetched", /async getDeviceSessions\(\)[\s\S]{0,900}gte\("last_seen_at"/.test(api));
 ok("the heartbeat falls back to the old account-only report",
-   banner.includes("if (!ok) api.reportAppVersion(APP_VERSION);"));
+   banner.includes("api.reportAppVersion(APP_VERSION);"));
 ok("the panel recomputes on a timer, so quiet becomes unreachable by itself",
    panel.includes("setTick((n) => n + 1)"));
 
