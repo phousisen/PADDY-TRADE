@@ -22,7 +22,7 @@ import {
 } from "./src/expenseCategories.js";
 import {
   windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
-  stationsOn, periodKeyOf, isoWeekKey, childGrain,
+  stationsOn, periodKeyOf, isoWeekKey, childGrain, daysInWindow, mergeByCategory,
 } from "./src/expenseBook.js";
 
 let failures = 0;
@@ -256,6 +256,57 @@ check("all four grains are offered",
 check("recording and correcting are separate permissions",
   /record_expenses/.test(fs.readFileSync(path.join("src", "permissions.js"), "utf8"))
   && /edit_expenses/.test(fs.readFileSync(path.join("src", "permissions.js"), "utf8")));
+
+
+console.log("\n8. A missing day is visible, and a duplicate can be fixed\n");
+
+// daysInWindow lists the CALENDAR, not the rows that happen to exist.
+{
+  const ds = daysInWindow("2026-09-01", "2026-09-30", "2026-09-16");
+  check("every day up to today is listed, not just the ones with expenses",
+    ds.length === 16, `got ${ds.length}`);
+  check("newest first, like every other grain",
+    ds[0] === "2026-09-16" && ds[ds.length - 1] === "2026-09-01", `${ds[0]} … ${ds[ds.length - 1]}`);
+  check("future days are not listed — an empty 30th is not a gap",
+    !ds.includes("2026-09-30"));
+  check("a month already past lists all of its days",
+    daysInWindow("2026-08-01", "2026-08-31", "2026-09-16").length === 31);
+  check("February 2026 has 28",
+    daysInWindow("2026-02-01", "2026-02-28", "2026-12-31").length === 28);
+}
+
+// mergeByCategory — the bug that made a duplicate unfixable.
+{
+  const day = [
+    { id: "a", category: "Fuel", amount: 150000 },
+    { id: "b", category: "Fuel", amount: 150000 },   // the duplicate
+    { id: "c", category: COMMISSION_CATEGORY, amount: 80000 },
+  ];
+  const m = mergeByCategory(day);
+  const fuel = m.get(categoryKey("Fuel"));
+  check("two rows of one category read as ONE line", m.size === 2, `got ${m.size}`);
+  check("and the line shows their SUM, not one of them",
+    fuel.amount === 300000, `got ${fuel.amount}`);
+  check("both rows are kept, so saving can collapse them",
+    fuel.rows.length === 2 && fuel.rows[0].id === "a" && fuel.rows[1].id === "b");
+  check("a category with one row is untouched",
+    m.get(categoryKey(COMMISSION_CATEGORY)).rows.length === 1);
+  check("spellings that differ invisibly merge too",
+    mergeByCategory([{ id: "x", category: "Fuel", amount: 1 },
+                     { id: "y", category: "Fu​el", amount: 2 }]).size === 1);
+}
+
+const src2 = fs.readFileSync(path.join("src", "pages", "Expenses.jsx"), "utf8");
+check("the sheet sums duplicates rather than showing one of them",
+  /mergeByCategory\(existingRows\)/.test(src2));
+check("saving voids the extra rows instead of leaving them",
+  /voidPayment\(x\.id/.test(src2));
+check("an empty day is listed and marked, not omitted",
+  /empty: true/.test(src2) && /ex_not_entered/.test(src2));
+check("every alert can open the day it is about",
+  /setSheet\(\{ day: a\.day, locationId: a\.locationId \}\)/.test(src2));
+check("the duplicate alert names its category",
+  /cleanCategory\(row\?\.category\)/.test(src2));
 
 console.log(
   failures === 0
