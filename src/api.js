@@ -2323,6 +2323,40 @@ const rawApi = {
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
+  // [2026-09-16] Who last changed each of these expense rows, and when.
+  //
+  // The day sheet shows a saved figure LOCKED, with the name and time of the
+  // last person to change it beside it — SISEN: "make sure the written amount
+  // are locked if they need to edit it, it will requires a password to show
+  // who edit and date and time."
+  //
+  // Read from audit_logs, which updateExpense already writes with the whole
+  // before/after and the reason. Nothing new is stored for this.
+  async getExpenseEdits(paymentIds) {
+    const ids = (paymentIds || []).filter(Boolean);
+    if (!ids.length) return {};
+    const { data, error } = await supabase
+      .from("audit_logs")
+      .select("record_id, created_at, new_data, old_data, profiles(full_name)")
+      .eq("action", "edit_expense")
+      .in("record_id", ids)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    const out = {};
+    for (const row of data || []) {
+      // Ordered newest first, so the first one seen for an id is the latest.
+      if (out[row.record_id]) continue;
+      out[row.record_id] = {
+        at: row.created_at,
+        by: row.profiles?.full_name || "—",
+        from: row.old_data?.amount ?? null,
+        to: row.new_data?.amount ?? null,
+        reason: row.new_data?.reason || "",
+      };
+    }
+    return out;
+  },
+
   // [2026-09-09] Daily close, per station.
   //
   // Not a lock — a signature. The monthly close refuses edits; this only

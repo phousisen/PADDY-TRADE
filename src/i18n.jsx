@@ -1037,6 +1037,18 @@ export const translations = {
     ex_alert_twice: "Twice",
     ex_nothing_since: "nothing entered since",
     ex_recorded_n_times: "recorded {n} times",
+
+    ex_save: "Save",
+    ex_saved: "Saved",
+    ex_unlock_to_edit: "Unlock to edit",
+    ex_changed_by: "changed by",
+    ex_say_why: "You are changing a figure already recorded — say why",
+    ex_unlock_title: "Unlock to edit",
+    ex_unlock_why: "The figures on this day are already recorded. Your password unlocks them, and your name and the time are kept with the change.",
+    ex_unlock_btn: "Unlock",
+
+    ex_confirm_title: "Confirm it is you",
+    ex_confirm_why: "You are changing a figure that is already recorded.",
   },
   km: {
     appName: "PADDYTRADE",
@@ -2016,6 +2028,18 @@ export const translations = {
     ex_alert_twice: "ពីរដង",
     ex_nothing_since: "គ្មានការបញ្ចូលតាំងពី",
     ex_recorded_n_times: "កត់ត្រា {n} ដង",
+
+    ex_save: "រក្សាទុក",
+    ex_saved: "បានរក្សាទុក",
+    ex_unlock_to_edit: "ដោះសោដើម្បីកែ",
+    ex_changed_by: "កែដោយ",
+    ex_say_why: "អ្នកកំពុងកែចំនួនដែលបានកត់ត្រារួច — សូមបញ្ជាក់មូលហេតុ",
+    ex_unlock_title: "ដោះសោដើម្បីកែ",
+    ex_unlock_why: "ចំនួនទឹកប្រាក់នៅថ្ងៃនេះត្រូវបានកត់ត្រារួចហើយ។ ពាក្យសម្ងាត់របស់អ្នកនឹងដោះសោពួកវា ហើយឈ្មោះ និងម៉ោងរបស់អ្នកនឹងត្រូវរក្សាទុកជាមួយការកែប្រែ។",
+    ex_unlock_btn: "ដោះសោ",
+
+    ex_confirm_title: "បញ្ជាក់ថាជាអ្នក",
+    ex_confirm_why: "អ្នកកំពុងកែចំនួនដែលបានកត់ត្រារួចហើយ។",
   },
 };
 
