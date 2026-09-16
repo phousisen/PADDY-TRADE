@@ -88,7 +88,20 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // here silently did nothing for that account type even though the page
   // it would open was already allowed. `canOpenLocation` is this table's
   // one gate for both the row's click handler and its chevron affordance.
-  const canOpenLocation = isAdmin || isViewOnly;
+  // [2026-09-16] NOT view-only any more. SISEN:
+  //
+  //     "remove on the option to click on the location and it bring to
+  //      location detail. because this is only a viewing account. so dont
+  //      need to lead to anything else"
+  //
+  // A viewing account has three pages, and the whole point of it is that
+  // there is nowhere else to end up. A row that opens a fourth screen —
+  // one not on the menu, with no obvious way back to the dashboard — is a
+  // trapdoor on an account built for two people who just want to see how
+  // the day went. The station page itself stays reachable by the accounts
+  // that have it in their menu; it is only this row that stops leading
+  // there, along with the chevron that promised it did.
+  const canOpenLocation = isAdmin && !isViewOnly;
   // [2026-09-11] Settling writes to the stock ledger, so it is Owner/HQ
   // Admin only — a view-only account reaches the same table and must not
   // get the button, and neither should a station login looking at its own

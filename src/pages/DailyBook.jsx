@@ -12,15 +12,19 @@ import { api } from "../api.js";
 import LocationFilter from "../components/LocationFilter.jsx";
 import Topbar from "../components/Topbar.jsx";
 import { useLanguage } from "../i18n.jsx";
+import { useAuth } from "../AuthContext.jsx";
 import { dayWithWeekday, range, my } from "../dateFormat.js";
 import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
 
+// [2026-09-16] These four were English labels sitting in a Khmer app —
+// SISEN, on his phone: "so not clean and professional for the phone size".
+// i18n keys now, like every other control.
 const GRAINS = [
-  ["days", "By day"],
-  ["weeks", "By week"],
-  ["months", "By month"],
-  ["year", "Year total"],
+  ["days", "db_by_day"],
+  ["weeks", "db_by_week"],
+  ["months", "db_by_month"],
+  ["year", "db_year_total"],
 ];
 
 // [2026-09-16] The English month and weekday arrays that used to sit here are
@@ -129,32 +133,39 @@ function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t }) {
 // ---- the same row, as a card ---------------------------------------------
 //
 // [2026-09-16] SISEN: "customize to fit different phone size to make it
-// readable. especially for daily book" — then, on the widths: "what about
-// if its iphone or sth. make sure it fit based on any size of the screen".
+// readable. especially for daily book", then on widths: "make sure it fit
+// based on any size of the screen", then, choosing between three densities
+// drawn against his own figures: "i prefer C".
 //
-// The ledger is SEVENTEEN columns — about 1,100px. On a 390pt phone that
-// is a sideways scroller, and nobody scrolls a table sideways, so every
-// column past "Bought kg" was never seen by anyone. Not hidden; just never
-// looked at, which is worse, because the figures were there all along.
+// The ledger is SEVENTEEN columns — about 1,100px. On a 390pt phone that is
+// a sideways scroller, and nobody scrolls a table sideways, so every column
+// past "Bought kg" was never read by anyone. Not hidden; never looked at,
+// which is worse, because the figures were there the whole time.
 //
-// Same numbers, same order, same colours, read downward instead of across.
-// Nothing here is sized to a phone model:
+// WHY EACH MOVEMENT TAKES TWO LINES
 //
-//   · No fixed widths anywhere. The card fills whatever it is given —
-//     a 320pt iPhone SE, a folded Galaxy, a 717pt unfolded one, a browser
-//     window being dragged. A phone that does not exist yet is handled
-//     too, because no width is written down.
-//   · ONE element per line may shrink: the middle "8,240 kg × 700".
-//     min-w-0 + truncate is what allows that. The loads badge and the
-//     riel amount are shrink-0 and whitespace-nowrap, because losing a
-//     digit off money is the one failure that would make the row LIE.
-//     What the middle loses can be read off the numbers either side.
-//   · The closing strip re-flows itself — auto-fit at a 96px minimum, so
-//     three cells across on a normal phone, two on a very narrow one,
-//     three again on a Fold. No breakpoint decides that; the content does.
+// His real days are 447,525 kg at 957.74 — 428,612,593 ៛. Ten digits. There
+// is no honest way to fit a load count, a weight, a price AND that on one
+// phone line, so the count and the money share the top line and the weight
+// × price sits under it in grey. My first attempt put all four on one line
+// and only looked right because I had filled it with invented small numbers.
+//
+// NOTHING IS SIZED TO A PHONE MODEL
+//
+//   · No fixed widths. The card fills what it is given — a 320pt iPhone SE,
+//     a folded Galaxy, a 717pt open one, a browser being dragged. A phone
+//     that does not exist yet works too, because no width is written down.
+//   · Exactly one element per line may shrink: the grey weight × price.
+//     min-w-0 + truncate allows it. The load badge and the riel amount are
+//     shrink-0 + nowrap, because losing a digit off money is the one
+//     failure that would make the row LIE. What the grey line loses can be
+//     read back off the two numbers around it.
+//   · The closing strip re-flows itself — auto-fit at a 98px minimum. Three
+//     across on a normal phone, two on a very narrow one, three again on a
+//     Fold. No breakpoint decides that; the content does.
 //
 // md: and up this is not rendered at all — the table is untouched.
-function LedgerCard({ label, sub, sums, variant, onClick, t }) {
+function LedgerCard({ label, sub, sums, variant, onClick, open, t }) {
   const tot = variant === "total";
   const wk = variant === "week";
   const money = (v) => Math.abs(Math.round(v || 0)).toLocaleString("en-US");
@@ -163,60 +174,67 @@ function LedgerCard({ label, sub, sums, variant, onClick, t }) {
 
   const Cell = ({ label: l, value, tone }) => (
     <div className={`min-w-0 px-2.5 py-1.5 ${tot ? "bg-brand-700" : tone === "stk" ? "bg-sky-50" : "bg-white"}`}>
-      <p className={`truncate text-[9px] font-semibold uppercase tracking-wide ${tot ? "text-brand-200" : "text-slate-400"}`}>{l}</p>
+      <p className={`truncate text-[9.5px] ${tot ? "text-brand-200" : "text-slate-400"}`}>{l}</p>
       <p className={`whitespace-nowrap text-[12.5px] font-bold tabular-nums ${
         tot ? "text-white" : tone === "stk" ? "text-sky-800" : "text-slate-700"}`}>{value}</p>
     </div>
   );
 
-  // A movement line. `n` null means this row has no loads at all — shown
-  // as a plain dash rather than a zero, which would read as a real figure.
+  // `n` null means no loads at all — a dash, never a zero, which would read
+  // as a real figure someone had recorded.
   const Move = ({ kind, n, weight, price, amount }) => (
-    <div className={`flex min-w-0 items-center gap-1.5 px-3 py-1.5 text-[12.5px] ${
-      kind === "buy" ? "bg-brand-600/[0.04]" : "bg-orange-600/[0.045]"}`}>
-      <span className={`shrink-0 rounded px-1 py-[3px] text-[8.5px] font-extrabold tracking-wide ${
-        kind === "buy" ? "bg-brand-100 text-brand-700" : "bg-orange-100 text-orange-700"}`}>
-        {kind === "buy" ? t("db_buy") : t("db_sell")}
-      </span>
-      <span className="inline-flex h-[19px] min-w-[21px] shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-1 text-[11px] font-bold tabular-nums text-slate-900">
-        {n || "—"}
-      </span>
-      <span className="min-w-0 flex-1 truncate tabular-nums text-slate-500">
-        {n ? <><b className="font-semibold text-slate-700">{kg(weight)}</b> kg{price ? ` × ${Number(price).toFixed(2)}` : ""}</> : <span className="text-slate-300">—</span>}
-      </span>
-      <span className={`shrink-0 whitespace-nowrap text-[12.5px] font-bold tabular-nums ${
-        n ? (kind === "buy" ? "text-brand-700" : "text-orange-700") : "text-slate-300"}`}>
-        {n ? money(amount) : "—"}
-      </span>
+    <div className={`px-3 py-1.5 ${kind === "buy" ? "bg-brand-600/[0.045]" : "bg-orange-600/[0.05]"}`}>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className={`shrink-0 rounded px-1.5 py-px text-[10.5px] font-bold ${
+          kind === "buy" ? "bg-brand-100 text-brand-700" : "bg-orange-100 text-orange-700"}`}>
+          {kind === "buy" ? t("db_buy") : t("db_sell")}
+        </span>
+        <span className="shrink-0 rounded-md border border-slate-200 bg-white px-1.5 text-[11.5px] font-bold tabular-nums text-slate-900">
+          {n || "—"}
+        </span>
+        <span className="flex-1" />
+        <span className={`shrink-0 whitespace-nowrap text-[13.5px] font-bold tabular-nums ${
+          !n ? "text-slate-300" : kind === "buy" ? "text-brand-700" : "text-orange-700"}`}>
+          {n ? money(amount) : "—"}
+        </span>
+      </div>
+      <p className={`mt-px truncate text-[11.5px] tabular-nums ${n ? "text-slate-500" : "text-slate-300"}`}>
+        {n ? <><b className="font-semibold text-slate-700">{kg(weight)}</b> {t("db_weight_kg")}{price ? ` × ${Number(price).toFixed(2)}` : ""}</> : t("db_no_loads")}
+      </p>
     </div>
   );
 
   return (
-    <div
-      onClick={onClick}
-      className={`border-b border-slate-100 last:border-0 ${onClick ? "cursor-pointer active:bg-brand-50" : ""} ${
-        tot ? "bg-brand-700" : wk ? "bg-slate-50" : "bg-white"}`}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 pb-2 pt-2.5">
-        <div className="min-w-0 flex-1">
-          <b className={`block whitespace-nowrap text-[14px] font-bold tracking-tight tabular-nums ${
-            tot ? "text-white" : wk ? "text-[12.5px] uppercase tracking-wide text-slate-500" : "text-slate-900"}`}>{label}</b>
-          {sub && <small className={`block truncate text-[10.5px] ${tot ? "text-brand-200" : "text-slate-400"}`}>{sub}</small>}
+    <div className={`border-b border-slate-100 last:border-0 ${
+      open ? "shadow-[inset_3px_0_0_theme(colors.brand.600)]" : ""} ${
+      tot ? "bg-brand-700" : wk ? "bg-slate-50" : "bg-white"}`}>
+      <div
+        onClick={onClick}
+        className={`flex items-center justify-between gap-2 px-3 pb-1.5 pt-2.5 ${onClick ? "cursor-pointer" : ""}`}
+      >
+        <div className="flex min-w-0 items-center gap-1.5">
+          {onClick && (
+            <span className={`shrink-0 text-[11px] transition-transform ${open ? "rotate-90 text-brand-600" : "text-slate-400"}`}>›</span>
+          )}
+          <span className="min-w-0">
+            <b className={`block whitespace-nowrap text-[14px] font-bold tracking-tight tabular-nums ${
+              tot ? "text-white" : wk ? "text-[12.5px] text-slate-500" : "text-slate-900"}`}>{label}</b>
+            {sub && <small className={`block truncate text-[10.5px] ${tot ? "text-brand-200" : "text-slate-400"}`}>{sub}</small>}
+          </span>
         </div>
         {/* Profit leads. It is what the row exists to say, and the only
-            figure whose colour tells you something. */}
-        <div className="flex shrink-0 items-baseline gap-1.5">
-          <i className={`text-[9.5px] font-semibold uppercase not-italic tracking-wide ${tot ? "text-brand-200" : "text-slate-400"}`}>{t("db_profit")}</i>
-          <b className={`whitespace-nowrap text-[16px] font-extrabold tracking-tight tabular-nums ${
+            figure here whose colour tells you anything. */}
+        <span className="shrink-0 text-right">
+          <i className={`block text-[9.5px] not-italic ${tot ? "text-brand-200" : "text-slate-400"}`}>{t("db_profit")}</i>
+          <b className={`block whitespace-nowrap text-[15px] font-extrabold tracking-tight tabular-nums ${
             tot ? "text-white" : (sums.profit || 0) < 0 ? "text-rose-600" : "text-brand-700"}`}>
-            {signed(sums.profit)}<u className={`ml-px text-[10px] font-semibold no-underline ${tot ? "text-brand-200" : "text-slate-400"}`}>៛</u>
+            {signed(sums.profit)} ៛
           </b>
-        </div>
+        </span>
       </div>
 
-      {/* Week and month rows are summaries — they have no single price, so
-          the movement lines would print a meaningless average. They get the
-          strip only. */}
+      {/* Week and month rows are summaries with no single price, so the
+          movement lines would print a meaningless average. Strip only. */}
       {!tot && !wk && (
         <>
           <Move kind="buy" n={sums.buyLoads} weight={sums.boughtKg} price={sums.buyPricePerKg} amount={sums.spent} />
@@ -226,22 +244,106 @@ function LedgerCard({ label, sub, sums, variant, onClick, t }) {
 
       <div
         className="grid gap-px border-t border-slate-100 bg-slate-100"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))" }}
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(98px, 1fr))" }}
       >
         {tot || wk ? (
           <>
-            <Cell label={t("db_buy")} value={`${kg(sums.boughtKg)} kg`} />
-            <Cell label={t("db_sell")} value={`${kg(sums.soldKg)} kg`} />
+            <Cell label={t("db_buy")} value={`${kg(sums.boughtKg)} ${t("db_weight_kg")}`} />
+            <Cell label={t("db_sell")} value={`${kg(sums.soldKg)} ${t("db_weight_kg")}`} />
             <Cell label={t("db_cash")} value={signed(sums.cash)} />
           </>
         ) : (
           <>
             <Cell label={t("db_expenses")} value={money(sums.expenses)} />
-            <Cell label={t("db_closing_kg")} value={`${kg(sums.closingKg)} kg`} tone="stk" />
+            <Cell label={t("db_closing_kg")} value={`${kg(sums.closingKg)} ${t("db_weight_kg")}`} tone="stk" />
             <Cell label={t("db_cash")} value={signed(sums.cash)} />
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---- what opens when a date is pressed, on a phone ------------------------
+//
+// [2026-09-16] SISEN, on the full drawer: "pressing on each date, show too
+// many data ... it doesnt need to show all transaction or anything."
+//
+// WHAT WAS REMOVED
+//
+// Every ticket. The buying list and the selling list, one row per load with
+// the farmer's or buyer's name, the plate, the weight and the price. On a
+// 154-load day that is 154 rows behind one date — and it is the most
+// personal data in the system, travelling to a phone whose whole purpose is
+// watching. Transactions was taken off this account's menu in September for
+// exactly that reason; leaving the same names inside the Daily Book drawer
+// put them back through a side door.
+//
+// WHAT IS LEFT, AND WHY
+//
+// Eleven lines answering the only two questions a day raises:
+//
+//   ឃ្លាំង            does the shed balance — what was there this morning,
+//                     in, out, counted, what is there tonight. The five
+//                     lines ADD UP, and when they do not, the warning above
+//                     says so. This is the only place that can be checked.
+//   ចំណេញមកពីណា     where the profit came from — sales, minus what that
+//                     paddy cost, minus ថ្លៃកូនដៃ, minus other spending.
+//                     Same figure as the card, with its working shown.
+//   សាច់ប្រាក់        one line, because profit and cash are not the same
+//                     thing and a day can be good at one, bad at the other.
+function SimpleDay({ day, t }) {
+  const money = (v) => Math.abs(Math.round(v || 0)).toLocaleString("en-US");
+  const kg = (v) => (Number(v) || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+
+  // min-w-0 + truncate on the label, shrink-0 + nowrap on the figure: a
+  // label may lose its tail, a number never may.
+  const Line = ({ label, value, tone, strong }) => (
+    <div className={`flex items-baseline gap-2 border-t border-slate-50 px-3 py-1.5 text-[12.5px] first:border-t-0 ${
+      strong === "sum" ? "!border-t-slate-200 bg-slate-50" : strong === "win" ? "bg-brand-700" : ""}`}>
+      <span className={`min-w-0 flex-1 truncate ${
+        strong === "win" ? "font-bold text-white" : strong === "sum" ? "font-bold text-slate-900" : "text-slate-500"}`}>{label}</span>
+      <span className={`shrink-0 whitespace-nowrap font-semibold tabular-nums ${
+        strong === "win" ? "font-extrabold text-white"
+        : strong === "sum" ? "font-extrabold text-slate-900"
+        : tone === "g" ? "text-brand-700" : tone === "r" ? "text-orange-700"
+        : tone === "n" ? "font-medium text-slate-300" : "text-slate-700"}`}>{value}</span>
+    </div>
+  );
+
+  const Block = ({ title, children }) => (
+    <div className="mb-2 overflow-hidden rounded-xl border border-slate-200 bg-white last:mb-0">
+      <p className="border-b border-slate-100 px-3 pb-1 pt-1.5 text-[10px] font-extrabold tracking-wide text-brand-700">{title}</p>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="border-t border-brand-100 bg-brand-50 px-2.5 pb-3 pt-2.5">
+      {day.shortfallKg > 0 && (
+        <div className="mb-2 rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-[11.5px] leading-relaxed text-orange-900">
+          <b className="block text-orange-800">{t("db_short_title", { kg: kg(day.shortfallKg) })}</b>
+          {t("db_short_body", { rate: day.costPerKg ? day.costPerKg.toFixed(2) : "—" })}
+        </div>
+      )}
+
+      <Block title={t("db_shed")}>
+        <Line label={t("db_open_short")} value={`${kg(day.openingKg)} ${t("db_weight_kg")}`} />
+        <Line label={`+ ${t("db_buy")}`} value={`+${kg(day.boughtKg)}`} tone="g" />
+        <Line label={`− ${t("db_sell")}`} value={`−${kg(day.soldKg)}`} tone="r" />
+        <Line label={t("db_counted_short")} value={day.lostKg ? `${day.lostKg < 0 ? "−" : "+"}${kg(Math.abs(day.lostKg))}` : "—"} tone={day.lostKg ? (day.lostKg < 0 ? "r" : "g") : "n"} />
+        <Line label={t("db_tonight")} value={`${kg(day.closingKg)} ${t("db_weight_kg")}`} strong="sum" />
+      </Block>
+
+      <Block title={t("db_profit_from")}>
+        <Line label={t("db_sales")} value={`+${money(day.received)}`} tone="g" />
+        <Line label={t("db_cogs_short")} value={`−${money(day.cogs)}`} tone="r" />
+        <Line label="ថ្លៃកូនដៃ" value={day.commission ? `−${money(day.commission)}` : "—"} tone={day.commission ? "r" : "n"} />
+        <Line label={t("db_other_expenses")} value={day.otherExp ? `−${money(day.otherExp)}` : "—"} tone={day.otherExp ? "r" : "n"} />
+        <Line label={t("db_stock_lost")} value={day.lostValue < 0 ? `−${money(-day.lostValue)}` : "—"} tone={day.lostValue < 0 ? "r" : "n"} />
+        <Line label={t("db_profit")} value={`${day.profit >= 0 ? "+" : "−"}${money(day.profit)} ៛`} strong="win" />
+        <Line label={t("db_cash_short")} value={`${day.cash >= 0 ? "+" : "−"}${money(day.cash)} ៛`} />
+      </Block>
     </div>
   );
 }
@@ -397,6 +499,7 @@ function DayDrawer({ day, txs, payments }) {
 // ---- the page -------------------------------------------------------------
 export default function DailyBook() {
   const { t } = useLanguage();
+  const { isViewOnly } = useAuth();
   const today = cambodiaToday();
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
@@ -477,26 +580,40 @@ export default function DailyBook() {
         subtitle={t("db_subtitle")}
       />
 
+      {/* [2026-09-16] On a phone this row was four things fighting for one
+          line: a label, four grain buttons, another label, a month picker, a
+          gold "read only" badge and the location filter. It wrapped into an
+          untidy stack about a third of the screen tall before a single
+          figure appeared.
+
+          Below md the two small uppercase labels are dropped — the buttons
+          say "By day / By week" and read perfectly well without a caption
+          over them — the grain buttons take the full width as one bar of
+          equal quarters, and the read-only badge moves out of the flow. On a
+          computer the row is exactly as it was. */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white px-4 py-3 md:px-6">
-        <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{t("db_show")}</span>
-        <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <span className="hidden text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 md:inline">{t("db_show")}</span>
+        <div className="flex w-full overflow-hidden rounded-lg border border-slate-200 bg-white md:w-auto">
           {GRAINS.map(([g, label]) => (
             <button key={g} onClick={() => { setGrain(g); setOpen(null); }}
-              className={`border-r border-slate-200 px-3.5 py-1.5 text-[13px] last:border-r-0 ${
+              className={`flex-1 truncate border-r border-slate-200 px-2 py-1.5 text-[12.5px] last:border-r-0 md:flex-none md:px-3.5 md:text-[13px] ${
                 grain === g ? "bg-brand-50 font-semibold text-brand-700" : "text-slate-500 hover:bg-slate-50"}`}>
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
-        <span className="ml-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{t("db_period")}</span>
+        <span className="hidden text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 md:ml-2 md:inline">{t("db_period")}</span>
         <select value={month} onChange={(e) => { setMonth(e.target.value); setOpen(null); }}
           disabled={grain === "year"}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-700 disabled:opacity-50">
-          <option value="">Whole year {year}</option>
+          <option value="">{t("db_whole_year", { year })}</option>
           {months.map((m) => <option key={m} value={m}>{my(m)}</option>)}
         </select>
-        <span className="rounded-md bg-gold-50 px-2 py-0.5 text-[10.5px] font-semibold text-gold-700 ring-1 ring-gold-300">
-          Auto-generated · read only
+        {/* Worth saying once, not worth a third of a phone screen. It stays
+            on the row on a computer and drops below the controls on a
+            phone, where it reads as a footnote rather than a control. */}
+        <span className="order-last w-full rounded-md text-[10.5px] font-semibold text-gold-700 md:order-none md:w-auto md:bg-gold-50 md:px-2 md:py-0.5 md:ring-1 md:ring-gold-300">
+          {t("db_auto_readonly")}
         </span>
         <div className="ml-auto">
           <LocationFilter locations={locations} selectedIds={selectedLocationIds} setSelectedIds={setSelectedLocationIds} />
@@ -532,11 +649,11 @@ export default function DailyBook() {
                 return (
                   <Fragment key={p.key}>
                     <LedgerCard
-                      label={main} sub={sub} sums={p.totals} t={t}
+                      label={main} sub={sub} sums={p.totals} t={t} open={isOpen}
                       onClick={isDay ? () => setOpen(isOpen ? null : p.key)
                         : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
                     />
-                    {isOpen && <DayDrawer day={day} txs={raw.txs} payments={raw.payments} />}
+                    {isOpen && <SimpleDay day={day} t={t} />}
                     {weekDays && weekDays.length > 1 && (
                       <LedgerCard variant="week"
                         label={`${t("db_week")} ${isoWeek(p.key).week}`} sub={`${weekDays.length} ${t("db_trading_days")}`}
@@ -608,7 +725,15 @@ export default function DailyBook() {
                         {isOpen && (
                           <tr>
                             <td colSpan={18} className="border-b border-slate-200 p-0">
-                              <DayDrawer day={day} txs={raw.txs} payments={raw.payments} />
+                              {/* [2026-09-16] A view-only account gets the short
+                                  drawer on a computer as well. Transactions was
+                                  taken off its menu in September because every
+                                  ticket carries a farmer's name and phone number
+                                  — leaving the same list inside this drawer put
+                                  them straight back through a side door. */}
+                              {isViewOnly
+                                ? <div className="bg-brand-50 px-4 py-3"><SimpleDay day={day} t={t} /></div>
+                                : <DayDrawer day={day} txs={raw.txs} payments={raw.payments} />}
                             </td>
                           </tr>
                         )}
