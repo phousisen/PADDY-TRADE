@@ -75,11 +75,15 @@ const BUY = "bg-brand-600/[0.03]";
 const SELL = "bg-orange-600/[0.03]";
 const STK = "bg-sky-700/[0.04]";
 
-// [2026-09-16] `t` here was the row's TOTALS. Renamed to `tot` so the
-// translator can be called `t` in this file like every other screen —
-// a bulk i18n pass put t("…") in here and would have called the totals
-// object as a function.
-function LedgerRow({ label, sub, tot, variant, onClick, onLoads, open, t }) {
+// [2026-09-16] The row's TOTALS object is `sums`.
+//
+// It was called `t`, which collided with the translator when this file
+// was translated — a bulk pass put t("…") in here, which would have
+// called the totals object as a function. I renamed it to `tot`, which
+// was ALSO already taken: `const tot = variant === "total"` two lines
+// below. That duplicate declaration failed the Vercel build, so nothing
+// shipped that day until it was found. Hence `sums` — checked free.
+function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t }) {
   const tot = variant === "total";
   const D = tot;   // dark row — placeholders need a lighter grey to be seen
   const wk = variant === "week";
@@ -105,27 +109,27 @@ function LedgerRow({ label, sub, tot, variant, onClick, onLoads, open, t }) {
         </span>
       </td>
 
-      <td className={`${cls(BUY)} text-center`}><Loads n={tot.buyLoads} title={`${tot.truck} ${t("db_truck")} · ${tot.koyun} ${t("db_koyun")} · ${tot.tractor} ${t("db_tractor")}${tot.otherVeh ? ` · ${tot.otherVeh} ${t("db_other_veh")}` : ""} — ${t("db_click_to_see")}`} /></td>
-      <td className={cls(BUY)}><Kg v={tot.boughtKg} dark={D} /></td>
-      <td className={cls(BUY)}>{tot.buyPricePerKg ? tot.buyPricePerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(BUY)}><Riel v={tot.spent} dark={D} /></td>
+      <td className={`${cls(BUY)} text-center`}><Loads n={sums.buyLoads} title={`${sums.truck} ${t("db_truck")} · ${sums.koyun} ${t("db_koyun")} · ${sums.tractor} ${t("db_tractor")}${sums.otherVeh ? ` · ${sums.otherVeh} ${t("db_other_veh")}` : ""} — ${t("db_click_to_see")}`} /></td>
+      <td className={cls(BUY)}><Kg v={sums.boughtKg} dark={D} /></td>
+      <td className={cls(BUY)}>{sums.buyPricePerKg ? sums.buyPricePerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(BUY)}><Riel v={sums.spent} dark={D} /></td>
 
-      <td className={`${cls(SELL)} text-center border-l border-slate-200`}><Loads n={tot.sellLoads} title={t("db_click_loads")} /></td>
-      <td className={cls(SELL)}><Kg v={tot.soldKg} dark={D} /></td>
-      <td className={cls(SELL)}><Riel v={tot.received} dark={D} /></td>
+      <td className={`${cls(SELL)} text-center border-l border-slate-200`}><Loads n={sums.sellLoads} title={t("db_click_loads")} /></td>
+      <td className={cls(SELL)}><Kg v={sums.soldKg} dark={D} /></td>
+      <td className={cls(SELL)}><Riel v={sums.received} dark={D} /></td>
 
-      <td className={`${cls()} border-l border-slate-200`}><Riel v={tot.commission} dark={D} /></td>
-      <td className={cls()}><Riel v={tot.otherExp} dark={D} /></td>
-      <td className={cls()}><Riel v={tot.expenses} dark={D} /></td>
+      <td className={`${cls()} border-l border-slate-200`}><Riel v={sums.commission} dark={D} /></td>
+      <td className={cls()}><Riel v={sums.otherExp} dark={D} /></td>
+      <td className={cls()}><Riel v={sums.expenses} dark={D} /></td>
 
-      <td className={`${cls(STK)} border-l border-slate-200`}>{tot.lostKg ? <Signed v={tot.lostKg} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(STK)}>{tot.lostValue ? <Signed v={tot.lostValue} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(STK)}><Kg v={tot.closingKg} dark={D} /></td>
-      <td className={cls(STK)}>{tot.costPerKg ? tot.costPerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
-      <td className={cls(STK)}><Riel v={tot.closingValue} dark={D} /></td>
+      <td className={`${cls(STK)} border-l border-slate-200`}>{sums.lostKg ? <Signed v={sums.lostKg} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}>{sums.lostValue ? <Signed v={sums.lostValue} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}><Kg v={sums.closingKg} dark={D} /></td>
+      <td className={cls(STK)}>{sums.costPerKg ? sums.costPerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
+      <td className={cls(STK)}><Riel v={sums.closingValue} dark={D} /></td>
 
-      <td className={`${cls()} border-l border-slate-200`}><Signed v={tot.profit} dark={D} /></td>
-      <td className={cls()}><Signed v={tot.cash} dark={D} /></td>
+      <td className={`${cls()} border-l border-slate-200`}><Signed v={sums.profit} dark={D} /></td>
+      <td className={cls()}><Signed v={sums.cash} dark={D} /></td>
     </tr>
   );
 }
@@ -407,7 +411,7 @@ export default function DailyBook() {
                     return (
                       <Fragment key={p.key}>
                         <LedgerRow
-                          label={main} sub={sub} tot={p.totals} t={t}
+                          label={main} sub={sub} sums={p.totals} t={t}
                           open={isOpen}
                           onClick={isDay ? () => setOpen(isOpen ? null : p.key)
                             : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
@@ -423,14 +427,14 @@ export default function DailyBook() {
                         {weekDays && weekDays.length > 1 && (
                           <LedgerRow variant="week"
                             label={`${t("db_week")} ${isoWeek(p.key).week}`} sub={`${weekDays.length} ${t("db_trading_days")}`}
-                            tot={rollup(weekDays)} t={t} />
+                            sums={rollup(weekDays)} t={t} />
                         )}
                       </Fragment>
                     );
                   })}
                   <LedgerRow variant="total"
                     label={month ? `${t(MONTH_KEYS[Number(month.slice(5, 7)) - 1])} ${t("db_total")}` : `${year} ${t("db_total")}`}
-                    sub={`${totals.days} ${t("db_trading_days")}`} tot={totals} t={t} />
+                    sub={`${totals.days} ${t("db_trading_days")}`} sums={totals} t={t} />
                 </tbody>
               </table>
             </div>
