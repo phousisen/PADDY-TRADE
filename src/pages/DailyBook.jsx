@@ -107,7 +107,7 @@ function LedgerRow({ label, sub, t, variant, onClick, onLoads, open }) {
       <td className={cls(SELL)}><Kg v={t.soldKg} dark={D} /></td>
       <td className={cls(SELL)}><Riel v={t.received} dark={D} /></td>
 
-      <td className={`${cls()} border-l border-slate-200`}><Riel v={t.staff} dark={D} /></td>
+      <td className={`${cls()} border-l border-slate-200`}><Riel v={t.commission} dark={D} /></td>
       <td className={cls()}><Riel v={t.otherExp} dark={D} /></td>
       <td className={cls()}><Riel v={t.expenses} dark={D} /></td>
 
@@ -200,7 +200,7 @@ function DayDrawer({ day, txs, payments }) {
         <Mini title="Profit, and the cash behind it">
           <Line label="Sales" a={<>+ <Riel v={day.received} /> ៛</>} tone="g" />
           <Line label="Cost of the paddy that left the shed" a={<>− <Riel v={day.cogs} /> ៛</>} tone="r" />
-          <Line label="Staff fees" a={day.staff ? <>− <Riel v={day.staff} /> ៛</> : "—"} tone={day.staff ? "r" : ""} />
+          <Line label="ថ្លៃកូនដៃ" a={day.commission ? <>− <Riel v={day.commission} /> ៛</> : "—"} tone={day.commission ? "r" : ""} />
           <Line label="Other expenses" a={day.otherExp ? <>− <Riel v={day.otherExp} /> ៛</> : "—"} tone={day.otherExp ? "r" : ""} />
           <Line label="Stock lost — counted" a={day.lostValue < 0 ? <>− <Riel v={-day.lostValue} /> ៛</> : "—"} tone={day.lostValue < 0 ? "r" : ""} />
           <div className="flex items-center gap-3 bg-brand-700 px-4 py-2.5 text-[13px] text-white">
@@ -369,7 +369,7 @@ export default function DailyBook() {
                     <th className={`${TH} ${SELL} border-b border-slate-200 border-l text-center`}>Loads</th>
                     <th className={`${TH} ${SELL} border-b border-slate-200`}>Weight kg</th>
                     <th className={`${TH} ${SELL} border-b border-slate-200`}>Received ៛</th>
-                    <th className={`${TH} border-b border-l border-slate-200`}>Staff ៛</th>
+                    <th className={`${TH} border-b border-l border-slate-200`}>ថ្លៃកូនដៃ ៛</th>
                     <th className={`${TH} border-b border-slate-200`}>Other ៛</th>
                     <th className={`${TH} border-b border-slate-200`}>Total ៛</th>
                     <th className={`${TH} ${STK} border-b border-l border-slate-200`}>Lost kg</th>
