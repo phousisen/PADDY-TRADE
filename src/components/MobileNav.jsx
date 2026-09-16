@@ -2,8 +2,20 @@ import { useState } from "react";
 import {
   LayoutGrid, Scale, Receipt, Users, Menu, X, Warehouse, ShoppingCart,
   MapPin, BarChart3, Settings, Languages, ClipboardList, LogOut, UserCog,
-  ShieldCheck, Wallet, Activity,
+  ShieldCheck, Wallet, Activity, BookOpen,
 } from "lucide-react";
+// [2026-09-16] BookOpen, on the end of that list, was USED below — the
+// Daily Book tab in the view-only tab list — and never imported. Nothing
+// in the app referenced it until the first real Viewer account signed in,
+// so the crash waited here until SISEN's parents' account was created:
+//
+//     "okay now i can login but the screen is plain white"
+//     Can't find variable: BookOpen
+//
+// With no error boundary in the app at the time, all it produced was a
+// blank page. scripts-check-icons.mjs now makes this same check on every
+// file — an icon is written as a VALUE, never called, so the existing
+// import guard could not see it.
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 
