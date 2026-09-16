@@ -416,7 +416,7 @@ const rawApi = {
   },
 
   async getProfiles() {
-    const { data, error } = await supabase.from("profiles").select("*, locations(name), roles(id, name, scope, permissions)").order("full_name");
+    const { data, error } = await supabase.from("profiles").select("*, locations(name), roles(id, name, scope, permissions, view_only)").order("full_name");
     if (error) {
       // The roles table/relationship may not exist yet if that migration
       // hasn't been run — fall back to plain profiles so this page doesn't
@@ -607,14 +607,22 @@ const rawApi = {
     }
   },
 
-  async createRole({ name, scope, permissions }) {
-    const { data, error } = await supabase.from("roles").insert({ name, scope, permissions }).select().single();
+  // [2026-09-16] viewOnly: a role can now BE view-only, rather than it being a
+  // tick box remembered separately on every person given that role. Omitted
+  // rather than defaulted, so a database that has not had viewer_role.sql run
+  // yet is never sent a column it does not have.
+  async createRole({ name, scope, permissions, viewOnly }) {
+    const row = { name, scope, permissions };
+    if (viewOnly !== undefined) row.view_only = !!viewOnly;
+    const { data, error } = await supabase.from("roles").insert(row).select().single();
     if (error) throw error;
     return data;
   },
 
-  async updateRole(id, { name, scope, permissions }) {
-    const { data, error } = await supabase.from("roles").update({ name, scope, permissions }).eq("id", id).select().single();
+  async updateRole(id, { name, scope, permissions, viewOnly }) {
+    const patch = { name, scope, permissions };
+    if (viewOnly !== undefined) patch.view_only = !!viewOnly;
+    const { data, error } = await supabase.from("roles").update(patch).eq("id", id).select().single();
     if (error) throw error;
     return data;
   },

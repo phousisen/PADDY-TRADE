@@ -142,7 +142,7 @@ export function AuthProvider({ children }) {
       // Try the full query with the roles join first.
       const { data, error } = await supabase
         .from("profiles")
-        .select("*, roles(id, name, scope, permissions)")
+        .select("*, roles(id, name, scope, permissions, view_only)")
         .eq("id", userId)
         .single();
 
@@ -367,7 +367,17 @@ export function AuthProvider({ children }) {
     return canWithProfile(profile, key);
   }
 
-  const isViewOnly = !!profile?.view_only;
+  // [2026-09-16] SISEN: "i think i want to create a role for a viewer
+  // instead. so i can create an account for that one."
+  //
+  // View only used to be a tick box on each PERSON, so every viewer account
+  // depended on somebody remembering to tick it — and forgetting was silent:
+  // a full working account with every edit button live. It can now be a
+  // property of the ROLE, which is where it belongs.
+  //
+  // Either one makes an account view only. The per-person tick is untouched,
+  // so nothing that works today stops working.
+  const isViewOnly = !!profile?.view_only || !!profile?.roles?.view_only;
 
   return (
     <AuthContext.Provider value={{ session, profile, loading, login, logout, hasPermission, can, isViewOnly, passwordRecovery }}>
