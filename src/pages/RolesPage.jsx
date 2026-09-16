@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Plus, Trash2, Lock, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Lock, AlertTriangle, Eye } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
+import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { PERMISSION_GROUPS } from "../permissions.js";
 
@@ -12,6 +13,8 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
   const [name, setName] = useState(role.name);
   const [scope, setScope] = useState(role.scope);
   const [permissions, setPermissions] = useState(role.permissions || []);
+  const [viewOnly, setViewOnly] = useState(!!role.view_only);
+  const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [reassigning, setReassigning] = useState(null);
@@ -30,10 +33,10 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
     setError("");
     try {
       if (isNew) {
-        const created = await api.createRole({ name: name.trim(), scope, permissions });
+        const created = await api.createRole({ name: name.trim(), scope, permissions, viewOnly });
         onSaved(created);
       } else {
-        const updated = await api.updateRole(role.id, { name: name.trim(), scope, permissions });
+        const updated = await api.updateRole(role.id, { name: name.trim(), scope, permissions, viewOnly });
         onSaved(updated);
       }
     } catch (err) {
@@ -102,6 +105,33 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
               {!canPickAllScope && !scopeLocked && <p className="mt-1 text-[11px] text-slate-400">Only Owner can grant all-location access.</p>}
             </div>
           </div>
+
+          {/* [2026-09-16] SISEN: "i think i want to create a role for a viewer
+              instead. so i can create an account for that one."
+
+              View only was a tick box on each PERSON, so every viewer account
+              depended on somebody remembering it, and forgetting was silent —
+              a full working account with every edit button live. Putting it on
+              the role means it is decided once, by whoever designs the role,
+              rather than every time somebody is added.
+
+              It sits ABOVE the permission list on purpose: it overrules all of
+              them, and a switch that overrules a list belongs in front of the
+              list, not buried under it. */}
+          <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 ${
+            viewOnly ? "border-sky-300 bg-sky-50" : "border-slate-200 bg-white"}`}>
+            <input type="checkbox" checked={viewOnly} onChange={() => setViewOnly((v) => !v)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-sky-600" />
+            <span>
+              <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <Eye size={14} className={viewOnly ? "text-sky-600" : "text-slate-400"} />
+                {t("role_view_only")}
+              </span>
+              <span className="mt-0.5 block text-[12.5px] text-slate-500">
+                {t("role_view_only_hint")}
+              </span>
+            </span>
+          </label>
 
           <div className="space-y-5">
             {PERMISSION_GROUPS.map((g) => (
