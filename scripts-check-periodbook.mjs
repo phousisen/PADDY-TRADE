@@ -15,6 +15,7 @@
 //
 // Run: node scripts-check-periodbook.mjs
 
+import { readFileSync } from "node:fs";
 import { buildDays, rollup, buildPeriods, isoWeek, monthKey, vehicleTypeOf, SUM_FIELDS } from "./src/periodBook.js";
 
 let failures = 0;
@@ -238,6 +239,58 @@ console.log("  vehicle types add up to the load count");
 // week numbering -------------------------------------------------------------
 ok(isoWeek("2026-01-01").week === 1, "ISO week of 1 Jan 2026 should be 1", isoWeek("2026-01-01"));
 ok(monthKey("2026-09-14") === "2026-09", "month key wrong");
+
+// reading order ---------------------------------------------------------------
+//
+// [2026-09-17] SISEN: "make the lastest date up instead" — "for all devices not
+// just pc". The page is opened to see how TODAY went, and today used to be
+// thirty rows down.
+//
+// Two things have to hold, and the second is the one that quietly breaks:
+//   · buildPeriods stays ASCENDING. It is a pure function several things
+//     reason about; the reversal belongs to the screen, not the data.
+//   · the week subtotal still lands under its OWN days once reversed.
+{
+  const asc = buildPeriods(days, "days");
+  const sorted = [...asc].every((p, i) => i === 0 || asc[i - 1].key <= p.key);
+  ok(sorted, "buildPeriods must stay oldest-first — the page reverses, not this");
+
+  const book = readFileSync("src/pages/DailyBook.jsx", "utf8");
+  ok(/buildPeriods\(scoped, grain\)\.slice\(\)\.reverse\(\)/.test(book),
+     "DailyBook must show newest first");
+  // Both layouts must read the SAME array, or a phone and a computer disagree
+  // about what order the month is in.
+  ok((book.match(/periods\.map\(/g) || []).length === 2,
+     "the phone cards and the computer table must both map over `periods`");
+  ok(!/\.reverse\(\)/.test(book.split("const periods = useMemo")[1].split("\n").slice(1).join("\n")),
+     "nothing may reverse the rows a second time further down the page");
+
+  // The week break is detected against the NEXT row in display order. Reversed,
+  // that is the older day — so the boundary must still fall at the start of a
+  // week, putting the subtotal beneath the group it belongs to.
+  const shown = [...asc].reverse();
+  const emitted = [];
+  shown.forEach((p, i) => {
+    const next = shown[i + 1];
+    emitted.push(p.key);
+    if (!next || isoWeek(p.key).key !== isoWeek(next.key).key) emitted.push(`W:${isoWeek(p.key).key}`);
+  });
+  // Every week that appears must be emitted exactly once, and immediately
+  // after the OLDEST day of that week.
+  const weeksSeen = emitted.filter((e) => e.startsWith("W:"));
+  const weeksReal = [...new Set(days.map((d) => isoWeek(d.date).key))];
+  ok(weeksSeen.length === weeksReal.length,
+     "every week gets exactly one subtotal", `${weeksSeen.length} vs ${weeksReal.length}`);
+  ok(new Set(weeksSeen).size === weeksSeen.length, "no week is subtotalled twice");
+  for (let i = 0; i < emitted.length; i += 1) {
+    const e = emitted[i];
+    if (!e.startsWith("W:")) continue;
+    const dayBefore = emitted[i - 1];
+    ok(dayBefore && !dayBefore.startsWith("W:") && `W:${isoWeek(dayBefore).key}` === e,
+       `the ${e} subtotal must sit directly under that week's oldest day`, dayBefore);
+  }
+  console.log("  newest day first, each week's total under its own days");
+}
 
 console.log(failures === 0
   ? `\nAll checks passed — ${days.length} days, ${buildPeriods(days,"weeks").length} weeks, ${buildPeriods(days,"months").length} months.`
