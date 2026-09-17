@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { noteSignOut, REASONS } from "../signOutReason.js";
+import { stuckStations, stuckSummary } from "../deviceWatch.js";
 import { Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut, Trash2, Undo2 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -262,6 +263,7 @@ function timeAgo(iso) {
 // doesn't exist today, and the second needs the aging math pulled out of
 // the Receivables report into something callable from here.
 function NotificationBell() {
+  const { t } = useLanguage();
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
   const [open, setOpen] = useState(false);
@@ -277,6 +279,35 @@ function NotificationBell() {
   // on every mount, to show a number. The count costs no rows at all, and
   // the pending-only list is filtered in the database rather than here.
   const [pendingCount, setPendingCount] = useState(0);
+
+  // [2026-09-17] STATIONS THAT ARE STUCK, seen from HQ.
+  //
+  // Ping Pong was stuck from 12 to 17 September with a red banner on its own
+  // screen saying "tell an admin now", and nobody at HQ knew. The data was
+  // already arriving here every minute — `stuck` and `pending_ops` on each
+  // machine's check-in — and nothing looked at it.
+  //
+  // Polled, because a station goes bad while HQ is mid-page, not on a reload.
+  // Every failure is swallowed: a bell that throws is worse than a bell that
+  // is briefly quiet.
+  const [stuck, setStuck] = useState([]);
+  useEffect(() => {
+    if (!isAdmin) { setStuck([]); return; }
+    let cancelled = false;
+    async function tick() {
+      try {
+        const [devs, locs] = await Promise.all([
+          api.getDeviceSessions(),
+          api.getLocations().catch(() => []),
+        ]);
+        if (!cancelled && devs) setStuck(stuckStations(devs, locs));
+      } catch { /* not migrated, offline, whatever — no badge, no error */ }
+    }
+    tick();
+    const timer = setInterval(tick, 60000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [isAdmin]);
+  const stuckNote = stuckSummary(stuck);
 
   useEffect(() => {
     if (!isAdmin) { setPendingCount(0); setPendingReqs([]); return; }
@@ -317,8 +348,11 @@ function NotificationBell() {
 
   // The dot reads the COUNT (always loaded, costs no rows); the list below
   // reads pendingReqs, which is only fetched once the bell is opened.
-  const count = pendingCount + (syncNotice ? 1 : 0);
-  const dotClass = syncNotice?.kind === "stuck" ? "bg-rose-500" : syncNotice?.kind === "session" ? "bg-indigo-500" : "bg-amber-500";
+  const count = pendingCount + (syncNotice ? 1 : 0) + (stuckNote ? 1 : 0);
+  // A station that cannot save is the worst thing this bell can carry, so it
+  // takes the colour whatever else is behind it.
+  const dotClass = (stuckNote || syncNotice?.kind === "stuck") ? "bg-rose-500"
+    : syncNotice?.kind === "session" ? "bg-indigo-500" : "bg-amber-500";
 
   return (
     <div className="relative" ref={boxRef}>
@@ -328,7 +362,17 @@ function NotificationBell() {
         className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100"
       >
         <Bell size={17} />
-        {count > 0 && <span className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full ${dotClass}`} />}
+        {/* A 6px dot was enough for "a change request is waiting". It is not
+            enough for "a station has been unable to save for five days", so
+            a stuck station gets a real number, in red, that does not read as
+            decoration. */}
+        {stuckNote ? (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+            {stuckNote.stations}
+          </span>
+        ) : count > 0 ? (
+          <span className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full ${dotClass}`} />
+        ) : null}
       </button>
       {open && (
         <div className="absolute right-0 top-11 z-30 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
@@ -337,6 +381,20 @@ function NotificationBell() {
             <p className="px-4 py-6 text-center text-xs text-slate-400">Nothing needs your attention right now.</p>
           ) : (
             <div className="max-h-80 overflow-y-auto">
+              {stuckNote && (
+                <div className="border-b border-rose-100 bg-rose-50 px-4 py-3">
+                  <p className="text-xs font-bold text-rose-800">{t("nb_station_stuck_title")}</p>
+                  {stuck.slice(0, 4).map((r) => (
+                    <p key={r.locationId || r.station} className="mt-1 text-[11px] text-rose-700">
+                      · <b>{r.station}</b> — {t("nb_station_stuck_line", { n: r.pending })}
+                    </p>
+                  ))}
+                  {stuck.length > 4 && (
+                    <p className="mt-1 text-[11px] text-rose-600">+{stuck.length - 4}</p>
+                  )}
+                  <p className="mt-1.5 text-[11px] text-rose-600">{t("nb_station_stuck_hint")}</p>
+                </div>
+              )}
               {syncNotice && (
                 <div className={`flex gap-2.5 border-b border-slate-100 px-4 py-3 ${syncNotice.kind === "stuck" ? "bg-rose-50/50" : ""}`}>
                   <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${dotClass}`} />
