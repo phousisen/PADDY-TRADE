@@ -277,3 +277,62 @@ export function childGrain(grain) {
   if (grain === "week") return "day";
   return null;
 }
+
+/**
+ * What a Save on the day sheet is actually asking for.
+ *
+ * [2026-09-17] SISEN: *"why even after i edit and erase some excpenses. its
+ * not gone. make this function properly."*
+ *
+ * He was right, and the cause was one line. The sheet built its entries as
+ *
+ *     shown.map(...).filter((e) => e.amount != null)
+ *
+ * so a box someone had emptied was dropped BEFORE the save ever saw it. The
+ * save was then handed a list that simply did not mention that category, did
+ * nothing about it, and the figure stayed on the day. There was no way to
+ * take a wrongly-entered expense off a sheet at all.
+ *
+ * An empty box means one of two completely different things:
+ *
+ *   · nothing recorded, nothing typed   → nothing to do
+ *   · a figure IS recorded, box cleared → REMOVE it
+ *
+ * Dropping both is what made erasing look broken. This tells them apart, and
+ * it is pure so every case can be tested — see scripts-check-expenses.mjs.
+ *
+ * `removals` carries the ROWS, not the category name, so a day holding two
+ * rows for one category has both taken out rather than one left behind.
+ */
+export function planDaySave({ shown = [], amounts = {}, merged = new Map(), parse } = {}) {
+  const read = typeof parse === "function"
+    ? parse
+    : (v) => {
+        const t = String(v ?? "").trim().replace(/,/g, "");
+        if (t === "") return null;
+        const n = Number(t);
+        return Number.isFinite(n) ? n : null;
+      };
+
+  const entries = [];
+  for (const name of shown) {
+    const amount = read(amounts[categoryKey(name)]);
+    if (amount != null) entries.push({ category: name, amount });
+  }
+
+  const removals = [];
+  for (const m of merged.values()) {
+    if (read(amounts[m.key]) == null) {
+      removals.push({ key: m.key, category: m.category, amount: m.amount, rows: m.rows });
+    }
+  }
+
+  // Taking money OUT of the record is at least as consequential as changing
+  // the figure, so it needs the same password and the same written reason.
+  const edited = [...merged.values()].some((m) => {
+    const typed = read(amounts[m.key]);
+    return typed != null && Math.round(typed) !== Math.round(m.amount);
+  });
+
+  return { entries, removals, changesExisting: removals.length > 0 || edited };
+}

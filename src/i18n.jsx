@@ -375,6 +375,11 @@ export const translations = {
     adj_reason_spillage: "Spillage / handling loss", adj_reason_recount: "Recount correction", adj_reason_other: "Other",
     adj_recount_gain: "Recount — more than expected", adj_corrected_up: "Corrected up",
     adj_title: "Adjust Stock — {station}",
+    // [2026-09-17] SISEN: "why even after i edit and erase some excpenses.
+    // its not gone." Clearing a box now removes the figure — and says so.
+    ex_will_remove: "remove",
+    ex_removing_title: "These will be taken off this day:",
+    ex_removing_note: "They stay on the record as voided, with your reason — they are not deleted.",
     // [2026-09-17] Weighing Tickets — the screen station staff touch on every
     // load, and the one with the most English left on it. Its field labels
     // were already bilingual by design (English with the Khmer beside it);
@@ -1579,6 +1584,10 @@ export const translations = {
     adj_reason_spillage: "បាត់បង់ដោយការចាក់ខ្ចាត់/ការដោះស្រាយ", adj_reason_recount: "កែតម្រូវពីការរាប់ឡើងវិញ", adj_reason_other: "ផ្សេងទៀត",
     adj_recount_gain: "រាប់ឡើងវិញ — ច្រើនជាងការរំពឹងទុក", adj_corrected_up: "កែតម្រូវឡើងលើ",
     adj_title: "កែតម្រូវស្តុក — {station}",
+    // [2026-09-17] លុបចំណាយចេញពីថ្ងៃនោះ
+    ex_will_remove: "លុប",
+    ex_removing_title: "ទាំងនេះនឹងត្រូវដកចេញពីថ្ងៃនេះ៖",
+    ex_removing_note: "វានៅតែមានក្នុងកំណត់ត្រា ជាមួយមូលហេតុរបស់លោក — មិនត្រូវបានលុបចោលទេ។",
     // [2026-09-17] សំបុត្រថ្លឹង
     wt_go_back_check: "ត្រឡប់ទៅពិនិត្យ",
     wt_save_anyway: "រក្សាទុកទោះយ៉ាងណា",
