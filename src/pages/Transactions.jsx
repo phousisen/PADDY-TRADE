@@ -280,52 +280,52 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
               className={`w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${derivedNet !== null ? "bg-slate-50 text-slate-600" : ""}`} />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Price per kg (៛)</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("tx_price_per_kg_r")}</label>
             <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
 
           {isBuy && (
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Quality Grade</label>
+              <label className="mb-1 block text-xs text-slate-500">{t("tx_quality_grade")}</label>
               <input list="rc-grade-options" value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               <datalist id="rc-grade-options"><option value="A" /><option value="B" /><option value="C" /></datalist>
             </div>
           )}
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("tx_payment_status")}</label>
             <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-              {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
+              {isBuy ? (<><option value="pending">{t("tx_pending")}</option><option value="paid">{t("paid")}</option></>) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("tx_credit")}</option><option value="deposit">{t("tx_deposit")}</option></>)}
             </select>
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Car Plate Number</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("tx_car_plate")}</label>
             <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
           <div>
-            <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
-            <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
+            <label className="mb-1 block text-xs text-slate-500">{t("tx_driver_name")}</label>
+            <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder={t("tx_eg_name")}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
         </div>
 
         <div className="mt-3 rounded-lg border border-slate-200 p-3">
-          <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
+          <p className="mb-2 text-xs font-medium text-slate-500">{t("tx_quality_deduction")}</p>
           <div className="grid grid-cols-4 gap-2">
-            <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-            <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-            <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-            <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_moisture_pct")}</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_mixture_pct")}</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_outthrow_pct")}</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+            <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_deduction_kg")}</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
           </div>
         </div>
 
         {isBuy && hadStaffFee && (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
-            <p className="mb-2 text-xs font-medium text-amber-800">Staff / Carrying Fee — old record</p>
+            <p className="mb-2 text-xs font-medium text-amber-800">{t("tx_staff_fee_old")}</p>
             <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
               className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             <p className="mt-1.5 text-[11px] text-amber-700">This transaction was recorded before the fee moved to Expenses, and this amount still comes off what the seller was paid. New transactions have no such fee — ថ្លៃកូនដៃ is typed on the Expenses screen instead.</p>
@@ -335,7 +335,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
         <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-            Apply VAT
+            {t("tx_apply_vat")}
           </label>
           {taxApplicable && (
             <div className="flex items-center gap-1.5">
@@ -346,12 +346,12 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
         </div>
 
         <div className="mt-3">
-          <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_note_optional")}</label>
           <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
 
         <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">{t("tx_new_total")}</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
         </div>
 
         <div className="mt-3">
@@ -405,34 +405,34 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
         </h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
-        <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
+        <label className="mb-1 block text-xs text-slate-500">{t("tx_amount_r")}</label>
         <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         <div className="mb-3 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-          <div className="flex justify-between"><span className="text-slate-500">Currently owed</span><span className="font-medium text-slate-700">{fmtRiel(remaining)}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Paying now</span><span className="font-medium text-slate-700">− {fmtRiel(paying)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">{t("tx_currently_owed")}</span><span className="font-medium text-slate-700">{fmtRiel(remaining)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">{t("tx_paying_now")}</span><span className="font-medium text-slate-700">− {fmtRiel(paying)}</span></div>
           <div className="mt-1 flex justify-between border-t border-slate-200 pt-1.5">
-            <span className="font-medium text-slate-600">New remaining balance</span>
+            <span className="font-medium text-slate-600">{t("tx_new_remaining")}</span>
             <span className={`font-bold ${newRemaining === 0 ? "text-emerald-600" : "text-slate-800"}`}>{fmtRiel(newRemaining)}</span>
           </div>
         </div>
-        {overpaying && <p className="mb-3 text-xs text-amber-600">This is more than what is owed — the balance will just be marked fully settled.</p>}
+        {overpaying && <p className="mb-3 text-xs text-amber-600">{t("tx_overpay_note")}</p>}
 
-        <label className="mb-1 block text-xs text-slate-500">Method</label>
+        <label className="mb-1 block text-xs text-slate-500">{t("tx_method")}</label>
         <select value={method} onChange={(e) => setMethod(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-          <option value="cash">Cash</option>
-          <option value="check">Check</option>
-          <option value="bank">Bank Transfer</option>
+          <option value="cash">{t("tx_cash")}</option>
+          <option value="check">{t("tx_check")}</option>
+          <option value="bank">{t("tx_bank_transfer")}</option>
         </select>
 
-        <label className="mb-1 block text-xs text-slate-500">Payment Date</label>
+        <label className="mb-1 block text-xs text-slate-500">{t("tx_payment_date")}</label>
         <input type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} max={cambodiaDateStr()}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-        <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
-        <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. partial payment"
+        <label className="mb-1 block text-xs text-slate-500">{t("tx_note_optional")}</label>
+        <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder={t("tx_eg_partial")}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         {error && <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
@@ -671,7 +671,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Edit Transaction</h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> {t("tx_edit_transaction")}</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
         <form onSubmit={submit}>
@@ -716,26 +716,26 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
 
             {locations.length > 0 && (
               <div className="col-span-2">
-                <label className="mb-1 block text-xs text-slate-500">Location</label>
+                <label className="mb-1 block text-xs text-slate-500">{t("tx_location")}</label>
                 <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
                 {locationId !== tx.location_id && (
-                  <p className="mt-1 text-[11px] text-amber-600">Moving this to a different location — its stock will move too.</p>
+                  <p className="mt-1 text-[11px] text-amber-600">{t("tx_move_location_note")}</p>
                 )}
               </div>
             )}
 
             <div className="col-span-2 rounded-lg border border-dashed border-brand-300 bg-brand-50/50 p-2.5">
-              <label className="mb-1 block text-xs text-slate-500">Paper Ticket Number</label>
+              <label className="mb-1 block text-xs text-slate-500">{t("tx_paper_ticket_no")}</label>
               <input value={paperTicketNo} onChange={(e) => { setPaperTicketNo(e.target.value); setDupWarning(null); }} placeholder="e.g. CN000157"
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               <p className="mt-1 text-[11px] text-slate-500">The number printed on the physical quality ticket booklet. Leave blank if this transaction never had one.</p>
               {dupWarning && (
                 <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
                   <p className="text-xs text-amber-800">
-                    <strong>Heads up:</strong> "{dupWarning.ticketNo}" is already recorded here{dupWarning.match?.party_name ? ` for ${dupWarning.match.party_name}` : ""}
+                    <strong>{t("tx_heads_up")}</strong> "{dupWarning.ticketNo}" is already recorded here{dupWarning.match?.party_name ? ` for ${dupWarning.match.party_name}` : ""}
                     {dupWarning.match?.created_at ? ` · ${dmy(dupWarning.match.created_at)}` : ""}. Double-check the paper slip — if it's really the same number twice, you can still save; it'll be flagged for an admin to look into.
                   </p>
                   <button type="button" disabled={saving} onClick={doSave}
@@ -772,45 +772,45 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
 
             {isBuy && (
               <div>
-                <label className="mb-1 block text-xs text-slate-500">Quality Grade</label>
+                <label className="mb-1 block text-xs text-slate-500">{t("tx_quality_grade")}</label>
                 <input list="et-grade-options" value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)}
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                 <datalist id="et-grade-options"><option value="A" /><option value="B" /><option value="C" /></datalist>
               </div>
             )}
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Payment Status</label>
+              <label className="mb-1 block text-xs text-slate-500">{t("tx_payment_status")}</label>
               <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-                {isBuy ? (<><option value="pending">Pending</option><option value="paid">Paid</option></>) : (<><option value="paid">Paid</option><option value="credit">Credit</option><option value="deposit">Deposit</option></>)}
+                {isBuy ? (<><option value="pending">{t("tx_pending")}</option><option value="paid">{t("paid")}</option></>) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("tx_credit")}</option><option value="deposit">{t("tx_deposit")}</option></>)}
               </select>
             </div>
 
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Car Plate Number</label>
+              <label className="mb-1 block text-xs text-slate-500">{t("tx_car_plate")}</label>
               <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234"
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div>
-              <label className="mb-1 block text-xs text-slate-500">Truck / Driver Name</label>
-              <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith"
+              <label className="mb-1 block text-xs text-slate-500">{t("tx_driver_name")}</label>
+              <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder={t("tx_eg_name")}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div className="col-span-2">
               <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Buyer" : "Seller"} <span className="text-slate-400">(staff who recorded this)</span></label>
-              <input value={recordedByName} onChange={(e) => setRecordedByName(e.target.value)} placeholder="Staff name"
+              <input value={recordedByName} onChange={(e) => setRecordedByName(e.target.value)} placeholder={t("tx_staff_name")}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               <p className="mt-1 text-[11px] text-slate-400">This is the name printed on the receipt's own "{isBuy ? "Buyer" : "Seller"}" line — not the {isBuy ? "farmer" : "buyer"} above.</p>
             </div>
           </div>
 
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
-            <p className="mb-2 text-xs font-medium text-slate-500">Quality Deduction (optional)</p>
+            <p className="mb-2 text-xs font-medium text-slate-500">{t("tx_quality_deduction")}</p>
             <div className="grid grid-cols-4 gap-2">
-              <div><label className="mb-1 block text-[11px] text-slate-400">Moisture %</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-              <div><label className="mb-1 block text-[11px] text-slate-400">Mixture %</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-              <div><label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
-              <div><label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_moisture_pct")}</label><input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_mixture_pct")}</label><input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_outthrow_pct")}</label><input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
+              <div><label className="mb-1 block text-[11px] text-slate-400">{t("tx_deduction_kg")}</label><input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" /></div>
             </div>
           </div>
 
@@ -833,27 +833,27 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
             <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is. Whenever both are filled in, Quantity/Net Weight above is calculated from them automatically — edit the weights here rather than Quantity directly, so they never disagree.</p>
             <div className="grid grid-cols-3 gap-2">
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Weigh-In (kg)</label>
+                <label className="mb-1 block text-[11px] text-slate-400">{t("tx_weigh_in_kg")}</label>
                 <input type="number" min="0" step="0.01" value={grossKg} onChange={(e) => setGrossKg(e.target.value)} readOnly={!canEditWeights} title={!canEditWeights ? t("lock_money_title") : undefined} className={`w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${!canEditWeights ? "bg-slate-50 text-slate-600" : ""}`} />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">In Date</label>
+                <label className="mb-1 block text-[11px] text-slate-400">{t("tx_in_date")}</label>
                 <input type="date" value={grossInDate} onChange={(e) => setGrossInDate(e.target.value)} max={cambodiaDateStr()} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">In Time</label>
+                <label className="mb-1 block text-[11px] text-slate-400">{t("tx_in_time")}</label>
                 <input type="time" value={grossInTime} onChange={(e) => setGrossInTime(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Weigh-Out (kg)</label>
+                <label className="mb-1 block text-[11px] text-slate-400">{t("tx_weigh_out_kg")}</label>
                 <input type="number" min="0" step="0.01" value={tareKg} onChange={(e) => setTareKg(e.target.value)} readOnly={!canEditWeights} title={!canEditWeights ? t("lock_money_title") : undefined} className={`w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${!canEditWeights ? "bg-slate-50 text-slate-600" : ""}`} />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Out Date</label>
+                <label className="mb-1 block text-[11px] text-slate-400">{t("tx_out_date")}</label>
                 <input type="date" value={tareOutDate} onChange={(e) => setTareOutDate(e.target.value)} max={cambodiaDateStr()} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
               <div>
-                <label className="mb-1 block text-[11px] text-slate-400">Out Time</label>
+                <label className="mb-1 block text-[11px] text-slate-400">{t("tx_out_time")}</label>
                 <input type="time" value={tareOutTime} onChange={(e) => setTareOutTime(e.target.value)} className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </div>
             </div>
@@ -861,7 +861,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
 
           {isBuy && hadStaffFee && (
             <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3">
-              <p className="mb-2 text-xs font-medium text-amber-800">Staff / Carrying Fee — old record</p>
+              <p className="mb-2 text-xs font-medium text-amber-800">{t("tx_staff_fee_old")}</p>
               <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
                 className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               <p className="mt-1.5 text-[11px] text-amber-700">This transaction was recorded before the fee moved to Expenses, and this amount still comes off what the seller was paid. New transactions have no such fee — ថ្លៃកូនដៃ is typed on the Expenses screen instead.</p>
@@ -871,7 +871,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
           <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 p-3">
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-              Apply VAT
+              {t("tx_apply_vat")}
             </label>
             {taxApplicable && (
               <div className="flex items-center gap-1.5">
@@ -882,21 +882,21 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-xs text-slate-500">Note (optional)</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("tx_note_optional")}</label>
             <input value={note} onChange={(e) => setNote(e.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
 
           <div className="mt-3">
-            <label className="mb-1 block text-xs text-slate-500">Transaction Date</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("tx_transaction_date")}</label>
             <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
 
           <div className="mt-3 rounded-lg bg-brand-50 px-3 py-2.5 text-sm">
-            <div className="flex justify-between"><span className="text-slate-500">New total amount</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">{t("tx_new_total")}</span><span className="font-bold text-slate-800">{fmtRiel(newAmount)}</span></div>
           </div>
 
-          <label className="mb-1 mt-3 block text-xs text-slate-500">Enter your password to confirm this change</label>
+          <label className="mb-1 mt-3 block text-xs text-slate-500">{t("tx_password_confirm_change")}</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             autoComplete="off" name="confirm-own-password-not-autofillable"
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
@@ -971,20 +971,20 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 font-semibold text-slate-700">Payment History</h3>
+        <h3 className="mb-1 font-semibold text-slate-700">{t("tx_payment_history")}</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
         <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200">
           {loading ? (
-            <p className="p-4 text-center text-sm text-slate-400">Loading…</p>
+            <p className="p-4 text-center text-sm text-slate-400">{t("loading_label")}</p>
           ) : payments.length === 0 ? (
-            <p className="p-4 text-center text-sm text-slate-400">No payments recorded yet.</p>
+            <p className="p-4 text-center text-sm text-slate-400">{t("tx_no_payments")}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-400">
-                  <th className="px-3 py-2 font-medium">Date</th>
-                  <th className="px-3 py-2 font-medium">Amount</th>
+                  <th className="px-3 py-2 font-medium">{t("tx_date")}</th>
+                  <th className="px-3 py-2 font-medium">{t("tx_amount")}</th>
                   <th className="px-3 py-2 font-medium">By</th>
                   <th className="px-3 py-2"></th>
                 </tr>
@@ -1008,7 +1008,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                         )}
                         {voided && (
                           <div className="mt-0.5 text-[11px] text-slate-400">
-                            <span className="font-semibold text-slate-500">Voided</span>
+                            <span className="font-semibold text-slate-500">{t("tx_voided")}</span>
                             {p.voided_reason ? ` — ${p.voided_reason}` : ""}
                           </div>
                         )}
@@ -1018,15 +1018,15 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                       <td className="px-3 py-2 text-right">
                         {voided ? (
                           byCancel ? (
-                            <span className="text-[11px] text-slate-400">comes back if restored</span>
+                            <span className="text-[11px] text-slate-400">{t("tx_comes_back")}</span>
                           ) : (
                             <button onClick={() => api.unvoidPayment(p.id).then(() => { load(); onChanged?.(); })}
-                              className="text-[11px] font-medium text-slate-400 hover:text-brand-600">Undo void</button>
+                              className="text-[11px] font-medium text-slate-400 hover:text-brand-600">{t("tx_undo_void")}</button>
                           )
                         ) : (
                           <div className="flex justify-end gap-2">
-                            <button onClick={() => setEditPayment(p)} title="Correct the amount" className="text-slate-400 hover:text-brand-600"><Pencil size={13} /></button>
-                            <button onClick={() => setVoidPayment(p)} title="This payment should not exist" className="text-slate-400 hover:text-rose-600"><Ban size={13} /></button>
+                            <button onClick={() => setEditPayment(p)} title={t("tx_t_correct_amount")} className="text-slate-400 hover:text-brand-600"><Pencil size={13} /></button>
+                            <button onClick={() => setVoidPayment(p)} title={t("tx_t_should_not_exist")} className="text-slate-400 hover:text-rose-600"><Ban size={13} /></button>
                           </div>
                         )}
                       </td>
@@ -1039,7 +1039,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
         </div>
 
         <div className="mt-4 flex justify-end">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close</button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("close_label")}</button>
         </div>
       </div>
 
@@ -1064,6 +1064,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
 // meaningless zero row and no record of why. A voided payment now stays
 // visible with its reason, stops counting everywhere, and can be undone.
 function VoidPaymentModal({ payment, onClose, onSubmit }) {
+  const { t } = useLanguage();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1080,7 +1081,7 @@ function VoidPaymentModal({ payment, onClose, onSubmit }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
-          <Ban size={16} className="text-rose-500" /> Void this payment
+          <Ban size={16} className="text-rose-500" /> {t("tx_void_payment")}
         </h3>
         <p className="mb-3 text-xs text-slate-400">
           {fmtRiel(payment.amount)} · {payment.pay_date}
@@ -1093,15 +1094,15 @@ function VoidPaymentModal({ payment, onClose, onSubmit }) {
           </span>
         </div>
         <form onSubmit={submit}>
-          <label className="mb-1 block text-xs text-slate-500">Why? <span className="text-rose-500">*</span></label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_why")} <span className="text-rose-500">*</span></label>
           <textarea
             value={reason} onChange={(e) => setReason(e.target.value)} autoFocus rows={2}
-            placeholder="e.g. Entered twice by mistake"
+            placeholder={t("tx_eg_twice")}
             className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
           />
           {error && <p className="mt-2 text-sm text-rose-500">{error}</p>}
           <div className="mt-4 flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
             <button type="submit" disabled={busy || !reason.trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
               {busy ? "Voiding…" : "Void payment"}
             </button>
@@ -1113,18 +1114,19 @@ function VoidPaymentModal({ payment, onClose, onSubmit }) {
 }
 
 function PhotoPane({ label, url }) {
+  const { t } = useLanguage();
   return (
     <div>
       <p className="mb-1 text-xs font-medium text-slate-500">{label}</p>
       {url ? (
         <a href={url} target="_blank" rel="noreferrer" className="block">
           <img src={url} alt={label} className="h-48 w-full rounded-lg border border-slate-200 object-contain bg-slate-50 hover:opacity-90" />
-          <p className="mt-1 text-center text-[11px] text-brand-600">Click to open full size</p>
+          <p className="mt-1 text-center text-[11px] text-brand-600">{t("tx_click_full_size")}</p>
         </a>
       ) : (
         <div className="flex h-48 w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-300">
           <ImageOff size={20} />
-          <p className="text-xs">Not uploaded</p>
+          <p className="text-xs">{t("tx_not_uploaded")}</p>
         </div>
       )}
     </div>
@@ -1132,18 +1134,19 @@ function PhotoPane({ label, url }) {
 }
 
 function PhotosModal({ tx, onClose }) {
+  const { t } = useLanguage();
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Camera size={16} className="text-brand-600" /> Photos</h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Camera size={16} className="text-brand-600" /> {t("tx_photos")}</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
         <div className="grid grid-cols-2 gap-4">
-          <PhotoPane label="Physical Receipt" url={tx.receipt_photo_url} />
-          <PhotoPane label="Bank QR / Payment Proof" url={tx.payment_proof_url} />
-          <PhotoPane label="Seller's Bank QR Code (to pay)" url={tx.bank_qr_url} />
+          <PhotoPane label={t("tx_l_physical_receipt")} url={tx.receipt_photo_url} />
+          <PhotoPane label={t("tx_l_bank_qr")} url={tx.payment_proof_url} />
+          <PhotoPane label={t("tx_l_seller_qr")} url={tx.bank_qr_url} />
         </div>
         <div className="mt-4 flex justify-end">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Close</button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("close_label")}</button>
         </div>
       </div>
     </div>
@@ -1182,15 +1185,15 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> Correct Payment Amount</h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> {t("tx_correct_payment")}</h3>
         <p className="mb-3 text-xs text-slate-400">Was: {fmtRiel(payment.amount)} on {payment.pay_date}</p>
 
         <form onSubmit={submit}>
-          <label className="mb-1 block text-xs text-slate-500">Correct amount (៛)</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_correct_amount_r")}</label>
           <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus
             className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_password_confirm")}</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
@@ -1240,6 +1243,7 @@ function parseCsv(text) {
 }
 
 function StationCheckModal({ allRows, loadError, locations, onClose }) {
+  const { t } = useLanguage();
   const [result, setResult] = useState(null);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
@@ -1263,7 +1267,7 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
     try {
       const rows = parseCsv(await file.text());
       if (!rows.length || !("transaction_code" in rows[0])) {
-        setError("This doesn't look like a station log — expected a file from the weighbridge folder's PaddyTrade_Logs, e.g. 2026-09-07.csv.");
+        setError(t("tx_not_a_station_log"));
         return;
       }
       const live = allRows.filter((tx) => tx.hq_status !== "cancelled");
@@ -1306,15 +1310,15 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
       <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <div>
-            <h3 className="font-bold text-slate-800">Station check</h3>
-            <p className="text-xs text-slate-500">Compare a station PC's daily log against what the system holds.</p>
+            <h3 className="font-bold text-slate-800">{t("tx_station_check")}</h3>
+            <p className="text-xs text-slate-500">{t("tx_station_check_sub")}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center hover:border-brand-400 hover:bg-brand-50/40">
-            <span className="text-sm font-semibold text-slate-700">Choose the station's log file</span>
-            <span className="mt-1 text-xs text-slate-500">On the station PC: weighbridge folder → <span className="font-mono">PaddyTrade_Logs</span> → <span className="font-mono">2026-09-07.csv</span> (one file per day)</span>
+            <span className="text-sm font-semibold text-slate-700">{t("tx_choose_log_file")}</span>
+            <span className="mt-1 text-xs text-slate-500">{t("tx_on_station_pc")} <span className="font-mono">PaddyTrade_Logs</span> → <span className="font-mono">2026-09-07.csv</span> (one file per day)</span>
             {fileName && <span className="mt-2 rounded bg-white px-2 py-0.5 text-xs font-medium text-brand-700">{fileName}</span>}
             <input type="file" accept=".csv,text/csv" onChange={onFile} disabled={!ready} className="hidden" />
           </label>
@@ -1322,23 +1326,23 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
               check cannot run without the complete list, and it will not
               guess. */}
           {loadError && <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{loadError}</p>}
-          {!ready && !loadError && <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">Loading every transaction to check against\u2026</p>}
+          {!ready && !loadError && <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-500">{t("tx_loading_all")}</p>}
           {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           {result && (
             <div className="mt-4 space-y-4">
               <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                <div className="rounded-lg bg-slate-50 p-2"><div className="text-lg font-bold text-slate-800">{result.total}</div>on station log</div>
-                <div className={`rounded-lg p-2 ${result.missing.length ? "bg-rose-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.missing.length ? "text-rose-700" : "text-emerald-700"}`}>{result.missing.length}</div>missing in system</div>
-                <div className={`rounded-lg p-2 ${result.mismatch.length ? "bg-amber-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.mismatch.length ? "text-amber-700" : "text-emerald-700"}`}>{result.mismatch.length}</div>numbers differ</div>
-                <div className={`rounded-lg p-2 ${result.doubled.length ? "bg-rose-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.doubled.length ? "text-rose-700" : "text-emerald-700"}`}>{result.doubled.length}</div>doubled in system</div>
+                <div className="rounded-lg bg-slate-50 p-2"><div className="text-lg font-bold text-slate-800">{result.total}</div>{t("tx_on_station_log")}</div>
+                <div className={`rounded-lg p-2 ${result.missing.length ? "bg-rose-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.missing.length ? "text-rose-700" : "text-emerald-700"}`}>{result.missing.length}</div>{t("tx_missing_in_system")}</div>
+                <div className={`rounded-lg p-2 ${result.mismatch.length ? "bg-amber-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.mismatch.length ? "text-amber-700" : "text-emerald-700"}`}>{result.mismatch.length}</div>{t("tx_numbers_differ")}</div>
+                <div className={`rounded-lg p-2 ${result.doubled.length ? "bg-rose-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.doubled.length ? "text-rose-700" : "text-emerald-700"}`}>{result.doubled.length}</div>{t("tx_doubled_in_system")}</div>
               </div>
               {result.missing.length === 0 && result.mismatch.length === 0 && result.doubled.length === 0 && (
                 <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">Every ticket on this station's log is in the system with the same weight and amount, and none is doubled.</p>
               )}
               {result.missing.length > 0 && (
                 <div>
-                  <h4 className="mb-1 text-sm font-bold text-rose-700">Missing in the system — the receipt printed, the save never arrived</h4>
-                  <table className="w-full text-xs"><thead><tr className="text-left text-slate-400"><th className="py-1">Time</th><th>Paper #</th><th>Code</th><th>Party</th><th className="text-right">Net kg</th><th className="text-right">Amount</th><th>Log says</th></tr></thead><tbody>
+                  <h4 className="mb-1 text-sm font-bold text-rose-700">{t("tx_missing_head")}</h4>
+                  <table className="w-full text-xs"><thead><tr className="text-left text-slate-400"><th className="py-1">{t("tx_time")}</th><th>{t("tx_paper_no")}</th><th>{t("tx_code")}</th><th>{t("tx_party")}</th><th className="text-right">{t("tx_net_kg")}</th><th className="text-right">{t("tx_amount")}</th><th>{t("tx_log_says")}</th></tr></thead><tbody>
                     {result.missing.map((r, i) => <tr key={i} className="border-t border-slate-100"><td className="py-1">{r.time}</td><td>{r.paper_ticket_no}</td><td className="font-mono">{r.transaction_code}</td><td>{r.party}</td><td className="text-right">{fmtKg(num(r.net_kg))}</td><td className="text-right">{fmtR(num(r.amount_riel))}</td><td>{r.status}</td></tr>)}
                   </tbody></table>
                   <p className="mt-1 text-[11px] text-slate-500">If the log says "waiting", the station PC is still trying to send it — check it is on and online. If it says "confirmed", the transaction was later cancelled or edited in the system.</p>
@@ -1346,8 +1350,8 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
               )}
               {result.mismatch.length > 0 && (
                 <div>
-                  <h4 className="mb-1 text-sm font-bold text-amber-700">Numbers differ between the station log and the system</h4>
-                  <table className="w-full text-xs"><thead><tr className="text-left text-slate-400"><th className="py-1">Paper #</th><th>Code</th><th className="text-right">Log kg</th><th className="text-right">System kg</th><th className="text-right">Log amount</th><th className="text-right">System amount</th></tr></thead><tbody>
+                  <h4 className="mb-1 text-sm font-bold text-amber-700">{t("tx_differ_head")}</h4>
+                  <table className="w-full text-xs"><thead><tr className="text-left text-slate-400"><th className="py-1">{t("tx_paper_no")}</th><th>{t("tx_code")}</th><th className="text-right">{t("tx_log_kg")}</th><th className="text-right">{t("tx_system_kg")}</th><th className="text-right">{t("tx_log_amount")}</th><th className="text-right">{t("tx_system_amount")}</th></tr></thead><tbody>
                     {result.mismatch.map((m, i) => <tr key={i} className="border-t border-slate-100"><td className="py-1">{m.log.paper_ticket_no}</td><td className="font-mono">{m.tx.code}</td><td className={`text-right ${m.kgOff ? "font-bold text-amber-700" : ""}`}>{fmtKg(num(m.log.net_kg))}</td><td className={`text-right ${m.kgOff ? "font-bold text-amber-700" : ""}`}>{fmtKg(m.tx.quantity_kg)}</td><td className={`text-right ${m.amtOff ? "font-bold text-amber-700" : ""}`}>{fmtR(num(m.log.amount_riel))}</td><td className={`text-right ${m.amtOff ? "font-bold text-amber-700" : ""}`}>{fmtR(m.tx.amount)}</td></tr>)}
                   </tbody></table>
                   <p className="mt-1 text-[11px] text-slate-500">A difference is expected if HQ edited the transaction or confirmed the buyer's final numbers after the receipt printed.</p>
@@ -1355,12 +1359,12 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
               )}
               {result.doubled.length > 0 && (
                 <div>
-                  <h4 className="mb-1 text-sm font-bold text-rose-700">Doubled in the system — more than one live transaction for one paper ticket</h4>
+                  <h4 className="mb-1 text-sm font-bold text-rose-700">{t("tx_doubled_head")}</h4>
                   {result.doubled.map((g, i) => (
                     <div key={i} className="mb-2 rounded-lg border border-rose-200 p-2 text-xs">
                       <div className="font-semibold text-slate-700">{g[0].paper_ticket_no} · {locName(g[0].location_id)} · {g[0].partyName}</div>
                       {g.map((tx) => <div key={tx.id} className="mt-0.5 font-mono text-slate-600">{tx.code} — {fmtKg(tx.quantity_kg)} kg — {fmtR(tx.amount)} — {tx.tx_date} {tx.tx_time || ""}</div>)}
-                      <div className="mt-1 text-[11px] text-slate-500">Keep the one the receipt shows; Cancel the other from the Transactions list.</div>
+                      <div className="mt-1 text-[11px] text-slate-500">{t("tx_doubled_hint")}</div>
                     </div>
                   ))}
                 </div>
@@ -1410,7 +1414,7 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><AlertTriangle size={16} className="text-rose-500" /> Confirm Cancellation</h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><AlertTriangle size={16} className="text-rose-500" /> {t("tx_confirm_cancel")}</h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName} · {fmtRiel(tx.amount)}</p>
 
         {alreadyPaid > 0.01 && (
@@ -1424,17 +1428,17 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
 
         <form onSubmit={submit}>
           <label className="mb-1 block text-xs text-slate-500">
-            Why is this being cancelled? <span className="text-rose-500">*</span>
+            {t("tx_why_cancel")} <span className="text-rose-500">*</span>
           </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             autoFocus
             rows={2}
-            placeholder="e.g. Truck turned back — load never delivered"
+            placeholder={t("tx_eg_turned_back")}
             className="mb-3 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100"
           />
-          <label className="mb-1 block text-xs text-slate-500">Enter your password to confirm</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_password_confirm")}</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
           {error && <p className="mb-2 text-sm text-rose-500">{error}</p>}
@@ -1488,21 +1492,21 @@ function ConfirmBuyerSaleModal({ tx, t, onClose, onSubmit }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white shadow-xl overflow-hidden">
         <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-5 py-4 text-white">
-          <h3 className="font-semibold">Confirm Buyer's Final Numbers</h3>
+          <h3 className="font-semibold">{t("tx_confirm_buyer")}</h3>
           <p className="text-xs text-rose-100">{tx.code} · {tx.partyName}</p>
         </div>
         <div className="p-5">
           <div className="mb-4 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-            <div className="flex justify-between text-slate-400"><span>Recorded at the station</span><span></span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Weight</span><span className="font-medium text-slate-700">{fmt2(stationKg)} kg</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">Price per kg</span><span className="font-medium text-slate-700">{fmtRiel(stationPrice)}</span></div>
+            <div className="flex justify-between text-slate-400"><span>{t("tx_recorded_station")}</span><span></span></div>
+            <div className="flex justify-between"><span className="text-slate-500">{t("tx_weight")}</span><span className="font-medium text-slate-700">{fmt2(stationKg)} kg</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">{t("tx_price_per_kg")}</span><span className="font-medium text-slate-700">{fmtRiel(stationPrice)}</span></div>
           </div>
 
-          <label className="mb-1 block text-xs text-slate-500">Buyer's Final Weight (kg)</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_buyer_weight")}</label>
           <input type="number" min="0" step="0.01" value={weight} onChange={(e) => setWeight(e.target.value)} autoFocus
             className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
 
-          <label className="mb-1 block text-xs text-slate-500">Buyer's Final Price per kg (Riel)</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_buyer_price")}</label>
           <input type="number" min="0" step="1" value={price} onChange={(e) => setPrice(e.target.value)}
             className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
 
@@ -1511,7 +1515,7 @@ function ConfirmBuyerSaleModal({ tx, t, onClose, onSubmit }) {
               <span>{lossKg >= 0 ? "Weight lost in transit" : "Weight gained"}</span>
               <span className="font-bold">{fmt2(Math.abs(lossKg))} kg{stationKg > 0 ? ` (${Math.abs(lossPct).toFixed(1)}%)` : ""}</span>
             </div>
-            <div className="flex justify-between"><span>New Total</span><span className="font-bold">{fmtRiel(newTotal)}</span></div>
+            <div className="flex justify-between"><span>{t("tx_new_total_2")}</span><span className="font-bold">{fmtRiel(newTotal)}</span></div>
           </div>
 
           {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
@@ -2145,11 +2149,11 @@ export default function Transactions({ setPage }) {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search ticket #, name, plate..."
+                placeholder={t("tx_search_ph")}
                 className="w-56 rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
               />
               {search && (
-                <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500" title="Clear search">
+                <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500" title={t("tx_t_clear_search")}>
                   <X size={13} />
                 </button>
               )}
@@ -2228,10 +2232,10 @@ export default function Transactions({ setPage }) {
                     );
                   }
                 }}
-                title="Station check — compare a station PC's daily log with the system"
+                title={t("tx_t_station_check")}
                 className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50"
               >
-                <CheckCircle2 size={14} /> Station check
+                <CheckCircle2 size={14} /> {t("tx_station_check")}
               </button>
             )}
             <button
@@ -2267,11 +2271,11 @@ export default function Transactions({ setPage }) {
             table), so there's no sideways-scrolling table on a touchscreen
             to explain in the first place. Nothing here changes at md+. */}
         <div className="mb-2 hidden items-center justify-end gap-2 md:flex">
-          <span className="text-xs text-slate-400">Can't scroll with your mouse? Use these:</span>
-          <button onClick={() => scrollTable(-1)} title="Scroll table left" className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
+          <span className="text-xs text-slate-400">{t("tx_scroll_hint")}</span>
+          <button onClick={() => scrollTable(-1)} title={t("tx_t_scroll_left")} className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
             <ChevronLeft size={16} />
           </button>
-          <button onClick={() => scrollTable(1)} title="Scroll table right" className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
+          <button onClick={() => scrollTable(1)} title={t("tx_t_scroll_right")} className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700">
             <ChevronRight size={16} />
           </button>
         </div>
@@ -2290,15 +2294,15 @@ export default function Transactions({ setPage }) {
               <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
                 <th className="w-8 px-2 py-3"></th>
                 <th className="px-5 py-3 font-semibold">#</th>
-                <th className="px-3 py-3 font-semibold">Ticket #</th>
-                <th className="px-3 py-3 font-semibold">Type</th>
+                <th className="px-3 py-3 font-semibold">{t("tx_ticket_no")}</th>
+                <th className="px-3 py-3 font-semibold">{t("tx_type")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_date")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_station")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_party")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_qty")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_amount")}</th>
-                <th className="px-3 py-3 font-semibold">Paid</th>
-                <th className="px-3 py-3 font-semibold">Remaining</th>
+                <th className="px-3 py-3 font-semibold">{t("paid")}</th>
+                <th className="px-3 py-3 font-semibold">{t("tx_remaining")}</th>
                 <th className="px-3 py-3 font-semibold">{t("hq_confirmation")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_action")}</th>
               </tr>
@@ -2367,17 +2371,17 @@ export default function Transactions({ setPage }) {
                         {tx.type === "BUY" ? "▲ BUY" : "▼ SELL"}
                       </span>
                       {isTransactionPendingSync(tx.id) && (
-                        <span title="Saved on this device, still waiting to sync to PaddyTrade's shared database" className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200">
-                          <RefreshCw size={9} /> Not synced
+                        <span title={t("tx_t_not_synced")} className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200">
+                          <RefreshCw size={9} /> {t("tx_not_synced")}
                         </span>
                       )}
                       {tx.station_quantity_kg != null && (
                         tx.buyer_confirmed_at ? (
-                          <span title="The buyer's final weight/price were confirmed and are what's used everywhere else" className="ml-1 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
+                          <span title={t("tx_t_buyer_confirmed")} className="ml-1 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
                             ✓ Confirmed
                           </span>
                         ) : (
-                          <span title="Recorded at the station only — still waiting on the buyer's own weight/price" className="ml-1 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                          <span title={t("tx_t_station_only")} className="ml-1 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                             ⏳ Pending buyer confirmation
                           </span>
                         )
@@ -2401,16 +2405,16 @@ export default function Transactions({ setPage }) {
                     </td>
                     <td className="px-3 py-3.5">
                       {isCancelled ? (
-                        <span className="text-xs text-slate-400">Excluded from reports</span>
+                        <span className="text-xs text-slate-400">{t("tx_excluded")}</span>
                       ) : isUnpriced ? (
-                        <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700" title="Finished without an agreed price — set the price in Edit, then the amount owed appears here.">No price yet</span>
+                        <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700" title="Finished without an agreed price — set the price in Edit, then the amount owed appears here.">{t("tx_no_price_yet")}</span>
                       ) : remaining > 0.01 ? (
                         isAdmin ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </button>
                         ) : (
-                          <span className="flex items-center gap-1 rounded-md border border-gold-100 bg-gold-50/60 px-2 py-1 text-xs font-medium text-gold-700" title="Only HQ Admin / Owner can record a payment against a remaining balance">
+                          <span className="flex items-center gap-1 rounded-md border border-gold-100 bg-gold-50/60 px-2 py-1 text-xs font-medium text-gold-700" title={t("tx_t_only_hq_pay")}>
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </span>
                         )
@@ -2422,7 +2426,7 @@ export default function Transactions({ setPage }) {
                           <AlertTriangle size={12} /> Overpaid {fmtRiel(overpaidByTx[tx.id])}
                         </span>
                       ) : (
-                        <span className="text-xs font-medium text-brand-600">Settled</span>
+                        <span className="text-xs font-medium text-brand-600">{t("tx_settled")}</span>
                       )}
                     </td>
                     <td className="px-3 py-3">
@@ -2436,12 +2440,12 @@ export default function Transactions({ setPage }) {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => setReceiptTx(tx)} title="View / print receipt" className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                          <Printer size={12} /> Receipt
+                        <button onClick={() => setReceiptTx(tx)} title={t("tx_t_view_receipt")} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
+                          <Printer size={12} /> {t("tx_receipt")}
                         </button>
                         {isAdmin ? (
                           <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                            <Pencil size={12} /> Edit
+                            <Pencil size={12} /> {t("tx_edit")}
                           </button>
                         ) : (
                           <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
@@ -2449,18 +2453,18 @@ export default function Transactions({ setPage }) {
                           </button>
                         )}
                         {isAdmin && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
-                          <button onClick={() => setConfirmSaleTx(tx)} title="Record the buyer's own weight/price once the truck has been settled at the buyer's place" className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100">
-                            <CheckCircle2 size={12} /> Confirm Sale
+                          <button onClick={() => setConfirmSaleTx(tx)} title={t("tx_t_record_buyer")} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100">
+                            <CheckCircle2 size={12} /> {t("tx_confirm_sale")}
                           </button>
                         )}
                         {isAdmin && (
                           isCancelled ? (
-                            <button onClick={() => restoreTransaction(tx)} title="Un-cancel — bring this transaction back into reports and the ledger" className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-emerald-300 hover:text-emerald-700">
-                              <Undo2 size={12} /> Restore
+                            <button onClick={() => restoreTransaction(tx)} title={t("tx_t_uncancel")} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-emerald-300 hover:text-emerald-700">
+                              <Undo2 size={12} /> {t("tx_restore")}
                             </button>
                           ) : (
-                            <button onClick={() => setCancelConfirmTx(tx)} title="Cancel this transaction — excludes it from reports and the ledger" className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-rose-300 hover:text-rose-600">
-                              <Ban size={12} /> Cancel
+                            <button onClick={() => setCancelConfirmTx(tx)} title={t("tx_t_cancel_tx")} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-rose-300 hover:text-rose-600">
+                              <Ban size={12} /> {t("cancel")}
                             </button>
                           )
                         )}
@@ -2473,11 +2477,11 @@ export default function Transactions({ setPage }) {
                       <td colSpan={11} className="px-5 py-4">
                         <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
                           <div>
-                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Price / kg</p>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_price_kg")}</p>
                             {tx.price_per_kg != null ? (
                               <p className="text-sm font-semibold text-slate-800">{fmtRiel(tx.price_per_kg)}</p>
                             ) : (
-                              <p className="text-sm font-medium text-slate-400">Not set yet</p>
+                              <p className="text-sm font-medium text-slate-400">{t("tx_not_set_yet")}</p>
                             )}
                           </div>
                           <div>
@@ -2488,7 +2492,7 @@ export default function Transactions({ setPage }) {
                                 {tx.gross_at && <p className="text-xs text-slate-400">{fmtWeighTime(tx.gross_at)}</p>}
                               </>
                             ) : (
-                              <p className="text-sm font-medium text-slate-400">Not recorded (entered manually)</p>
+                              <p className="text-sm font-medium text-slate-400">{t("tx_not_recorded_manual")}</p>
                             )}
                           </div>
                           <div>
@@ -2499,11 +2503,11 @@ export default function Transactions({ setPage }) {
                                 {tx.tare_at && <p className="text-xs text-slate-400">{fmtWeighTime(tx.tare_at)}</p>}
                               </>
                             ) : (
-                              <p className="text-sm font-medium text-slate-400">Not recorded (entered manually)</p>
+                              <p className="text-sm font-medium text-slate-400">{t("tx_not_recorded_manual")}</p>
                             )}
                           </div>
                           <div>
-                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Net Weight</p>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_net_weight")}</p>
                             <p className="text-sm font-semibold text-slate-800">
                               {fmt2(tx.quantity_kg)} kg
                               {edits[tx.id] && <EditedBadge transactionId={tx.id} editCount={edits[tx.id].edit_count} />}
@@ -2512,21 +2516,21 @@ export default function Transactions({ setPage }) {
                           {(tx.deduction_kg || 0) > 0 && (
                             <>
                               <div>
-                                <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Deduction</p>
+                                <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_deduction")}</p>
                                 <p className="text-sm font-semibold text-slate-800">{fmt2(tx.deduction_kg)} kg</p>
                               </div>
                               <div>
-                                <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Payable Weight</p>
+                                <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_payable_weight")}</p>
                                 <p className="text-sm font-semibold text-slate-800">{fmt2(payableKg)} kg</p>
                               </div>
                             </>
                           )}
                           <div>
-                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Truck</p>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_truck")}</p>
                             <p className="text-sm font-semibold text-slate-800">{tx.car_plate || "—"}</p>
                           </div>
                           <div>
-                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Recorded By</p>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_recorded_by")}</p>
                             <p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p>
                           </div>
                         </div>
@@ -2542,7 +2546,7 @@ export default function Transactions({ setPage }) {
                               </p>
                               <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-200 bg-white p-3">
                                 <div>
-                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Station Recorded</p>
+                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_station_recorded")}</p>
                                   <p className="text-sm font-bold text-slate-800">{fmt2(stationKg)} kg</p>
                                   <p className="text-xs text-slate-500">{fmtRiel(tx.station_price_per_kg)}/kg</p>
                                 </div>
@@ -2554,7 +2558,7 @@ export default function Transactions({ setPage }) {
                                       <p className="text-xs text-slate-500">{fmtRiel(tx.price_per_kg)}/kg</p>
                                     </>
                                   ) : (
-                                    <p className="text-sm font-medium text-slate-400">Not confirmed yet</p>
+                                    <p className="text-sm font-medium text-slate-400">{t("tx_not_confirmed")}</p>
                                   )}
                                 </div>
                                 <div>
@@ -2578,7 +2582,7 @@ export default function Transactions({ setPage }) {
                   </Fragment>
                 );
               })}
-              {pagedRows.length === 0 && loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
+              {pagedRows.length === 0 && loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
               {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{search.trim() ? `No matches for "${search.trim()}"` : (unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
