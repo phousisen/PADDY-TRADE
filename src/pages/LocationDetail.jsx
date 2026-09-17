@@ -50,6 +50,8 @@ function ShedSpark({ values, color, label }) {
 export default function LocationDetail({ locationId, setPage }) {
   const { t } = useLanguage();
   const { profile, session, hasPermission, isViewOnly } = useAuth();
+  // [2026-09-17] Renaming a station is Owner-only — see the Rename button.
+  const isOwner = !!profile?.isOwner;
   const isAdmin = profile?.role === "admin";
   // Same gate as Stock & Inventory's "Adjust Stock" button — HQ Admin/Owner
   // or any custom role explicitly granted "adjust_stock" from the Roles
@@ -299,13 +301,19 @@ export default function LocationDetail({ locationId, setPage }) {
               <Scale size={13} /> Adjust Stock
             </button>
           )}
-          {/* [2026-09-03] `&& !isViewOnly` — this had no permission gate at
-              all before; the only reason it never let a view-only account
-              actually rename anything is api.js's Proxy backstop rejecting
-              the write at submit time. Hiding it here matches every other
-              write control in the app instead of showing a form that can
-              only ever fail. */}
-          {!isCombined && !isViewOnly && (
+          {/* [2026-09-17] OWNER ONLY. SISEN:
+              "for the rename part. make sure only the boss can rename the
+               location because this is a serious work that needs a proper
+               confirmation"
+              A station's name is not a label on a screen — it is printed on
+              every paper ticket, it heads every report, and it is what the
+              stock ledger and the Daily Book are read by. Renaming one is a
+              business decision, and it was available to every account that
+              was not view-only.
+              `isOwner` is the manage_admins permission, so this is boss and
+              nobody else. The modal now also asks for the current name to be
+              typed — see RenameLocationModal. */}
+          {!isCombined && isOwner && (
             <button onClick={() => setEditing(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700">
               <Pencil size={13} /> Rename
             </button>

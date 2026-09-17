@@ -41,6 +41,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, Loader2, Lock, Plus, ChevronRight, X } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
+import ExpenseSheetPrint from "../components/ExpenseSheetPrint.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useLanguage } from "../i18n.jsx";
@@ -53,6 +54,7 @@ import {
   windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
   stationsOn, childGrain, daysInWindow, mergeByCategory, periodLabel,
 } from "../expenseBook.js";
+import { checkCommission, MAX_PER_TONNE } from "../commissionRule.js";
 import { dmyTime, weekday } from "../dateFormat.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
 
@@ -101,6 +103,201 @@ function Seg({ options, value, onChange, t }) {
           {t(label)}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────── one station, inside a day ──
+//
+// [2026-09-17] SISEN: "i want to be able to see what the spending is on each
+// day" — and then, precisely: "for each location".
+//
+// Opening a day used to give five thin table rows, each with a commission
+// figure, an other figure and a total. Three numbers per station and not one
+// word about what the money was actually spent on — which is the only thing
+// anyone opens a day to find out.
+//
+// `only` is true when the location picker has one station chosen. There is
+// then nothing to label, so the station header is dropped and the categories
+// sit directly under the day. A card headed "JOMNOUM" on a screen that
+// already says JOMNOUM twice is furniture.
+function DayStation({ station, tonnage, only, canRecord, onOpen, t }) {
+  // The station's own rows, added up per category. A station can record the
+  // same category twice in a day (a second fuel run), and those belong on one
+  // line — two lines reading "ប្រេងឥន្ធនៈ" would look like a mistake.
+  const lines = useMemo(() => {
+    const m = new Map();
+    for (const r of station.rows || []) {
+      const key = categoryKey(r.category);
+      const name = cleanCategory(r.category) || "—";
+      const prev = m.get(key) || { key, name, amount: 0, kh: isCommission(r.category) };
+      prev.amount += Number(r.amount) || 0;
+      m.set(key, prev);
+    }
+    // ថ្លៃកូនដៃ first wherever it appears — it is the one being watched.
+    return [...m.values()].sort((a, b) => (b.kh - a.kh) || (b.amount - a.amount));
+  }, [station.rows]);
+
+  const filed = station.state === "spent";
+  const nothing = station.state === "nothing";
+
+  // [2026-09-17] The ថ្លៃកូនដៃ check. SISEN: "normally every tons the
+  // commision is 10,000riels max". The tonnes come from the tickets already
+  // recorded at this station on this day — nothing new is typed, so this
+  // cannot disagree with the Daily Book. See commissionRule.js, whose every
+  // branch is run in scripts-check-commission.mjs.
+  const check = checkCommission({
+    commission: station.commission,
+    boughtKg: tonnage?.boughtKg,
+    soldKg: tonnage?.soldKg,
+  });
+  const ton = (v) => (Number(v) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Tonnes in, tonnes out. Shown whenever the day has either, even if no
+  // commission was paid — a station that bought 40 tonnes and recorded no
+  // ថ្លៃកូនដៃ is worth noticing too.
+  const Tons = () => (
+    (tonnage?.boughtKg || tonnage?.soldKg) ? (
+      <div className="flex gap-px border-y border-slate-100 bg-slate-100">
+        <div className="min-w-0 flex-1 bg-slate-50/80 px-2.5 py-1">
+          <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-400">{t("db_buy")}</p>
+          <p className="whitespace-nowrap text-[12.5px] font-bold tabular-nums text-brand-700">
+            {ton(check.tonnesBought)}<span className="ml-0.5 text-[9.5px] font-semibold text-slate-400">{t("ex_tonne")}</span>
+          </p>
+        </div>
+        <div className="min-w-0 flex-1 bg-slate-50/80 px-2.5 py-1">
+          <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-400">{t("db_sell")}</p>
+          <p className="whitespace-nowrap text-[12.5px] font-bold tabular-nums text-orange-700">
+            {ton(check.tonnesSold)}<span className="ml-0.5 text-[9.5px] font-semibold text-slate-400">{t("ex_tonne")}</span>
+          </p>
+        </div>
+        {/* The rate as its own figure, from sm: up. On a phone it is in the
+            sentence below instead — three columns of numbers on a 320pt
+            screen is how a figure ends up truncated. */}
+        {check.perTonne !== null && station.commission > 0 && (
+          <div className="hidden min-w-0 flex-1 bg-slate-50/80 px-2.5 py-1 sm:block">
+            <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-400">{t("ex_per_tonne")}</p>
+            <p className={`whitespace-nowrap text-[12.5px] font-bold tabular-nums ${
+              check.state === "over" ? "text-rose-700" : check.state === "at" ? "text-amber-700" : "text-brand-700"}`}>
+              {fmt(check.perTonne)}
+            </p>
+          </div>
+        )}
+      </div>
+    ) : null
+  );
+
+  // One line, and it has to be readable by someone who will act on it. An
+  // "over" says BY HOW MUCH in riel — a warning triangle on its own tells
+  // nobody what to do, and this is a line that can end in a conversation
+  // with a staff member.
+  const Check = () => {
+    if (!filed || station.commission <= 0) return null;
+    const tone = check.state === "over"
+      ? "bg-rose-50 text-rose-700"
+      : check.state === "at" ? "bg-amber-50 text-amber-800"
+      : check.state === "unknown" ? "bg-slate-50 text-slate-500"
+      : "bg-brand-50 text-brand-700";
+    const dot = check.state === "over" ? "bg-rose-600" : check.state === "at" ? "bg-amber-500"
+      : check.state === "unknown" ? "bg-slate-300" : "bg-brand-600";
+    const mark = check.state === "over" ? "!" : check.state === "at" ? "≈" : check.state === "unknown" ? "?" : "✓";
+    return (
+      <div className={`flex items-center gap-2 px-2.5 py-1.5 text-[11.5px] ${tone}`}>
+        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9.5px] font-extrabold text-white ${dot}`}>{mark}</span>
+        <span className="min-w-0 flex-1">
+          {check.state === "over"
+            ? <>{t("ex_kh_over")} <b className="font-extrabold tabular-nums">{fmt(check.overBy)}</b> ៛</>
+            : check.state === "at" ? t("ex_kh_at")
+            : check.state === "unknown" ? t("ex_kh_unknown")
+            : <>{t("ex_kh_ok")} <span className="tabular-nums">{fmt(check.ceiling)}</span></>}
+        </span>
+        {check.perTonne !== null && (
+          <span className="shrink-0 whitespace-nowrap font-extrabold tabular-nums sm:hidden">
+            {fmt(check.perTonne)} ៛/{t("ex_tonne")}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const Lines = () => (
+    <div className={only ? "" : "px-3 pb-2.5"}>
+      {lines.map((l) => (
+        <div key={l.key}
+          className="ml-0.5 flex items-baseline justify-between gap-2.5 border-l-2 border-slate-100 py-1 pl-3 text-[12.5px]">
+          <span className={`min-w-0 truncate ${l.kh ? "font-semibold text-amber-700" : "text-slate-500"}`}>{l.name}</span>
+          <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums text-slate-700">{fmt(l.amount)}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  // ── one station chosen: no card, no header, just the categories ──
+  if (only) {
+    if (!filed) {
+      return (
+        <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-slate-200 bg-white px-3 py-2.5">
+          <span className="flex-1 text-[12.5px] text-slate-400">
+            {nothing ? t("ex_nothing_spent") : t("ex_not_entered")}
+          </span>
+          {canRecord && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              className="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-[11.5px] font-bold text-white hover:bg-brand-700">
+              {t("ex_enter")}
+            </button>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <Tons />
+        <Check />
+        <div className="px-3 pb-2.5 pt-2"><Lines /></div>
+        <div className="flex items-center gap-2.5 border-t border-slate-100 px-3 py-2">
+          <span className="min-w-0 flex-1 truncate text-[10.5px] text-slate-400">{station.enteredBy || ""}</span>
+          <span className="shrink-0 whitespace-nowrap text-[13px] font-extrabold tabular-nums text-slate-900">{fmt(station.total)}</span>
+          {canRecord && (
+            <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }}
+              className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700">
+              {t("ex_open")}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── all locations: one card per station ──
+  return (
+    <div className={`mb-1.5 overflow-hidden rounded-lg border bg-white last:mb-0 ${
+      filed ? "border-slate-200" : "border-dashed border-slate-200 bg-slate-50/50"}`}>
+      <div className="flex items-center gap-2.5 px-3 py-2">
+        <span className={`min-w-0 flex-1 truncate text-[12.5px] font-bold ${filed ? "text-slate-900" : "text-slate-400"}`}>
+          {station.name}
+          {!filed && (
+            <span className="ml-2 rounded bg-slate-100 px-1.5 py-px text-[10px] font-semibold text-slate-500">
+              {nothing ? t("ex_nothing_spent") : t("ex_not_entered")}
+            </span>
+          )}
+        </span>
+        <span className={`shrink-0 whitespace-nowrap text-[13px] font-extrabold tabular-nums ${
+          filed ? "text-slate-900" : "text-slate-300"}`}>
+          {filed ? fmt(station.total) : "—"}
+        </span>
+        {canRecord && (
+          <button type="button" onClick={(e) => { e.stopPropagation(); onOpen(); }}
+            className={`shrink-0 whitespace-nowrap rounded-lg px-2.5 py-1 text-[11.5px] font-semibold ${
+              filed
+                ? "border border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                : "bg-brand-600 font-bold text-white hover:bg-brand-700"}`}>
+            {filed ? t("ex_open") : t("ex_enter")}
+          </button>
+        )}
+      </div>
+      {filed && <Tons />}
+      {filed && <Check />}
+      {filed && lines.length > 0 && <Lines />}
     </div>
   );
 }
@@ -402,6 +599,11 @@ export default function Expenses() {
 
   const [locations, setLocations] = useState([]);
   const [allExpenses, setAllExpenses] = useState([]);
+  const [allTx, setAllTx] = useState([]);
+  // [2026-09-17] The printed sheet. Mounted only while printing — it builds
+  // its own document in a hidden frame and unmounts itself when the dialog
+  // closes. See ExpenseSheetPrint.jsx for why it does not print through the app.
+  const [printing, setPrinting] = useState(false);
   const [marks, setMarks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -426,14 +628,28 @@ export default function Expenses() {
   async function load() {
     setLoading(true); setLoadError("");
     try {
-      const [locs, exp, dm] = await Promise.all([
+      // [2026-09-17] Transactions come too, for the ថ្លៃកូនដៃ check.
+      //
+      // SISEN: "i each location to show the total buy amount in tons that is
+      // purchased in that day so we can actually compare if the commision
+      // given is correct or wrong."
+      //
+      // The tonnage is NOT a new figure anybody types — it is the tickets
+      // already recorded, the same rows the Daily Book adds up. Read here so
+      // the two screens can never disagree about a day.
+      //
+      // .catch(() => []) on purpose: this screen's job is expenses, and a
+      // transactions call that fails must cost the check, not the page.
+      const [locs, exp, dm, txs] = await Promise.all([
         api.getLocations(),
         api.getPayments({ type: "expense" }),
         api.getExpenseDayMarks().catch(() => []),
+        api.getTransactions({}).catch(() => []),
       ]);
       setLocations(locs || []);
       setAllExpenses(exp || []);
       setMarks(dm || []);
+      setAllTx(txs || []);
     } catch (err) {
       setLoadError(errText(null, err, "") || err.message || "Couldn't load expenses.");
     } finally { setLoading(false); }
@@ -476,8 +692,45 @@ export default function Expenses() {
       },
     );
   }, [rows, grain, win, today]);
+  // [2026-09-17] SISEN: "when i click on one location it loads the other
+  // location as well."
+  //
+  // He was right, and it was one line. `rows` is filtered by the location
+  // picker, but the station breakdown under an expanded day was handed the
+  // FULL `locations` list — so picking JOMNOUM still printed Ping Pong,
+  // Pong Ro, Reang Kesey and Thapedey underneath it, every one of them
+  // reading "មិនទាន់បញ្ចូល", which looks like four stations that forgot to
+  // file rather than four stations you did not ask about.
+  //
+  // Everything the picker governs uses this. The day SHEET deliberately
+  // does not — you must still be able to enter a day for any station
+  // whatever the report happens to be filtered to.
+  // Kilograms bought and sold, keyed "YYYY-MM-DD|locationId". Built once from
+  // every transaction rather than filtered per station per day, which on a
+  // month of five stations would be 150 passes over the same array.
+  const tonnageByDayLoc = useMemo(() => {
+    const m = new Map();
+    for (const tx of allTx || []) {
+      if ((tx.hq_status || "processing") === "cancelled") continue;
+      const day = String(tx.tx_date || "").slice(0, 10);
+      if (!day || !tx.location_id) continue;
+      const key = `${day}|${tx.location_id}`;
+      const at = m.get(key) || { boughtKg: 0, soldKg: 0 };
+      const kg = Number(tx.quantity_kg) || 0;
+      if (tx.type === "BUY") at.boughtKg += kg;
+      else if (tx.type === "SELL") at.soldKg += kg;
+      m.set(key, at);
+    }
+    return m;
+  }, [allTx]);
+
+  const scopedLocations = useMemo(
+    () => (scope.length ? locations.filter((l) => scope.includes(l.id)) : locations),
+    [locations, scope],
+  );
+
   const categories = useMemo(() => byCategory(rows), [rows]);
-  const stations = useMemo(() => byStation(rows, locations), [rows, locations]);
+  const stations = useMemo(() => byStation(rows, scopedLocations), [rows, scopedLocations]);
   const prevByCat = useMemo(() => {
     const m = new Map();
     byCategory(prevRows).forEach((c) => m.set(c.key, c.amount));
@@ -504,7 +757,7 @@ export default function Expenses() {
       const d = String(m.day).slice(0, 10);
       if (!lastSeen[m.location_id] || d > lastSeen[m.location_id]) lastSeen[m.location_id] = d;
     });
-    for (const l of locations) {
+    for (const l of scopedLocations) {
       const last = lastSeen[l.id];
       if (!last) continue;
       const gap = Math.round((Date.parse(today) - Date.parse(last)) / 86400000);
@@ -530,7 +783,7 @@ export default function Expenses() {
       });
     }
     return out;
-  }, [allExpenses, marks, locations, rows, today, t]);
+  }, [allExpenses, marks, scopedLocations, locations, rows, today, t]);
 
   // ── the sheet ───────────────────────────────────────────────────────────
   useEffect(() => { setJustSaved(false); setUnlocked(false); }, [sheet?.day, sheet?.locationId]);
@@ -608,9 +861,11 @@ export default function Expenses() {
     reallySave(payload);
   }
 
-  const scopeLabel = !scope.length ? "All locations"
-    : scope.length === 1 ? (locations.find((l) => l.id === scope[0])?.name || "1 station")
-    : `${scope.length} stations`;
+  // [2026-09-17] The picker is single-choice now (LocationFilter.jsx), so
+  // this is either everything or one named station — never a count.
+  const scopeLabel = scope.length
+    ? (locations.find((l) => l.id === scope[0])?.name || t("loc_one"))
+    : t("loc_all");
 
   const headers = group === "period" ? [t("ex_period")] : group === "category" ? [t("ex_category")] : [t("ex_station")];
 
@@ -645,6 +900,10 @@ export default function Expenses() {
                       className="rounded-lg border border-slate-200 px-2 py-1 text-sm text-slate-500 hover:bg-slate-50">›</button>
                   </div>
                 )}
+                <button type="button" onClick={() => setPrinting(true)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700">
+                  {t("ex_print")}
+                </button>
                 {canRecord && (
                   <button type="button" onClick={() => setSheet({ day: today, locationId: locations[0]?.id })}
                     className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">
@@ -711,7 +970,7 @@ export default function Expenses() {
                       const isOpen = openKey === p.key;
                       const kids = !isOpen ? null
                         : grain === "day"
-                          ? stationsOn(p.key, locations, rows, marks)
+                          ? stationsOn(p.key, scopedLocations, rows, marks)
                           : byPeriod(p.rows, childGrain(grain));
                       return (
                         <Fragmented key={p.key}>
@@ -727,26 +986,38 @@ export default function Expenses() {
                             <Num v={p.empty ? null : p.total} cls="font-bold text-slate-800" />
                             <td className="px-4 text-right"><ChevronRight size={15} className={`inline text-slate-300 ${isOpen ? "rotate-90 text-brand-600" : ""}`} /></td>
                           </tr>
-                          {isOpen && grain === "day" && kids.map((s) => (
-                            <tr key={s.id} className="border-b border-slate-50 bg-slate-50/70 text-[13px]">
-                              <td className="py-1.5 pl-10 pr-4 text-slate-600">
-                                {s.name}
-                                {s.state === "nothing" && <span className="ml-2 text-[11px] text-slate-400">{t("ex_nothing_spent")}</span>}
-                                {s.state === "blank" && <span className="ml-2 text-[11px] text-slate-400">{t("ex_not_entered")}</span>}
-                              </td>
-                              <Num v={s.state === "blank" ? null : s.commission} cls={s.state === "spent" ? "text-amber-700" : "text-slate-400"} />
-                              <Num v={s.state === "blank" ? null : s.other} cls="text-slate-500" hide />
-                              <Num v={s.state === "blank" ? null : s.total} cls="text-slate-700" />
-                              <td className="px-4 text-right">
-                                {canRecord && (
-                                  <button type="button" onClick={(e) => { e.stopPropagation(); setSheet({ day: p.key, locationId: s.id }); }}
-                                    className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-white">
-                                    {s.state === "blank" ? t("ex_enter") : t("ex_open")}
-                                  </button>
-                                )}
+                          {/* [2026-09-17] THE DAY, BROKEN OUT BY STATION AND THEN
+                              BY WHAT THE MONEY WENT ON.
+                              SISEN: "i want to be able to see what the spending is
+                              on each day" — "for each location".
+                              This used to be five thin table rows per day, each
+                              with a commission figure, an other figure and a
+                              total. Three numbers per station and not one word
+                              about what was actually bought. Now each station is
+                              a small card carrying its own categories, and a
+                              station that has not filed is a dashed card with the
+                              button on it rather than a line of dashes.
+                              Rendered inside one full-width cell because a card
+                              is not a table row — and when ONE station is picked
+                              the station level disappears entirely (there is only
+                              one) and the categories sit directly under the day. */}
+                          {isOpen && grain === "day" && (
+                            <tr className="border-b border-slate-100 bg-brand-50/60">
+                              <td colSpan={5} className="px-2.5 py-2.5 sm:px-3">
+                                {kids.map((st) => (
+                                  <DayStation
+                                    key={st.id}
+                                    station={st}
+                                    tonnage={tonnageByDayLoc.get(`${p.key}|${st.id}`)}
+                                    only={kids.length === 1}
+                                    canRecord={canRecord}
+                                    onOpen={() => setSheet({ day: p.key, locationId: st.id })}
+                                    t={t}
+                                  />
+                                ))}
                               </td>
                             </tr>
-                          ))}
+                          )}
                           {isOpen && grain !== "day" && kids.map((c) => (
                             <tr key={c.key} className="border-b border-slate-50 bg-slate-50/70 text-[13px]">
                               <td className="py-1.5 pl-10 pr-4 text-slate-600">{c.label}</td>
@@ -824,6 +1095,25 @@ export default function Expenses() {
           )}
         </div>
       </main>
+
+      {/* [2026-09-17] The printed sheet — SISEN: "i need help making sure we
+          can print out the expenses file". It renders nothing on screen; it
+          builds a standalone A4 document in a hidden frame and opens the
+          print dialog, where "Save as PDF" is a destination like any printer.
+          Given the SAME rows the table is showing, so the paper and the screen
+          can never disagree, and every day in the window including the ones
+          nobody filed. */}
+      {printing && (
+        <ExpenseSheetPrint
+          rows={rows}
+          days={daysInWindow(win.from, win.to, today)}
+          marks={marks}
+          scopeLabel={scopeLabel}
+          periodLabel={win.label || t("ex_all_years")}
+          byWhom={profile?.full_name || ""}
+          onDone={() => setPrinting(false)}
+        />
+      )}
 
       {sheet && (
         <DaySheet
