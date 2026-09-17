@@ -438,6 +438,82 @@ ok("the heartbeat falls back to the old account-only report",
 ok("the panel recomputes on a timer, so quiet becomes unreachable by itself",
    panel.includes("setTick((n) => n + 1)"));
 
+
+// ---------------------------------------------------------------------------
+// A station that cannot save must find HQ, not wait to be found
+//
+// [2026-09-17] SISEN: "how can this happen again and again. the red issue and
+// the stuck or lost ticket".
+//
+// Ping Pong was stuck from 12 to 17 September. Nothing was lost — the app held
+// the entry, retried, and raised a red banner reading "tell an admin now". It
+// then sat on that PC for five days because the alarm existed only where the
+// admin was not. The data had been arriving at HQ the whole time.
+//
+// What must not regress:
+//   · a stuck station is reported to HQ at all
+//   · a queue merely WAITING for a connection is not reported as stuck —
+//     crying wolf beside a real alarm is how the real one gets ignored
+//   · one row per STATION, not per machine
+//   · the worst station first
+// ---------------------------------------------------------------------------
+{
+  const locs = [{ id: "pp", name: "PING PONG" }, { id: "cn", name: "JOMNOUM" }];
+
+  ok("nothing stuck reads as nothing",
+        w.stuckStations([{ location_id: "pp", stuck: false, pending_ops: 0 }], locs).length === 0);
+
+  ok("a queue waiting for the connection is NOT an alarm",
+        w.stuckStations([{ location_id: "pp", stuck: false, pending_ops: 9 }], locs).length === 0,
+        "offline with work waiting is normal; rejected-over-and-over is not");
+
+  const one = w.stuckStations([{ location_id: "pp", stuck: true, pending_ops: 1 }], locs);
+  ok("a stuck station is reported", one.length === 1);
+  ok("and named", one[0].station === "PING PONG");
+  ok("with what it is holding", one[0].pending === 1);
+
+  const two = w.stuckStations([
+    { location_id: "pp", stuck: true, pending_ops: 1 },
+    { location_id: "pp", stuck: true, pending_ops: 2 },
+  ], locs);
+  ok("two machines at one station are ONE row", two.length === 1,
+        "HQ rings a shed, not a PC");
+  ok("and their work adds up", two[0].pending === 3);
+  ok("and it counts the machines", two[0].devices === 2);
+
+  const worst = w.stuckStations([
+    { location_id: "pp", stuck: true, pending_ops: 1 },
+    { location_id: "cn", stuck: true, pending_ops: 6 },
+  ], locs);
+  ok("the worst station comes first", worst[0].station === "JOMNOUM");
+
+  ok("a station with no name still reports",
+        w.stuckStations([{ location_id: "zz", stuck: true, pending_ops: 2 }], locs)[0].station === "—",
+        "an unknown station must never be dropped from an alarm");
+
+  ok("junk in does not throw",
+        w.stuckStations(null, null).length === 0 && w.stuckStations([null, undefined], []).length === 0);
+
+  ok("no summary when nothing is stuck", w.stuckSummary([]) === null);
+  const sum = w.stuckSummary(worst);
+  ok("the summary counts stations", sum.stations === 2);
+  ok("and the total work held", sum.pending === 7);
+  ok("and names the worst", sum.worst.station === "JOMNOUM");
+}
+
+// And the bell must actually show it — loudly.
+{
+  const bar = readFileSync("src/components/Topbar.jsx", "utf8");
+  ok("the bell reads stuck stations", /stuckStations\(devs, locs\)/.test(bar));
+  ok("it polls, rather than only on mount", /setInterval\(tick, 60000\)/.test(bar));
+  ok("a failure never breaks the bell", /catch \{ \/\* not migrated/.test(bar));
+  ok("a stuck station gets a NUMBER, not a 6px dot", /stuckNote \? \(/.test(bar) && /rounded-full bg-rose-600/.test(bar),
+        "a dot was enough for a change request; it is not enough for five days");
+  ok("and it outranks everything else for colour", /\(stuckNote \|\| syncNotice\?\.kind === "stuck"\)/.test(bar));
+  ok("it is listed above the rest", bar.indexOf("nb_station_stuck_title") < bar.indexOf("{syncNotice && ("));
+  ok("it says the alarm will not clear itself", /nb_station_stuck_hint/.test(bar));
+}
+
 console.log(failed
   ? `\n${failed} FAILED`
   : "\nWho is in the system, on what, and whether we can reach them — all checked.");
