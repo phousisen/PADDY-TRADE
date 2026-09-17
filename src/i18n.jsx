@@ -375,6 +375,11 @@ export const translations = {
     adj_reason_spillage: "Spillage / handling loss", adj_reason_recount: "Recount correction", adj_reason_other: "Other",
     adj_recount_gain: "Recount — more than expected", adj_corrected_up: "Corrected up",
     adj_title: "Adjust Stock — {station}",
+    // [2026-09-17] A station that cannot save, shown at HQ. Ping Pong was
+    // stuck from 12 to 17 September and the only alarm was on its own screen.
+    nb_station_stuck_title: "A station cannot save",
+    nb_station_stuck_line: "{n} change(s) rejected over and over",
+    nb_station_stuck_hint: "This will not fix itself. Open Station Health, or ring the station.",
     // [2026-09-17] SISEN: "why even after i edit and erase some excpenses.
     // its not gone." Clearing a box now removes the figure — and says so.
     ex_will_remove: "remove",
@@ -1584,6 +1589,10 @@ export const translations = {
     adj_reason_spillage: "បាត់បង់ដោយការចាក់ខ្ចាត់/ការដោះស្រាយ", adj_reason_recount: "កែតម្រូវពីការរាប់ឡើងវិញ", adj_reason_other: "ផ្សេងទៀត",
     adj_recount_gain: "រាប់ឡើងវិញ — ច្រើនជាងការរំពឹងទុក", adj_corrected_up: "កែតម្រូវឡើងលើ",
     adj_title: "កែតម្រូវស្តុក — {station}",
+    // [2026-09-17] ស្ថានីយ៍មិនអាចរក្សាទុកបាន — បង្ហាញនៅការិយាល័យ
+    nb_station_stuck_title: "ស្ថានីយ៍មិនអាចរក្សាទុកបាន",
+    nb_station_stuck_line: "{n} ការផ្លាស់ប្តូរត្រូវបានបដិសេធម្តងហើយម្តងទៀត",
+    nb_station_stuck_hint: "វានឹងមិនជាសះស្បើយដោយខ្លួនឯងទេ។ សូមបើកទំព័រ សុខភាពស្ថានីយ៍ ឬទូរស័ព្ទទៅស្ថានីយ៍។",
     // [2026-09-17] លុបចំណាយចេញពីថ្ងៃនោះ
     ex_will_remove: "លុប",
     ex_removing_title: "ទាំងនេះនឹងត្រូវដកចេញពីថ្ងៃនេះ៖",

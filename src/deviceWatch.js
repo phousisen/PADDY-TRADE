@@ -260,3 +260,68 @@ export function buildBoard({
     silent: live.length === 0,
   };
 }
+
+/**
+ * Which STATIONS have a save that is stuck, seen from HQ.
+ *
+ * [2026-09-17] SISEN: *"how can this happen again and again. the red issue
+ * and the stuck or lost ticket"*.
+ *
+ * The ticket was never lost. On 12 September a payment at Ping Pong started
+ * failing, the app held it on that PC, kept retrying, and raised a red banner
+ * reading "tell an admin now".
+ *
+ * Then it sat there for FIVE DAYS.
+ *
+ * Not because anything was broken — because the alarm was on the station's own
+ * screen and nowhere else. SISEN found it by walking up to the machine. An
+ * alarm only the person standing next to it can see is not an alarm, it is a
+ * note; and the one person who could have fixed it was the one person not
+ * looking at that screen.
+ *
+ * Every machine already reports what its queue is holding on every check-in —
+ * `pending_ops` and `stuck` arrive at HQ once a minute and nothing was done
+ * with them. This turns those columns into something that finds the owner
+ * instead of waiting to be found.
+ *
+ * Deliberately NOT "how long it has been stuck": nothing records when a queue
+ * first went bad, and adding that means changing `report_device`, which every
+ * station calls every minute. Putting a hot-path rewrite in the way of an
+ * alarm is how the 15:03 outage happened. The alarm ships first; the age can
+ * follow on its own migration.
+ *
+ * `devices` is what api.getDeviceSessions() returns; `locations` is the list
+ * of stations, for the name. One row per STATION, not per machine — HQ does
+ * not care which PC, only which shed to ring.
+ */
+export function stuckStations(devices, locations = []) {
+  const nameOf = new Map((locations || []).map((l) => [l.id, l.name]));
+  const byStation = new Map();
+
+  for (const d of devices || []) {
+    // `stuck` means the server has rejected the same save over and over; that
+    // never clears itself. A queue merely waiting for a connection is not
+    // this, and must not cry wolf beside it.
+    if (!d || !d.stuck) continue;
+    const key = d.location_id || "unassigned";
+    const at = byStation.get(key) || {
+      locationId: d.location_id || null,
+      station: nameOf.get(d.location_id) || "—",
+      pending: 0,
+      devices: 0,
+    };
+    at.pending += Number(d.pending_ops) || 0;
+    at.devices += 1;
+    byStation.set(key, at);
+  }
+
+  // Worst first: the station holding the most unsaved work is the one to ring.
+  return [...byStation.values()].sort((a, b) => b.pending - a.pending);
+}
+
+/** One line for the bell. Kept out of the component so a test can read it. */
+export function stuckSummary(rows) {
+  if (!rows || rows.length === 0) return null;
+  const total = rows.reduce((s, r) => s + (r.pending || 0), 0);
+  return { stations: rows.length, pending: total, worst: rows[0] };
+}
