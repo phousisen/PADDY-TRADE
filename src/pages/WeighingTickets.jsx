@@ -325,6 +325,7 @@ async function checkTicketNoDuplicate({ locationId, paperTicketNo, excludeId }) 
 }
 
 function SanityWarningModal({ warning, onBack, onConfirm, confirming }) {
+  const { t } = useLanguage();
   return (
     <Modal title={`Heads up — Ticket #${warning.ticketNo} already used`} onClose={onBack}>
       <p className="mb-4 text-sm text-slate-500">
@@ -333,10 +334,10 @@ function SanityWarningModal({ warning, onBack, onConfirm, confirming }) {
       </p>
       <div className="flex justify-end gap-2">
         <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-          Go back and check
+          {t("wt_go_back_check")}
         </button>
         <button disabled={confirming} onClick={onConfirm} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60">
-          {confirming ? "Saving…" : "Save anyway"}
+          {confirming ? t("saving_label") : t("wt_save_anyway")}
         </button>
       </div>
     </Modal>
@@ -812,20 +813,20 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       headerColor={accent.header}
       icon="⚖️"
       title={<>New Ticket — {isBuy ? "Buy" : "Sell"}</>}
-      subtitle="Weigh In (Loaded)"
+      subtitle={t("wt_weigh_in_loaded")}
       onClose={onClose} wide
     >
       {isAdmin && (
         <div className="mb-4">
-          <label className={labelCls}>Location</label>
+          <label className={labelCls}>{t("station")}</label>
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)} className={fieldCls}>
-            <option value="">Select location…</option>
+            <option value="">{t("wt_select_location")}</option>
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
       )}
 
-      <NewTicketSectionHead label="Ticket & Truck" dotClass={accent.dot} textClass={accent.text} />
+      <NewTicketSectionHead label={t("wt_sec_ticket_truck")} dotClass={accent.dot} textClass={accent.text} />
       <div className="grid grid-cols-2 gap-3.5">
         {/* Now asked on both Buy and Sell, per explicit request — the
             paper quality-ticket booklet number, entered here so it matches
@@ -850,7 +851,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                   value={vehicleType}
                   onChange={(e) => setVehicleType(e.target.value)}
                   className={fieldCls}
-                  placeholder="New type"
+                  placeholder={t("wt_new_type")}
                 />
                 <button
                   type="button"
@@ -883,7 +884,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </div>
       </div>
 
-      <NewTicketSectionHead label="People" dotClass={accent.dot} textClass={accent.text} />
+      <NewTicketSectionHead label={t("wt_sec_people")} dotClass={accent.dot} textClass={accent.text} />
       <div className="grid grid-cols-2 gap-3.5">
         <div className="col-span-2">
           <NewTicketFieldLabel icon="📞" en="Phone" km="ទូរស័ព្ទ" lang={lang} />
@@ -895,7 +896,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 <img src={savedBank.bankQrUrl} alt="Saved bank QR code" className="h-12 w-12 flex-shrink-0 rounded border border-emerald-200 object-cover" />
               )}
               <div className="text-xs text-emerald-700">
-                <p className="font-semibold">Saved payment on file — filled in automatically</p>
+                <p className="font-semibold">{t("wt_saved_payment_note")}</p>
                 <p>{savedBank.bankName || "—"}{savedBank.bankAccount ? ` · ${savedBank.bankAccount}` : ""}</p>
               </div>
             </div>
@@ -920,7 +921,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             value={partyName}
             onChange={(e) => handlePartyNameChange(e.target.value)}
             className={fieldCls}
-            placeholder="Type to search or add new"
+            placeholder={t("wt_search_or_add")}
           />
           <datalist id="new-ticket-party-options">
             {partyOptions.map((name) => <option key={name} value={name} />)}
@@ -991,7 +992,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         )}
         <div className={isBuy ? "" : "col-span-2"}>
           <NewTicketFieldLabel icon="🧑" en="Driver" km="អ្នកបើកបរ" lang={lang} />
-          <input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={fieldCls} placeholder="Optional" />
+          <input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={fieldCls} placeholder={t("wt_optional")} />
         </div>
         <div className="col-span-2">
           <NewTicketFieldLabel icon="🧾" en={isBuy ? "Buyer (you)" : "Seller (you)"} km={isBuy ? "អ្នកទិញ" : "អ្នកលក់"} lang={lang} />
@@ -1002,7 +1003,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
                 value={recordedByName}
                 onChange={(e) => setRecordedByName(e.target.value)}
                 className={fieldCls}
-                placeholder="Your name (whoever is filling in this ticket)"
+                placeholder={t("wt_your_name_hint")}
               />
               {recordedByOptions.length > 0 && (
                 <button
@@ -1023,7 +1024,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
               }}
               className={fieldCls}
             >
-              <option value="" disabled>Select your name…</option>
+              <option value="" disabled>{t("wt_select_your_name")}</option>
               {recordedByOptions.map((name, i) => <option key={name} value={name}>{i + 1}. {name}</option>)}
               <option value="__other__">+ Add new name…</option>
             </select>
@@ -1031,7 +1032,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         </div>
       </div>
 
-      <NewTicketSectionHead label="Weight" dotClass={accent.dot} textClass={accent.text} />
+      <NewTicketSectionHead label={t("wt_sec_weight")} dotClass={accent.dot} textClass={accent.text} />
       <div>
         {/* Buy: the truck shows up already loaded with paddy from the
             farmer, so this first weighing is the heavier "gross" number.
@@ -1273,7 +1274,7 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
             </select>
           )}
         </div>
-        <div><label className={labelCls}>Driver Name<span className="font-khmer block text-brand-600">ឈ្មោះអ្នកបើកបរ</span></label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder="optional" /></div>
+        <div><label className={labelCls}>Driver Name<span className="font-khmer block text-brand-600">ឈ្មោះអ្នកបើកបរ</span></label><input value={driverName} onChange={(e) => setDriverName(e.target.value)} className={inputCls} placeholder={t("wt_optional")} /></div>
       </div>
 
       <div className="mt-4">
@@ -1700,7 +1701,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                   }}
                   className={fieldCls}
                 >
-                  <option value="" disabled>Select from what's in stock…</option>
+                  <option value="" disabled>{t("wt_select_from_stock")}</option>
                   {inStockProducts.map((p) => <option key={p.id} value={p.name}>{p.name} — {fmt2(p.kg)} kg in stock</option>)}
                   {/* [2026-09-15] Owner only. Selling a type that is not in
                       stock here is a stock error, not a new paddy type. */}
@@ -1767,7 +1768,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                 passes the rule, which is the only reason 2,882 earlier
                 transactions were fine: nobody had ever used the field. */}
             <select value={qualityGrade} onChange={(e) => setQualityGrade(e.target.value)} className={fieldCls}>
-              <option value="">Not set</option>
+              <option value="">{t("wt_not_set")}</option>
               <option value="A">A</option>
               <option value="B">B</option>
               <option value="C">C</option>
@@ -1791,12 +1792,12 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                 }}
                 className={fieldCls}
               >
-                <option value="" disabled>Select payment method / bank</option>
+                <option value="" disabled>{t("wt_select_bank")}</option>
                 {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-                <option value="__other__">Other...</option>
+                <option value="__other__">{t("wt_other")}</option>
               </select>
               {bankIsOther && (
-                <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`${fieldCls} mt-2`} />
+                <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder={t("wt_type_bank_name")} className={`${fieldCls} mt-2`} />
               )}
             </div>
             <div><NewTicketFieldLabel icon="🔢" en="Bank Account" km="លេខគណនីធនាគារ" lang={lang} /><input value={bankAccount} onChange={(e) => setBankAccount(e.target.value)} className={fieldCls} /></div>
@@ -1831,7 +1832,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
                 kind="party-bank-qr"
                 url={bankQrUrl}
                 onUploaded={setBankQrUrl}
-                hint="Take a photo of the farmer's bank QR code so payment can be sent straight from the receipt"
+                hint={t("wt_bank_qr_hint")}
               />
             </div>
           )}
@@ -1897,6 +1898,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
 // ---- Quick Decline (straight from the board card — no need to open the full Finish Ticket form) ----
 
 function DeclineModal({ ticket, onClose, onDeclined }) {
+  const { t } = useLanguage();
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   // [2026-09-08] The duplicate-number check runs before doSave() sets
@@ -1918,10 +1920,10 @@ function DeclineModal({ ticket, onClose, onDeclined }) {
   return (
     <Modal title={`Decline Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
       <p className="mb-3 text-xs text-slate-400">Same as not signing the paper quality ticket — no price, no weigh-out needed. This just keeps a short record of why.</p>
-      <label className={labelCls}>Reason (optional)</label>
-      <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} placeholder="e.g. moisture too high" />
+      <label className={labelCls}>{t("wt_reason_optional")}</label>
+      <input value={reason} onChange={(e) => setReason(e.target.value)} className={inputCls} placeholder={t("wt_reason_eg_moisture")} />
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
         <button disabled={saving} onClick={submit} className="flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40">
           <Ban size={14} /> {saving ? "Saving…" : "Confirm Decline"}
         </button>
@@ -1950,6 +1952,7 @@ function cambodiaDayKey(d) {
 }
 
 function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
+  const { t } = useLanguage();
   // [2026-09-10] THE TRANSACTION DATE IS THE DAY FINISH IS PRESSED. Always.
   //
   // That is the day the receipt is printed and the day the money changes
@@ -1980,8 +1983,8 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
   const differentDay = weighedInDay && weighedInDay !== cambodiaDayKey(getAccurateNow());
   const inStamp = splitCambodiaTimestamp(ticket.gross_at);
   return (
-    <Modal title="Confirm the truck" onClose={onClose}>
-      <p className="mb-4 text-sm text-slate-500">Double-check this matches the truck on the scale right now before continuing.</p>
+    <Modal title={t("wt_confirm_truck")} onClose={onClose}>
+      <p className="mb-4 text-sm text-slate-500">{t("wt_confirm_truck_body")}</p>
       {differentDay && (
         <div className="mb-4 rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
           <p className="text-sm font-bold text-amber-800">
@@ -1989,7 +1992,7 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
             <span className="ml-1 font-khmer font-normal">រថយន្តនេះបានថ្លឹងចូលនៅថ្ងៃផ្សេង មិនមែនថ្ងៃនេះទេ។</span>
           </p>
           <p className="mt-1 text-xs text-amber-700">
-            If it's the wrong ticket entirely, press cancel.
+            {t("wt_confirm_truck_wrong")}
           </p>
           <p className="mt-2 text-xs text-amber-800">
             The weigh-in stays on {inStamp.date}. The receipt is dated today, because today is
@@ -2007,9 +2010,9 @@ function ConfirmFinishModal({ ticket, onClose, onConfirm }) {
         <p className="text-sm text-slate-500">{ticket.product_name} · Ticket {ticket.code}{ticket.paper_ticket_no ? ` · Quality Ticket No. ${ticket.paper_ticket_no}` : ""}</p>
       </div>
       <div className="flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">This isn't it — cancel</button>
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("wt_not_this_one")}</button>
         <button onClick={() => onConfirm()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-          Yes, this is the right truck <ArrowRight size={14} />
+          {t("wt_yes_right_truck")} <ArrowRight size={14} />
         </button>
       </div>
     </Modal>
@@ -2060,13 +2063,13 @@ function ReopenTicketModal({ ticket, onClose, onReopened }) {
       <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
         If a receipt from this ticket was already printed and handed over, this can't recall it — void or staple that paper copy by hand.
       </div>
-      <label className={labelCls}>Reason (required)</label>
+      <label className={labelCls}>{t("wt_reason_required")}</label>
       <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
-        placeholder="e.g. Finished against the wrong ticket — this was actually truck 3A-1205"
+        placeholder={t("wt_reason_eg_wrong_ticket")}
         className={`${inputCls} resize-none`} />
       {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
         <button disabled={saving} onClick={submit} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40">
           {saving ? "Reopening…" : "Reopen Ticket"}
         </button>
@@ -2108,7 +2111,7 @@ function RestoreTicketModal({ ticket, onClose, onRestored }) {
   }
 
   return (
-    <Modal title={`Restore Ticket ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
+    <Modal title={`${t("wt_restore_ticket")} ${ticket.code}`} subtitle={`${ticket.party_name} · ${ticket.car_plate}`} onClose={onClose}>
       <p className="mb-3 text-sm text-slate-500">
         Use this when a ticket was declined by mistake. This clears the decline reason and puts
         {" "}{ticket.code} back in the waiting queue with only its original weigh-in kept, ready to be
@@ -2116,18 +2119,18 @@ function RestoreTicketModal({ ticket, onClose, onRestored }) {
       </p>
       {ticket.price_note && (
         <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
-          Current decline reason: <span className="font-medium text-slate-700">{ticket.price_note}</span>
+          {t("wt_current_decline_reason")} <span className="font-medium text-slate-700">{ticket.price_note}</span>
         </div>
       )}
-      <label className={labelCls}>Reason (required)</label>
+      <label className={labelCls}>{t("wt_reason_required")}</label>
       <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
-        placeholder="e.g. Declined by mistake — this load actually passed quality check"
+        placeholder={t("wt_reason_eg_declined_mistake")}
         className={`${inputCls} resize-none`} />
       {error && <p className="mt-2 text-xs text-rose-600">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+        <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
         <button disabled={saving} onClick={submit} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
-          {saving ? "Restoring…" : "Restore Ticket"}
+          {saving ? t("wt_restoring") : t("wt_restore_ticket")}
         </button>
       </div>
     </Modal>
@@ -2147,6 +2150,7 @@ function RestoreTicketModal({ ticket, onClose, onRestored }) {
 // Shares the exact layout approved for Receipt.jsx (see Receipt.jsx) so a
 // Weigh-In Slip and the final Receipt read as the same document family.
 function TicketSlip({ ticket, onClose }) {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState({});
   useEffect(() => {
     api.getSettings().then(setSettings).catch(() => {});
@@ -2187,9 +2191,9 @@ function TicketSlip({ ticket, onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
         <div className="no-print mb-4 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-700">Weigh-In Slip</h3>
+          <h3 className="font-semibold text-slate-700">{t("wt_weigh_in_slip")}</h3>
           <div className="flex gap-2">
-            <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"><Printer size={13} /> Print</button>
+            <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700"><Printer size={13} /> {t("wt_print")}</button>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
           </div>
         </div>
@@ -2554,7 +2558,7 @@ export default function WeighingTickets() {
                       </p>
                       <p className="text-xs text-slate-400">{t.stationName}{t.tare_at ? ` · ${hm(t.tare_at)}` : ""}</p>
                     </div>
-                    <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={16} /></button>
+                    <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title={tr("wt_view_print_slip")}><Printer size={16} /></button>
                   </div>
                   <div className="mb-3 space-y-0.5 text-sm">
                     <p className="text-slate-700">{t.party_name} <span className="text-slate-400">· {t.car_plate}</span></p>
@@ -2602,9 +2606,9 @@ export default function WeighingTickets() {
                         {t.gross_at ? hm(t.gross_at) : ""}
                       </span>
                       {tab === "waiting" && !isViewOnly && (
-                        <button onClick={() => setEditTicket(t)} className="text-slate-400 hover:text-brand-600" title="Edit ticket info"><Pencil size={14} /></button>
+                        <button onClick={() => setEditTicket(t)} className="text-slate-400 hover:text-brand-600" title={tr("wt_edit_ticket_info")}><Pencil size={14} /></button>
                       )}
-                      <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title="View / print slip"><Printer size={15} /></button>
+                      <button onClick={() => setSlipTicket(t)} className="text-slate-400 hover:text-brand-600" title={tr("wt_view_print_slip")}><Printer size={15} /></button>
                     </div>
                   </div>
 
@@ -2651,7 +2655,7 @@ export default function WeighingTickets() {
                       restoreTicket for what it resets. */}
                   {tab === "declined" && isAdmin && !isViewOnly && (
                     <button onClick={() => setRestoreTicketRow(t)} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-brand-200 px-3 py-2 text-sm font-medium text-brand-600 hover:bg-brand-50">
-                      <RotateCcw size={14} /> Restore Ticket
+                      <RotateCcw size={14} /> {tr("wt_restore_ticket")}
                     </button>
                   )}
 
