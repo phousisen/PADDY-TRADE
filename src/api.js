@@ -723,6 +723,86 @@ const rawApi = {
     return data;
   },
 
+  // ── Stock reset requests ────────────────────────────────────────────────
+  // [2026-09-17] SISEN: "i want each location to be able to reset their stock
+  // to 0 to get it as a stock loss, but will need hq above to confirm and
+  // accept it."
+  //
+  // Nothing here writes stock. Filing a request only records the ask; the
+  // stock moves inside resolve_stock_reset() on approval, through the same
+  // record_stock_adjustment() the Adjust Stock button has always used. See
+  // stock_reset_requests.sql.
+  async requestStockReset({ locationId, countedKg, reason, note, pricePerKg }) {
+    const { data, error } = await supabase.rpc("request_stock_reset", {
+      p_location_id: locationId,
+      p_counted_kg: countedKg,
+      p_reason: reason || "recount",
+      p_note: note || null,
+      p_price_per_kg: pricePerKg ?? null,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async cancelStockReset(id) {
+    const { error } = await supabase.rpc("cancel_stock_reset", { p_id: id });
+    if (error) throw error;
+  },
+
+  async resolveStockReset(id, approve, { rejectReason } = {}) {
+    const { error } = await supabase.rpc("resolve_stock_reset", {
+      p_id: id, p_approve: !!approve, p_reject_reason: rejectReason || null,
+    });
+    if (error) throw error;
+  },
+
+  // Row-level security decides the scope: a station sees its own station's
+  // requests and nothing else, HQ sees every one. Nothing is filtered here —
+  // a filter in the browser is a preference, not a boundary.
+  //
+  // Returns [] rather than throwing when the table is not there yet, so an
+  // app that reaches a station before the migration does still opens.
+  async getStockResetRequests({ status = null, locationId = null } = {}) {
+    try {
+      let query = supabase
+        .from("stock_reset_requests")
+        .select("*, locations(name, name_kh), requester:profiles!stock_reset_requests_requested_by_fkey(full_name), resolver:profiles!stock_reset_requests_resolved_by_fkey(full_name)")
+        .order("requested_at", { ascending: false });
+      if (status) query = query.eq("status", status);
+      if (locationId) query = query.eq("location_id", locationId);
+      const { data, error } = await query;
+      if (error) return [];
+      return (data || []).map((r) => ({
+        ...r,
+        stationName: r.locations?.name || "—",
+        stationNameKh: r.locations?.name_kh || "",
+        requestedByName: r.requester?.full_name || "—",
+        resolvedByName: r.resolver?.full_name || "",
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  // What the station's own screen needs: is one already waiting?
+  async getPendingStockReset(locationId) {
+    const rows = await this.getStockResetRequests({ status: "pending", locationId });
+    return rows[0] || null;
+  },
+
+  async getPendingStockResetCount() {
+    try {
+      const { count, error } = await supabase
+        .from("stock_reset_requests")
+        .select("id", { count: "exact", head: true })
+        .eq("status", "pending");
+      if (error) return 0;
+      return count || 0;
+    } catch {
+      return 0;
+    }
+  },
+
   async uploadTransactionPhoto(file, kind) {
     const ext = file.name.split(".").pop() || "jpg";
     const path = `${kind}/${crypto.randomUUID()}.${ext}`;

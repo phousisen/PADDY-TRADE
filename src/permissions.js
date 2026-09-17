@@ -45,6 +45,11 @@ export const PERMISSION_GROUPS = [
     permissions: [
       { key: "manage_locations", label: "Rename locations, view location details" },
       { key: "adjust_stock", label: "Record a daily stock adjustment (moisture/spillage loss)" },
+      // [2026-09-17] For a station that has counted its shed and needs the
+      // book changed to match. This does NOT move stock — it files a request
+      // HQ has to approve. A role with `adjust_stock` never needs it; that
+      // role can already set the figure directly.
+      { key: "request_stock_reset", label: "Ask HQ to correct this station's stock" },
     ],
   },
   {
