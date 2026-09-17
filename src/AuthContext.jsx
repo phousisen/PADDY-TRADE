@@ -367,11 +367,20 @@ export function AuthProvider({ children }) {
     return error;
   }
 
-  async function logout() {
+  // [2026-09-17] `reason` — because not every call to this is a person
+  // pressing Log out.
+  //
+  // SISEN's login screen read "You signed out" when he had not. The sync
+  // banner's own "Sign in again" button — the one shown when the login has
+  // ALREADY expired — calls this same function, so an expiry was being
+  // recorded as a deliberate sign-out. That is the exact failure the whole
+  // sign-out record exists to prevent: it hid the real cause behind a
+  // confident wrong one, on the screen built to reveal it.
+  async function logout(reason = REASONS.USER) {
     // [2026-09-08] Forget the cached profile FIRST so a reload — even an
     // offline one — can never reopen the app as this user (audit #12).
     try { localStorage.removeItem(CACHED_PROFILE_KEY); } catch { /* ignore */ }
-    noteSignOut(REASONS.USER);
+    noteSignOut(typeof reason === "string" ? reason : REASONS.USER);
     const { error } = await supabase.auth.signOut();
     if (error) {
       // Flaky WiFi: the server call failed, so supabase-js kept the local

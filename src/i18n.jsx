@@ -8,7 +8,7 @@ export const translations = {
     // [2026-09-16] A login is stored as an email address because that is all
     // the database will hold, but nobody has to type the "@" part — see
     // loginName.js. So the box is labelled for what people actually enter.
-    login_name: "Name", login_name_hint: "boss, or 012934050",
+    login_name: "Name", login_name_hint: "your name or phone number",
     // [2026-09-16] SISEN, looking at the Daily Book on his phone with the
     // Khmer app showing English controls: "so not clean and professional".
     db_by_day: "By day", db_by_week: "By week", db_by_month: "By month", db_year_total: "Year total",
@@ -1399,7 +1399,7 @@ export const translations = {
     appName: "PADDYTRADE",
     login_title: "ចូលទៅកាន់ PaddyTrade", login_subtitle: "បញ្ចូលឈ្មោះ និងពាក្យសម្ងាត់របស់អ្នក",
     email: "អុីមែល", password: "ពាក្យសម្ងាត់", sign_in: "ចូល", signing_in: "កំពុងចូល...",
-    login_name: "ឈ្មោះចូលប្រើ", login_name_hint: "boss ឬ 012934050",
+    login_name: "ឈ្មោះចូលប្រើ", login_name_hint: "ឈ្មោះ ឬ លេខទូរស័ព្ទរបស់លោក",
     db_by_day: "តាមថ្ងៃ", db_by_week: "តាមសប្តាហ៍", db_by_month: "តាមខែ", db_year_total: "សរុបឆ្នាំ",
     upd_stuck: "សូមបិទកម្មវិធី រួចបើកម្តងទៀត",
     upd_stuck_why: "ការធ្វើបច្ចុប្បន្នភាពមិនអាចដំឡើងដោយខ្លួនឯងបានទេ",
