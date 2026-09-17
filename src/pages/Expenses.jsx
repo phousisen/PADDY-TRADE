@@ -52,7 +52,7 @@ import {
 } from "../expenseCategories.js";
 import {
   windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
-  stationsOn, childGrain, daysInWindow, mergeByCategory, periodLabel,
+  stationsOn, childGrain, daysInWindow, mergeByCategory, periodLabel, planDaySave,
 } from "../expenseBook.js";
 import { checkCommission, MAX_PER_TONNE } from "../commissionRule.js";
 import { dmyTime, weekday } from "../dateFormat.js";
@@ -398,19 +398,33 @@ function DaySheet({
   // Changing a figure that is already recorded is a correction. Putting one
   // into an empty box is not. Compared against the MERGED figure, so a day
   // holding two rows for one category is judged on what it actually totals.
-  const changesExisting = [...merged.values()].some((m) => {
-    const typed = parseAmount(amounts[m.key]);
-    return typed != null && Math.round(typed) !== Math.round(m.amount);
-  });
+  // [2026-09-17] SISEN: "why even after i edit and erase some excpenses. its
+  // not gone."
+  //
+  // Because an emptied box was being thrown away before the save ever heard
+  // about it — see `removals` in submit() below. Clearing a figure that IS
+  // recorded is the most consequential edit on this screen: it takes money
+  // OUT of the record. It now counts as changing an existing figure, so it
+  // needs the same password and the same written reason as altering one.
+  const plan = planDaySave({ shown, amounts, merged, parse: parseAmount });
+  const removals = plan.removals;
+  const changesExisting = plan.changesExisting;
   // Unlocking is the password step now, so what a change still needs is a
   // reason — kept in audit_logs beside the before and after.
   const mustExplain = changesExisting;
 
   function submit() {
-    const entries = shown
-      .map((n) => ({ category: n, amount: parseAmount(amounts[categoryKey(n)]) }))
-      .filter((e) => e.amount != null);
-    onSave({ entries, reason: reason.trim(), changesExisting });
+    const { entries } = plan;
+    // An empty box means one of two completely different things, and the old
+    // code could not tell them apart because it dropped both:
+    //
+    //   · nothing recorded, nothing typed  → there is nothing to do
+    //   · a figure IS recorded, box cleared → REMOVE it
+    //
+    // Only the second is a removal, and it carries the rows to void rather
+    // than the category name, so a day holding two rows for one category has
+    // both taken out rather than one left behind.
+    onSave({ entries, removals, reason: reason.trim(), changesExisting });
   }
 
   const cur = locations.find((l) => l.id === locationId);
@@ -489,13 +503,17 @@ function DaySheet({
                     </span>
                   ) : (
                   <>
-                  <span className="w-20 shrink-0 text-right text-xs tabular-nums text-slate-400">
-                    {parsed != null ? fmt(parsed) : ""}
+                  {/* [2026-09-17] An emptied box used to look exactly like a
+                      box that never had anything in it, and did exactly the
+                      same nothing. Now it removes the figure — so it has to
+                      SAY so before the Save button is pressed. */}
+                  <span className={`w-20 shrink-0 text-right text-xs tabular-nums ${saved && parsed == null ? "font-semibold text-rose-600" : "text-slate-400"}`}>
+                    {parsed != null ? fmt(parsed) : (saved ? t("ex_will_remove") : "")}
                   </span>
                   <input inputMode="numeric" value={value} placeholder="—"
                     onChange={(e) => setAmounts((a) => ({ ...a, [key]: e.target.value }))}
                     onKeyDown={(e) => { if (e.key === "Enter" && !saving) submit(); }}
-                    className={`${amountCls} w-28 shrink-0`} />
+                    className={`${amountCls} w-28 shrink-0 ${saved && parsed == null ? "border-rose-300 bg-rose-50" : ""}`} />
                   </>
                   )}
                 </div>
@@ -524,6 +542,16 @@ function DaySheet({
                 </p>
               ))}
               <p className="mt-1 text-xs text-amber-700">{t("ex_dup_merge_hint")}</p>
+            </div>
+          )}
+
+          {removals.length > 0 && (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              <p className="font-semibold">{t("ex_removing_title")}</p>
+              {removals.map((r) => (
+                <p key={r.key} className="tabular-nums">· {r.category} — {fmt(r.amount)} ៛</p>
+              ))}
+              <p className="mt-1 text-xs text-rose-700">{t("ex_removing_note")}</p>
             </div>
           )}
 
@@ -812,7 +840,7 @@ export default function Expenses() {
   const needsPassword = !!sheet && (sheet.day !== today
     || sheetRows.some((r) => r.created_by && r.created_by !== session?.user?.id));
 
-  async function reallySave({ entries, reason }) {
+  async function reallySave({ entries, removals = [], reason }) {
     setSaving(true); setSaveError("");
     try {
       // [2026-09-16] Keyed by category and carrying EVERY row for it, not
@@ -838,6 +866,18 @@ export default function Expenses() {
           });
         }
       }
+      // [2026-09-17] Taking a figure back out. Voided, never deleted — the
+      // same rule the duplicate-merge above follows, so an expense that was
+      // recorded and then removed leaves a trail with a name, a time and a
+      // reason on it. Every total in the app reads payments with
+      // `voided_at is null`, so voiding is what actually makes it gone from
+      // the sheet, the Daily Book and the reports.
+      for (const r of removals) {
+        for (const row of r.rows) {
+          await api.voidPayment(row.id, reason || "Removed on the expense sheet");
+        }
+      }
+
       if (entries.length) await api.clearExpenseDayMark({ locationId: sheet.locationId, day: sheet.day }).catch(() => {});
       else await api.markExpenseDayEmpty({ locationId: sheet.locationId, day: sheet.day, userId: session.user.id });
 
