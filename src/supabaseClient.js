@@ -176,10 +176,38 @@ export async function ensureFreshSession() {
   try {
     const { data } = await supabase.auth.getSession();
     const session = data?.session;
-    // No session at all just means nobody's logged in on this device —
-    // AuthContext's own login screen already handles that case; nothing
-    // for the sync loop to do here.
-    if (!session) return true;
+    // [2026-09-17] This line used to `return true` — "no session just means
+    // nobody's logged in on this device; AuthContext's login screen handles
+    // it, nothing for the sync loop to do here."
+    //
+    // That reasoning holds for a device with nothing queued. It is exactly
+    // wrong for the only device that ever reaches this line in anger: one
+    // that HAS unsaved work and has just lost its login. Saying "auth is
+    // fine" let the queue fire every queued write with no login attached.
+    //
+    // Supabase does not refuse those. A request carrying no login runs as
+    // the signed-out `anon` role, and under row-level security `anon` can
+    // see no rows at all. So finalize_weighing_ticket could not find the
+    // very ticket it was finishing and raised
+    //
+    //     weighing ticket <id> not found
+    //
+    // for a ticket sitting right there, already finalized. The queue read
+    // that as a data problem rather than a login problem, retried every
+    // 15 seconds, and produced 14,697 database errors in one day at
+    // Jomnoum (17 September, TKT-625624450 and TKT-183171063). The same
+    // line, on the same day, is what made Ping Pong's payment fail with
+    // "new row violates row-level security policy for payments" — an
+    // anonymous insert, not a permissions gap. Two faults that looked
+    // nothing alike, one cause.
+    //
+    // The comment that used to sit here described the Thapedey
+    // misdiagnosis — "a dead login produced a permissions-looking error,
+    // which sent troubleshooting in the wrong direction" — and then caused
+    // it again. Returning false is what makes the banner say the true
+    // thing: sign in again. Nothing queued is dropped; it all resumes the
+    // moment someone does.
+    if (!session) return false;
 
     const expiresAt = session.expires_at; // unix seconds
     const nowSeconds = Date.now() / 1000;
