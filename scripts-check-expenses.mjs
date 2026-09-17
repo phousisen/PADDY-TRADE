@@ -23,6 +23,7 @@ import {
 import {
   windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
   stationsOn, periodKeyOf, isoWeekKey, childGrain, daysInWindow, mergeByCategory,
+  planDaySave,
 } from "./src/expenseBook.js";
 
 let failures = 0;
@@ -227,9 +228,27 @@ check("a day with nothing spent is recorded, not left blank",
   /markExpenseDayEmpty/.test(src) && /markExpenseDayEmpty/.test(apiSrc));
 check("recording money on a day clears the 'nothing spent' mark",
   /clearExpenseDayMark/.test(src) && /clearExpenseDayMark/.test(apiSrc));
+// [2026-09-17] Rewritten for the card, not the old table row.
+//
+// This used to look for `s.state === "blank" ? null`, which was the exact
+// line that printed a dash instead of a zero in the old five-thin-rows
+// layout. Opening a day now gives a card per station with its CATEGORIES in
+// it (SISEN: "i want to be able to see what the spending is on each day —
+// for each location"), so that line is gone and the distinction lives in
+// DayStation's `filed` / `nothing` instead.
+//
+// The RULE is unchanged and is what matters: a station that spent nothing
+// and a station that never filed must not look the same. One is a fact about
+// the business; the other is a fact about the paperwork.
 check("the table tells a real zero from a day nobody entered",
   /ex_nothing_spent/.test(src) && /ex_not_entered/.test(src)
-  && /s\.state === "blank" \? null/.test(src));
+  && /station\.state === "spent"/.test(src)
+  && /station\.state === "nothing"/.test(src)
+  && /nothing \? t\("ex_nothing_spent"\) : t\("ex_not_entered"\)/.test(src));
+check("a station that has not filed still offers the button to file it",
+  /filed \? t\("ex_open"\) : t\("ex_enter"\)/.test(src));
+check("one station chosen drops the station header — there is nothing to label",
+  /only \? "" : "px-3 pb-2\.5"/.test(src) && /if \(only\) \{/.test(src));
 check("reaching back past today asks for a password",
   /needsPassword/.test(src) && /ConfirmPassword/.test(src)
   && /sheet\.day !== today/.test(src));
@@ -335,6 +354,125 @@ check("who edited is read from audit_logs, nothing new stored",
   /getExpenseEdits/.test(apiSrc3) && /\.eq\("action", "edit_expense"\)/.test(apiSrc3));
 check("the newest edit per row wins",
   /if \(out\[row\.record_id\]\) continue;/.test(apiSrc3));
+
+// ---------------------------------------------------------------------------
+// Erasing a figure must actually erase it
+//
+// [2026-09-17] SISEN: "why even after i edit and erase some excpenses. its not
+// gone. make this function properly. like srsly this has to be very
+// professional."
+//
+// He was right, and the cause was one line — the sheet filtered out every
+// empty box before the save saw it, so an emptied box and a box that never
+// held anything were the same thing: nothing. There was no way to take a
+// wrongly entered expense off a day at all.
+//
+// Three ways this can go wrong again, worst first:
+//
+//   · ERASING SILENTLY DOES NOTHING. The original bug. The figure stays, the
+//     person believes they removed it, and every total downstream is wrong
+//     with nobody looking.
+//   · ERASING TAKES OUT ONE ROW OF TWO. A day with a duplicate pair would
+//     read as emptied on screen while still carrying half the money.
+//   · ERASING SLIPS THROUGH WITHOUT A REASON. Taking 1.2 million riel off a
+//     day is a bigger act than changing it. It needs the same password and
+//     the same written reason, or the trail has a hole exactly where the
+//     money left.
+// ---------------------------------------------------------------------------
+{
+  const rows = (...a) => a.map(([id, category, amount]) => ({ id, category, amount }));
+  const merge = (rs) => mergeByCategory(rs);
+
+  const day = rows(
+    ["p1", "ថ្លៃកូនដៃ", 1206950],
+    ["p2", "ថ្លៃចូក", 582725],
+    ["p3", "ផ្សេងៗ", 125000],
+  );
+  const shown = ["ថ្លៃកូនដៃ", "ថ្លៃចូក", "ផ្សេងៗ", "Salary", "Fuel"];
+  const K = categoryKey;
+
+  const same = planDaySave({
+    shown, merged: merge(day),
+    amounts: { [K("ថ្លៃកូនដៃ")]: "1206950", [K("ថ្លៃចូក")]: "582725", [K("ផ្សេងៗ")]: "125000" },
+  });
+  check("nothing typed differently is not a change", same.changesExisting === false);
+  check("and removes nothing", same.removals.length === 0);
+  check("but still sends every figure", same.entries.length === 3);
+
+  const cleared = planDaySave({
+    shown, merged: merge(day),
+    amounts: { [K("ថ្លៃកូនដៃ")]: "1206950", [K("ថ្លៃចូក")]: "", [K("ផ្សេងៗ")]: "125000" },
+  });
+  check("an emptied box becomes a REMOVAL, not silence", cleared.removals.length === 1,
+        JSON.stringify(cleared.removals));
+  check("and names the right category", cleared.removals[0].category === "ថ្លៃចូក");
+  check("and carries the row to void", cleared.removals[0].rows.map((r) => r.id).join() === "p2");
+  check("and carries what is being taken off", cleared.removals[0].amount === 582725);
+  check("the cleared category is NOT sent as an entry",
+        !cleared.entries.some((e) => e.category === "ថ្លៃចូក"));
+  check("the other two are untouched", cleared.entries.length === 2);
+  check("removing counts as changing an existing figure — password and reason",
+        cleared.changesExisting === true,
+        "taking money off a day is at least as serious as altering it");
+
+  const untouched = planDaySave({
+    shown, merged: merge(day),
+    amounts: { [K("ថ្លៃកូនដៃ")]: "1206950", [K("ថ្លៃចូក")]: "582725", [K("ផ្សេងៗ")]: "125000", [K("Salary")]: "" },
+  });
+  check("an always-empty box removes nothing", untouched.removals.length === 0,
+        "otherwise every blank line on the sheet would try to delete something");
+  check("and is not a change", untouched.changesExisting === false);
+
+  const all = planDaySave({ shown, merged: merge(day), amounts: {} });
+  check("clearing every box removes every figure", all.removals.length === 3);
+  check("and sends no entries", all.entries.length === 0);
+
+  const dup = rows(["a", "ថ្លៃចូក", 300000], ["b", "ថ្លៃចូក", 282725]);
+  const dupCleared = planDaySave({
+    shown: ["ថ្លៃចូក"], merged: merge(dup), amounts: { [K("ថ្លៃចូក")]: "" },
+  });
+  check("a duplicated category removes ALL its rows", dupCleared.removals[0].rows.length === 2,
+        "one row left behind would look emptied while still holding money");
+  check("and reports the full amount", dupCleared.removals[0].amount === 582725);
+
+  const edited = planDaySave({
+    shown, merged: merge(day),
+    amounts: { [K("ថ្លៃកូនដៃ")]: "109300", [K("ថ្លៃចូក")]: "582725", [K("ផ្សេងៗ")]: "125000" },
+  });
+  check("changing a figure is still a change", edited.changesExisting === true);
+  check("and is not a removal", edited.removals.length === 0);
+
+  const junk = planDaySave({
+    shown, merged: merge(day),
+    amounts: { [K("ថ្លៃកូនដៃ")]: "abc", [K("ថ្លៃចូក")]: "582725", [K("ផ្សេងៗ")]: "125000" },
+  });
+  check("unreadable text is treated as empty, so it cannot silently keep a figure",
+        junk.removals.length === 1 && junk.removals[0].category === "ថ្លៃកូនដៃ");
+
+  check("a zero is a figure, not an erasure",
+        planDaySave({
+          shown: ["ថ្លៃចូក"], merged: merge(rows(["z", "ថ្លៃចូក", 5000])),
+          amounts: { [K("ថ្លៃចូក")]: "0" },
+        }).removals.length === 0,
+        "0 means 'nothing was spent on this', which is a recorded fact");
+
+  console.log("  erasing a figure removes it, and says so first");
+}
+
+// The screen must actually use the planner, and the save must VOID rather than
+// delete — the record of a removed expense has to survive it.
+{
+  const page = fs.readFileSync(path.join("src", "pages", "Expenses.jsx"), "utf8");
+  check("the day sheet uses planDaySave", /planDaySave\(\{ shown, amounts, merged/.test(page),
+        "the old inline filter is what dropped emptied boxes");
+  check("the old drop-every-empty-box filter is gone",
+        !/\.filter\(\(e\) => e\.amount != null\)/.test(page));
+  check("removals reach the save", /onSave\(\{ entries, removals/.test(page));
+  check("and are voided, not deleted", /api\.voidPayment\(row\.id/.test(page));
+  check("every row of a removal is voided", /for \(const row of r\.rows\)/.test(page));
+  check("the sheet says what it is about to take off", /ex_removing_title/.test(page));
+  check("and marks the box that will remove something", /ex_will_remove/.test(page));
+}
 
 console.log(
   failures === 0
