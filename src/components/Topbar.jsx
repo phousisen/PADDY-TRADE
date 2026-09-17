@@ -692,7 +692,10 @@ export default function Topbar({ title, subtitle }) {
           <AccountMenu profile={profile} t={t} logout={logout} />
         </div>
       </header>
-      <SyncStatusBanner onSignInAgain={logout} />
+      {/* [2026-09-17] The reason matters. This button is only ever shown when
+          the login has ALREADY expired — recording it as "you signed out"
+          told SISEN the opposite of the truth. */}
+      <SyncStatusBanner onSignInAgain={() => logout(REASONS.EXPIRED)} />
     </>
   );
 }
