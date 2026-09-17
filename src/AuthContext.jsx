@@ -1,4 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { noteSignOut, readSignOutNote, wasDeliberate, clearSignOutNote, REASONS } from "./signOutReason.js";
+import { getDeviceId } from "./deviceId.js";
 import { canWithProfile } from "./capabilities.js";
 import { supabase, getAccurateNow } from "./supabaseClient.js";
 import { setViewOnlyMode } from "./viewOnlyGuard.js";
@@ -267,7 +269,18 @@ export function AuthProvider({ children }) {
       // [2026-09-08] Only a recovery/invite link may open the Set Password
       // page (App.jsx) — see audit #7.
       if (_event === "PASSWORD_RECOVERY") setPasswordRecovery(true);
-      if (_event === "SIGNED_OUT") { try { localStorage.removeItem(CACHED_PROFILE_KEY); } catch { /* ignore */ } }
+      if (_event === "SIGNED_OUT") {
+        try { localStorage.removeItem(CACHED_PROFILE_KEY); } catch { /* ignore */ }
+        // [2026-09-17] THE ONE THAT ANSWERS SISEN'S QUESTION.
+        // Every sign-out this app performs writes its reason down first (see
+        // signOutReason.js). So a SIGNED_OUT with no fresh note means nothing
+        // in this app did it: the refresh token was rejected, or the Supabase
+        // project itself ended the session. Recording that is what turns
+        // "why do we always get logged out" from a guess into a fact.
+        if (!wasDeliberate({ note: readSignOutNote() })) {
+          noteSignOut(REASONS.EXPIRED);
+        }
+      }
       setSession(session);
       if (session) {
         await loadProfileWithOfflineFallback(session.user.id);
@@ -275,6 +288,18 @@ export function AuthProvider({ children }) {
         // reload restoring an existing session, and not on a background
         // token refresh, both of which also fire through this callback.
         if (_event === "SIGNED_IN") {
+          // [2026-09-17] Hand in the note explaining how the LAST session
+          // ended. It can only happen now: a session that has ended cannot
+          // write to the database, so a phone in Pong Ro tells HQ why it was
+          // logged out at the moment it comes back. See signout_reason.sql.
+          const note = readSignOutNote();
+          if (note) {
+            Promise.resolve(
+              supabase.rpc("note_signout", {
+                p_device_id: getDeviceId(), p_reason: note.reason, p_at: note.at || null,
+              })
+            ).then(() => clearSignOutNote()).catch(() => {});
+          }
           lookupIpLocation().then(({ ip, location }) => {
             // Wrapped in Promise.resolve() because Supabase's query builder
             // isn't a real Promise until it's awaited/wrapped — calling
@@ -313,6 +338,7 @@ export function AuthProvider({ children }) {
           .single();
         if (!cancelled && data?.logout_requested_at && new Date(data.logout_requested_at) > openedAtRef.current) {
           await supabase.rpc("acknowledge_logout");
+          noteSignOut(REASONS.HQ_FORCED);
           await supabase.auth.signOut();
         }
       } catch (_err) {
@@ -345,6 +371,7 @@ export function AuthProvider({ children }) {
     // [2026-09-08] Forget the cached profile FIRST so a reload — even an
     // offline one — can never reopen the app as this user (audit #12).
     try { localStorage.removeItem(CACHED_PROFILE_KEY); } catch { /* ignore */ }
+    noteSignOut(REASONS.USER);
     const { error } = await supabase.auth.signOut();
     if (error) {
       // Flaky WiFi: the server call failed, so supabase-js kept the local

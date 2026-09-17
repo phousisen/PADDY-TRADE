@@ -533,7 +533,7 @@ const rawApi = {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data, error } = await supabase
       .from("device_sessions")
-      .select("device_id, user_id, location_id, app_version, platform, browser, first_seen_at, last_seen_at, first_ip, last_ip, ip_changed_at, city, region, country, signout_requested_at, signed_out_at, signout_by, missed_checkins, pending_ops, stuck")
+      .select("device_id, user_id, location_id, app_version, platform, browser, first_seen_at, last_seen_at, first_ip, last_ip, ip_changed_at, city, region, country, signout_requested_at, signed_out_at, signout_by, missed_checkins, pending_ops, stuck, last_signout_reason, last_signout_at")
       .gte("last_seen_at", since)
       .order("last_seen_at", { ascending: false });
     // Not migrated yet reads as "nothing to show", never as an error — the

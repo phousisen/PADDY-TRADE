@@ -375,6 +375,16 @@ export const translations = {
     adj_reason_spillage: "Spillage / handling loss", adj_reason_recount: "Recount correction", adj_reason_other: "Other",
     adj_recount_gain: "Recount — more than expected", adj_corrected_up: "Corrected up",
     adj_title: "Adjust Stock — {station}",
+    // [2026-09-17] Why the last session ended — see signOutReason.js. SISEN:
+    // "why do we always get logged out".
+    so_reason_user: "You signed out.",
+    so_reason_everywhere: "Signed out on every device.",
+    so_reason_hq_device: "HQ signed this device out.",
+    so_reason_hq_forced: "HQ signed this account out.",
+    so_reason_password: "Password changed — sign in with the new one.",
+    so_reason_expired: "Your login expired on its own. Nothing here signed you out.",
+    so_reason_unknown: "Signed out.",
+    st_signout_hint: "Why this machine was last signed out",
     // [2026-09-17] Stock reset requests — a station asking HQ to correct its
     // stock. See stockReset.js and stock_reset_requests.sql.
     col_ask_reset: "Ask HQ",
@@ -1528,6 +1538,15 @@ export const translations = {
     adj_reason_spillage: "បាត់បង់ដោយការចាក់ខ្ចាត់/ការដោះស្រាយ", adj_reason_recount: "កែតម្រូវពីការរាប់ឡើងវិញ", adj_reason_other: "ផ្សេងទៀត",
     adj_recount_gain: "រាប់ឡើងវិញ — ច្រើនជាងការរំពឹងទុក", adj_corrected_up: "កែតម្រូវឡើងលើ",
     adj_title: "កែតម្រូវស្តុក — {station}",
+    // [2026-09-17] មូលហេតុដែលចាកចេញលើកមុន — signOutReason.js
+    so_reason_user: "លោកបានចាកចេញដោយខ្លួនឯង។",
+    so_reason_everywhere: "បានចាកចេញពីគ្រប់ឧបករណ៍។",
+    so_reason_hq_device: "ការិយាល័យបានឱ្យឧបករណ៍នេះចាកចេញ។",
+    so_reason_hq_forced: "ការិយាល័យបានឱ្យគណនីនេះចាកចេញ។",
+    so_reason_password: "បានប្តូរពាក្យសម្ងាត់ — សូមចូលដោយពាក្យសម្ងាត់ថ្មី។",
+    so_reason_expired: "ការចូលរបស់លោកផុតកំណត់ដោយខ្លួនឯង។ គ្មានអ្វីនៅទីនេះឱ្យលោកចាកចេញទេ។",
+    so_reason_unknown: "បានចាកចេញ។",
+    st_signout_hint: "មូលហេតុដែលម៉ាស៊ីននេះចាកចេញលើកចុងក្រោយ",
     // [2026-09-17] សំណើកែស្តុក — ស្ថានីយ៍សុំឱ្យការិយាល័យកែស្តុក។
     col_ask_reset: "សុំកែស្តុក",
     sr_title: "កែស្តុក — {station}",
