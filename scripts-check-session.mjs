@@ -184,7 +184,43 @@ for (const [file, label] of [
      "needs useRefetchSignal() and refetch in the effect's dependencies");
 }
 
+// ── 4 ─ a device with no login may not sync ────────────────────────────────
+//
+// [2026-09-17] The whole of that day's damage came from one line saying a
+// missing session was fine. It is not fine. A request with no login is not
+// refused by Supabase — it runs as the signed-out `anon` role, which under
+// row-level security can see NO rows. Every queued save then fails with a
+// message that names the wrong problem:
+//
+//   · finalize_weighing_ticket → "weighing ticket <id> not found", for a
+//     ticket sitting right there, already finalized  (Jomnoum, 14,697
+//     database errors in one day)
+//   · an insert → "new row violates row-level security policy for payments"
+//     (Ping Pong, the same day)
+//
+// Neither reads as "sign in again", so nothing ever stopped retrying.
+
+console.log("\n4. A device with no login does not sync");
+
+ok("no session means NOT ok to sync",
+   /if \(!session\) return false;/.test(client),
+   "ensureFreshSession must return false when there is no session at all — "
+   + "returning true lets the queue fire every write as the anonymous role");
+
+ok("and the old line is really gone",
+   !/if \(!session\) return true;/.test(client),
+   "the 17 September fault is back");
+
+ok("the queue stops instead of retrying when auth says no",
+   /const authOk = await ensureFreshSession\(\);\s*\n\s*if \(!authOk\) \{\s*\n\s*sessionExpired = true;/
+     .test(readFileSync("src/offlineQueue.js", "utf8")),
+   "offlineQueue must set sessionExpired and return, not carry on");
+
+ok("a genuinely offline device is still allowed to try",
+   /catch \(_err\) \{[\s\S]*?return true;/.test(client),
+   "no connection is not the same as no login — that path must still return true");
+
 console.log(failed
   ? `\n${failed} FAILED`
-  : "\nComing back to the app re-asks with a live login — nobody has to sign out and in.");
+  : "\nComing back to the app re-asks with a live login — and a device with no login never writes as nobody.");
 process.exit(failed ? 1 : 0);
