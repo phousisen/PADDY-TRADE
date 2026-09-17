@@ -28,50 +28,46 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASELINE = {
-  "src/App.jsx": 2,
-  "src/components/AddLocationModal.jsx": 5,
-  "src/components/AddUserModal.jsx": 12,
-  "src/components/DateRangeFilter.jsx": 4,
-  "src/components/EditedBadge.jsx": 4,
-  "src/components/LiveWeightBox.jsx": 1,
-  "src/components/LocationFilter.jsx": 2,
-  "src/components/MobileNav.jsx": 2,
-  "src/components/MonthlyClosePanel.jsx": 11,
-  "src/components/RenameLocationModal.jsx": 4,
-  "src/components/Sidebar.jsx": 1,
-  "src/components/StationDaysReview.jsx": 7,
-  "src/components/Topbar.jsx": 18,
-  "src/components/WeightField.jsx": 2,
-  "src/pages/ChangeRequests.jsx": 22,
-  "src/pages/DailyBook.jsx": 2,
-  "src/pages/DataCheck.jsx": 21,
-  "src/pages/Expenses.jsx": 1,
-  "src/pages/LocationDetail.jsx": 15,
-  "src/pages/LocationsPage.jsx": 19,
-  "src/pages/Login.jsx": 1,
-  "src/pages/Receipt.jsx": 20,
-  "src/pages/ReceiptTemplateEditor.jsx": 1,
-  "src/pages/RegisterFarmer.jsx": 11,
-  "src/pages/RegisterPartyStaff.jsx": 3,
-  "src/pages/ReportAuditLog.jsx": 6,
+  "src/pages/Transactions.jsx": 169,
   "src/pages/ReportCapital.jsx": 44,
+  "src/pages/WeighingTickets.jsx": 40,
+  "src/pages/TransactionForm.jsx": 38,
   "src/pages/ReportFinanceSetup.jsx": 37,
-  "src/pages/ReportPayables.jsx": 30,
   "src/pages/ReportPurchases.jsx": 31,
-  "src/pages/ReportReceivables.jsx": 24,
+  "src/pages/ReportPayables.jsx": 30,
   "src/pages/ReportSales.jsx": 30,
   "src/pages/ReportShrinkage.jsx": 28,
+  "src/pages/UsersPage.jsx": 26,
+  "src/pages/ReportReceivables.jsx": 24,
+  "src/pages/ChangeRequests.jsx": 22,
+  "src/pages/RolesPage.jsx": 22,
+  "src/pages/DataCheck.jsx": 21,
+  "src/pages/Receipt.jsx": 20,
+  "src/pages/LocationsPage.jsx": 19,
+  "src/components/Topbar.jsx": 18,
+  "src/pages/LocationDetail.jsx": 15,
   "src/pages/ReportStock.jsx": 14,
   "src/pages/ReportTax.jsx": 14,
-  "src/pages/RolesPage.jsx": 22,
+  "src/components/AddUserModal.jsx": 12,
+  "src/components/MonthlyClosePanel.jsx": 11,
+  "src/pages/RegisterFarmer.jsx": 11,
   "src/pages/SetPassword.jsx": 8,
+  "src/components/StationDaysReview.jsx": 7,
+  "src/pages/ReportAuditLog.jsx": 6,
+  "src/components/AddLocationModal.jsx": 5,
   "src/pages/SettingsPage.jsx": 5,
-  "src/pages/StationHealth.jsx": 6,
+  "src/components/DateRangeFilter.jsx": 4,
+  "src/components/EditedBadge.jsx": 4,
+  "src/pages/RegisterPartyStaff.jsx": 3,
+  "src/App.jsx": 2,
+  "src/components/MobileNav.jsx": 2,
+  "src/components/WeightField.jsx": 2,
+  "src/components/LiveWeightBox.jsx": 1,
+  "src/components/Sidebar.jsx": 1,
+  "src/pages/DailyBook.jsx": 1,
+  "src/pages/Expenses.jsx": 1,
+  "src/pages/ReceiptTemplateEditor.jsx": 1,
   "src/pages/StockInventory.jsx": 1,
-  "src/pages/TransactionForm.jsx": 41,
-  "src/pages/Transactions.jsx": 169,
-  "src/pages/UsersPage.jsx": 26,
-  "src/pages/WeighingTickets.jsx": 98
 };
 
 function files(dir, out = []) {
@@ -99,8 +95,31 @@ function countEnglish(file) {
     if (WORDY.test(t) && !/^[A-Z_]+$/.test(t)) n += 1;
   }
   // a user-visible prop handed a bare string
+  //
+  // [2026-09-17] EXCEPT where the same element also carries the Khmer.
+  // WeighingTickets renders its field labels through small bilingual
+  // components — `<NewTicketFieldLabel en="Ticket #" km="លេខសំបុត្រ" />`,
+  // `<SectionHeader title="Weigh Out" titleKm="…" />`. Those ARE translated;
+  // counting them told SISEN 16 strings on his busiest screen were English
+  // when they were already Khmer, which makes the whole number untrustworthy
+  // and sends someone to "fix" working code.
+  //
+  // The pairing has to be read off the SAME element, not the file, or one
+  // km= anywhere would excuse every en= everywhere.
+  const bilingual = new Set();
+  for (const el of src.matchAll(/<[A-Za-z][^>]*?>/gs)) {
+    const tag = el[0];
+    if (/\bkm\s*=\s*"/.test(tag)) {
+      for (const a of tag.matchAll(/\ben\s*=\s*"([^"]{3,90})"/g)) bilingual.add(`en\u0000${a[1]}`);
+    }
+    if (/\btitleKm\s*=\s*"/.test(tag)) {
+      for (const a of tag.matchAll(/\btitle\s*=\s*"([^"]{3,90})"/g)) bilingual.add(`title\u0000${a[1]}`);
+    }
+  }
   for (const m of src.matchAll(/\b(placeholder|title|subtitle|label|aria-label|hint|en)\s*=\s*"([^"]{3,90})"/g)) {
-    if (WORDY.test(m[2])) n += 1;
+    if (!WORDY.test(m[2])) continue;
+    if (bilingual.has(`${m[1]}\u0000${m[2]}`)) continue;
+    n += 1;
   }
   return n;
 }
@@ -125,7 +144,18 @@ console.log(`  ok    ${total} hardcoded English strings remain (baseline ${Objec
 
 console.log("\n2. The dictionary is at parity\n");
 
-const dict = fs.readFileSync(path.join("src", "i18n.jsx"), "utf8");
+// [2026-09-16] Comments come out BEFORE any key is read.
+//
+// A `//` note inside the dictionary explaining a new key happened to contain
+// the words `English controls: "so not clean and professional"`, and that is
+// the exact shape of a dictionary entry. The guard duly reported a key
+// called `controls` present in English and missing in Khmer, and stopped a
+// build over a sentence. A guard that can be broken by a comment teaches
+// people not to write comments.
+const dict = fs.readFileSync(path.join("src", "i18n.jsx"), "utf8")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .split("\n").map((l) => (/^\s*\/\//.test(l) ? "" : l)).join("\n");
+
 function entries(lang) {
   const i = dict.indexOf("\n  " + lang + ": {");
   const j = dict.indexOf("\n  },", i);
@@ -154,6 +184,34 @@ for (const f of files("src").concat(
   }
 }
 if (!unresolved) console.log("  ok    every t() key resolves in both languages");
+
+// [2026-09-17] A Khmer entry that is still English is WORSE than a missing one.
+//
+// Missing shows up as a crash or a blank. English-in-the-Khmer-column looks
+// finished: the key is there, the parity check above is happy, and the screen
+// quietly speaks English to somebody who cannot read it. Found by this very
+// check on the day it was written — `role_admin` had sat as "HQ Admin" in the
+// Khmer dictionary, next to two siblings that were properly translated.
+//
+// A Khmer value is only suspicious when it has NO Khmer letters at all AND
+// contains a real English word. "5451", "kg", "QR", "{station}" are all fine.
+const KHMER_LETTER = /[\u1780-\u17FF]/;
+const ENGLISH_WORD = /[A-Za-z]{4,}/;
+// The brand is the brand in both languages.
+const BRAND_KEYS = new Set(["appName"]);
+{
+  const kmBlock = dict.slice(dict.indexOf("\n  km: {"));
+  let englishInKhmer = 0;
+  for (const m of kmBlock.matchAll(/^\s*([a-z][A-Za-z0-9_]*)\s*:\s*"((?:[^"\\]|\\.)*)"/gm)) {
+    const [, key, value] = m;
+    if (BRAND_KEYS.has(key)) continue;
+    if (KHMER_LETTER.test(value)) continue;
+    if (!ENGLISH_WORD.test(value)) continue;
+    fail(`km.${key} is still English: "${value}"`);
+    englishInKhmer += 1;
+  }
+  if (!englishInKhmer) console.log("  ok    no Khmer entry is secretly still English");
+}
 
 console.log(
   failures === 0
