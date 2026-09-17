@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, X, Eye } from "lucide-react";
+import { Check, X, Eye, Warehouse } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { dmy, dmyTime } from "../dateFormat.js";
+import { describeReset } from "../stockReset.js";
 
 // [2026-09-01] "Ticket Queue" design (Option B) — status carried by a
 // colored left edge on each row/card instead of a filled pill background,
@@ -242,14 +243,138 @@ function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, o
   );
 }
 
+
+// [2026-09-17] STOCK RESETS. SISEN: "i want each location to be able to reset
+// their stock to 0 to get it as a stock loss, but will need hq above to
+// confirm and accept it."
+//
+// A separate section at the top of this page rather than a row mixed into the
+// list below, because these are a different shape and a different weight: a
+// change request moves one ticket's figures, this writes off a shed. It leads
+// with the riel, because a number of kilograms does not tell anyone whether
+// they are approving a rounding error or a lorry.
+function StockResetCard({ req, viewerId, busy, t, onApprove, onReject }) {
+  const [rejecting, setRejecting] = useState(false);
+  const [why, setWhy] = useState("");
+  const d = describeReset({
+    bookKg: req.book_kg_at_request,
+    countedKg: req.counted_kg,
+    pricePerKg: req.price_per_kg,
+  });
+  // The same rule the database enforces. Shown as a reason, not as a button
+  // that silently does nothing.
+  const isOwn = req.requested_by && viewerId && req.requested_by === viewerId;
+
+  return (
+    <div className="mb-2.5 rounded-lg border border-slate-200 border-l-[3px] border-l-amber-500 bg-white px-4 py-3.5">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+        <Warehouse size={18} className="mt-0.5 shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-bold text-slate-900">{req.stationName}</p>
+          <p className="text-[12px] text-slate-400">
+            {req.requestedByName} · {dmyTime(req.requested_at)}
+          </p>
+        </div>
+        <div className="text-right">
+          {d.isLoss && d.hasPrice ? (
+            <p className="text-[19px] font-extrabold tabular-nums leading-tight text-rose-700">{fmtRiel(d.lossValue)}</p>
+          ) : d.isGain && d.hasPrice ? (
+            <p className="text-[19px] font-extrabold tabular-nums leading-tight text-brand-700">+{fmtRiel(d.gainValue)}</p>
+          ) : (
+            <p className="text-[19px] font-extrabold tabular-nums leading-tight text-slate-400">—</p>
+          )}
+          <p className="text-[12px] tabular-nums text-slate-500">
+            {fmt2(d.bookKg)} → {fmt2(d.countedKg)} kg
+          </p>
+        </div>
+      </div>
+
+      {req.note && <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-[13.5px] italic text-slate-600">{req.note}</p>}
+
+      {!d.hasPrice && (
+        <p className="mt-2 text-[12px] text-amber-700">{t("sr_no_price_warning")}</p>
+      )}
+
+      {rejecting ? (
+        <div className="mt-3">
+          <textarea value={why} onChange={(e) => setWhy(e.target.value)} rows={2}
+            placeholder={t("sr_reject_placeholder")}
+            className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-rose-300 focus:ring-2 focus:ring-rose-100" />
+          <div className="flex justify-end gap-2">
+            <button onClick={() => { setRejecting(false); setWhy(""); }} disabled={busy}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
+            <button onClick={() => onReject(req, why)} disabled={busy || !why.trim()}
+              className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40">
+              {t("reject")}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 flex items-center justify-end gap-2">
+          {isOwn && <span className="mr-auto text-[12px] text-slate-400">{t("sr_own_request")}</span>}
+          <button onClick={() => setRejecting(true)} disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40">
+            <X size={13} /> {t("reject")}
+          </button>
+          <button onClick={() => onApprove(req)} disabled={busy || isOwn}
+            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+            <Check size={13} /> {t("sr_approve")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChangeRequests() {
   const { t } = useLanguage();
   const { session } = useAuth();
   const [rows, setRows] = useState([]);
   const [reviewReq, setReviewReq] = useState(null);
+  // [2026-09-17] Stock resets. Loaded separately and never allowed to fail
+  // this page — a database without stock_reset_requests.sql yet simply has
+  // none, and the change-request list must still work.
+  const [resets, setResets] = useState([]);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState("");
 
-  async function load() { setRows(await api.getChangeRequests()); }
+  async function load() {
+    setRows(await api.getChangeRequests());
+    api.getStockResetRequests({ status: "pending" }).then(setResets).catch(() => setResets([]));
+  }
   useEffect(() => { load(); }, []);
+
+  async function approveReset(req) {
+    setResetError(""); setResetBusy(true);
+    try {
+      await api.resolveStockReset(req.id, true);
+      await api.logAudit({
+        action: "approve_stock_reset",
+        tableName: "stock_reset_requests",
+        recordId: req.id,
+        oldData: { current_stock_kg: req.book_kg_at_request },
+        newData: { current_stock_kg: req.counted_kg, stationName: req.stationName },
+        userId: session.user.id,
+      }).catch(() => {});
+      await load();
+    } catch (err) {
+      setResetError(err.message || "Could not approve.");
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function rejectReset(req, why) {
+    setResetError(""); setResetBusy(true);
+    try {
+      await api.resolveStockReset(req.id, false, { rejectReason: why });
+      await load();
+    } catch (err) {
+      setResetError(err.message || "Could not reject.");
+    } finally {
+      setResetBusy(false);
+    }
+  }
 
   // Same "this month" basis Stock Loss and every other summary strip in
   // the app uses — grouped by the request's own date (created_at), since
@@ -376,7 +501,20 @@ export default function ChangeRequests() {
           <span><b className="font-semibold tabular-nums text-slate-900">{counts.rejected}</b> rejected this month</span>
         </div>
 
-        {rows.length === 0 && (
+        {resets.length > 0 && (
+          <div className="mb-6">
+            <h3 className="mb-2 px-0.5 text-[13px] font-semibold uppercase tracking-wide text-slate-400">
+              {t("sr_section_title")}
+            </h3>
+            {resetError && <p className="mb-2 text-sm text-rose-600">{resetError}</p>}
+            {resets.map((r) => (
+              <StockResetCard key={r.id} req={r} viewerId={session.user.id} busy={resetBusy} t={t}
+                onApprove={approveReset} onReject={rejectReset} />
+            ))}
+          </div>
+        )}
+
+        {rows.length === 0 && resets.length === 0 && (
           <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t("no_requests")}</div>
         )}
 

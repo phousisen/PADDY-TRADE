@@ -2,6 +2,8 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers, Scale, RotateCcw } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { AdjustStockModal, reasonLabel } from "../components/AdjustStockModal.jsx";
+import { StockResetModal } from "../components/StockResetModal.jsx";
+import { canRequestReset } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -56,6 +58,17 @@ export default function StockInventory() {
   // the one other page that already showed it that way (see the matching
   // fix + comment on LocationDetail.jsx's own canAdjustStock).
   const canAdjustStock = (isAdmin || hasPermission("adjust_stock")) && !isViewOnly;
+  // [2026-09-17] The station's side of the same column. A station cannot set
+  // its own stock — it asks, and HQ answers. See stockReset.js.
+  const canAskReset = canRequestReset({
+    isViewOnly,
+    canAdjustStock,
+    hasRequestPermission: hasPermission("request_stock_reset"),
+    isOwnStation: !!profile?.location_id,
+  });
+  // One column, two meanings — HQ sets the figure, a station asks for it to be
+  // set. Nobody sees both, so nobody has to work out which button they have.
+  const showActionCol = canAdjustStock || canAskReset;
   const [stations, setStations] = useState([]);
   const [products, setProducts] = useState([]);
   const [txs, setTxs] = useState([]);
@@ -64,6 +77,10 @@ export default function StockInventory() {
   const [loadError, setLoadError] = useState("");
   const [expandedId, setExpandedId] = useState(null);
   const [adjustStation, setAdjustStation] = useState(null);
+  const [resetStation, setResetStation] = useState(null);
+  // Keyed by location id. A station with one waiting must see the receipt,
+  // not a form it is not allowed to send.
+  const [pendingResets, setPendingResets] = useState({});
 
   async function load() {
     setLoading(true);
@@ -86,6 +103,15 @@ export default function StockInventory() {
       setTxs(tx);
       setProducts(pr);
       setAdjustments(adj);
+      // Separate and never allowed to fail the page — the table may not exist
+      // yet on a database that has not had stock_reset_requests.sql run.
+      api.getStockResetRequests({ status: "pending" })
+        .then((rows) => {
+          const byLoc = {};
+          for (const r of rows) byLoc[r.location_id] = r;
+          setPendingResets(byLoc);
+        })
+        .catch(() => {});
     } catch (err) {
       // Without this, a failed/dropped request left the refresh icon
       // spinning forever with no error and no way to tell what happened.
@@ -115,6 +141,31 @@ export default function StockInventory() {
       userId: session.user.id,
     }).catch(() => {});
     setAdjustStation(null);
+    load();
+  }
+
+  // [2026-09-17] Files the ask. Moves NOTHING — the stock only changes inside
+  // resolve_stock_reset() when HQ approves, which is the whole point.
+  async function submitResetRequest({ countedKg, reason, note, pricePerKg }) {
+    const station = resetStation;
+    await api.requestStockReset({
+      locationId: station.id, countedKg, reason, note, pricePerKg,
+    });
+    await api.logAudit({
+      action: "request_stock_reset",
+      tableName: "stock_reset_requests",
+      recordId: station.id,
+      oldData: { current_stock_kg: Number(station.current_stock_kg) || 0 },
+      newData: { counted_kg: countedKg, reason, note, stationName: station.name },
+      userId: session.user.id,
+    }).catch(() => {});
+    setResetStation(null);
+    load();
+  }
+
+  async function withdrawResetRequest(req) {
+    await api.cancelStockReset(req.id);
+    setResetStation(null);
     load();
   }
 
@@ -497,7 +548,7 @@ export default function StockInventory() {
           const displayReason = kg >= 0
             ? (a.reason === "recount" ? t("adj_recount_gain") : t("adj_corrected_up"))
             : label;
-          adjustmentDetails.push({ kg, reason: label, displayReason, note: a.note, valueLost: a.value_lost });
+          adjustmentDetails.push({ kg, reason: label, displayReason, note: a.note, valueLost: a.value_lost, pricePerKg: a.price_per_kg });
         } else {
           cursor += ev.deltaKg;
         }
@@ -508,6 +559,27 @@ export default function StockInventory() {
       // modal already suggests when a loss is entered. Sums every
       // adjustment that landed this day; a day with no valued loss (an
       // adjustment recorded with no price, or a pure gain) reads as 0.
+      // [2026-09-12] ONE SIGNED FIGURE, not a losses-only one.
+      //
+      // A loss uses the value_lost written on the day — that is what was
+      // true at that day's price, and re-pricing it later would rewrite
+      // history every time the market moved. A GAIN never had one stored
+      // (the database kept a price only for negatives until 11 Sept), so
+      // it is worked out from the price now kept alongside it.
+      //
+      // Negative for a loss, positive for a gain, and null when there is no
+      // price to work from — a dash, never a confident zero.
+      const adjustmentValueToday = adjustmentDetails.reduce((sum, a) => {
+        if (a.kg < 0) {
+          if (a.valueLost != null) return sum - Math.abs(Number(a.valueLost));
+          if (a.pricePerKg != null) return sum - Math.abs(a.kg * Number(a.pricePerKg));
+          return sum;
+        }
+        if (a.kg > 0 && a.pricePerKg != null) return sum + a.kg * Number(a.pricePerKg);
+        return sum;
+      }, 0);
+      // Kept under its old name so nothing that still reads "value lost"
+      // (the month summary above) changes meaning: losses only, positive.
       const valueLostToday = adjustmentDetails.reduce((s, a) => s + (a.kg < 0 ? Number(a.valueLost) || 0 : 0), 0);
 
       const closingByProduct = { ...openingByProduct };
@@ -528,6 +600,7 @@ export default function StockInventory() {
         adjustedKg,
         adjustmentDetails,
         valueLostToday,
+        adjustmentValueToday,
         closing,
         byProduct: Object.entries(closingByProduct)
           // Keep a type with real activity that day even if it netted to
@@ -599,7 +672,7 @@ export default function StockInventory() {
   // Totals row at the bottom of the ledger — same numbers as the rows
   // above, just summed across whatever period is currently selected.
   const ledgerTotals = useMemo(() => {
-    const t = { boughtKg: 0, spentAmt: 0, soldKg: 0, earnedAmt: 0, adjustedKg: 0, valueLostToday: 0 };
+    const t = { boughtKg: 0, spentAmt: 0, soldKg: 0, earnedAmt: 0, adjustedKg: 0, valueLostToday: 0, adjustmentValueToday: 0 };
     for (const r of ledgerRows) {
       t.boughtKg += r.boughtKg;
       t.spentAmt += r.spentAmt;
@@ -607,6 +680,7 @@ export default function StockInventory() {
       t.earnedAmt += r.earnedAmt;
       t.adjustedKg += r.adjustedKg;
       t.valueLostToday += r.valueLostToday;
+      t.adjustmentValueToday += r.adjustmentValueToday || 0;
     }
     t.marginAmt = t.earnedAmt - t.spentAmt;
     t.netAmt = t.marginAmt - t.valueLostToday;
@@ -668,7 +742,7 @@ export default function StockInventory() {
                 <th className="px-5 py-2 font-medium">{t("quantity_kg")}</th>
                 <th className="px-5 py-2 font-medium">{t("stock_value_col")}</th>
                 <th className="px-5 py-2 font-medium">{t("updated")}</th>
-                {canAdjustStock && <th className="px-5 py-2 font-medium">{t("col_adjust")}</th>}
+                {showActionCol && <th className="px-5 py-2 font-medium">{t(canAdjustStock ? "col_adjust" : "col_ask_reset")}</th>}
                 <th className="px-5 py-2"></th>
               </tr>
             </thead>
@@ -684,14 +758,30 @@ export default function StockInventory() {
                       <td className="px-5 py-3 font-medium text-slate-700">{fmt(s.current_stock_kg)}</td>
                       <td className="px-5 py-3 font-medium text-slate-700">{fmtRiel(stationValue)}</td>
                       <td className="px-5 py-3 text-xs text-slate-400">{s.updated_ago}</td>
-                      {canAdjustStock && (
+                      {showActionCol && (
                         <td className="px-5 py-3">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setAdjustStation(s); }}
-                            className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700"
-                          >
-                            <Scale size={12} /> {t("col_adjust")}
-                          </button>
+                          {canAdjustStock ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setAdjustStation(s); }}
+                              className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                            >
+                              <Scale size={12} /> {t("col_adjust")}
+                            </button>
+                          ) : (
+                            // A station with one already waiting gets the same
+                            // button in amber — it opens the receipt instead of
+                            // the form. Never a disabled button with no reason.
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setResetStation(s); }}
+                              className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium ${
+                                pendingResets[s.id]
+                                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                                  : "border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700"
+                              }`}
+                            >
+                              <Scale size={12} /> {pendingResets[s.id] ? t("sr_waiting_short") : t("col_ask_reset")}
+                            </button>
+                          )}
                         </td>
                       )}
                       <td className="px-5 py-3 text-right">
@@ -700,7 +790,7 @@ export default function StockInventory() {
                     </tr>
                     {isOpen && (
                       <tr className="border-b border-slate-50 bg-slate-50/60 last:border-0">
-                        <td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-3">
+                        <td colSpan={showActionCol ? 6 : 5} className="px-5 py-3">
                           {rows.length === 0 ? (
                             <p className="py-2 text-center text-xs text-slate-400">{t("no_paddy_breakdown")}</p>
                           ) : (
@@ -730,10 +820,10 @@ export default function StockInventory() {
                 );
               })}
               {loading && stations.length === 0 && (
-                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>
+                <tr><td colSpan={showActionCol ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>
               )}
               {stations.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={canAdjustStock ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_locations_visible")}</td></tr>
+                <tr><td colSpan={showActionCol ? 6 : 5} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_locations_visible")}</td></tr>
               )}
             </tbody>
           </table>
@@ -866,7 +956,7 @@ export default function StockInventory() {
                 <th className="px-4 py-2.5 font-semibold">{t("col_sold_out")}</th>
                 <th className="px-4 py-2.5 font-semibold">{t("col_earned")}</th>
                 <th className="px-4 py-2.5 font-semibold">{t("col_lost")}</th>
-                <th className="px-4 py-2.5 font-semibold">{t("col_value_lost")}</th>
+                <th className="px-4 py-2.5 font-semibold">{t("col_adj_value")}</th>
                 <th className="px-4 py-2.5 font-semibold">{t("col_closing")}</th>
                 <th className="px-4 py-2.5"></th>
               </tr>
@@ -895,7 +985,16 @@ export default function StockInventory() {
                           </span>
                         ) : <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-4 py-3 font-medium text-rose-600">{r.valueLostToday > 0.5 ? fmtRiel(r.valueLostToday) : <span className="font-normal text-slate-300">—</span>}</td>
+                      {/* [2026-09-12] One signed money column instead of a
+                          losses-only one. A gain in kilos next to a dash
+                          under "Value lost" read as though the gain were
+                          worth nothing; green for a gain, red for a loss,
+                          and a dash only when no price was ever recorded. */}
+                      <td className={`px-4 py-3 font-medium ${r.adjustmentValueToday < -0.5 ? "text-rose-600" : r.adjustmentValueToday > 0.5 ? "text-emerald-600" : ""}`}>
+                        {Math.abs(r.adjustmentValueToday) > 0.5
+                          ? `${r.adjustmentValueToday > 0 ? "+" : "−"}${fmtRiel(Math.abs(r.adjustmentValueToday))}`
+                          : <span className="font-normal text-slate-300">—</span>}
+                      </td>
                       <td className="px-4 py-3">{balanceCell(r.closing, "font-bold text-slate-800")}</td>
                       <td className="px-4 py-3 text-right">
                         {isOpen ? <ChevronDown size={16} className="ml-auto text-slate-400" /> : <ChevronRight size={16} className="ml-auto text-slate-300" />}
@@ -938,7 +1037,9 @@ export default function StockInventory() {
                                     {a.kg > 0 ? "+" : ""}{fmt2(a.kg)} kg
                                   </span>
                                   {" — "}{a.displayReason}{a.note ? `: ${a.note}` : ""}
-                                  {a.valueLost != null ? ` (${fmtRiel(a.valueLost)} lost)` : ""}
+                                  {a.valueLost != null
+                                    ? ` (${fmtRiel(a.valueLost)} ${t("adj_detail_lost")})`
+                                    : (a.kg > 0 && a.pricePerKg != null ? ` (+${fmtRiel(a.kg * Number(a.pricePerKg))} ${t("adj_detail_gained")})` : "")}
                                 </p>
                               ))}
                             </div>
@@ -965,7 +1066,11 @@ export default function StockInventory() {
                   <td className="px-4 py-3 font-bold text-rose-600">−{fmt2(ledgerTotals.soldKg)} kg</td>
                   <td className="px-4 py-3 font-bold text-brand-700">{fmtRiel(ledgerTotals.earnedAmt)}</td>
                   <td className="px-4 py-3 font-bold text-rose-600">{Math.abs(ledgerTotals.adjustedKg) > 0.005 ? `${ledgerTotals.adjustedKg < 0 ? "−" : "+"}${fmt2(Math.abs(ledgerTotals.adjustedKg))} kg` : "—"}</td>
-                  <td className="px-4 py-3 font-bold text-rose-600">{ledgerTotals.valueLostToday > 0.5 ? fmtRiel(ledgerTotals.valueLostToday) : "—"}</td>
+                  <td className={`px-4 py-3 font-bold ${ledgerTotals.adjustmentValueToday < -0.5 ? "text-rose-600" : ledgerTotals.adjustmentValueToday > 0.5 ? "text-emerald-600" : ""}`}>
+                    {Math.abs(ledgerTotals.adjustmentValueToday) > 0.5
+                      ? `${ledgerTotals.adjustmentValueToday > 0 ? "+" : "−"}${fmtRiel(Math.abs(ledgerTotals.adjustmentValueToday))}`
+                      : "—"}
+                  </td>
                   <td className="px-4 py-3 font-bold text-slate-800">{fmt2(ledgerRows[ledgerRows.length - 1]?.closing ?? 0)} kg</td>
                   <td className="px-4 py-3"></td>
                 </tr>
@@ -1001,6 +1106,18 @@ export default function StockInventory() {
           userEmail={session.user.email}
           onClose={() => setAdjustStation(null)}
           onSubmit={submitAdjustment}
+        />
+      )}
+
+      {resetStation && (
+        <StockResetModal
+          station={resetStation}
+          priceSuggestion={priceSuggestionByLocation[resetStation.id] ?? null}
+          pending={pendingResets[resetStation.id] || null}
+          t={t}
+          onClose={() => setResetStation(null)}
+          onSubmit={submitResetRequest}
+          onCancelRequest={withdrawResetRequest}
         />
       )}
     </div>

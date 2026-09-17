@@ -3,6 +3,8 @@ import { ArrowLeft, Pencil, TrendingUp, Warehouse, Wallet, Scale, CalendarDays, 
 import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
+import { StockResetModal } from "../components/StockResetModal.jsx";
+import { canRequestReset } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -61,6 +63,14 @@ export default function LocationDetail({ locationId, setPage }) {
   // hands, matching every other write entry point in the app, see
   // App.jsx's `isViewOnly` comments).
   const canAdjustStock = (isAdmin || hasPermission("adjust_stock")) && !isViewOnly;
+  // [2026-09-17] A station cannot set its own stock. It asks, HQ answers —
+  // see stockReset.js and stock_reset_requests.sql.
+  const canAskReset = canRequestReset({
+    isViewOnly,
+    canAdjustStock,
+    hasRequestPermission: hasPermission("request_stock_reset"),
+    isOwnStation: !!profile?.location_id && profile.location_id === locationId,
+  });
   const isCombined = locationId === "all";
   const [allLocations, setAllLocations] = useState([]);
   const [location, setLocation] = useState(null);
@@ -74,6 +84,10 @@ export default function LocationDetail({ locationId, setPage }) {
   // reminder/enforcement: staff haven't been trained on the overnight
   // re-weigh workflow yet, per the owner's explicit call).
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  // The station's own open request, if there is one. Loaded separately so a
+  // database without stock_reset_requests.sql yet cannot break this page.
+  const [pendingReset, setPendingReset] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -99,6 +113,11 @@ export default function LocationDetail({ locationId, setPage }) {
       setAdjustments(adjustmentRows);
       setTxs(transactions);
       setLocation(isCombined ? null : (locs.find((l) => l.id === locationId) || null));
+      // [2026-09-17] Separate and never allowed to fail the page — the table
+      // may not exist yet on a database the migration has not reached.
+      if (!isCombined) {
+        api.getPendingStockReset(locationId).then(setPendingReset).catch(() => {});
+      }
     } catch (err) {
       // Without this, a failed/dropped request left this whole page stuck
       // showing "Loading…" forever with no error and no way to retry.
@@ -239,6 +258,28 @@ export default function LocationDetail({ locationId, setPage }) {
     load();
   }
 
+  // [2026-09-17] Files the ask; moves nothing. The stock changes only inside
+  // resolve_stock_reset() when HQ approves.
+  async function submitResetRequest({ countedKg, reason, note, pricePerKg }) {
+    await api.requestStockReset({ locationId: location.id, countedKg, reason, note, pricePerKg });
+    await api.logAudit({
+      action: "request_stock_reset",
+      tableName: "stock_reset_requests",
+      recordId: location.id,
+      oldData: { current_stock_kg: Number(location.current_stock_kg) || 0 },
+      newData: { counted_kg: countedKg, reason, note, stationName: location.name },
+      userId: session.user.id,
+    }).catch(() => {});
+    setResetOpen(false);
+    load();
+  }
+
+  async function withdrawResetRequest(req) {
+    await api.cancelStockReset(req.id);
+    setResetOpen(false);
+    load();
+  }
+
   if (!isCombined && !location) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -296,6 +337,16 @@ export default function LocationDetail({ locationId, setPage }) {
             <h2 className="truncate text-xl font-extrabold tracking-tight text-slate-800">{displayName}</h2>
             {displayNameKh && <p className="truncate text-sm text-slate-400">{displayNameKh}</p>}
           </div>
+          {!isCombined && !canAdjustStock && canAskReset && (
+            <button onClick={() => setResetOpen(true)}
+              className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium ${
+                pendingReset
+                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                  : "border-gold-100 bg-gold-50 text-gold-700 hover:bg-gold-100"
+              }`}>
+              <Scale size={13} /> {pendingReset ? t("sr_waiting_short") : t("col_ask_reset")}
+            </button>
+          )}
           {!isCombined && canAdjustStock && (
             <button onClick={() => setAdjustOpen(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gold-100 bg-gold-50 px-3 py-2 text-sm font-medium text-gold-700 hover:bg-gold-100">
               <Scale size={13} /> Adjust Stock
@@ -615,6 +666,18 @@ export default function LocationDetail({ locationId, setPage }) {
           userEmail={session.user.email}
           onClose={() => setAdjustOpen(false)}
           onSubmit={submitAdjustment}
+        />
+      )}
+
+      {resetOpen && !isCombined && location && (
+        <StockResetModal
+          station={location}
+          priceSuggestion={priceSuggestion}
+          pending={pendingReset}
+          t={t}
+          onClose={() => setResetOpen(false)}
+          onSubmit={submitResetRequest}
+          onCancelRequest={withdrawResetRequest}
         />
       )}
     </div>
