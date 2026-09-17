@@ -12,6 +12,7 @@
 // like ?register=1 -- so it works the same whether or not this browser
 // happens to already be signed in as someone else.
 import { useState } from "react";
+import { noteSignOut, REASONS } from "../signOutReason.js";
 import { supabase } from "../supabaseClient.js";
 
 const inputCls = "w-full rounded-lg border border-slate-300 px-4 py-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
@@ -45,6 +46,7 @@ export default function SetPassword() {
       // Sign this recovery session out so they land on the normal login
       // screen and sign in fresh with the password they just chose, instead
       // of being dropped straight into the app from a recovery session.
+      noteSignOut(REASONS.PASSWORD);
       await supabase.auth.signOut();
       setDone(true);
     } catch (err) {
