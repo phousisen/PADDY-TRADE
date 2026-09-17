@@ -28,7 +28,6 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASELINE = {
-  "src/pages/Transactions.jsx": 169,
   "src/pages/ReportCapital.jsx": 44,
   "src/pages/WeighingTickets.jsx": 40,
   "src/pages/TransactionForm.jsx": 38,
@@ -62,6 +61,7 @@ const BASELINE = {
   "src/App.jsx": 2,
   "src/components/MobileNav.jsx": 2,
   "src/components/WeightField.jsx": 2,
+  "src/pages/Transactions.jsx": 2,
   "src/components/LiveWeightBox.jsx": 1,
   "src/components/Sidebar.jsx": 1,
   "src/pages/DailyBook.jsx": 1,
