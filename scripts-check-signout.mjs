@@ -151,7 +151,11 @@ console.log("\n6. EVERY sign-out path writes a reason first");
 // indistinguishable from an expired login, which is the answer that sends
 // somebody to change a Supabase setting that was never the problem.
 const paths = [
-  ["src/AuthContext.jsx", "the person pressing Log out", /noteSignOut\(REASONS\.USER\);\s*\n\s*const \{ error \} = await supabase\.auth\.signOut\(\);/],
+  // [2026-09-17] This used to insist on a literal REASONS.USER here. It now
+  // records whatever reason the CALLER gave, because the expired-login banner
+  // calls the very same function and must not be recorded as a person
+  // pressing Log out. The default is still USER, checked in section 6b.
+  ["src/AuthContext.jsx", "the person pressing Log out", /noteSignOut\([^\n]*REASONS\.USER\);\s*\n\s*const \{ error \} = await supabase\.auth\.signOut\(\);/],
   ["src/AuthContext.jsx", "the heartbeat's forced logout", /noteSignOut\(REASONS\.HQ_FORCED\);\s*\n\s*await supabase\.auth\.signOut\(\);/],
   ["src/components/UpdateBanner.jsx", "HQ signing this machine out", /noteSignOut\(REASONS\.HQ_DEVICE\);\s*\n\s*try \{ await supabase\.auth\.signOut\(\)/],
   ["src/components/Topbar.jsx", "sign out everywhere", /noteSignOut\(REASONS\.EVERYWHERE\);\s*\n\s*const \{ error \} = await supabase\.auth\.signOut\(\{ scope: "global" \}\)/],
@@ -177,6 +181,40 @@ const auth = readFileSync("src/AuthContext.jsx", "utf8");
 ok("an unexplained SIGNED_OUT is recorded as expired",
    /if \(!wasDeliberate\(\{ note: readSignOutNote\(\) \}\)\) \{\s*\n\s*noteSignOut\(REASONS\.EXPIRED\);/.test(auth),
    "this is the whole point — it separates 'the app did it' from 'the login died'");
+
+console.log("\n6b. The reason must be the REAL reason");
+
+// [2026-09-17] SISEN's login screen read "You signed out." when he had not.
+// The sync banner's own "Sign in again" button — only ever shown when the
+// login has ALREADY expired — called the same logout() as the menu item, so
+// an expiry was recorded as a deliberate sign-out.
+//
+// That is this feature failing at its own job. The whole point is to separate
+// "the app did it" from "your login died", and it was labelling the second as
+// the first, on the one screen built to tell them apart.
+ok("logout() takes a reason rather than assuming one",
+   /async function logout\(reason = REASONS\.USER\)/.test(auth),
+   "not every caller is a person pressing Log out");
+ok("and a caller that passes junk still records something sane",
+   /typeof reason === "string" \? reason : REASONS\.USER/.test(auth));
+ok("the expired-login banner records EXPIRED, not USER",
+   /onSignInAgain=\{\(\) => logout\(REASONS\.EXPIRED\)\}/.test(readFileSync("src/components/Topbar.jsx", "utf8")),
+   "that button is only shown when the login has already died");
+
+console.log("\n6c. The login screen gives nothing away");
+
+// SISEN: "why would u put a suggestion for the real account on there".
+// The Name box hinted "boss, or 012934050" — a real username and a real phone
+// number, on the one screen a stranger can reach without signing in. Half a
+// login, printed on the door.
+{
+  const dict = readFileSync("src/i18n.jsx", "utf8");
+  ok("no real account name in the login hint", !/login_name_hint: "boss/.test(dict));
+  ok("no real phone number either", !/login_name_hint:[^\n]*012934050/.test(dict));
+  ok("the hint still says what SHAPE to type",
+     /login_name_hint: "your name or phone number"/.test(dict),
+     "generic is the goal, useless is not");
+}
 
 console.log("\n7. It reaches HQ");
 
