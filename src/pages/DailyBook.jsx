@@ -550,7 +550,23 @@ export default function DailyBook() {
     () => (month ? days.filter((d) => d.date.startsWith(month)) : days),
     [days, month]
   );
-  const periods = useMemo(() => buildPeriods(scoped, grain), [scoped, grain]);
+  // [2026-09-17] NEWEST FIRST. SISEN: "make the lastest date up instead" —
+  // "for all devices not just pc".
+  //
+  // This page is opened to answer "how did today go", and today was at the
+  // bottom of a month that is 30 rows and, on a phone, 30 cards deep. Every
+  // single visit began with a scroll to the end.
+  //
+  // Reversing here rather than in buildPeriods() keeps that function pure and
+  // ascending for everything else that reasons about it, and it is the ONE
+  // array both layouts render — the phone's cards and the computer's table
+  // both map over `periods`, so they cannot disagree about the order.
+  //
+  // The week subtotal still lands under its own days: the break is detected by
+  // comparing each row with the NEXT one in display order, and in reversed
+  // order the next row is the older day, so the boundary falls in exactly the
+  // same place. Guarded in scripts-check-periodbook.mjs.
+  const periods = useMemo(() => buildPeriods(scoped, grain).slice().reverse(), [scoped, grain]);
   const totals = useMemo(() => rollup(scoped), [scoped]);
 
   const months = useMemo(() => [...new Set(days.map((d) => d.date.slice(0, 7)))].sort(), [days]);
