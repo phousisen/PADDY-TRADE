@@ -3,6 +3,7 @@ import {
   RefreshCw, CheckCircle2, WifiOff, Clock, Monitor, Smartphone, Info, LogOut, X,
 } from "lucide-react";
 import { api } from "../api.js";
+import { reasonKey, needsAttention } from "../signOutReason.js";
 import { useAuth } from "../AuthContext.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { APP_VERSION, shortVersion } from "../version.js";
@@ -97,6 +98,19 @@ function DeviceLine({ d, t, canSignOut, onSignOut }) {
           it is a guess from a free lookup, and says so. See deviceNet.js. */}
       {d.last_ip && <span className="font-mono text-[11px] text-slate-400">{d.last_ip}</span>}
       {place && <span className="text-[11px] text-slate-300" title={t("st_place_hint")}>{place}</span>}
+      {/* [2026-09-17] Why this machine was last signed out — handed in by the
+          browser on its next successful login (see signout_reason.sql). Amber
+          only for "expired", the one cause that is not somebody's decision and
+          therefore the only one that needs looking into. */}
+      {d.last_signout_reason && (
+        <span className={`rounded border px-1.5 text-[10.5px] font-medium ${
+          needsAttention(d.last_signout_reason)
+            ? "border-amber-200 bg-amber-50 text-amber-700"
+            : "border-slate-200 bg-slate-50 text-slate-400"
+        }`} title={t("st_signout_hint")}>
+          {t(reasonKey(d.last_signout_reason))}
+        </span>
+      )}
       {flag && (
         <span className="rounded border border-amber-200 bg-amber-50 px-1.5 text-[10.5px] font-semibold text-amber-700">
           {t(FLAG_KEY[flag])}

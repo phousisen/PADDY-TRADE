@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { noteSignOut, REASONS } from "../signOutReason.js";
 import { Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut, Trash2, Undo2 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -470,6 +471,7 @@ function AccountSecurityModal({ onClose }) {
     // device included — the app's own auth listener (AuthContext.jsx)
     // picks up the resulting SIGNED_OUT event and returns to the login
     // screen on its own, no manual redirect needed here.
+    noteSignOut(REASONS.EVERYWHERE);
     const { error } = await supabase.auth.signOut({ scope: "global" });
     setSigningOut(false);
     if (error) setSignOutErr(error.message || "Couldn't sign out everywhere — try again.");

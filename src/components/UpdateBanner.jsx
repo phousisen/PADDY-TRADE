@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { noteSignOut, REASONS } from "../signOutReason.js";
 import { RefreshCw } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { api } from "../api.js";
@@ -95,6 +96,7 @@ export default function UpdateBanner() {
       // HQ has signed this machine out. The database cleared the request as
       // it answered, so this happens once and cannot loop.
       if (signOut) {
+        noteSignOut(REASONS.HQ_DEVICE);
         try { await supabase.auth.signOut(); } catch { /* already gone */ }
         return;
       }
