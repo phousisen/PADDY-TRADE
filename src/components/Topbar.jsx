@@ -4,7 +4,7 @@ import { stuckStations, stuckSummary } from "../deviceWatch.js";
 import { Bell, WifiOff, RefreshCw, AlertTriangle, X, ShieldCheck, LogOut, Trash2, Undo2 } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
-import { onSyncStatusChange, listStuckOps, discardStuckOps, recoverStuckOps } from "../offlineQueue.js";
+import { onSyncStatusChange, listStuckOps, discardStuckOps, recoverStuckOps, confirmRecoverable } from "../offlineQueue.js";
 import NeedsAttentionModal from "./NeedsAttentionModal.jsx";
 import { api } from "../api.js";
 import { getAccurateNow, supabase } from "../supabaseClient.js";
@@ -53,7 +53,36 @@ function SyncStatusBanner({ onSignInAgain }) {
   // rebuilding the missing transaction from this device's own copy does
   // not. See recoverStuckOps in offlineQueue.js.
   const [recovered, setRecovered] = useState(null);
+  // [2026-09-18] Nothing is offered as recoverable until the SERVER has said
+  // it is really missing. `checking` is the state between opening the panel
+  // and hearing back; `verified` is false when we could not ask at all, and
+  // in that case no Put back button appears. See confirmRecoverable in
+  // offlineQueue.js for why this fails closed rather than open.
+  const [checking, setChecking] = useState(false);
+  const [verified, setVerified] = useState(true);
   const recoverable = (discardList || []).filter((x) => x.recoverTxId);
+  const alreadyThere = (discardList || []).filter((x) => x.alreadyOnServer);
+
+  async function openStuckPanel() {
+    setDiscarded(0);
+    setRecovered(null);
+    setVerified(true);
+    const rows = listStuckOps();
+    setDiscardList(rows);
+    if (!rows.some((r) => r.recoverTxId)) return;
+    setChecking(true);
+    try {
+      const { rows: settled, checked } = await confirmRecoverable(rows);
+      setDiscardList(settled);
+      setVerified(checked);
+    } catch {
+      // Cannot verify — show the list, offer no repair.
+      setDiscardList(rows.map((r) => ({ ...r, recoverTxId: null, recoverSummary: null, recoverUnverified: true })));
+      setVerified(false);
+    } finally {
+      setChecking(false);
+    }
+  }
   const viewBtn = (cls) => (
     <button type="button" onClick={() => setShowAttention(true)} className={`shrink-0 rounded-md px-3 py-1 font-semibold ${cls}`}>{t("sync_view_details")}</button>
   );
@@ -121,7 +150,7 @@ function SyncStatusBanner({ onSignInAgain }) {
           <div className="pl-[21px]">
             <button
               type="button"
-              onClick={() => { setDiscarded(0); setRecovered(null); setDiscardList(listStuckOps()); }}
+              onClick={openStuckPanel}
               className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2.5 py-1 text-[11.5px] font-semibold hover:bg-white/25"
             >
               <Undo2 size={12} /> {t("sync_discard_open")}
@@ -163,14 +192,52 @@ function SyncStatusBanner({ onSignInAgain }) {
                             {t("sync_recover_badge", { s: x.recoverSummary })}
                           </p>
                         )}
+                        {/* [2026-09-18] The server was asked, and it already
+                            has the entry this device thought was missing.
+                            Saying so plainly is what stops somebody putting
+                            a second copy of a real purchase into the books. */}
+                        {x.alreadyOnServer && (
+                          <p className="mt-1 rounded-md bg-slate-100 px-2 py-1 text-[11.5px] font-semibold text-slate-600">
+                            {t("sync_already_on_server")}
+                          </p>
+                        )}
+                        {x.recoverUnverified && (
+                          <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-[11.5px] font-semibold text-amber-800">
+                            {t("sync_recover_unverified")}
+                          </p>
+                        )}
                       </div>
                     ))}
                   </div>
-                  {recoverable.length > 0 ? (
+                  {checking && (
+                    <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">
+                      {t("sync_checking_server")}
+                    </div>
+                  )}
+                  {!checking && recoverable.length > 0 ? (
                     <div className="mb-3 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-brand-800">
                       {t("sync_recover_hint")}
                     </div>
                   ) : null}
+                  {/* [2026-09-18] The two cases where there is no safe button
+                      at all. Before this, station staff saw nothing here and
+                      a green "Put back" they should not press — which is
+                      exactly what happened at Ping Pong. */}
+                  {!checking && alreadyThere.length > 0 && (
+                    <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-slate-600">
+                      {t("sync_already_on_server_hint")}
+                    </div>
+                  )}
+                  {!checking && !verified && (
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
+                      {t("sync_cannot_verify_hint")}
+                    </div>
+                  )}
+                  {!checking && !canDiscard && recoverable.length === 0 && discardList.length > 0 && (
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
+                      {t("sync_needs_admin")}
+                    </div>
+                  )}
                   {canDiscard && (
                     <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12.5px] leading-relaxed text-amber-800">
                       {t("sync_discard_warning")}
@@ -185,7 +252,7 @@ function SyncStatusBanner({ onSignInAgain }) {
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
                   {t("close_label")}
                 </button>
-                {canDiscard && !recovered && discarded === 0 && discardList.length > 0 && (
+                {canDiscard && !checking && !recovered && discarded === 0 && discardList.length > 0 && (
                   <button type="button"
                     onClick={() => setDiscarded(discardStuckOps(discardList.map((x) => x.opId)))}
                     className={`rounded-lg px-4 py-2 text-sm font-semibold ${
@@ -196,9 +263,16 @@ function SyncStatusBanner({ onSignInAgain }) {
                     <span className="inline-flex items-center gap-1.5"><Trash2 size={13} /> {t("sync_discard_btn", { n: discardList.length })}</span>
                   </button>
                 )}
-                {!recovered && discarded === 0 && recoverable.length > 0 && (
+                {!checking && !recovered && discarded === 0 && recoverable.length > 0 && (
                   <button type="button"
-                    onClick={() => setRecovered(recoverStuckOps(recoverable.map((x) => x.opId)))}
+                    onClick={async () => {
+                      const r = await recoverStuckOps(recoverable.map((x) => x.opId));
+                      // checked === false means the server could not be asked
+                      // at the moment of pressing. Nothing was rebuilt, and
+                      // saying so beats a silent no-op.
+                      if (r && r.checked === false) { setVerified(false); return; }
+                      setRecovered(r);
+                    }}
                     className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">
                     <span className="inline-flex items-center gap-1.5"><Undo2 size={13} /> {t("sync_recover_btn", { n: recoverable.length })}</span>
                   </button>
