@@ -26,7 +26,7 @@
 // This file has no UI in it — WeighingTickets.jsx calls into it.
 
 import { api } from "./api.js";
-import { ensureFreshSession, getAccurateNow } from "./supabaseClient.js";
+import { ensureFreshSession, getAccurateNow, supabase } from "./supabaseClient.js";
 import { assertNotViewOnly } from "./viewOnlyGuard.js";
 // [2026-09-10] Shared with api.js and with the database's product_key().
 import { cleanProductName, findProductByName } from "./productName.js";
@@ -1303,23 +1303,126 @@ export function listStuckOps() {
   return out;
 }
 
+// [2026-09-18] ASK THE SERVER. This is the check that was missing, and its
+// absence nearly cost real money at Ping Pong on 18 September.
+//
+// listStuckOps decides "the transaction this save is waiting for is missing"
+// by looking only at THIS DEVICE'S own records: the op is still queued, and
+// the device holds a cached copy. It never asks whether the server already
+// has it. But a transaction can reach the server by a route this browser
+// knows nothing about — the station relay carries finished tickets and
+// manual entries with its OWN login, and does so precisely when the browser
+// is having trouble. So the browser's "it never arrived" routinely means
+// "I never heard back", which is a different sentence.
+//
+// At Ping Pong that produced a green "Put back 1 missing entry(s)" button
+// offering to restore INV-206089-B — a 1,155 kg purchase that had been sitting
+// on the server since 12 September. Pressing it would have written a second
+// copy of a real purchase, and a second payment behind it.
+//
+// Returns the set of ids the server DOES have.
+export async function serverHasTransactions(ids) {
+  const present = new Set();
+  const list = [...new Set((ids || []).filter(Boolean))];
+  if (list.length === 0) return present;
+  // Chunked: a station that has been offline for a while can have a long
+  // list, and a huge `in (...)` is what makes a URL too long to send.
+  for (let i = 0; i < list.length; i += 50) {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("id")
+      .in("id", list.slice(i, i + 50));
+    // Throw rather than return a partial answer. A caller that cannot tell
+    // "absent" from "could not check" is exactly how this went wrong.
+    if (error) throw error;
+    for (const row of data || []) present.add(row.id);
+  }
+  return present;
+}
+
+// Take the rows from listStuckOps and settle, against the server, which of
+// them really are waiting on a missing transaction.
+//
+// FAILS CLOSED, deliberately. If the check cannot be made — no connection,
+// no login, server error — recovery is NOT offered. Being unable to offer a
+// repair is an inconvenience; offering one that silently duplicates a
+// purchase and its payment is money. Those are not the same size of mistake,
+// so they do not get the same benefit of the doubt.
+//
+// Returns { rows, checked }:
+//   · rows   — same shape as listStuckOps, with recoverTxId cleared on
+//              anything the server already has (marked alreadyOnServer) or
+//              anything that could not be verified (marked recoverUnverified)
+//   · checked — false when the server could not be reached at all
+export async function confirmRecoverable(rows) {
+  const list = rows || [];
+  const ids = list.map((r) => r.recoverTxId).filter(Boolean);
+  if (ids.length === 0) return { rows: list, checked: true };
+
+  let present;
+  try {
+    present = await serverHasTransactions(ids);
+  } catch {
+    return {
+      rows: list.map((r) =>
+        r.recoverTxId
+          ? { ...r, recoverTxId: null, recoverSummary: null, recoverUnverified: true }
+          : r
+      ),
+      checked: false,
+    };
+  }
+
+  return {
+    rows: list.map((r) =>
+      r.recoverTxId && present.has(r.recoverTxId)
+        ? { ...r, recoverTxId: null, recoverSummary: null, alreadyOnServer: true }
+        : r
+    ),
+    checked: true,
+  };
+}
+
 // Rebuild the missing transactions the named stuck ops are waiting on,
 // re-queue them under their original ids, and let those ops try again
 // from a clean slate. Returns { rebuilt, retried } — how many
 // transactions were put back, and how many stuck saves were released.
 //
+// [2026-09-18] Now async, and it re-checks the server itself rather than
+// trusting what the screen was showing. The UI already filters the list with
+// confirmRecoverable, but time passes between a panel opening and a button
+// being pressed, and this is the last point before a duplicate purchase
+// becomes real. If the re-check cannot be made, NOTHING is rebuilt.
+//
 // Nothing is deleted here, by design: if a rebuild turns out not to fix
 // it, the op is still in the queue and Discard is still available.
-export function recoverStuckOps(opIds) {
+export async function recoverStuckOps(opIds) {
   const byOpId = new Map(listStuckOps().map((x) => [x.opId, x]));
   const txById = new Map(getCachedTransactions().map((t) => [t.id, t]));
   const doneTxIds = new Set();
   let rebuilt = 0;
   let retried = 0;
+
+  // The server's word, taken now, on every transaction we are about to
+  // rebuild. Anything it already has is skipped. If we cannot ask, we
+  // rebuild nothing at all — see confirmRecoverable for why failing closed
+  // is the only honest default here.
+  const wanted = (opIds || [])
+    .map((id) => byOpId.get(id))
+    .filter((e) => e && e.recoverTxId)
+    .map((e) => e.recoverTxId);
+  let alreadyThere;
+  try {
+    alreadyThere = await serverHasTransactions(wanted);
+  } catch {
+    return { rebuilt: 0, retried: 0, checked: false };
+  }
+
   for (const opId of opIds || []) {
     const entry = byOpId.get(opId);
     if (!entry || !entry.recoverTxId) continue;
     const txId = entry.recoverTxId;
+    if (alreadyThere.has(txId)) continue; // not missing after all
     if (!doneTxIds.has(txId)) {
       const payload = cachedTxToCreateOpPayload(txById.get(txId));
       if (!payload) continue;
@@ -1339,7 +1442,7 @@ export function recoverStuckOps(opIds) {
     notifyStatus();
     trySync();
   }
-  return { rebuilt, retried };
+  return { rebuilt, retried, checked: true };
 }
 
 // Throw the named ops away for good. Returns how many were actually

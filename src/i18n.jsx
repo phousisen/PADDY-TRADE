@@ -638,6 +638,14 @@ export const translations = {
     // recoverStuckOps in offlineQueue.js.
     sync_recover_badge: "This device still has the missing entry: {s}",
     sync_recover_hint: "The entry these are waiting for is missing from the server, but this computer still has a full copy of it. Put it back first — nothing has to be retyped.",
+    // [2026-09-18] Added after Ping Pong was offered a green button that
+    // would have duplicated a 1,155 kg purchase recorded six days earlier.
+    sync_checking_server: "Checking with the server…",
+    sync_already_on_server: "Already on the server — nothing is missing",
+    sync_already_on_server_hint: "This computer thought an entry was missing, but the server already has it — most likely the scale relay sent it. Do NOT put it back; that would record the same purchase twice. The save waiting behind it should be discarded instead.",
+    sync_recover_unverified: "Could not check with the server",
+    sync_cannot_verify_hint: "The server could not be asked whether anything is really missing, so no repair is offered. Try again when the connection is back. Nothing is lost in the meantime.",
+    sync_needs_admin: "There is nothing safe for this account to press here. Send the red text above to an admin — only an admin can clear a save that will never go through.",
     sync_recover_btn: "Put back {n} missing entry(s)",
     sync_recover_done: "Put back {n} entry(s) and restarted {r} save(s). They are sending now — the red bar clears by itself once they land. If it is still there in a minute, come back here.",
     sync_recover_only_after: "Only discard something after trying Put back, or when there is nothing left to put back.",
@@ -1968,6 +1976,12 @@ export const translations = {
     sync_discard_done: "បានលុបចោល {n} ធាតុ។ ការព្រមាននឹងបាត់ក្នុងពេលបន្តិចទៀត។",
     sync_recover_badge: "កុំព្យូទ័រនេះនៅមានទិន្នន័យដែលបាត់: {s}",
     sync_recover_hint: "ប្រតិបត្តិការដែលទាំងនេះកំពុងរង់ចាំបានបាត់ពីម៉ាស៊ីនមេ ប៉ុន្តែកុំព្យូទ័រនេះនៅមានច្បាប់ចម្លងពេញលេញ។ សូមដាក់វាត្រឡប់ចូលវិញជាមុនសិន — មិនចាំបាច់វាយបញ្ចូលឡើងវិញទេ។",
+    sync_checking_server: "កំពុងពិនិត្យជាមួយម៉ាស៊ីនមេ…",
+    sync_already_on_server: "មានរួចហើយនៅលើម៉ាស៊ីនមេ — គ្មានអ្វីបាត់ទេ",
+    sync_already_on_server_hint: "កុំព្យូទ័រនេះគិតថាប្រតិបត្តិការមួយបានបាត់ ប៉ុន្តែម៉ាស៊ីនមេមានវារួចហើយ — ភាគច្រើនគឺកម្មវិធីភ្ជាប់ជញ្ជីងបានផ្ញើវាទៅ។ កុំដាក់វាត្រឡប់ចូលវិញ ព្រោះវានឹងកត់ត្រាការទិញតែមួយពីរដង។ ការរក្សាទុកដែលកំពុងរង់ចាំគួរតែត្រូវបានលុបចោលវិញ។",
+    sync_recover_unverified: "មិនអាចពិនិត្យជាមួយម៉ាស៊ីនមេបានទេ",
+    sync_cannot_verify_hint: "មិនអាចសួរម៉ាស៊ីនមេថាតើមានអ្វីបាត់ពិតប្រាកដឬទេ ដូច្នេះមិនមានការជួសជុលត្រូវបានផ្តល់ជូនទេ។ សូមព្យាយាមម្តងទៀតពេលការតភ្ជាប់ត្រឡប់មកវិញ។ គ្មានអ្វីបាត់បង់ក្នុងពេលនេះទេ។",
+    sync_needs_admin: "គ្មានប៊ូតុងណាដែលគណនីនេះអាចចុចដោយសុវត្ថិភាពនៅទីនេះទេ។ សូមផ្ញើអក្សរពណ៌ក្រហមខាងលើទៅអ្នកគ្រប់គ្រង — មានតែអ្នកគ្រប់គ្រងទេដែលអាចលុបការរក្សាទុកដែលនឹងមិនអាចជោគជ័យបាន។",
     sync_recover_btn: "ដាក់ត្រឡប់ចូលវិញ {n} ធាតុ",
     sync_recover_done: "បានដាក់ត្រឡប់ចូលវិញ {n} ធាតុ និងចាប់ផ្តើមរក្សាទុកឡើងវិញ {r} ដង។ វាកំពុងផ្ញើឥឡូវនេះ — របាររំលេចក្រហមនឹងបាត់ដោយខ្លួនឯងនៅពេលវាចូល។ បើនៅតែមានក្នុងមួយនាទីទៀត សូមត្រឡប់មកទីនេះវិញ។",
     sync_recover_only_after: "សូមលុបចោលតែក្រោយពីបានសាកល្បងដាក់ត្រឡប់ចូលវិញ ឬពេលគ្មានអ្វីអាចដាក់ត្រឡប់ចូលវិញបានទៀត។",
