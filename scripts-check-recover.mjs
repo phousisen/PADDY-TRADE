@@ -229,7 +229,9 @@ eq("an unknown transaction id drops nothing",
 
 // The source must still contain the rules tested above.
 for (const needle of [
-  "export function recoverStuckOps",
+  // [2026-09-18] Now async: it asks the server whether the entry is really
+  // missing before rebuilding anything. See scripts-check-discard.mjs.
+  "export async function recoverStuckOps",
   "function cachedTxToCreateOpPayload",
   "function dependsOnTransactionId",
   "txDate: tx.tx_date || null",
