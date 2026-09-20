@@ -79,6 +79,10 @@ export default function LocationDetail({ locationId, setPage }) {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  // [2026-09-19] Losses and counts could not be read: the page still loads,
+  // but says so, instead of showing a stock figure with no losses in it as if
+  // it were complete (audit F2).
+  const [adjFailed, setAdjFailed] = useState(false);
   // [2026-08-31] "Adjust Stock" — manual only, matching the same modal
   // already used on Stock & Inventory (no new reason type, no automatic
   // reminder/enforcement: staff haven't been trained on the overnight
@@ -92,6 +96,7 @@ export default function LocationDetail({ locationId, setPage }) {
   async function load() {
     setLoading(true);
     setLoadError("");
+    let adjLost = false;
     try {
       // Stock adjustments are only fetched for a single real location — the
       // Daily Stock Ledger below is a per-station report (same as
@@ -106,11 +111,12 @@ export default function LocationDetail({ locationId, setPage }) {
       // rather than with this one shed.
       const [locs, transactions, adjustmentRows] = await Promise.all([
         api.getLocations(),
-        api.getTransactions(isCombined ? {} : { locationId }),
-        isCombined ? Promise.resolve([]) : api.getStockAdjustments({ locationId }).catch(() => []),
+        api.getTransactions({ ...(isCombined ? {} : { locationId }), lean: true }), // [2026-09-19] SPEED
+        isCombined ? Promise.resolve([]) : api.getStockAdjustments({ locationId }).catch(() => { adjLost = true; return []; }),
       ]);
       setAllLocations(locs);
       setAdjustments(adjustmentRows);
+      setAdjFailed(adjLost);
       setTxs(transactions);
       setLocation(isCombined ? null : (locs.find((l) => l.id === locationId) || null));
       // [2026-09-17] Separate and never allowed to fail the page — the table
@@ -132,8 +138,9 @@ export default function LocationDetail({ locationId, setPage }) {
     const active = txs.filter((t) => (t.hq_status || "processing") !== "cancelled");
     const buys = active.filter((t) => t.type === "BUY");
     const sells = active.filter((t) => t.type === "SELL");
-    const totalBuy = buys.reduce((s, t) => s + Number(t.amount), 0);
-    const totalSell = sells.reduce((s, t) => s + Number(t.amount), 0);
+    // [2026-09-19] The bill incl. tax, as every other screen adds it up.
+    const totalBuy = buys.reduce((s, t) => s + (Number(t.total_with_tax ?? t.amount) || 0), 0);
+    const totalSell = sells.reduce((s, t) => s + (Number(t.total_with_tax ?? t.amount) || 0), 0);
     return {
       totalBuy, totalSell, profit: totalSell - totalBuy,
       buyKg: buys.reduce((s, t) => s + Number(t.quantity_kg), 0),
@@ -240,7 +247,10 @@ export default function LocationDetail({ locationId, setPage }) {
 
   async function submitAdjustment({ newStockKg, reason, note, pricePerKg }) {
     const previousStockKg = Number(location.current_stock_kg) || 0;
-    await api.recordStockAdjustment({
+    // [2026-09-19] The database reads the stock at the moment it saves and
+    // returns it; that is the "before" the Activity Log now shows. The figure
+    // on screen could be minutes old, with trucks weighed since (audit F14).
+    const saved = await api.recordStockAdjustment({
       locationId: location.id, previousStockKg, newStockKg, reason, note, pricePerKg, userId: session.user.id,
     });
     // Same audit-log pattern as every other significant change in the app —
@@ -250,7 +260,7 @@ export default function LocationDetail({ locationId, setPage }) {
       action: "adjust_stock",
       tableName: "locations",
       recordId: location.id,
-      oldData: { current_stock_kg: previousStockKg },
+      oldData: { current_stock_kg: saved?.previous_stock_kg ?? previousStockKg },
       newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: location.name },
       userId: session.user.id,
     }).catch(() => {});
@@ -316,6 +326,9 @@ export default function LocationDetail({ locationId, setPage }) {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={displayName} subtitle={displayNameKh} />
       <main className="flex-1 overflow-y-auto p-6">
+        {adjFailed && !loadError && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{t("err_adjustments_partial")}</div>
+        )}
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>

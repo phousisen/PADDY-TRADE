@@ -4,6 +4,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
+import { useLanguage } from "../i18n.jsx";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
@@ -26,6 +27,7 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
   const [amount, setAmount] = useState("");
   const [entryDate, setEntryDate] = useState(cambodiaDateStr());
   const [note, setNote] = useState("");
+  const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
   const partnersForLocation = partners.filter((p) => p.location_id === locationId);
@@ -35,15 +37,25 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
     if (!locationId || !amount || parseFloat(amount) <= 0) return;
     let usePartnerId = partnerId;
     setSaving(true);
+    setFormError("");
     try {
       if (!usePartnerId && newPartnerName.trim()) {
         const created = await onAddPartner({ name: newPartnerName.trim(), locationId });
         usePartnerId = created.id;
+        // [2026-09-19] Remember the partner NOW. If the entry below fails, a
+        // retry used to see the name still typed and no partner chosen, and
+        // created the same partner a second time.
+        setPartnerId(created.id);
+        setNewPartnerName("");
       }
       if (!usePartnerId) { setSaving(false); return; }
       await onAdd({ partnerId: usePartnerId, locationId, type, amount: parseFloat(amount), entryDate, note });
       setAmount(""); setNote(""); setNewPartnerName(""); setPartnerId("");
       setOpen(false);
+    } catch (err) {
+      // [2026-09-19] There was no catch: a failed save showed nothing at all,
+      // and the person could only guess whether to press it again.
+      setFormError(err?.message || String(err));
     } finally {
       setSaving(false);
     }
@@ -105,6 +117,9 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
+        {formError && (
+          <p className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{formError}</p>
+        )}
         <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
           {saving ? "Saving..." : "Save"}
         </button>
@@ -124,6 +139,7 @@ function AddLoanEntryForm({ locations, onAdd }) {
   const [amount, setAmount] = useState("");
   const [entryDate, setEntryDate] = useState(cambodiaDateStr());
   const [note, setNote] = useState("");
+  const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   useEffect(() => { if (!locationId && locations.length) setLocationId(locations[0].id); }, [locations]);
 
@@ -131,10 +147,13 @@ function AddLoanEntryForm({ locations, onAdd }) {
     e.preventDefault();
     if (!locationId || !lenderName.trim() || !amount || parseFloat(amount) <= 0) return;
     setSaving(true);
+    setFormError("");
     try {
       await onAdd({ locationId, lenderName: lenderName.trim(), type, amount: parseFloat(amount), entryDate, note });
       setAmount(""); setNote(""); setLenderName("");
       setOpen(false);
+    } catch (err) {
+      setFormError(err?.message || String(err)); // [2026-09-19] was silent
     } finally {
       setSaving(false);
     }
@@ -186,6 +205,9 @@ function AddLoanEntryForm({ locations, onAdd }) {
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
+        {formError && (
+          <p className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{formError}</p>
+        )}
         <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
           {saving ? "Saving..." : "Save"}
         </button>
@@ -198,13 +220,18 @@ function AddLoanEntryForm({ locations, onAdd }) {
 }
 
 export default function ReportCapital({ selectedLocationIds = [], startDate = null, endDate = null }) {
-  const { session } = useAuth();
+  // [2026-09-19] View-only accounts see the capital and loans, not the
+  // forms to add to them (audit F15).
+  const { session, isViewOnly } = useAuth();
   const [locations, setLocations] = useState([]);
   const [partners, setPartners] = useState([]);
   const [capitalEntries, setCapitalEntries] = useState([]);
   const [loanEntries, setLoanEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  // [2026-09-19] "Saved, but the cash-ledger line did not" — see api.js.
+  const [ledgerNotice, setLedgerNotice] = useState("");
+  const { t } = useLanguage();
 
   async function load() {
     setLoading(true);
@@ -274,6 +301,9 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
   async function addCapitalEntry(entry) {
     const created = await api.createPartnerCapitalEntry({ ...entry, userId: session.user.id });
+    if (created?.cashLedgerError) {
+      setLedgerNotice(t("cap_ledger_notice", { msg: created.cashLedgerError }));
+    }
     const partnerName = partners.find((p) => p.id === entry.partnerId)?.name;
     await api.logAudit({
       action: "add_capital_entry", tableName: "partner_capital_entries", recordId: created?.id,
@@ -284,6 +314,9 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
   async function addLoanEntry(entry) {
     const created = await api.createBankLoanEntry({ ...entry, userId: session.user.id });
+    if (created?.cashLedgerError) {
+      setLedgerNotice(t("cap_ledger_notice", { msg: created.cashLedgerError }));
+    }
     await api.logAudit({
       action: "add_loan_entry", tableName: "bank_loans", recordId: created?.id,
       oldData: null, newData: entry, userId: session.user.id,
@@ -293,6 +326,12 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
   return (
     <div>
+      {ledgerNotice && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span>{ledgerNotice}</span>
+          <button onClick={() => setLedgerNotice("")} className="shrink-0 text-xs font-medium text-amber-700 hover:underline">{t("ok_label")}</button>
+        </div>
+      )}
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
@@ -307,7 +346,7 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
       <div className="mb-8">
         <div className="mb-3 flex justify-end">
-          <AddCapitalEntryForm locations={locations} partners={partners} onAddPartner={addPartner} onAdd={addCapitalEntry} />
+          {!isViewOnly && <AddCapitalEntryForm locations={locations} partners={partners} onAddPartner={addPartner} onAdd={addCapitalEntry} />}
         </div>
 
         <TableCard title="Partner Capital">
@@ -340,7 +379,7 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
 
       <div>
         <div className="mb-3 flex justify-end">
-          <AddLoanEntryForm locations={locations} onAdd={addLoanEntry} />
+          {!isViewOnly && <AddLoanEntryForm locations={locations} onAdd={addLoanEntry} />}
         </div>
 
         <TableCard title="Bank Loans">

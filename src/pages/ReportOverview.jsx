@@ -3,7 +3,7 @@ import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import ToEnter from "./FinanceStart.jsx";
 import { StatementSummary } from "../components/StatementUI.jsx";
-import { queryRange, rangeKey } from "../reportQuery.js";
+import { queryRange, rangeKey, dayAfter } from "../reportQuery.js";
 // [2026-09-14] The figures moved to src/financials.js — see the six fixes
 // documented there. Re-exported from here so the pages that have always
 // imported them from this file (Purchases, Sales, PartyDetail, SimpleListPage,
@@ -48,20 +48,42 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
     // zero it did not get from the database.
     setLoadError("");
     setLoaded(false);
+    // [2026-09-19] Only the newest request may fill the page (audit F12).
+    let alive = true;
+    const onlyIfMissing = (e) => {
+      if (/relation .* does not exist|schema cache|could not find/i.test(String(e?.message || ""))) return [];
+      throw e;
+    };
     Promise.all([api.getTransactions(asAt), api.getLocations()])
-      .then(([t, s]) => { setTxs(t); setStations(s); setLoaded(true); })
-      .catch((e) => setLoadError(e?.message || "Couldn't load transactions."));
-    api.getPayments(asAt).then(setPayments).catch(() => setPayments([]));
-    api.getStockAdjustments({ locationId: asAt.locationId, endDate })
-      .then(setAdjustments).catch(() => setAdjustments([]));
-    // Admin-only tables — a non-admin viewer (shouldn't normally reach this
-    // page, but just in case) simply sees zero partner capital/bank loans
-    // rather than an error.
-    api.getPartnerCapitalEntries().then(setCapitalEntries).catch(() => setCapitalEntries([]));
-    api.getBankLoans().then(setLoanEntries).catch(() => setLoanEntries([]));
+      .then(([tx, st]) => { if (!alive) return; setTxs(tx); setStations(st); setLoaded(true); })
+      .catch((e) => { if (alive) setLoadError(e?.message || "Couldn't load transactions."); });
+    // [2026-09-19] A failed payments or adjustments load used to become an
+    // empty list, and the page went on to show "owed to farmers" equal to
+    // every purchase and cash collected 0 — confidently, with no warning.
+    // Those figures are wrong, so the page now says it could not load them.
+    api.getPayments(asAt).then((v) => { if (alive) setPayments(v); })
+      .catch((e) => { if (alive) setLoadError(`${t("err_payments_load")} ${e?.message || e}`); });
+    api.getStockAdjustments({ locationId: asAt.locationId, endDate: dayAfter(endDate) })
+      .then((v) => { if (alive) setAdjustments(v); })
+      .catch((e) => { if (alive) setLoadError(`${t("err_adjustments_load")} ${e?.message || e}`); });
+    // [2026-09-19] Capital and loans: a table not set up yet is empty; any
+    // other failure is now said, instead of a balance sheet with the
+    // partners' capital silently missing (audit F22).
+    api.getPartnerCapitalEntries().catch(onlyIfMissing)
+      .then((v) => { if (alive) setCapitalEntries(v); })
+      .catch((e) => { if (alive) { setCapitalEntries([]); setLoadError(`${t("err_capital_load")} ${e?.message || e}`); } });
+    api.getBankLoans().catch(onlyIfMissing)
+      .then((v) => { if (alive) setLoanEntries(v); })
+      .catch((e) => { if (alive) { setLoanEntries([]); setLoadError(`${t("err_capital_load")} ${e?.message || e}`); } });
+    return () => { alive = false; };
   }, [rk]);
 
-  const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
+  // [2026-09-19] SPEED: memoised — a new array on every render made both
+  // heavy calculations below run again on every render.
+  const filteredStations = useMemo(
+    () => (selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations),
+    [stations, selectedLocationIds.join(",")] // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const activeTxs = txs
     .filter((t) => (t.hq_status || "processing") !== "cancelled")
     .filter((t) => !startDate || t.tx_date >= startDate)

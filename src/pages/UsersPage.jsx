@@ -104,8 +104,12 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
 }
 
 export default function UsersPage() {
-  const { profile: me, session } = useAuth();
+  const { profile: me, session, isViewOnly } = useAuth();
   const isOwner = !!me?.isOwner;
+  // [2026-09-19] A view-only account is not shown controls it cannot use.
+  // The API refuses the write anyway; this stops the button promising it
+  // (audit F15).
+  const writable = !isViewOnly;
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -169,6 +173,7 @@ export default function UsersPage() {
   // who currently hold an own_location-scope role — the database enforces
   // this too, this is just to keep the UI honest about what will work.
   function canEdit(u) {
+    if (!writable) return false;
     if (isOwner) return true;
     return u.roleObj?.scope === "own_location";
   }
@@ -294,9 +299,9 @@ export default function UsersPage() {
         ) : (
           <div className="mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
             <span>{!isOwner && "As HQ Admin, you can manage Manager/Staff-tier accounts; only Owner can change Owner or HQ Admin-level accounts."}</span>
-            <button onClick={() => setAdding(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
+            {writable && <button onClick={() => setAdding(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
               <Plus size={13} /> Add User
-            </button>
+            </button>}
           </div>
         )}
 
@@ -445,7 +450,7 @@ export default function UsersPage() {
                             <LogOut size={12} /> Log Out
                           </button>
                         )}
-                        {isOwner && u.id !== me.id && (
+                        {isOwner && writable && u.id !== me.id && (
                           <button onClick={() => setPasswordUser(u)} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
                             <KeyRound size={12} /> Set Password
                           </button>

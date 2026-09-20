@@ -47,7 +47,11 @@ export default function SetPassword() {
       // screen and sign in fresh with the password they just chose, instead
       // of being dropped straight into the app from a recovery session.
       noteSignOut(REASONS.PASSWORD);
-      await supabase.auth.signOut();
+      // [2026-09-19] Deliberately GLOBAL, and now written out so it is plainly a
+      // choice: after a password change every other session should end, so an
+      // old device holding the previous login cannot carry on. Every other
+      // sign-out in the app is scope "local".
+      await supabase.auth.signOut({ scope: "global" });
       setDone(true);
     } catch (err) {
       setError(

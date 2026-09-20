@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Warehouse, Languages } from "lucide-react";
 import { useAuth } from "../AuthContext.jsx";
 import { useLanguage } from "../i18n.jsx";
+import { isNetworkAuthError } from "../supabaseClient.js";
 import { loginCandidates } from "../loginName.js";
 import { readSignOutNote, shouldShowNote, reasonKey, needsAttention } from "../signOutReason.js";
 import { dmyTime } from "../dateFormat.js";
@@ -35,12 +36,19 @@ export default function Login() {
     // correct password on the first domain, both stop at one attempt.
     const candidates = loginCandidates(email);
     let err = null;
+    // [2026-09-19] Every failure used to say "Incorrect name or password" —
+    // including no internet and too many attempts, which sent people to reset
+    // passwords that were fine (audit F26). The real cause is shown now.
+    let netErr = false, rateErr = false;
     for (const address of candidates) {
       err = await login(address, password);
       if (!err) break;
+      if (isNetworkAuthError(err)) { netErr = true; break; }
+      if (err.status === 429 || /rate limit|too many/i.test(String(err.message || ""))) { rateErr = true; break; }
     }
     setLoading(false);
-    if (err || candidates.length === 0) setError(t("login_error"));
+    if (!err && candidates.length > 0) return;
+    setError(netErr ? t("login_error_network") : rateErr ? t("login_error_rate") : t("login_error"));
   }
 
   return (

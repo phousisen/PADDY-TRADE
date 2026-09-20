@@ -6,6 +6,7 @@ import { StockResetModal } from "../components/StockResetModal.jsx";
 import { canRequestReset } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
+import { stockByType, avgCostByType } from "../stockByType.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 
@@ -75,6 +76,10 @@ export default function StockInventory() {
   const [adjustments, setAdjustments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  // [2026-09-19] Losses and counts could not be read: the page still loads,
+  // but says so, instead of showing a stock figure with no losses in it as if
+  // it were complete (audit F2).
+  const [adjFailed, setAdjFailed] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [adjustStation, setAdjustStation] = useState(null);
   const [resetStation, setResetStation] = useState(null);
@@ -85,6 +90,7 @@ export default function StockInventory() {
   async function load() {
     setLoading(true);
     setLoadError("");
+    let adjLost = false;
     try {
       // getStockAdjustments() is caught on its own, separately from the
       // other three — the Stock Loss Log is one section of this page, not
@@ -95,14 +101,15 @@ export default function StockInventory() {
       // calls fails, and the catch block below never gets to set anything.
       const [st, tx, pr, adj] = await Promise.all([
         api.getLocations(),
-        api.getTransactions(),
+        api.getTransactions({ lean: true }), // [2026-09-19] SPEED: only the columns stock needs
         api.getProducts(),
-        api.getStockAdjustments().catch(() => []),
+        api.getStockAdjustments().catch(() => { adjLost = true; return []; }),
       ]);
       setStations(st);
       setTxs(tx);
       setProducts(pr);
       setAdjustments(adj);
+      setAdjFailed(adjLost);
       // Separate and never allowed to fail the page — the table may not exist
       // yet on a database that has not had stock_reset_requests.sql run.
       api.getStockResetRequests({ status: "pending" })
@@ -126,7 +133,10 @@ export default function StockInventory() {
   async function submitAdjustment({ newStockKg, reason, note, pricePerKg }) {
     const station = adjustStation;
     const previousStockKg = Number(station.current_stock_kg) || 0;
-    await api.recordStockAdjustment({
+    // [2026-09-19] The database reads the stock at the moment it saves and
+    // returns it; that is the "before" the Activity Log now shows. The figure
+    // on screen could be minutes old, with trucks weighed since (audit F14).
+    const saved = await api.recordStockAdjustment({
       locationId: station.id, previousStockKg, newStockKg, reason, note, pricePerKg, userId: session.user.id,
     });
     // Logged the same way every other significant change in the app is —
@@ -136,7 +146,7 @@ export default function StockInventory() {
       action: "adjust_stock",
       tableName: "locations",
       recordId: station.id,
-      oldData: { current_stock_kg: previousStockKg },
+      oldData: { current_stock_kg: saved?.previous_stock_kg ?? previousStockKg },
       newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: station.name },
       userId: session.user.id,
     }).catch(() => {});
@@ -201,11 +211,7 @@ export default function StockInventory() {
   // so a quiet station still shows a number rather than zero.
   const STOCK_VALUE_WINDOW_DAYS = 90;
   const { avgPrice, avgPriceBasis } = useMemo(() => {
-    const dayCut = (days) => {
-      const d = new Date();
-      d.setDate(d.getDate() - days);
-      return cambodiaDateStr(d);
-    };
+    const dayCut = (days) => cambodiaDateStr(new Date(getAccurateNow().getTime() - days * 86400000));
     const weighted = (rows) => {
       let kg = 0, riel = 0;
       for (const t of rows) {
@@ -313,61 +319,18 @@ export default function StockInventory() {
 
   const productsById = useMemo(() => Object.fromEntries(products.map((p) => [p.id, p])), [products]);
 
-  // A manual stock adjustment (Reset to 0, or any other correction) sets
-  // a location's own running total (current_stock_kg) directly — it has
-  // no per-paddy-type breakdown of its own, since stock was never tracked
-  // per type in the database to begin with (see the comment below). That
-  // means a reset only zeroes out the ONE aggregate number; the per-type
-  // breakdown below used to have no way to know a reset ever happened, so
-  // it kept replaying transactions from the beginning of time regardless
-  // — a station reset to 0kg could still show its old paddy composition
-  // here forever, contradicting the 0kg total shown right above it. Fixed
-  // the same way the net-stock diagnostic (see the project log) treats an
-  // adjustment: a hard reset point — nothing dated before a location's
-  // most recent adjustment counts toward its per-type breakdown anymore.
-  // One acknowledged limitation: a real adjustment only ever corrects the
-  // single aggregate number, never a specific paddy type, so a reset is
-  // treated here as zeroing every type at that location, not just one —
-  // there's no data to do better than that.
-  const lastAdjustmentAtByLocation = useMemo(() => {
-    const map = {};
-    for (const a of adjustments) {
-      if (!a.location_id || !a.created_at) continue;
-      if (!map[a.location_id] || a.created_at > map[a.location_id]) map[a.location_id] = a.created_at;
-    }
-    return map;
-  }, [adjustments]);
-
-  // Stock isn't tracked per paddy type in the database — each location just
-  // has one running total. To break it down by type, replay every
-  // transaction's net weighed weight, adding it for Buys and subtracting it
-  // for Sells, grouped by location and paddy type — skipping anything dated
-  // at or before that location's last adjustment (see comment above).
-  //
-  // [2026-09-01] Fixed to use `quantity_kg` (the real weighed net — gross
-  // minus tare) instead of `quantity_kg - deduction_kg`. Confirmed with the
-  // user: a quality deduction (moisture/mixture/outthrow %) is a PRICE
-  // adjustment only — nothing is physically sorted out or discarded at the
-  // station, the full weighed-in paddy stays in the pile. Subtracting the
-  // deduction here was silently undercounting real physical stock, and
-  // disagreeing with `current_stock_kg` (the number this whole page's
-  // total, and the Dashboard, are built from), which was never subtracting
-  // it. This was very likely a real contributor to stock feeling like it
-  // "wasn't sitting right" — the two numbers on this very page could drift
-  // apart by however much deduction had accumulated.
+  // [2026-09-19] Per-type stock now comes from stockByType.js — the same
+  // rule the Sell screen uses. It used to treat ANY count, even a small loss
+  // entered at midday, as "everything before this is gone", and every type
+  // read 0 after a daytime count (audit F4). See stockByType.js.
   const stockByLocationProduct = useMemo(() => {
     const map = {};
-    for (const tx of activeTxs) {
-      if (!tx.location_id || !tx.product_id) continue;
-      const lastAdjAt = lastAdjustmentAtByLocation[tx.location_id];
-      if (lastAdjAt && tx.created_at && tx.created_at <= lastAdjAt) continue;
-      const netKg = Number(tx.quantity_kg) || 0;
-      const delta = tx.type === "BUY" ? netKg : -netKg;
-      map[tx.location_id] = map[tx.location_id] || {};
-      map[tx.location_id][tx.product_id] = (map[tx.location_id][tx.product_id] || 0) + delta;
+    const locIds = new Set(activeTxs.map((tx) => tx.location_id).filter(Boolean));
+    for (const locId of locIds) {
+      map[locId] = stockByType({ txs: activeTxs, adjustments, locationId: locId });
     }
     return map;
-  }, [activeTxs, lastAdjustmentAtByLocation]);
+  }, [activeTxs, adjustments]);
 
   const combinedByProduct = useMemo(() => {
     const map = {};
@@ -381,17 +344,9 @@ export default function StockInventory() {
 
   // Value paddy type by its own average trade price rather than the one
   // blended average, so a premium type doesn't get under/over-valued.
-  const avgPriceByProduct = useMemo(() => {
-    const sums = {}, counts = {};
-    for (const tx of activeTxs) {
-      if (!tx.product_id) continue;
-      sums[tx.product_id] = (sums[tx.product_id] || 0) + Number(tx.price_per_kg || 0);
-      counts[tx.product_id] = (counts[tx.product_id] || 0) + 1;
-    }
-    const out = {};
-    for (const id in sums) out[id] = sums[id] / counts[id];
-    return out;
-  }, [activeTxs]);
+  // [2026-09-19] Weighted by kilograms, Buys only — what a kg of that type
+  // cost (audit F3). See avgCostByType in stockByType.js.
+  const avgPriceByProduct = useMemo(() => avgCostByType(activeTxs), [activeTxs]);
 
   function productRows(byProduct) {
     return Object.entries(byProduct)
@@ -693,6 +648,9 @@ export default function StockInventory() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={t("stock_title")} />
       <main className="flex-1 overflow-y-auto p-6">
+        {adjFailed && !loadError && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{t("err_adjustments_partial")}</div>
+        )}
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>

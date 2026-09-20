@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { ReceiptText } from "lucide-react";
 import { api } from "../api.js";
 // [2026-09-12] These were CALLED on this page but never imported, so the
@@ -13,21 +13,27 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
   const [allTxs, setAllTxs] = useState([]);
   const [view, setView] = useState("summary");
   const [loading, setLoading] = useState(true);
+  const loadSeq = useRef(0);
   const [loadError, setLoadError] = useState("");
 
   function load() {
+    // [2026-09-19] Only the newest request may fill the page: changing the
+    // station or dates quickly let an older, slower answer land last (audit F12).
+    const my = ++loadSeq.current;
+    const live = () => my === loadSeq.current;
     setLoading(true);
     setLoadError("");
     // [2026-09-10] Period and station asked of the database — reportQuery.js.
     api.getTransactions(queryRange({ selectedLocationIds, startDate, endDate }))
-      .then(setAllTxs)
+      .then((v) => { if (live()) setAllTxs(v); })
       .catch((err) => {
+        if (!live()) return;
         // Without this, a failed/dropped request silently showed "No
         // taxable transactions" — as if nothing taxable had ever happened
         // — instead of saying the load itself had failed.
         setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (live()) setLoading(false); });
   }
   useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 

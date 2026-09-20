@@ -93,6 +93,7 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], setSelect
             <Line label={t("st_ap")} hint={t("bs_ap_hint")} value={b.accountsPayable} indent />
             <Line label={t("bs_loans")} value={b.loansOutstanding} indent />
             <Line label={t("st_accrued")} hint={t("bs_accrued_hint")} value={b.accrued} indent />
+            {Math.abs(b.vatNet || 0) > 0.5 && <Line label={t("bs_vat")} hint={t("bs_vat_hint")} value={b.vatNet} indent signed />}
             <Line label={t("st_totliab")} value={b.totalLiabilities} total />
           </ReportCard>
 
@@ -100,6 +101,7 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], setSelect
             <Line label={t("st_capital")} hint={t("bs_capital_hint")} value={b.partnerCapital} indent />
             <Line label={t("st_drawings")} hint={t("bs_drawings_hint")} value={-b.drawings} indent signed />
             <Line label={t("st_retained")} hint={t("bs_retained_hint")} value={b.retainedEarnings} indent signed />
+            {Math.abs(b.openingEquity || 0) > 0.5 && <Line label={t("bs_opening_equity")} hint={t("bs_opening_equity_hint")} value={b.openingEquity} indent />}
             <Line label={t("st_totequity")} value={b.equity} total signed />
             <Line
               label={t("bs_lplusE")}

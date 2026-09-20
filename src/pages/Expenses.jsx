@@ -38,7 +38,7 @@
 //     back you are reaching, not about whether the change is recorded — it is
 //     recorded either way, in audit_logs.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Loader2, Lock, Plus, ChevronRight, X } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import ExpenseSheetPrint from "../components/ExpenseSheetPrint.jsx";
@@ -512,7 +512,9 @@ function DaySheet({
                   </span>
                   <input inputMode="numeric" value={value} placeholder="—"
                     onChange={(e) => setAmounts((a) => ({ ...a, [key]: e.target.value }))}
-                    onKeyDown={(e) => { if (e.key === "Enter" && !saving) submit(); }}
+                    // [2026-09-19] Same rule as the Save button: changing a figure
+                    // that is already there needs a reason. Enter used to skip it.
+                    onKeyDown={(e) => { if (e.key === "Enter" && !saving && !(mustExplain && !reason.trim())) submit(); }}
                     className={`${amountCls} w-28 shrink-0 ${saved && parsed == null ? "border-rose-300 bg-rose-50" : ""}`} />
                   </>
                   )}
@@ -646,6 +648,15 @@ export default function Expenses() {
 
   const [sheet, setSheet] = useState(null);          // { day, locationId } | null
   const [saving, setSaving] = useState(false);
+  // [2026-09-19] One id per new expense, kept until that save is confirmed.
+  // Saving a day creates one row per category, one request at a time. If the
+  // third timed out, the first two had already landed — but the sheet was not
+  // refreshed, so on "Save" again they still looked new and were created a
+  // second time. The duplicate-payment guard in api.js could not catch it: it
+  // only applies to payments against a transaction, and expenses have none.
+  // A stable id makes the retry fetch the row that already exists instead of
+  // inserting another (createPayment goes through insertOrFetchExisting).
+  const pendingExpenseIds = useRef(new Map());
   const [saveError, setSaveError] = useState("");
   const [pwPrompt, setPwPrompt] = useState(null);
   const [justSaved, setJustSaved] = useState(false);
@@ -672,7 +683,7 @@ export default function Expenses() {
         api.getLocations(),
         api.getPayments({ type: "expense" }),
         api.getExpenseDayMarks().catch(() => []),
-        api.getTransactions({}).catch(() => []),
+        api.getTransactions({ lean: true }).catch(() => []), // [2026-09-19] SPEED: tonnage columns only
       ]);
       setLocations(locs || []);
       setAllExpenses(exp || []);
@@ -852,14 +863,27 @@ export default function Expenses() {
         const was = existing.get(categoryKey(e.category));
         if (was) {
           const extras = was.rows.slice(1);
+          // [2026-09-19] An extra row whose void FAILED is still counted, so
+          // the first row takes only what is left. Before, a failed void was
+          // ignored and the first row was set to the whole total anyway — the
+          // day then counted the extra twice (50,000 + 50,000 became 150,000).
+          let stillLive = 0;
           for (const x of extras) {
-            await api.voidPayment(x.id, "Merged — this day held more than one entry for this category")
-              .catch(() => {});
+            try {
+              await api.voidPayment(x.id, "Merged — this day held more than one entry for this category");
+            } catch {
+              stillLive += Number(x.amount) || 0;
+            }
           }
+          const firstRowAmount = Math.max(0, e.amount - stillLive);
           if (!extras.length && Math.round(was.amount) === Math.round(e.amount)) continue;
-          await api.updateExpense(was.rows[0].id, { amount: e.amount, reason, userId: session.user.id });
+          await api.updateExpense(was.rows[0].id, { amount: firstRowAmount, reason, userId: session.user.id });
+          if (stillLive > 0) throw new Error(t("exp_merge_partial"));
         } else {
+          const idKey = `${sheet.locationId}|${sheet.day}|${categoryKey(e.category)}`;
+          if (!pendingExpenseIds.current.has(idKey)) pendingExpenseIds.current.set(idKey, crypto.randomUUID());
           await api.createPayment({
+            id: pendingExpenseIds.current.get(idKey),
             type: "expense", category: e.category, transactionId: null,
             locationId: sheet.locationId, amount: e.amount, method: "cash",
             payDate: sheet.day, memo: null, userId: session.user.id,
@@ -881,6 +905,10 @@ export default function Expenses() {
       if (entries.length) await api.clearExpenseDayMark({ locationId: sheet.locationId, day: sheet.day }).catch(() => {});
       else await api.markExpenseDayEmpty({ locationId: sheet.locationId, day: sheet.day, userId: session.user.id });
 
+      // Confirmed — these ids have done their job for this day.
+      for (const k of [...pendingExpenseIds.current.keys()]) {
+        if (k.startsWith(`${sheet.locationId}|${sheet.day}|`)) pendingExpenseIds.current.delete(k);
+      }
       await load();
       // [2026-09-16] It used to jump to the next station that had not been
       // entered. SISEN: "why does it bring me to next station for what?"
@@ -893,6 +921,9 @@ export default function Expenses() {
       setJustSaved(true);
     } catch (err) {
       setSaveError(errText(null, err, "") || err.message || "Could not save.");
+      // [2026-09-19] Show what DID land before the failure, so the sheet and
+      // the next Save are working from the truth rather than the old figures.
+      await load().catch(() => {});
     } finally { setSaving(false); }
   }
 
@@ -975,8 +1006,11 @@ export default function Expenses() {
                       go. Every alert is listed, names its category, and opens
                       the day it is about. */}
                   {(alertsOpen ? alerts : alerts.slice(0, 1)).map((a, i) => (
-                    <button key={i} type="button" disabled={!a.day}
-                      onClick={() => a.day && setSheet({ day: a.day, locationId: a.locationId })}
+                    <button key={i} type="button" disabled={!a.day || !canRecord}
+                      // [2026-09-19] canRecord, like the "Enter a day" button.
+                      // Without it, an account that may only view reports could
+                      // open a day from an alert and save expenses.
+                      onClick={() => a.day && canRecord && setSheet({ day: a.day, locationId: a.locationId })}
                       className={`flex w-full flex-wrap items-center gap-2 px-4 py-2 text-left text-sm text-amber-900 ${
                         i ? "border-t border-amber-200/70" : ""} ${a.day ? "hover:bg-amber-100" : ""}`}>
                       <span className="rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">{a.k}</span>

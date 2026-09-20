@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, Save, ScanLine, ChevronDown, Ticket } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
@@ -191,9 +191,18 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   // Searches by phone number, not name — lots of farmers share the exact
   // same name, but phone numbers are unique, so this is a much more
   // reliable way to find the right person.
+  // [2026-09-19] Waits 300 ms after the last keystroke, and ignores an
+  // older answer that arrives after a newer one — typing a 9-digit number
+  // sent 9 searches, and a slow one for "012" could replace the list.
   useEffect(() => {
-    if (!partyPhone.trim()) { setParties([]); return; }
-    api.getParties({ type: isBuy ? "supplier" : "buyer", qPhone: partyPhone }).then(setParties).catch(() => {});
+    if (!partyPhone.trim()) { setParties([]); return undefined; }
+    let stale = false;
+    const timer = setTimeout(() => {
+      api.getParties({ type: isBuy ? "supplier" : "buyer", qPhone: partyPhone })
+        .then((rows) => { if (!stale) setParties(rows); })
+        .catch(() => {});
+    }, 300);
+    return () => { stale = true; clearTimeout(timer); };
   }, [partyPhone, isBuy]);
 
   useEffect(() => {
@@ -222,9 +231,14 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   // it reflects the booklet rather than one screen's history. Bounded, and
   // falls back to this device's memory offline or on a slow connection.
   const suggestStationId = isAdmin ? stationId : profile?.location_id;
+  // [2026-09-19] The number this screen filled in by itself. When an admin
+  // switches station, a number still equal to it (not typed by staff) is
+  // replaced with the new station's next one, instead of keeping station A's.
+  const autoTicketNoRef = useRef("");
   useEffect(() => {
     let cancelled = false;
-    if (!suggestStationId || paperTicketNo) return undefined;
+    if (!suggestStationId) return undefined;
+    if (paperTicketNo && paperTicketNo !== autoTicketNoRef.current) return undefined;
     (async () => {
       const live = await withTimeout(
         api.getLatestPaperTicketNo(suggestStationId).catch(() => null), 3000, null
@@ -233,7 +247,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       const suggested = incrementTicketNo(live) || suggestNextPaperTicketNo(suggestStationId);
       // Only ever fills a box that is STILL blank — staff may well have
       // typed the real number while this was in flight, and that must win.
-      if (suggested) setPaperTicketNo((cur) => (cur ? cur : suggested));
+      if (suggested) {
+        setPaperTicketNo((cur) => {
+          if (cur && cur !== autoTicketNoRef.current) return cur;
+          autoTicketNoRef.current = suggested;
+          return suggested;
+        });
+      }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -320,7 +340,33 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillParty]);
 
+  // [2026-09-19] One submit at a time, decided SYNCHRONOUSLY. `saving` is
+  // React state, so it does not change until the next render — and it was
+  // only set after the paper-ticket duplicate check, which waits up to 3.5 s
+  // for the server. A double-click, or Enter pressed twice in any field,
+  // started two saves inside that window: two transactions with different
+  // codes, and two "paid at time of transaction" cash payments. The Weighing
+  // Tickets board fixed the same bug on its own buttons ("audit #11"); this
+  // form never got it. A ref changes immediately, so the second press is
+  // turned away before anything is sent.
+  const submittingRef = useRef(false);
+  // [2026-09-19] The purchase/sale already created by an earlier press whose
+  // PAYMENT step then failed. A second press must not create the truck
+  // again — it only retries the payment. Before, the error told staff to
+  // press Save again, and that created a second transaction for one truck.
+  const createdTxRef = useRef(null);
   async function handleSubmit(e) {
+    e.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await handleSubmitOnce(e);
+    } finally {
+      submittingRef.current = false;
+    }
+  }
+
+  async function handleSubmitOnce(e) {
     e.preventDefault();
     setError("");
     const effectiveStationId = isAdmin ? stationId : profile?.location_id;
@@ -356,7 +402,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // happened unrecorded, which is worse. Pressing Save a second time with
     // the same number goes through and the database flags the pair.
     const trimmedTicketNo = normalizePaperTicketNo(paperTicketNo) || "";
-    if (trimmedTicketNo && dupWarn?.ticketNo !== trimmedTicketNo) {
+    if (trimmedTicketNo && dupWarn?.ticketNo !== trimmedTicketNo && !createdTxRef.current) {
       // [2026-09-12] Checks BOTH the weighbridge board and already-recorded
       // transactions, not just transactions. One paper booklet does not care
       // which screen a load was entered on, and looking at only half of it
@@ -429,8 +475,15 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
           // Existing farmer — if their bank details or QR code were
           // corrected or added here, keep their saved profile in sync.
           const patch = {};
-          if (bankName !== (party.bank_name || "")) patch.bankName = bankName;
-          if (bankAccount !== (party.bank_account || "")) patch.bankAccount = bankAccount;
+          // [2026-09-19] Only ever ADD or CORRECT, never blank out. When a
+          // farmer was found by typing their phone number (without picking
+          // them from the suggestion list), the bank fields on this form were
+          // still empty — and "" differs from their saved ABA account, so the
+          // save wrote blanks over it. Nothing on screen showed it; the next
+          // payment simply had no account to go to. Clearing a farmer's bank
+          // details is an edit made on purpose on the farmer's own page.
+          if (bankName && bankName !== (party.bank_name || "")) patch.bankName = bankName;
+          if (bankAccount && bankAccount !== (party.bank_account || "")) patch.bankAccount = bankAccount;
           if (bankName !== "Cash" && bankQrUrl && bankQrUrl !== (party.bank_qr_url || "")) patch.bankQrUrl = bankQrUrl;
           if (Object.keys(patch).length > 0) {
             updatePartyOffline(party.id, patch);
@@ -467,7 +520,8 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       // of whatever the Payment Status dropdown happens to say.
       const finalPaymentStatus = !isBuy && finalPricePerKg == null ? "credit" : paymentStatus;
 
-      const tx = await createTransactionOffline({
+      const alreadyCreated = createdTxRef.current;
+      const tx = alreadyCreated || await createTransactionOffline({
         type, locationId: effectiveStationId, partyId, productId,
         quantityKg: netKg, pricePerKg: finalPricePerKg, paymentStatus: finalPaymentStatus, userId: session.user.id,
         txDate,
@@ -511,12 +565,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         bankName: partyBankName, bankAccount: partyBankAccount,
         productName: productQuery.trim(), stationName: myStation?.name,
       });
+      createdTxRef.current = tx;
 
       // Log every new Buy/Sell to the Activity Log so it's traceable later —
       // same reasoning as logging edits/payments: an audit trail is only
       // useful for finding mistakes if it captures the original entry too,
       // not just later corrections.
-      logAuditOffline({
+      if (!alreadyCreated) logAuditOffline({
         action: "create_transaction",
         tableName: "transactions",
         recordId: tx.id,
@@ -534,7 +589,9 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
       // above), so this can't fire a real ₣0 "payment received" record for
       // a transaction nobody has actually agreed a price on yet.
       if (finalPaymentStatus === "paid") {
-        const createdPayment = createPaymentOffline({
+        let createdPayment;
+        try {
+          createdPayment = createPaymentOffline({
           type: isBuy ? "pay_supplier" : "receive_customer",
           transactionId: tx.id,
           locationId: effectiveStationId,
@@ -543,7 +600,12 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
           payDate: tx.tx_date,
           memo: "Paid at time of transaction",
           userId: session.user.id,
-        });
+          });
+        } catch (payErr) {
+          const e = new Error(t("tx_payment_retry"));
+          e.cause = payErr;
+          throw e;
+        }
         logAuditOffline({
           action: "record_payment",
           tableName: "payments",
@@ -580,6 +642,9 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         partyName, partyIdNumber: partyPhone || partyIdNumber || "",
         bank_name: partyBankName, bank_account: partyBankAccount,
         product_name: productQuery.trim(), stationName: myStation?.name,
+        // [2026-09-19] The station's own address/phone on the receipt, as on
+        // a finished ticket — it printed head office's instead.
+        stationAddress: myStation?.address || "", stationPhone: myStation?.phone || "",
       });
     } catch (err) {
       const isNetworkError = err.message && (err.message.includes("fetch") || err.message.includes("network") || err.message.includes("Failed"));

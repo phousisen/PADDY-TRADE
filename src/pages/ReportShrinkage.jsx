@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { api } from "../api.js";
 // [2026-09-12] These were CALLED on this page but never imported, so the
 // whole tab threw a ReferenceError before it painted anything.
 import { queryRangeAdj, rangeKey } from "../reportQuery.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 import { dmy, hm } from "../dateFormat.js";
+import { effectiveAdjDateStr } from "../dailyLedger.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -71,29 +72,42 @@ function fmtDateTime(iso) {
 export default function ReportShrinkage({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allAdjustments, setAllAdjustments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const loadSeq = useRef(0);
   const [loadError, setLoadError] = useState("");
 
   // Station names come from api.getStockAdjustments()'s own join (each
   // row already carries stationName) — no separate getLocations() call
   // needed here.
   function load() {
+    // [2026-09-19] Only the newest request may fill the page: changing the
+    // station or dates quickly let an older, slower answer land last (audit F12).
+    const my = ++loadSeq.current;
+    const live = () => my === loadSeq.current;
     setLoading(true);
     setLoadError("");
     // [2026-09-10] Period and station asked of the database — reportQuery.js.
-    api.getStockAdjustments(queryRangeAdj({ selectedLocationIds, startDate, endDate }))
-      .then(setAllAdjustments)
+    // [2026-09-19] (audit F11) A reset entered after midnight belongs to the
+    // night before — the rule the Daily Book and Stock Inventory use
+    // (effectiveAdjDateStr). This report dated it by the clock instead, so a
+    // 2 a.m. reset for 31 August showed in September. The query now reaches
+    // one day either side, and the rows are dated by the shared rule below.
+    const pad = (d, n) => (d ? new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10) : d);
+    api.getStockAdjustments(queryRangeAdj({ selectedLocationIds, startDate: pad(startDate, 0), endDate: pad(endDate, 1) }))
+      .then((v) => { if (live()) setAllAdjustments(v); })
       .catch((err) => {
+        if (!live()) return;
         setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (live()) setLoading(false); });
   }
   useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
   const adjustments = useMemo(() => {
     return allAdjustments
       .filter((a) => !selectedLocationIds.length || selectedLocationIds.includes(a.location_id))
-      .filter((a) => !startDate || cambodiaDateOnly(a.created_at) >= startDate)
-      .filter((a) => !endDate || cambodiaDateOnly(a.created_at) <= endDate);
+      .filter((a) => a.created_at)
+      .filter((a) => !startDate || effectiveAdjDateStr(a) >= startDate)
+      .filter((a) => !endDate || effectiveAdjDateStr(a) <= endDate);
   }, [allAdjustments, selectedLocationIds, startDate, endDate]);
 
   // `priced` counts only the rows that actually have a value, so a total

@@ -20,7 +20,8 @@ import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
-import { getCachedParties, addCachedParty, setCachedParties, enqueue, trySync, newId, logAuditOffline } from "../offlineQueue.js";
+import { getCachedParties, addCachedParty, setCachedParties, enqueueStrict, trySync, newId, logAuditOffline } from "../offlineQueue.js";
+import { getAccurateNow } from "../supabaseClient.js";
 import { useLanguage } from "../i18n.jsx";
 import { dmyTime } from "../dateFormat.js";
 
@@ -129,7 +130,9 @@ export default function RegisterPartyStaff() {
         api.getParties({ q, locationId: scopedLocationId }),
         api.getParties({ qPhone: q, locationId: scopedLocationId }),
       ]);
-      const merged = [...cacheMatches, ...byName, ...byPhone].filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
+      // [2026-09-19] Server rows first, so a stale copy kept on this device
+      // never hides a newer bank account or verification (audit F6).
+      const merged = [...byName, ...byPhone, ...cacheMatches].filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
       setResults(merged);
     } catch (err) {
       // A live lookup can fail (flaky connection) even while navigator.onLine
@@ -147,8 +150,13 @@ export default function RegisterPartyStaff() {
   // held here as PENDING until staff who know the farmer apply it — the
   // QR page can no longer change a bank account on its own (audit #6).
   const [pendingBank, setPendingBank] = useState(null);
+  // [2026-09-19] The record exactly as it was opened. Used as the "before"
+  // for the bank-change check, instead of this device's cache — which may
+  // not hold this farmer at all, so the change went unlogged (audit F6).
+  const [openedParty, setOpenedParty] = useState(null);
   function openExisting(party) {
     setEditingId(party.id);
+    setOpenedParty(party);
     setPendingBank(party.pending_bank_account || party.pending_bank_name || party.pending_bank_qr_url
       ? { name: party.pending_bank_name || "", account: party.pending_bank_account || "", qr: party.pending_bank_qr_url || null, at: party.pending_bank_requested_at || null }
       : null);
@@ -169,6 +177,7 @@ export default function RegisterPartyStaff() {
 
   function openNew() {
     setEditingId(null);
+    setOpenedParty(null);
     setForm({
       ...blankForm(),
       name: query && !looksLikePhone(query) ? query : "",
@@ -203,7 +212,23 @@ export default function RegisterPartyStaff() {
       // verified from before, without a fresh QR/identity photo this time,
       // keeps its original verified_at/verified_by rather than being wiped
       // back to unverified.
-      const verifiedStamp = isVerifiable ? { verifiedAt: new Date().toISOString(), verifiedBy: profile?.id } : {};
+      // [2026-09-19] Stamped only when this save is what verifies the
+      // record: a new record with both photos, a record that was not
+      // verified before, or a changed bank account backed by a NEW QR photo.
+      // Re-saving an already verified farmer no longer moves the date to
+      // today, and a changed bank with the old QR photo is not verified
+      // (audit F5).
+      const orig = editingId ? openedParty : null;
+      const bankChanged = !!orig && (
+        (orig.bank_account || "") !== (form.bankAccount.trim() || "") ||
+        (orig.bank_name || "") !== (form.bankName.trim() || "")
+      );
+      const freshQr = !orig || (form.bankQrUrl && form.bankQrUrl !== (orig.bank_qr_url || null));
+      const wasVerified = !!orig?.verified_at;
+      const stampNow = isVerifiable && (!orig || (bankChanged ? freshQr : !wasVerified));
+      const verifiedStamp = stampNow
+        ? { verifiedAt: getAccurateNow().toISOString(), verifiedBy: profile?.id }
+        : (bankChanged ? { verifiedAt: null, verifiedBy: null } : {});
       const shared = {
         name: form.name.trim(),
         phone: form.phone.trim(),
@@ -235,13 +260,7 @@ export default function RegisterPartyStaff() {
         // redirects money. It is written to the Activity Log with before
         // and after, and the "Verified" badge is withdrawn unless fresh
         // ID + QR photos were attached in this same save (audit #26).
-        const orig = idx >= 0 ? list[idx] : null;
-        const bankChanged = !!orig && (
-          (orig.bank_account || "") !== (shared.bankAccount || "") ||
-          (orig.bank_name || "") !== (shared.bankName || "")
-        );
         if (bankChanged) {
-          if (!isVerifiable) { shared.verifiedAt = null; shared.verifiedBy = null; }
           logAuditOffline({
             action: "update_party_bank", tableName: "parties", recordId: editingId,
             oldData: { name: orig.name, phone: orig.phone, bank_name: orig.bank_name || null, bank_account: orig.bank_account || null },
@@ -261,7 +280,9 @@ export default function RegisterPartyStaff() {
           };
           setCachedParties(list);
         }
-        enqueue({ type: "updateParty", partyId: editingId, payload: shared });
+        // [2026-09-19] Strict: if this device cannot store it, say so instead
+        // of showing "Saved" for a change that was never queued.
+        enqueueStrict({ type: "updateParty", partyId: editingId, payload: shared });
       } else {
         const id = newId();
         const locationId = profile?.location_id || null;
@@ -271,7 +292,7 @@ export default function RegisterPartyStaff() {
           bank_qr_url: shared.bankQrUrl, id_photo_url: shared.idPhotoUrl,
           verified_at: shared.verifiedAt || null, verified_by: shared.verifiedBy || null,
         });
-        enqueue({ type: "createParty", payload: { id, ...shared, type: form.type, locationId } });
+        enqueueStrict({ type: "createParty", payload: { id, ...shared, type: form.type, locationId } });
       }
       trySync();
       setSaved(true);
@@ -426,6 +447,9 @@ export default function RegisterPartyStaff() {
               )}
               {results.map((p) => {
                 const missingBank = !p.bank_name || !p.bank_account || !p.bank_qr_url || !p.id_photo_url;
+                // [2026-09-19] "Verified" means someone verified it, not just
+                // that two photos exist (audit F24).
+                const notVerified = !missingBank && !p.verified_at;
                 return (
                   <button key={p.id} onClick={() => openExisting(p)} className="flex w-full items-center justify-between gap-3 rounded-lg border border-brand-300 bg-brand-50 p-3 text-left">
                     <div className="min-w-0">
@@ -433,6 +457,8 @@ export default function RegisterPartyStaff() {
                       <p className="text-xs text-slate-400">{p.phone || "—"} · {p.type === "supplier" ? t("party_farmer") : t("party_buyer")}</p>
                       {missingBank
                         ? <p className="mt-1 text-[11px] font-semibold text-rose-600">{t("reg_incomplete")}</p>
+                        : notVerified
+                        ? <p className="mt-1 text-[11px] font-semibold text-amber-600">{t("reg_not_verified")}</p>
                         : <p className="mt-1 text-[11px] font-semibold text-brand-600">{t("reg_verified")}</p>}
                     </div>
                     <span className="shrink-0 text-xs font-semibold text-brand-700">{t("reg_complete_arrow")}</span>

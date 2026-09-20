@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Plus, Printer, X, ArrowRight, Ban, Check, Search, Pencil, RotateCcw } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import Topbar from "../components/Topbar.jsx";
@@ -6,6 +6,7 @@ import StationDayClose from "../components/StationDayClose.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
 import WeightField from "../components/WeightField.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
+import { stockByType } from "../stockByType.js";
 import { getAccurateNow } from "../supabaseClient.js";
 import { errText } from "../errText.js";
 import { useAuth } from "../AuthContext.jsx";
@@ -14,7 +15,7 @@ import {
   startAutoSync, refreshLookupCaches, getCachedTickets, getCachedTransactions, mergeServerTickets,
   resolvePartyIdOffline, resolveProductIdOffline, createTicketOffline, editTicketOffline,
   setTicketPriceOffline, setTicketTareOffline, finalizeTicketOffline,
-  onSyncStatusChange, pendingCountForTicket, getCachedParties, updatePartyOffline,
+  onSyncStatusChange, getQueue, getCachedParties, updatePartyOffline,
   suggestNextPaperTicketNo, incrementTicketNo, withTimeout, logAuditOffline, forgetPendingTransaction, createPaymentOffline,
 } from "../offlineQueue.js";
 import { paddyTypeOptions, isOtherPaddyType } from "../paddyTypes.js";
@@ -175,6 +176,8 @@ function splitCambodiaTimestamp(iso) {
 // actually uses two visits to the computer per truck, not four or five.
 const OPEN_STAGE_IDS = ["arrived", "weighed_in", "priced", "weighed_out"];
 const ALL_STAGE_IDS = [...OPEN_STAGE_IDS, "declined"];
+// How many recent declined tickets the board keeps (see load()).
+const DECLINED_ON_BOARD = 100;
 
 // ---- Modal shell ----------------------------------------------------------
 
@@ -349,6 +352,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const { lang, t } = useLanguage();
   const [locationId, setLocationId] = useState(defaultLocationId || "");
   const [partyName, setPartyName] = useState("");
+  // [2026-09-19] The name as it is NOW, for the phone lookup below — the
+  // value captured when the lookup started could never differ from itself,
+  // so a name picked while the lookup was running was always overwritten.
+  const partyNameRef = useRef("");
+  partyNameRef.current = partyName;
   const [phone, setPhone] = useState("");
   // Vehicle type (Truck/Koyun/Tractor/custom) + its value — a plate
   // number for Truck, a bag count for anything else. Combined into the
@@ -540,17 +548,31 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   // in their phone + saved bank details too, the same as the phone lookup
   // and "Use previous" button both already do — so picking a name from
   // the list is a genuine one-step shortcut, not just the name by itself.
+  // [2026-09-19] SPEED: the saved farmers/buyers are read and indexed once,
+  // not parsed from browser storage again on every keystroke in the Name box.
+  const partyByName = useMemo(() => {
+    const matchType = type === "BUY" ? "supplier" : "buyer";
+    const m = new Map();
+    for (const p of getCachedParties()) {
+      if (p.type !== matchType || (locationId && p.location_id !== locationId)) continue;
+      const k = (p.name || "").trim().toLowerCase();
+      if (k && !m.has(k)) m.set(k, p);
+    }
+    return m;
+  }, [type, locationId]);
+  const partyDatalist = useMemo(
+    () => partyOptions.map((name) => <option key={name} value={name} />),
+    [partyOptions]
+  );
+
   function handlePartyNameChange(value) {
     setPartyName(value);
     const trimmed = value.trim();
     if (!trimmed) return;
-    const matchType = type === "BUY" ? "supplier" : "buyer";
-    const match = getCachedParties().find(
-      (p) => p.type === matchType && (!locationId || p.location_id === locationId) && (p.name || "").trim().toLowerCase() === trimmed.toLowerCase()
-    );
+    const match = partyByName.get(trimmed.toLowerCase());
     if (match) {
       setPhone(match.phone || "");
-      setPhoneLookupMsg(match.phone ? `Filled in: ${match.name}` : "");
+      setPhoneLookupMsg(match.phone ? t("wt_filled_in", { name: match.name }) : "");
       setSavedBank(
         match.bank_name || match.bank_account || match.bank_qr_url
           ? { bankName: match.bank_name || "", bankAccount: match.bank_account || "", bankQrUrl: match.bank_qr_url || null }
@@ -637,7 +659,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   async function lookupByPhone() {
     const trimmed = phone.trim();
     if (!trimmed) { setPhoneLookupMsg(""); setSavedBank(null); return; }
-    setPhoneLookupMsg("Looking up…");
+    setPhoneLookupMsg(t("wt_phone_looking"));
     // Snapshot what staff had typed before we went to the network — if
     // WiFi is up but no real internet, this used to hang with no limit
     // (see supabaseClient.js) and could still land minutes later and
@@ -651,9 +673,11 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
       );
       if (matches && matches.length > 0) {
         const p = matches[0];
-        // Only auto-fill if staff hasn't typed a name in the meantime.
-        if (partyName === nameBeforeLookup) setPartyName(p.name || "");
-        setPhoneLookupMsg(`Found: ${p.name}`);
+        // Only auto-fill if staff hasn't typed or picked a name meanwhile —
+        // and then leave that person's bank details alone too.
+        if (partyNameRef.current !== nameBeforeLookup) { setPhoneLookupMsg(""); return; }
+        setPartyName(p.name || "");
+        setPhoneLookupMsg(t("wt_phone_found", { name: p.name }));
         setSavedBank(
           p.bank_name || p.bank_account || p.bank_qr_url
             ? { bankName: p.bank_name || "", bankAccount: p.bank_account || "", bankQrUrl: p.bank_qr_url || null }
@@ -663,7 +687,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         // Timed out or failed (likely offline) — don't claim "no record".
         setPhoneLookupMsg("");
       } else {
-        setPhoneLookupMsg("No record found — fill in details below.");
+        setPhoneLookupMsg(t("wt_phone_none"));
         setSavedBank(null);
       }
     } catch {
@@ -924,7 +948,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
             placeholder={t("wt_search_or_add")}
           />
           <datalist id="new-ticket-party-options">
-            {partyOptions.map((name) => <option key={name} value={name} />)}
+            {partyDatalist}
           </datalist>
         </div>
         {/* Product moved off this form for Sell — a Sell ticket now picks
@@ -1197,7 +1221,12 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
         partyId, partyName: partyName.trim(), phone,
         carPlate, driverName, productId, productName: productName.trim(),
         paperTicketNo: paperTicketNo.trim(),
-        grossKg: kg,
+        // [2026-09-19] Sent only when the weight really changed, and the
+        // weigh-in time is stamped only if there was no weigh-in before.
+        // Fixing a plate typo re-dated the weigh-in to "now" (standing rule:
+        // never change the weigh-in date).
+        grossKg: (kg ?? null) !== (ticket.gross_kg == null ? null : Number(ticket.gross_kg)) ? kg : undefined,
+        firstWeighIn: !ticket.gross_at && kg != null,
         userId: session.user.id,
       });
       setActiveWarning(null);
@@ -1409,24 +1438,28 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     if (isBuy) return;
     let cancelled = false;
     (async () => {
-      const txs = await withTimeout(
-        api.getTransactions({ locationId: ticket.location_id }).catch(() => null),
+      // [2026-09-19] Stock counts and losses are now included, and the
+      // weighed net is used as Stock Inventory does (a deduction is a price
+      // adjustment, not paddy removed). This list ignored counts entirely, so
+      // a type written off in a count was still offered as "in stock". One
+      // shared rule for both screens: stockByType.js.
+      const [txs, adjustments, products] = await withTimeout(
+        Promise.all([
+          // Only the columns the stock sum needs (see api.getTransactions).
+          api.getTransactions({ locationId: ticket.location_id, lean: true }),
+          api.getStockAdjustments({ locationId: ticket.location_id }),
+          api.getProducts(),
+        ]).catch(() => [null, null, null]),
         STOCK_LOOKUP_TIMEOUT_MS,
-        null
+        [null, null, null]
       );
       if (cancelled) return;
-      if (!txs) { setInStockProducts([]); return; }
-      const stockByProduct = {};
-      for (const tx of txs) {
-        if (!tx.product_id) continue;
-        if ((tx.hq_status || "processing") === "cancelled") continue;
-        const payable = Math.max(0, Number(tx.quantity_kg || 0) - Number(tx.deduction_kg || 0));
-        const delta = tx.type === "BUY" ? payable : -payable;
-        if (!stockByProduct[tx.product_id]) stockByProduct[tx.product_id] = { kg: 0, name: tx.productName || "—" };
-        stockByProduct[tx.product_id].kg += delta;
-      }
-      const inStock = Object.entries(stockByProduct)
-        .map(([id, v]) => ({ id, name: v.name, kg: v.kg }))
+      if (!txs || !adjustments) { setInStockProducts([]); return; }
+      const names = {};
+      for (const p of products || []) if (p && p.id) names[p.id] = p.name;
+      const byType = stockByType({ txs, adjustments, locationId: ticket.location_id });
+      const inStock = Object.entries(byType)
+        .map(([id, kg]) => ({ id, name: names[id] || "—", kg }))
         .filter((p) => p.kg > 0.5) // small threshold — ignores rounding dust, not a real remaining amount
         .sort((a, b) => b.kg - a.kg);
       setInStockProducts(inStock);
@@ -1536,10 +1569,27 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
       // manual Buy/Sell form does.
       if (isBuy && ticket.party_id) {
         const savedParty = getCachedParties().find((p) => p.id === ticket.party_id) || {};
+        // [2026-09-19] Only ever ADD or CORRECT bank details, never blank
+        // them: paying cash this once (Cash picked, account box empty) used
+        // to wipe the farmer's saved ABA account. A real change of account is
+        // written to the Activity Log and takes the "Verified" badge away, as
+        // on the registration screen — it is the one edit that redirects money.
         const patch = {};
-        if (bankName !== (savedParty.bank_name || "")) patch.bankName = bankName;
-        if (bankAccount !== (savedParty.bank_account || "")) patch.bankAccount = bankAccount;
+        const realBank = bankName && bankName !== "Cash";
+        if (realBank && bankName !== (savedParty.bank_name || "")) patch.bankName = bankName;
+        if (realBank && bankAccount.trim() && bankAccount.trim() !== (savedParty.bank_account || "")) patch.bankAccount = bankAccount.trim();
         if (finalBankQrUrl && finalBankQrUrl !== (savedParty.bank_qr_url || "")) patch.bankQrUrl = finalBankQrUrl;
+        const accountChanged = !!savedParty.bank_account && patch.bankAccount !== undefined;
+        if (accountChanged) {
+          patch.verifiedAt = null;
+          patch.verifiedBy = null;
+          logAuditOffline({
+            action: "update_party_bank", tableName: "parties", recordId: ticket.party_id,
+            oldData: { name: savedParty.name, bank_name: savedParty.bank_name || null, bank_account: savedParty.bank_account || null },
+            newData: { name: savedParty.name, bank_name: patch.bankName ?? savedParty.bank_name ?? null, bank_account: patch.bankAccount, viaFinishTicket: true },
+            userId: session.user.id,
+          });
+        }
         if (Object.keys(patch).length > 0) updatePartyOffline(ticket.party_id, patch);
       }
       const tareUpdated = setTicketTareOffline(ticket.id, { tareKg, userId: session.user.id });
@@ -1885,7 +1935,9 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           <Ban size={14} /> {isBuy ? "Not Buying" : "Not Selling"} <span className="font-khmer">{isBuy ? "មិនទិញ" : "មិនលក់"}</span>
         </button>
         <div className="flex gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel <span className="font-khmer">បោះបង់</span></button>
+          {/* [2026-09-19] Not while saving: cancelling mid-save and finishing
+              again recorded a second payment against the same purchase. */}
+          <button disabled={saving} onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">Cancel <span className="font-khmer">បោះបង់</span></button>
           <button disabled={saving} onClick={submitFinish} className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-40 ${accent.saveBtn}`}>
             <Check size={14} /> {saving ? <>Saving… <span className="font-khmer">កំពុងរក្សាទុក…</span></> : <>Save, Print &amp; Finalize <span className="font-khmer">រក្សាទុក បោះពុម្ព និងបញ្ចប់</span></>}
           </button>
@@ -2186,6 +2238,13 @@ function TicketSlip({ ticket, onClose }) {
     const [y, m, d] = dateStr.split("-");
     return `${d}-${m}-${y}`;
   }
+  // [2026-09-19] For a TIMESTAMP (gross_at / tare_at), not a plain date. These
+  // used to be cut with .slice(0, 10), which is the UTC day — so a truck
+  // weighed at 06:30 in Phnom Penh printed yesterday's date on its slip.
+  // dmy() now resolves the day in Asia/Phnom_Penh; only the separator differs.
+  function slipDay(timestamp) {
+    return timestamp ? dmy(timestamp).replace(/\//g, "-") : "—";
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -2219,7 +2278,7 @@ function TicketSlip({ ticket, onClose }) {
 
           <div className="fields">
             <div className="field"><span className="lbl"><span className="kh">ទំនិញ</span><span className="en">Product</span></span><span className="val">{ticket.product_name || "—"}</span></div>
-            <div className="field"><span className="lbl"><span className="kh">ថ្ងៃ</span><span className="en">Date</span></span><span className="val">{ddmmyyyy(ticket.gross_at ? ticket.gross_at.slice(0, 10) : null)}</span></div>
+            <div className="field"><span className="lbl"><span className="kh">ថ្ងៃ</span><span className="en">Date</span></span><span className="val">{slipDay(ticket.gross_at)}</span></div>
             <div className="field"><span className="lbl"><span className="kh">{partyLabelKh}</span><span className="en">{partyLabelEn}</span></span><span className="val">{ticket.party_name}{ticket.phone ? ` · ${ticket.phone}` : ""}</span></div>
             <div className="field"><span className="lbl"><span className="kh">អ្នកបើកបរ</span><span className="en">Driver</span></span><span className="val">{ticket.driver_name || "—"}</span></div>
             <div className="field"><span className="lbl"><span className="kh">លេខសំបុត្រ</span><span className="en">Ticket No.</span></span><span className="val">{ticket.paper_ticket_no || "—"}</span></div>
@@ -2238,14 +2297,14 @@ function TicketSlip({ ticket, onClose }) {
             <tbody>
               <tr>
                 <td>ចូល IN</td>
-                <td>{ddmmyyyy(ticket.gross_at ? ticket.gross_at.slice(0, 10) : null)}</td>
+                <td>{slipDay(ticket.gross_at)}</td>
                 <td>{inStamp.time}</td>
                 <td className="num">{ticket.gross_kg != null ? `${fmt2(ticket.gross_kg)} kg` : "—"}</td>
               </tr>
               {ticket.tare_kg != null && (
                 <tr>
                   <td>ចេញ OUT</td>
-                  <td>{ddmmyyyy(ticket.tare_at ? ticket.tare_at.slice(0, 10) : null)}</td>
+                  <td>{slipDay(ticket.tare_at)}</td>
                   <td>{outStamp.time}</td>
                   <td className="num">{fmt2(ticket.tare_kg)} kg</td>
                 </tr>
@@ -2381,11 +2440,19 @@ export default function WeighingTickets() {
     // right after this computer boots with no WiFi yet.
     if (navigator.onLine) {
       try {
-        serverRows = await withTimeout(
-          api.getTickets({ locationId: effectiveLocationId || undefined, stages: ALL_STAGE_IDS }),
+        // [2026-09-19] SPEED: open tickets in full, declined ones only the
+        // newest 100. Every declined ticket ever (with five joins) was being
+        // downloaded again every minute, on every tab focus and after every
+        // save, and that list only ever grows.
+        const both = await withTimeout(
+          Promise.all([
+            api.getTickets({ locationId: effectiveLocationId || undefined, stages: OPEN_STAGE_IDS }),
+            api.getTickets({ locationId: effectiveLocationId || undefined, stages: ["declined"], limit: DECLINED_ON_BOARD }),
+          ]),
           BOARD_LOAD_TIMEOUT_MS,
           null
         );
+        serverRows = both ? [...both[0], ...both[1]] : null;
       } catch {
         serverRows = null; // WiFi connected but not really working — fall back to the local cache below
       }
@@ -2429,6 +2496,11 @@ export default function WeighingTickets() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", tick); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveLocationId]);
+
+  // [2026-09-19] SPEED: the offline queue is read once per draw, not once
+  // per ticket card (each read parses the whole queue from storage).
+  const pendingByTicket = {};
+  for (const op of getQueue()) if (op.ticketId) pendingByTicket[op.ticketId] = (pendingByTicket[op.ticketId] || 0) + 1;
 
   const grouped = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -2598,7 +2670,7 @@ export default function WeighingTickets() {
                 <div className={`absolute inset-y-4 left-0 w-1 rounded-full ${t.type === "BUY" ? "bg-brand-500" : "bg-rose-400"}`} />
                 <div className="pl-3">
                   <div className="mb-1 flex items-center justify-between">
-                    {pendingCountForTicket(t.id) > 0 ? (
+                    {(pendingByTicket[t.id] || 0) > 0 ? (
                       <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">{tr("not_synced")}</span>
                     ) : <span />}
                     <div className="flex items-center gap-2">

@@ -9,7 +9,7 @@ import { PERMISSION_GROUPS } from "../permissions.js";
 const SCOPE_LABELS = { all: "All Locations", own_location: "Own Location Only" };
 const SCOPE_STYLES = { all: "bg-brand-100 text-brand-700", own_location: "bg-slate-100 text-slate-600" };
 
-function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSaved, onDeleted, onMembersChanged }) {
+function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSaved, onDeleted, onMembersChanged, readOnly = false }) {
   const [name, setName] = useState(role.name);
   const [scope, setScope] = useState(role.scope);
   const [permissions, setPermissions] = useState(role.permissions || []);
@@ -62,7 +62,18 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
     setReassigning(profileId);
     setError("");
     try {
-      await api.updateProfileRole(profileId, { roleId: newRoleId });
+      // [2026-09-19] Same as the Users page: keep the older admin/staff
+      // column in step with the new role, and write the move to the Activity
+      // Log. Moving someone here used to leave "admin" behind on a person
+      // moved to a station role, with no record of who moved them (audit F16).
+      const person = allProfiles.find((p) => p.id === profileId);
+      const newRole = allRoles.find((r) => r.id === newRoleId);
+      const legacyRole = newRole?.scope === "all" ? "admin" : "staff";
+      await api.updateProfileRole(profileId, { roleId: newRoleId, role: legacyRole });
+      await api.logAudit({
+        action: "change_role", tableName: "profiles", recordId: profileId,
+        oldData: { role: role.name }, newData: { role: newRole?.name, fullName: person?.full_name }, userId: myId,
+      });
       onMembersChanged();
     } catch (err) {
       setError(err.message || String(err));
@@ -73,7 +84,7 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
 
   const scopeLocked = role.is_system; // never let scope change on a seed role
   const canPickAllScope = isOwner; // only Owner can grant all-location reach
-  const canManageMembers = isOwner || role.scope === "own_location";
+  const canManageMembers = !readOnly && (isOwner || role.scope === "own_location");
 
   return (
     <div>
@@ -86,7 +97,7 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
           into a third of the screen each on phone; now stacks full-width
           below the lg breakpoint, unchanged on desktop. */}
       <div className="grid max-w-4xl grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+        <fieldset disabled={readOnly} className="min-w-0 rounded-xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
           <div className="mb-5 grid grid-cols-2 gap-4">
             <div>
               <label className="mb-1 block text-xs text-slate-500">Role name</label>
@@ -158,19 +169,19 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
           {error && <p className="mt-4 text-sm text-rose-500">{error}</p>}
 
           <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
-            {!isNew && !role.is_system ? (
+            {!readOnly && !isNew && !role.is_system ? (
               <button onClick={del} disabled={saving} className="flex items-center gap-1.5 text-sm text-rose-500 hover:text-rose-700">
                 <Trash2 size={14} /> Delete role
               </button>
             ) : <span />}
             <div className="flex gap-2">
               <button onClick={onBack} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
-              <button onClick={save} disabled={saving} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+              {!readOnly && <button onClick={save} disabled={saving} className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
                 {saving ? "Saving..." : "Save Role"}
-              </button>
+              </button>}
             </div>
           </div>
-        </div>
+        </fieldset>
 
         {!isNew && (
           <div className="h-fit rounded-xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-1">
@@ -199,7 +210,7 @@ function RoleEditor({ role, isOwner, allRoles, allProfiles, myId, onBack, onSave
 }
 
 export default function RolesPage() {
-  const { profile } = useAuth();
+  const { profile, isViewOnly } = useAuth();
   const isOwner = !!profile?.isOwner;
   const [roles, setRoles] = useState([]);
   const [profiles, setProfiles] = useState([]);
@@ -239,6 +250,8 @@ export default function RolesPage() {
     load();
   }
 
+  // [2026-09-19] Only the Owner edits all-station roles (Owner, HQ Admin) —
+  // the page said so, the editor did not enforce it (see readOnly below).
   if (editing) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -248,6 +261,7 @@ export default function RolesPage() {
             role={editing} isOwner={isOwner} allRoles={roles} allProfiles={profiles} myId={profile.id}
             onBack={() => setEditing(null)} onSaved={handleSaved} onDeleted={handleDeleted}
             onMembersChanged={load}
+            readOnly={isViewOnly || (!isOwner && editing.scope === "all")}
           />
         </main>
       </div>
@@ -272,7 +286,7 @@ export default function RolesPage() {
               <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase's SQL Editor, then refresh this page.</p>
             </div>
           </div>
-        ) : (
+        ) : isViewOnly ? null : (
           <button onClick={() => setEditing({ name: "", scope: "own_location", permissions: [], is_system: false })}
             className="mb-4 flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
             <Plus size={15} /> Add Role

@@ -6,6 +6,9 @@ import { api } from "../api.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
 import { useLanguage } from "../i18n.jsx";
 
+// The bill as the farmer or buyer sees it: including tax where there is any.
+const billOf = (tx) => Number(tx.total_with_tax ?? tx.amount) || 0;
+
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
@@ -27,6 +30,8 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
   const [viewingTx, setViewingTx] = useState(null);
 
   useEffect(() => {
@@ -34,22 +39,39 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
     const txType = isSupplier ? "BUY" : "SELL";
     const payType = isSupplier ? "pay_supplier" : "receive_customer";
     setLoading(true);
+    setLoadError("");
+    let alive = true;
     // [2026-09-10] Ask for THIS farmer's transactions, not everyone's.
     // This page shows one person's history — perhaps fifty rows — and used
     // to download every Buy (or every Sell) in the business to find them,
     // then discard the rest in the browser. Opening one farmer's profile
     // cost the same as loading the whole company's trading.
+    //
+    // [2026-09-19] (audit F18) Three fixes:
+    //  - a failed load used to leave this page on "Loading…" forever; it now
+    //    says so and offers Retry.
+    //  - a failed PAYMENTS load was swallowed, so every bill showed as unpaid
+    //    and the farmer as owed everything. It is now an error like any other.
+    //  - only THIS person's payments are fetched, not every payment of that
+    //    kind in the business.
     Promise.all([
-      api.getParties({ type: partyType }),
+      api.getPartyById(partyId),
       api.getTransactions({ type: txType, partyId }),
-      api.getPayments({ type: payType }).catch(() => []),
-    ]).then(([parties, txs, pays]) => {
-      setParty(parties.find((p) => p.id === partyId) || null);
+    ]).then(async ([one, txs]) => {
+      const pays = txs.length
+        ? await api.getPayments({ type: payType, transactionIds: txs.map((x) => x.id) })
+        : [];
+      if (!alive) return;
+      setParty(one && one.type === partyType ? one : null);
       setRows(txs);
       setPayments(pays);
-      setLoading(false);
+    }).catch((err) => {
+      if (alive) setLoadError(t("party_err_load"));
+    }).finally(() => {
+      if (alive) setLoading(false);
     });
-  }, [partyId, kind]);
+    return () => { alive = false; };
+  }, [partyId, kind, reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const paidDateByTx = useMemo(() => {
     const map = {};
@@ -90,7 +112,10 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
     return {
       count: active.length,
       qty: active.reduce((s, r) => s + Number(r.quantity_kg), 0),
-      amount: active.reduce((s, r) => s + Number(r.amount), 0),
+      // [2026-09-19] The bill including tax — the same figure paid and
+      // remaining are worked out against. Adding up the pre-tax amount here
+      // made Paid + Unpaid not add up to the total shown (audit F9).
+      amount: active.reduce((s, r) => s + billOf(r), 0),
       paid: active.reduce((s, r) => s + (paidMap[r.id]?.paid || 0), 0),
       remaining: active.reduce((s, r) => s + (paidMap[r.id]?.remaining || 0), 0),
       completedCount: completed.length,
@@ -104,6 +129,23 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
         <Topbar title={isSupplier ? t("party_farmer") : t("party_buyer")} />
         <main className="flex flex-1 items-center justify-center text-sm text-slate-400">{t("loading_label")}</main>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-1 flex-col overflow-hidden">
+        <Topbar title={isSupplier ? t("party_farmer") : t("party_buyer")} />
+        <main className="flex-1 overflow-y-auto p-6">
+          <button onClick={() => setPage(kind)} className="mb-4 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
+            <ArrowLeft size={15} /> {t("party_back_to", { name: isSupplier ? t("nav_suppliers") : t("nav_buyers") })}
+          </button>
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+            <span>{loadError}</span>
+            <button onClick={() => setReloadKey((k) => k + 1)} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
+          </div>
+        </main>
       </div>
     );
   }
@@ -256,12 +298,12 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                   <td className="px-5 py-3 text-slate-600">{r.productName}</td>
                   <td className="px-5 py-3 text-slate-500">{r.driver_name || "—"}</td>
                   <td className="px-5 py-3 text-slate-700">{fmt2(r.quantity_kg)}</td>
-                  {!hideAmounts && <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(r.amount)}</td>}
+                  {!hideAmounts && <td className="px-5 py-3 font-medium text-slate-800">{fmtRiel(billOf(r))}</td>}
                   {!hideAmounts && (
                     <td className={`px-5 py-3 font-medium ${r.payStatus === "cancelled" ? "text-slate-400 line-through" : r.payStatus === "paid" ? "text-emerald-600" : r.payStatus === "partial" ? "text-amber-600" : "text-rose-500"}`}>
                       {r.payStatus === "cancelled" ? t("hq_cancelled") : r.payStatus === "paid" ? (isSupplier ? t("paid") : t("card_received")) : r.payStatus === "partial" ? t("party_partial") : (isSupplier ? t("card_unpaid") : t("card_not_received"))}
                       {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">{t("party_not_counted")}</div>}
-                      {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{t("party_of_amount", { paid: fmtRiel(r.paidSoFar), total: fmtRiel(r.amount) })}</div>}
+                      {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{t("party_of_amount", { paid: fmtRiel(r.paidSoFar), total: fmtRiel(billOf(r)) })}</div>}
                       {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
                     </td>
                   )}

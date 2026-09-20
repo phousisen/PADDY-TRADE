@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { queryRange, rangeKey } from "../reportQuery.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr, Tfoot } from "../components/ReportUI.jsx";
+import { useLanguage } from "../i18n.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -12,6 +13,8 @@ function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round
 export default function ReportSales({ selectedLocationIds = [], startDate = null, endDate = null }) {
   const [allRows, setAllRows] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [loadError, setLoadError] = useState("");
+  const { t } = useLanguage();
   const [groupBy, setGroupBy] = useState("party");
   const [view, setView] = useState("summary");
 
@@ -19,16 +22,29 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
   const rk = rangeKey({ selectedLocationIds, startDate, endDate });
   useEffect(() => {
     const range = queryRange({ selectedLocationIds, startDate, endDate });
-    api.getTransactions({ type: "SELL", ...range }).then((tx) => {
+    setLoadError("");
+    // [2026-09-19] Only the newest request may fill the page. Changing the
+    // station or dates quickly let a slower, older answer land last and show
+    // figures for a filter no longer selected (audit F12).
+    let alive = true;
+    // [2026-09-19] Neither call below had a catch that told anyone. A failed
+    // transactions load left the page on 0 kg / 0 ៛; a failed payments load
+    // marked every bill unpaid. Both now say so instead.
+    api.getTransactions({ type: "SELL", ...range }).catch((e) => {
+      if (alive) setLoadError(e?.message || String(e));
+      return null;
+    }).then((tx) => {
+      if (!tx || !alive) return;
       setAllRows(tx);
     // [2026-09-12] Payments are bounded by the TRANSACTIONS on screen,
     // not by the period — a sale inside the period can still be paid
     // outside it, so the date was never the right bound. See
     // api.getPayments' transactionIds option.
       api.getPayments({ type: "receive_customer", transactionIds: tx.map((t) => t.id) })
-        .then(setPayments)
-        .catch(() => setPayments([]));
+        .then((pay) => { if (alive) setPayments(pay); })
+        .catch((e) => { if (alive) setLoadError(`${t("err_payments_load")} ${e?.message || e}`); });
     });
+    return () => { alive = false; };
   }, [rk]);
 
   const rows = allRows
@@ -103,6 +119,15 @@ export default function ReportSales({ selectedLocationIds = [], startDate = null
 
   const totalQty = rows.reduce((s, r) => s + Number(r.quantity_kg), 0);
   const totalAmount = rows.reduce((s, r) => s + Number(r.amount), 0);
+
+  if (loadError) {
+    return (
+      <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-[13px] text-rose-800">
+        <p className="font-semibold">{t("err_report_load")}</p>
+        <p className="mt-2 rounded-md bg-white/70 px-3 py-2 font-mono text-[12px] text-rose-900">{loadError}</p>
+      </div>
+    );
+  }
 
   return (
     <div>

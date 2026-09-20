@@ -110,7 +110,7 @@ function DiffRow({ label, current, proposed }) {
 // person approving their own request, which makes a two-person rule decorative.
 // The check is here AND on the page's approve handler, so closing this box is
 // not a way around it.
-function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, onReject }) {
+function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, onReject, readOnly = false }) {
   const tx = req.transactions || {};
   const p = req.proposed_data;
   const isBuy = tx.type === "BUY";
@@ -210,15 +210,17 @@ function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, o
 
         {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
 
-        <div className="mt-4">
+        {/* [2026-09-19] View-only: the request is shown, not the controls to
+            decide it — the API refuses them anyway (audit F15). */}
+        {!readOnly && <div className="mt-4">
           <label className="mb-1 block text-xs text-slate-500">{t("cr_reject_reason")}</label>
           <input value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
             placeholder={t("cr_reject_placeholder")}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-        </div>
+        </div>}
 
         <div className="mt-3 flex justify-end gap-2">
-          <button onClick={handleReject} disabled={saving || rejecting} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40"><X size={14} /> {rejecting ? "Rejecting…" : t("reject")}</button>
+          {!readOnly && <button onClick={handleReject} disabled={saving || rejecting} className="flex items-center gap-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40"><X size={14} /> {rejecting ? "Rejecting…" : t("reject")}</button>}
           <button onClick={onClose} disabled={saving || rejecting} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
         </div>
 
@@ -228,7 +230,7 @@ function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, o
           </div>
         )}
 
-        {p && !isOwnRequest && (
+        {p && !isOwnRequest && !readOnly && (
           <div className="mt-4 border-t border-slate-200 pt-4">
             <label className="mb-1 block text-xs text-slate-500">Enter your own login password to approve &amp; apply these changes to the transaction</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" name="approve-own-password-not-autofillable"
@@ -253,7 +255,7 @@ function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, o
 // change request moves one ticket's figures, this writes off a shed. It leads
 // with the riel, because a number of kilograms does not tell anyone whether
 // they are approving a rounding error or a lorry.
-function StockResetCard({ req, viewerId, busy, t, onApprove, onReject }) {
+function StockResetCard({ req, viewerId, busy, t, onApprove, onReject, readOnly = false }) {
   const [rejecting, setRejecting] = useState(false);
   const [why, setWhy] = useState("");
   const d = describeReset({
@@ -295,7 +297,7 @@ function StockResetCard({ req, viewerId, busy, t, onApprove, onReject }) {
         <p className="mt-2 text-[12px] text-amber-700">{t("sr_no_price_warning")}</p>
       )}
 
-      {rejecting ? (
+      {readOnly ? null : rejecting ? (
         <div className="mt-3">
           <textarea value={why} onChange={(e) => setWhy(e.target.value)} rows={2}
             placeholder={t("sr_reject_placeholder")}
@@ -328,7 +330,7 @@ function StockResetCard({ req, viewerId, busy, t, onApprove, onReject }) {
 
 export default function ChangeRequests() {
   const { t } = useLanguage();
-  const { session } = useAuth();
+  const { session, isViewOnly } = useAuth();
   const [rows, setRows] = useState([]);
   const [reviewReq, setReviewReq] = useState(null);
   // [2026-09-17] Stock resets. Loaded separately and never allowed to fail
@@ -338,9 +340,20 @@ export default function ChangeRequests() {
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState("");
 
+  // [2026-09-19] Neither load used to report failure. The change requests had
+  // no catch at all, so the page stayed on "No requests" while requests were
+  // waiting; the stock resets were caught into an empty list for the same
+  // effect. Either failure now says so on the page.
+  const [loadError, setLoadError] = useState("");
   async function load() {
-    setRows(await api.getChangeRequests());
-    api.getStockResetRequests({ status: "pending" }).then(setResets).catch(() => setResets([]));
+    setLoadError("");
+    try {
+      setRows(await api.getChangeRequests());
+    } catch (err) {
+      setLoadError(err?.message || String(err));
+    }
+    api.getStockResetRequests({ status: "pending" }).then(setResets)
+      .catch((err) => setLoadError((prev) => prev || `${t("err_resets_load")} ${err?.message || err}`));
   }
   useEffect(() => { load(); }, []);
 
@@ -393,6 +406,9 @@ export default function ChangeRequests() {
     if (req.requested_by && req.requested_by === session.user.id) {
       throw new Error(t("cr_self_title") + " " + t("cr_self_body"));
     }
+    const now = await api.getChangeRequestState(req.id);
+    if (!now || now.status !== "pending") throw new Error(t("cr_already_decided"));
+    if (now.txCancelled) throw new Error(t("cr_tx_cancelled"));
     const tx = req.transactions;
     const p = req.proposed_data;
     const oldData = { ...tx };
@@ -473,6 +489,8 @@ export default function ChangeRequests() {
   // thing being refused — and nothing about why. The person who asked could
   // see their request was rejected and not learn anything from it.
   async function reject(req, rejectReason) {
+    const now = await api.getChangeRequestState(req.id);
+    if (!now || now.status !== "pending") throw new Error(t("cr_already_decided"));
     await api.resolveChangeRequest(req.id, "rejected", { rejectReason, userId: session.user.id });
     await api.logAudit({
       action: "reject_change_request",
@@ -493,6 +511,12 @@ export default function ChangeRequests() {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={t("requests_title")} subtitle={t("requests_subtitle")} />
       <main className="flex-1 overflow-y-auto bg-paper p-6">
+        {loadError && (
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <span>{t("err_requests_load")} {loadError}</span>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
+          </div>
+        )}
         <div className="mb-5 flex flex-wrap items-baseline gap-x-5 gap-y-1 px-0.5 text-[13px] text-slate-400">
           <span><b className={`font-semibold tabular-nums ${counts.pending > 0 ? "text-amber-700" : "text-slate-900"}`}>{counts.pending}</b> pending</span>
           <span className="text-slate-300">·</span>
@@ -508,7 +532,7 @@ export default function ChangeRequests() {
             </h3>
             {resetError && <p className="mb-2 text-sm text-rose-600">{resetError}</p>}
             {resets.map((r) => (
-              <StockResetCard key={r.id} req={r} viewerId={session.user.id} busy={resetBusy} t={t}
+              <StockResetCard key={r.id} req={r} viewerId={session.user.id} busy={resetBusy} t={t} readOnly={isViewOnly}
                 onApprove={approveReset} onReject={rejectReset} />
             ))}
           </div>
@@ -559,6 +583,7 @@ export default function ChangeRequests() {
           userEmail={session.user.email}
           viewerId={session.user.id}
           t={t}
+          readOnly={isViewOnly}
           onClose={() => setReviewReq(null)}
           onApprove={approveAndApply}
           onReject={reject}

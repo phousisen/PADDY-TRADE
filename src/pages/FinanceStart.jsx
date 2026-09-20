@@ -62,21 +62,29 @@ export default function ToEnter({ onNavigate, isAdmin }) {
 
   useEffect(() => {
     let alive = true;
-    const soft = (p, d) => p.then((v) => v).catch(() => d);
+    // [2026-09-19] (audit F22, F25) A table not created yet counts as empty;
+    // any other failure hides this panel rather than telling the owner that
+    // no expenses or partners have been entered when they have. And only
+    // expense payments are fetched — this used to download every payment in
+    // the business to count the expenses.
+    const soft = (p, d) => p.catch((e) => {
+      if (/relation .* does not exist|schema cache|could not find/i.test(String(e?.message || ""))) return d;
+      throw e;
+    });
     Promise.all([
-      soft(api.getPayments({}), []),
+      soft(api.getPayments({ type: "expense" }), []),
       soft(api.getPartners(), []),
       soft(api.getFinanceSettings(), {}),
-      soft(api.getLocations(), []),
+      api.getLocations(),
     ]).then(([payments, partners, settings, locations]) => {
       if (!alive) return;
       setGaps({
-        expenses: payments.filter((p) => p.type === "expense").length,
+        expenses: payments.length,
         partners: partners.length,
         noOpening: locations.filter((l) => settings?.[l.id]?.opening_cash == null).length,
         stations: locations.length,
       });
-    });
+    }).catch(() => { if (alive) setGaps(null); });
     return () => { alive = false; };
   }, []);
 

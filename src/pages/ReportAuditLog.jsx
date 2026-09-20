@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { api } from "../api.js";
 import { rangeKey } from "../reportQuery.js";
 import { TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 import { dmyTime } from "../dateFormat.js";
+import { useLanguage } from "../i18n.jsx";
 
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 // Every timestamp elsewhere in PaddyTrade is shown in Cambodia's own
@@ -15,32 +16,29 @@ function fmtCambodiaDateTime(iso) {
   return dmyTime(iso);
 }
 
+// [2026-09-19] Every action the app writes has a label and a filter group
+// (twelve of them used to show as raw names like "void_payment" and could
+// only be found under "All activity"), and every label is in both languages
+// (audit F29).
 const ACTION_META = {
-  create_transaction: { label: "Created a transaction", category: "transaction" },
-  edit_transaction: { label: "Edited a transaction", category: "transaction" },
-  cancel_transaction: { label: "Cancelled a transaction", category: "transaction" },
-  submit_change_request: { label: "Submitted a change request", category: "request" },
-  approve_change_request: { label: "Approved a change request", category: "request" },
-  reject_change_request: { label: "Rejected a change request", category: "request" },
-  record_payment: { label: "Recorded a payment", category: "payment" },
-  edit_payment: { label: "Corrected a payment amount", category: "payment" },
-  change_role: { label: "Changed a user's role", category: "user" },
-  add_partner: { label: "Added a partner", category: "capital" },
-  add_capital_entry: { label: "Recorded a capital entry", category: "capital" },
-  add_loan_entry: { label: "Recorded a bank loan entry", category: "capital" },
+  create_transaction: "transaction", edit_transaction: "transaction", cancel_transaction: "transaction",
+  restore_transaction: "transaction", reopen_ticket: "transaction", restore_declined_ticket: "transaction",
+  confirm_buyer_sale: "transaction",
+  submit_change_request: "request", approve_change_request: "request", reject_change_request: "request",
+  record_payment: "payment", edit_payment: "payment", void_payment: "payment", edit_expense: "payment",
+  update_party_bank: "payment",
+  change_role: "user", set_password: "user", list_emails: "user",
+  add_partner: "capital", add_capital_entry: "capital", add_loan_entry: "capital",
+  adjust_stock: "stock", request_stock_reset: "stock", approve_stock_reset: "stock",
 };
 
-const CATEGORY_LABELS = {
-  all: "All activity",
-  payment: "Payments",
-  transaction: "Transactions",
-  request: "Change Requests",
-  user: "Users",
-  capital: "Capital & Loans",
-};
+const CATEGORIES = ["all", "payment", "transaction", "request", "stock", "user", "capital", "other"];
 
-function actionMeta(action) {
-  return ACTION_META[action] || { label: action, category: "other" };
+function actionMeta(action, t) {
+  const category = ACTION_META[action] || "other";
+  const key = `al_act_${action}`;
+  const label = ACTION_META[action] ? t(key) : action;
+  return { label, category };
 }
 
 function refLabel(log) {
@@ -52,7 +50,7 @@ function refLabel(log) {
   return code || partyName || "";
 }
 
-function describeChange(log) {
+function describeChange(log, t) {
   const before = log.old_data || {};
   const after = log.new_data || {};
   const action = log.action;
@@ -62,81 +60,81 @@ function describeChange(log) {
   switch (action) {
     case "create_transaction":
       if (ref) parts.push(ref);
-      if (after.amount !== undefined) parts.push(`Amount: ${fmtRiel(after.amount)}`);
-      if (after.stationName) parts.push(`Location: ${after.stationName}`);
-      if (after.paymentStatus) parts.push(`Status: ${after.paymentStatus}`);
+      if (after.amount !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.amount) }));
+      if (after.stationName) parts.push(t("al_location", { v: after.stationName }));
+      if (after.paymentStatus) parts.push(t("al_status", { v: after.paymentStatus }));
       break;
 
     case "record_payment":
       if (ref) parts.push(ref);
-      if (after.amount !== undefined) parts.push(`Amount: ${fmtRiel(after.amount)}`);
-      if (after.method) parts.push(`Method: ${after.method}`);
+      if (after.amount !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.amount) }));
+      if (after.method) parts.push(t("al_method", { v: after.method }));
       if (after.memo) parts.push(after.memo);
       break;
 
     case "edit_payment":
       if (ref) parts.push(ref);
       if (before.amount !== undefined && after.amount !== undefined) {
-        parts.push(`Amount: ${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}`);
+        parts.push(t("al_amount", { v: `${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}` }));
       }
       break;
 
     case "submit_change_request":
       if (ref) parts.push(ref);
-      if (after.reason) parts.push(`Reason: ${after.reason}`);
+      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
       break;
 
     case "approve_change_request":
     case "reject_change_request":
       if (ref) parts.push(ref);
-      if (after.reason) parts.push(`Reason: ${after.reason}`);
+      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
       if (action === "approve_change_request") {
         if (before.amount !== undefined && after.amount !== undefined && before.amount !== after.amount) {
-          parts.push(`Amount: ${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}`);
+          parts.push(t("al_amount", { v: `${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}` }));
         }
         if (before.price_per_kg !== undefined && after.price_per_kg !== undefined && before.price_per_kg !== after.price_per_kg) {
-          parts.push(`Price/kg: ${fmtRiel(before.price_per_kg)} → ${fmtRiel(after.price_per_kg)}`);
+          parts.push(t("al_price", { v: `${fmtRiel(before.price_per_kg)} → ${fmtRiel(after.price_per_kg)}` }));
         }
       }
       break;
 
     case "cancel_transaction":
       if (ref) parts.push(ref);
-      if (after.amount !== undefined) parts.push(`Amount: ${fmtRiel(after.amount)}`);
+      if (after.amount !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.amount) }));
       break;
 
     case "change_role":
       if (after.fullName) parts.push(after.fullName);
-      if (after.role) parts.push(`New role: ${after.role}`);
+      if (after.role) parts.push(t("al_new_role", { v: after.role }));
       break;
 
     case "add_partner":
-      if (after.name) parts.push(`Partner: ${after.name}`);
+      if (after.name) parts.push(t("al_partner", { v: after.name }));
       break;
 
     case "add_capital_entry":
       if (after.partnerName) parts.push(after.partnerName);
       if (after.amount !== undefined) parts.push(fmtRiel(after.amount));
-      if (after.type) parts.push(after.type === "contribution" ? "Contribution" : "Withdrawal");
+      if (after.type) parts.push(after.type === "contribution" ? t("al_contribution") : t("al_withdrawal"));
       break;
 
     case "add_loan_entry":
       if (after.lenderName) parts.push(after.lenderName);
       if (after.amount !== undefined) parts.push(fmtRiel(after.amount));
-      if (after.type) parts.push(after.type === "borrow" ? "Loan drawn" : "Loan repaid");
+      if (after.type) parts.push(after.type === "borrow" ? t("al_loan_drawn") : t("al_loan_repaid"));
       break;
 
     default:
       // Fallback for older or unrecognized log entries
       if (ref) parts.push(ref);
       if (before.amount !== undefined && after.amount !== undefined && before.amount !== after.amount) {
-        parts.push(`Amount: ${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}`);
+        parts.push(t("al_amount", { v: `${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}` }));
       }
       if (before.price_per_kg !== undefined && after.price_per_kg !== undefined && before.price_per_kg !== after.price_per_kg) {
-        parts.push(`Price/kg: ${fmtRiel(before.price_per_kg)} → ${fmtRiel(after.price_per_kg)}`);
+        parts.push(t("al_price", { v: `${fmtRiel(before.price_per_kg)} → ${fmtRiel(after.price_per_kg)}` }));
       }
       if (before.payment_status !== undefined && after.payment_status !== undefined && before.payment_status !== after.payment_status) {
-        parts.push(`Status: ${before.payment_status} → ${after.payment_status}`);
+        parts.push(t("al_status", { v: `${before.payment_status} → ${after.payment_status}` }));
       }
   }
 
@@ -144,52 +142,65 @@ function describeChange(log) {
 }
 
 export default function ReportAuditLog({ selectedLocationIds = [], startDate = null, endDate = null }) {
+  const { t } = useLanguage();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const loadSeq = useRef(0);
   const [loadError, setLoadError] = useState("");
   const [category, setCategory] = useState("all");
 
   function load() {
+    // [2026-09-19] Only the newest request may fill the page: changing the
+    // station or dates quickly let an older, slower answer land last (audit F12).
+    const my = ++loadSeq.current;
+    const live = () => my === loadSeq.current;
     setLoading(true);
     setLoadError("");
     // [2026-09-12] Asks the database for the chosen period instead of
     // downloading every entry ever recorded — see api.getAuditLogs.
     api.getAuditLogs({ from: startDate, to: endDate })
-      .then((data) => setLogs(data))
+      .then((data) => { if (live()) setLogs(data); })
       .catch((err) => {
+        if (!live()) return;
         // Without this, a failed/dropped request left this page stuck
         // showing nothing, with no error and no way to retry.
-        setLoadError(err.message || "Couldn't load the activity log — check your connection and try again.");
+        setLoadError(err.message || t("al_err_load"));
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (live()) setLoading(false); });
   }
   // Refetch when the period changes — rangeKey gives a stable string so an
   // array prop does not retrigger this on every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [rangeKey({ selectedLocationIds, startDate, endDate })]);
 
-  const categories = ["all", "payment", "transaction", "request", "user", "capital"];
-
+  // [2026-09-19] The station filter at the top of Reports used to do nothing
+  // here (audit F29). A log entry has no station of its own, so it follows
+  // the station of the person who did it; head-office accounts (no station)
+  // show only under "All locations".
+  const locKey = [...selectedLocationIds].sort().join(",");
   const filteredLogs = useMemo(() => {
-    if (category === "all") return logs;
-    return logs.filter((l) => actionMeta(l.action).category === category);
-  }, [logs, category]);
+    const wanted = selectedLocationIds.length ? new Set(selectedLocationIds) : null;
+    return logs.filter((l) =>
+      (!wanted || wanted.has(l.userLocationId)) &&
+      (category === "all" || actionMeta(l.action, t).category === category));
+  }, [logs, category, locKey, t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>
       <div className="mb-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
-        Every action taken in the system — new transactions, payments recorded, edits, approvals, and cancellations — is logged here with who did it and when, so you can trace back any mistake, especially around payments.
+        {t("al_intro")}
+        {selectedLocationIds.length > 0 && <span className="mt-1 block">{t("al_station_note")}</span>}
       </div>
 
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
         </div>
       )}
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {categories.map((c) => (
+        {CATEGORIES.map((c) => (
           <button
             key={c}
             onClick={() => setCategory(c)}
@@ -199,7 +210,7 @@ export default function ReportAuditLog({ selectedLocationIds = [], startDate = n
                 : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
             }`}
           >
-            {CATEGORY_LABELS[c]}
+            {t(`al_cat_${c}`)}
           </button>
         ))}
       </div>
@@ -208,15 +219,15 @@ export default function ReportAuditLog({ selectedLocationIds = [], startDate = n
         <Table>
           <thead>
             <tr>
-              <Th>When</Th>
-              <Th>Who</Th>
-              <Th>Action</Th>
-              <Th>Details</Th>
+              <Th>{t("al_when")}</Th>
+              <Th>{t("al_who")}</Th>
+              <Th>{t("al_action")}</Th>
+              <Th>{t("al_details")}</Th>
             </tr>
           </thead>
           <tbody>
             {filteredLogs.map((l) => {
-              const meta = actionMeta(l.action);
+              const meta = actionMeta(l.action, t);
               return (
                 <Tr key={l.id}>
                   <Td className="whitespace-nowrap">{fmtCambodiaDateTime(l.created_at)}</Td>
@@ -230,17 +241,17 @@ export default function ReportAuditLog({ selectedLocationIds = [], startDate = n
                       {meta.label}
                     </span>
                   </Td>
-                  <Td>{describeChange(l)}</Td>
+                  <Td>{describeChange(l, t)}</Td>
                 </Tr>
               );
             })}
             {loading && filteredLogs.length === 0 && (
-              <Tr><td colSpan={4} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>
+              <Tr><td colSpan={4} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("loading_label")}</td></Tr>
             )}
             {filteredLogs.length === 0 && !loading && !loadError && (
               <Tr>
                 <td colSpan={4} className="px-4 py-10 text-center text-[13.5px] text-slate-400">
-                  No activity recorded yet{category !== "all" ? ` for ${CATEGORY_LABELS[category].toLowerCase()}` : ""}.
+                  {t("al_empty")}
                 </td>
               </Tr>
             )}

@@ -8,6 +8,7 @@ import Topbar from "../components/Topbar.jsx";
 // Forcing it into that shape would have meant bending both.
 import MonthlyClosePanel from "../components/MonthlyClosePanel.jsx";
 import { api } from "../api.js";
+import { useAuth } from "../AuthContext.jsx";
 
 const FIELD_GROUPS = [
   {
@@ -55,6 +56,9 @@ const FIELD_GROUPS = [
 ];
 
 export default function SettingsPage() {
+  // [2026-09-19] View-only: the fields are shown but locked, with no Save
+  // button promising a change the API will refuse (audit F15).
+  const { isViewOnly } = useAuth();
   const [values, setValues] = useState({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -120,7 +124,7 @@ export default function SettingsPage() {
                 </div>
                 <p className="mb-4 text-xs text-slate-400">{group.subtitle}</p>
 
-                <div className="space-y-3">
+                <fieldset disabled={isViewOnly} className="min-w-0 space-y-3">
                   {group.fields.map((f) => (
                     <div key={f.key}>
                       <label className="mb-1 block text-xs text-slate-500">{f.label}</label>
@@ -137,10 +141,10 @@ export default function SettingsPage() {
                       )}
                     </div>
                   ))}
-                </div>
+                </fieldset>
 
                 {groupErrors[group.key] && <p className="mt-3 text-xs text-rose-500">{groupErrors[group.key]}</p>}
-                <div className="mt-4 flex justify-end">
+                {!isViewOnly && <div className="mt-4 flex justify-end">
                   <button
                     onClick={() => saveGroup(group)}
                     disabled={savingGroup === group.key}
@@ -148,7 +152,7 @@ export default function SettingsPage() {
                   >
                     {savedGroup === group.key ? (<><Check size={14} /> Saved</>) : savingGroup === group.key ? "Saving..." : "Save"}
                   </button>
-                </div>
+                </div>}
               </div>
             ))}
           </div>

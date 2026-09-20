@@ -6,9 +6,8 @@ import DateRangeFilter from "../components/DateRangeFilter.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
-import { queryRange } from "../reportQuery.js";
+import { queryRange, dayAfter } from "../reportQuery.js";
 import { getAccurateNow } from "../supabaseClient.js";
-import { downloadReportWorkbook, cambodiaTimestamp } from "../reportExport.js";
 import ReportOverview from "./ReportOverview.jsx";
 import ReportBalanceSheet from "./ReportBalanceSheet.jsx";
 import ReportPurchases from "./ReportPurchases.jsx";
@@ -69,10 +68,18 @@ export default function Reports({ initialTab = "overview" }) {
     api.getLocations().then(setLocations).catch(() => {});
   }, []);
 
+  const onlyIfMissing = (e) => {
+    if (/relation .* does not exist|schema cache|could not find/i.test(String(e?.message || ""))) return [];
+    throw e;
+  };
+
   async function exportExcel() {
     setExporting(true);
     setExportError("");
     try {
+      // [2026-09-19] Without the stations, every profit and stock figure in
+      // the workbook came out as 0. Refuse instead of writing a wrong file.
+      if (!locations.length) throw new Error(t("err_export_no_stations"));
       // [2026-09-10] The export now respects the filters ON SCREEN. It used
       // to fetch everything ever recorded and hand it to the workbook,
       // which then filtered it — so the download was the size of the whole
@@ -85,10 +92,14 @@ export default function Reports({ initialTab = "overview" }) {
       const [txs, payments, capitalEntries, loanEntries, adjustments] = await Promise.all([
         api.getTransactions(asAt),
         api.getPayments(asAt),
-        api.getPartnerCapitalEntries().catch(() => []),
-        api.getBankLoans().catch(() => []),
-        api.getStockAdjustments({ locationId: asAt.locationId, endDate }).catch(() => []),
+        // [2026-09-19] Only a table that does not exist yet may be treated as
+        // empty. Any other failure used to produce a workbook with the
+        // capital, loans or stock counts silently missing (audit F22).
+        api.getPartnerCapitalEntries().catch(onlyIfMissing),
+        api.getBankLoans().catch(onlyIfMissing),
+        api.getStockAdjustments({ locationId: asAt.locationId, endDate: dayAfter(endDate) }).catch(onlyIfMissing),
       ]);
+      const { downloadReportWorkbook, cambodiaTimestamp } = await import("../reportExport.js");
       downloadReportWorkbook(
         { txs, payments, adjustments, capitalEntries, loanEntries, stations: locations, selectedLocationIds, startDate, endDate },
         `PaddyTrade_Report_${cambodiaTimestamp()}.xlsx`

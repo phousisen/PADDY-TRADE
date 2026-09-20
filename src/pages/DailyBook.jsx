@@ -8,6 +8,8 @@
 // at any grain opens what is inside it.
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { dayAfter } from "../reportQuery.js";
+import { effectiveAdjDateStr } from "../dailyLedger.js";
 import { api } from "../api.js";
 import LocationFilter from "../components/LocationFilter.jsx";
 import Topbar from "../components/Topbar.jsx";
@@ -510,7 +512,9 @@ export default function DailyBook() {
   const [error, setError] = useState("");
   const [raw, setRaw] = useState({ txs: [], payments: [], adjustments: [] });
 
-  const year = today.slice(0, 4);
+  // [2026-09-19] A year can be chosen — from January, last December could
+  // not be opened at all.
+  const [year, setYear] = useState(today.slice(0, 4));
   const from = `${year}-01-01`;
   const to = `${year}-12-31`;
   const locKey = selectedLocationIds.join(",");
@@ -530,16 +534,36 @@ export default function DailyBook() {
     // One station is pushed into the query; several are filtered in the
     // browser, exactly as reportQuery.js does for every other report.
     const one = selectedLocationIds.length === 1 ? selectedLocationIds[0] : undefined;
+    // [2026-09-19] The shed at the START of the year. Every year used to
+    // open with an empty shed, so paddy carried over from December was sold
+    // in January at a cost of 0 — January's profit was simply its sales, and
+    // a false "shipped but not in the shed" warning appeared. Everything
+    // before the year is replayed (lean: weights and money only) to find it.
+    const prevEnd = `${Number(year) - 1}-12-31`;
     Promise.all([
       api.getTransactions({ locationId: one, from, to }),
       api.getPayments({ locationId: one, type: "expense", from, to }),
-      api.getStockAdjustments({ locationId: one, startDate: from, endDate: to }),
+      api.getStockAdjustments({ locationId: one, startDate: from, endDate: dayAfter(to) }),
+      api.getTransactions({ locationId: one, to: prevEnd, lean: true }),
+      api.getStockAdjustments({ locationId: one, endDate: dayAfter(prevEnd) }),
     ])
-      .then(([txs, payments, adjustments]) => { if (alive) setRaw({ txs, payments, adjustments }); })
+      .then(([txs, payments, adjustments, priorTxs, priorAdj]) => {
+        if (!alive) return;
+        const inYear = (a) => a.created_at && effectiveAdjDateStr(a) >= from;
+        const before = buildDays({
+          txs: priorTxs, payments: [], adjustments: priorAdj.filter((a) => a.created_at && !inYear(a)),
+          locationIds: selectedLocationIds,
+        });
+        const last = before[before.length - 1];
+        setRaw({
+          txs, payments, adjustments: adjustments.filter(inYear),
+          openingKg: last ? last.closingKg : 0, openingValue: last ? last.closingValue : 0,
+        });
+      })
       .catch((e) => { if (alive) setError(e.message || "Could not load the Daily Book."); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [locKey, from, to, refetch]);
+  }, [locKey, from, to, refetch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const days = useMemo(
     () => buildDays({ ...raw, locationIds: selectedLocationIds }),
@@ -619,6 +643,10 @@ export default function DailyBook() {
           ))}
         </div>
         <span className="hidden text-[10.5px] font-semibold uppercase tracking-wide text-slate-400 md:ml-2 md:inline">{t("db_period")}</span>
+        <select value={year} onChange={(e) => { setYear(e.target.value); setMonth(""); setOpen(null); }}
+          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-700">
+          {[0, 1, 2, 3].map((n) => String(Number(today.slice(0, 4)) - n)).map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
         <select value={month} onChange={(e) => { setMonth(e.target.value); setOpen(null); }}
           disabled={grain === "year"}
           className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[13px] text-slate-700 disabled:opacity-50">

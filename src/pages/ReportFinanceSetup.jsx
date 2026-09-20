@@ -18,10 +18,15 @@ import { Plus, Trash2, Check, AlertTriangle } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { ReportCard, SectionLabel, TableCard } from "../components/ReportUI.jsx";
+import { cambodiaDateStr as cambodiaDateStrOf } from "../dailyLedger.js";
 
 const fmt = (n) => (n === null || n === undefined || n === "" ? "—" : Number(n).toLocaleString("en-US"));
-const cambodiaDateStr = () =>
-  new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Phnom_Penh" })).toISOString().slice(0, 10);
+// [2026-09-19] This page used to build "today" by formatting the time as
+// Phnom Penh text, parsing it back as THIS DEVICE's local time, then converting
+// to UTC with toISOString(). On a UTC+7 PC that subtracts seven hours twice
+// over, so between 00:00 and 06:59 the default date was yesterday. The shared
+// helper asks Intl for the Phnom Penh calendar day directly.
+const cambodiaDateStr = () => cambodiaDateStrOf(new Date());
 
 const INPUT = "w-full rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
 const LABEL = "mb-1 block text-[11px] font-medium text-slate-500";

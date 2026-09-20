@@ -310,7 +310,10 @@ export default function DataCheck() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  const clean = tab === "checks" && Array.isArray(mismatches) && mismatches.length === 0;
+  // [2026-09-19] Never "all clear" while a refresh has failed or is still
+  // running: an earlier clean answer stayed green over a failed re-check
+  // (audit F21).
+  const clean = tab === "checks" && Array.isArray(mismatches) && mismatches.length === 0 && !error && !loading;
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">

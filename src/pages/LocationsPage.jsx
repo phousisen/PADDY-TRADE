@@ -6,25 +6,31 @@ import AddLocationModal from "../components/AddLocationModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
+import { cambodiaDateStr } from "../dailyLedger.js";
+import { useLanguage } from "../i18n.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtPct(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 
+// [2026-09-19] The first day of the period as a plain Cambodia date
+// ("2026-09-13"), compared with tx_date as text (audit F7). It used to be
+// this PC's local midnight compared with tx_date read as UTC midnight, so on
+// a Cambodian PC "Today" also took in yesterday, and on a PC set to another
+// timezone the periods shifted by a day. The labels also said "This Week"
+// and "This Month" for what are the last 7 and last 30 days.
+const DAY_MS = 24 * 60 * 60 * 1000;
 function periodStart(period) {
-  const d = getAccurateNow();
-  d.setHours(0, 0, 0, 0);
-  if (period === "today") return d;
-  if (period === "week") { d.setDate(d.getDate() - 6); return d; }
-  if (period === "month") { d.setDate(d.getDate() - 29); return d; }
-  return null; // all time
+  const back = { today: 0, week: 6, month: 29 }[period];
+  if (back === undefined) return null; // all time
+  return cambodiaDateStr(new Date(getAccurateNow().getTime() - back * DAY_MS));
 }
 
 const PERIODS = [
-  { v: "today", l: "Today" },
-  { v: "week", l: "This Week" },
-  { v: "month", l: "This Month" },
-  { v: "all", l: "All Time" },
+  { v: "today", k: "loc_period_today" },
+  { v: "week", k: "loc_period_7" },
+  { v: "month", k: "loc_period_30" },
+  { v: "all", k: "loc_period_all" },
 ];
 
 export default function LocationsPage({ setPage, setSelectedLocationId }) {
@@ -35,6 +41,7 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
   // The page itself stays readable for anyone who can reach it: the stock and
   // the week's trade per station is exactly what a finance account needs.
   const { profile } = useAuth();
+  const { t } = useLanguage();
   const isOwner = !!profile?.isOwner;
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
@@ -48,7 +55,7 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
     setLoading(true);
     setLoadError("");
     try {
-      const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions()]);
+      const [locs, transactions] = await Promise.all([api.getLocations(), api.getTransactions({ lean: true })]); // [2026-09-19] SPEED: columns for the totals only
       setLocations(locs);
       setTxs(transactions);
     } catch (err) {
@@ -67,10 +74,10 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
     const map = {};
     txs.forEach((tx) => {
       if ((tx.hq_status || "processing") === "cancelled") return;
-      if (start && new Date(tx.tx_date) < start) return;
+      if (start && String(tx.tx_date || "").slice(0, 10) < start) return;
       if (!map[tx.location_id]) map[tx.location_id] = { boughtKg: 0, boughtAmt: 0, soldKg: 0, soldAmt: 0 };
-      if (tx.type === "BUY") { map[tx.location_id].boughtKg += Number(tx.quantity_kg); map[tx.location_id].boughtAmt += Number(tx.amount); }
-      else { map[tx.location_id].soldKg += Number(tx.quantity_kg); map[tx.location_id].soldAmt += Number(tx.amount); }
+      if (tx.type === "BUY") { map[tx.location_id].boughtKg += Number(tx.quantity_kg); map[tx.location_id].boughtAmt += Number(tx.total_with_tax ?? tx.amount) || 0; }
+      else { map[tx.location_id].soldKg += Number(tx.quantity_kg); map[tx.location_id].soldAmt += Number(tx.total_with_tax ?? tx.amount) || 0; }
     });
     return map;
   }, [txs, period]);
@@ -86,12 +93,12 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
   // per-station above — reused here rather than re-scanning txs, so the
   // KPI strip always agrees with the table beneath it by construction.
   const periodTotals = useMemo(() => {
-    const t = { boughtKg: 0, boughtAmt: 0, soldKg: 0, soldAmt: 0 };
+    const sum = { boughtKg: 0, boughtAmt: 0, soldKg: 0, soldAmt: 0 };
     Object.values(totalsByLocation).forEach((row) => {
-      t.boughtKg += row.boughtKg; t.boughtAmt += row.boughtAmt;
-      t.soldKg += row.soldKg; t.soldAmt += row.soldAmt;
+      sum.boughtKg += row.boughtKg; sum.boughtAmt += row.boughtAmt;
+      sum.soldKg += row.soldKg; sum.soldAmt += row.soldAmt;
     });
-    return t;
+    return sum;
   }, [totalsByLocation]);
 
   // The single highest-stock station gets the "Top Station" badge — but
@@ -106,7 +113,7 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
     return top?.id ?? null;
   }, [locations]);
 
-  const periodLabel = PERIODS.find((p) => p.v === period)?.l || "This Week";
+  const periodLabel = t(PERIODS.find((p) => p.v === period)?.k || "loc_period_7");
 
   function openDetail(id) {
     setSelectedLocationId(id);
@@ -192,7 +199,7 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
                     period === o.v ? "bg-white font-bold text-brand-700 shadow-sm" : "font-medium text-slate-500 hover:text-slate-700"
                   }`}
                 >
-                  {o.l}
+                  {t(o.k)}
                 </button>
               ))}
             </div>
@@ -226,7 +233,7 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
             </thead>
             <tbody>
               {locations.map((loc, i) => {
-                const t = totalsByLocation[loc.id] || { boughtKg: 0, boughtAmt: 0, soldKg: 0, soldAmt: 0 };
+                const tot = totalsByLocation[loc.id] || { boughtKg: 0, boughtAmt: 0, soldKg: 0, soldAmt: 0 };
                 const stockKg = Number(loc.current_stock_kg || 0);
                 const share = totalStockKg > 0 ? (stockKg / totalStockKg) * 100 : 0;
                 const isTop = loc.id === topLocationId;
@@ -264,16 +271,16 @@ export default function LocationsPage({ setPage, setSelectedLocationId }) {
                       </p>
                     </td>
                     <td className="px-5 py-3.5 text-right tabular-nums">
-                      <p className={`font-bold ${hasStock || t.boughtKg > 0 ? "text-slate-800" : "text-slate-300"}`}>
-                        {fmt2(t.boughtKg)} <span className="text-xs font-normal text-slate-400">kg</span>
+                      <p className={`font-bold ${hasStock || tot.boughtKg > 0 ? "text-slate-800" : "text-slate-300"}`}>
+                        {fmt2(tot.boughtKg)} <span className="text-xs font-normal text-slate-400">kg</span>
                       </p>
-                      <p className="text-xs text-slate-400">{t.boughtKg > 0 ? fmtRiel(t.boughtAmt) : "—"}</p>
+                      <p className="text-xs text-slate-400">{tot.boughtKg > 0 ? fmtRiel(tot.boughtAmt) : "—"}</p>
                     </td>
                     <td className="px-5 py-3.5 text-right tabular-nums">
-                      <p className={`font-bold ${t.soldKg > 0 ? "text-slate-800" : "text-slate-300"}`}>
-                        {fmt2(t.soldKg)} <span className="text-xs font-normal text-slate-400">kg</span>
+                      <p className={`font-bold ${tot.soldKg > 0 ? "text-slate-800" : "text-slate-300"}`}>
+                        {fmt2(tot.soldKg)} <span className="text-xs font-normal text-slate-400">kg</span>
                       </p>
-                      <p className="text-xs text-slate-300">{t.soldKg > 0 ? fmtRiel(t.soldAmt) : "—"}</p>
+                      <p className="text-xs text-slate-300">{tot.soldKg > 0 ? fmtRiel(tot.soldAmt) : "—"}</p>
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <button onClick={() => openDetail(loc.id)} className="text-slate-300 hover:text-brand-600" title="View Details">

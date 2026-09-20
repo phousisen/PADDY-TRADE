@@ -12,8 +12,6 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { onSyncStatusChange, getCachedTransactions, mergeServerTransactions, isTransactionPendingSync, getCachedPayments, mergeServerPayments, withTimeout } from "../offlineQueue.js";
-import { downloadLedgerWorkbook } from "../ledgerExport.js";
-import { cambodiaTimestamp } from "../reportExport.js";
 import { paddyTypeOptions, paddyTypeNames, isOtherPaddyType } from "../paddyTypes.js";
 import { cleanProductName, findProductByName } from "../productName.js";
 import Receipt from "./Receipt.jsx";
@@ -182,7 +180,15 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   // three figures cannot disagree in a proposal somebody is about to approve.
   const gN = parseFloat(grossKg), tN = parseFloat(tareKg);
   const weightsGiven = grossKg.trim() !== "" && tareKg.trim() !== "" && !isNaN(gN) && !isNaN(tN);
-  const derivedNet = weightsGiven ? Math.max(0, isBuy ? gN - tN : tN - gN) : null;
+  // [2026-09-19] Never for a Sell the buyer has already confirmed — the same
+  // rule Edit Transaction has followed since 2026-09-08 (audit #5). That
+  // quantity is the BUYER's weighed figure, which is what the sale is priced
+  // on; the station's own gross/tare are kept for the record but do not
+  // decide it. A request made only to fix a plate used to recompute the
+  // quantity from the station weights, and approving it silently replaced
+  // the buyer's agreed weight and the amount along with it.
+  const buyerConfirmedReq = !isBuy && !!tx.buyer_confirmed_at;
+  const derivedNet = weightsGiven && !buyerConfirmedReq ? Math.max(0, isBuy ? gN - tN : tN - gN) : null;
   const effectiveQty = derivedNet === null ? (parseFloat(quantityKg) || 0) : derivedNet;
 
   const newAmount = Math.max(0, Math.max(0, effectiveQty - (parseFloat(deductionKg) || 0)) * (parseFloat(pricePerKg) || 0) - (isBuy ? (parseFloat(staffFee) || 0) : 0));
@@ -924,6 +930,15 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
 // the amount back and it should auto-update" case the HQ confirmation
 // column is meant to handle automatically.
 function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
+  // [2026-09-19] Correcting, voiding and un-voiding a payment is money. The
+  // buttons used to show for every account that could open this list —
+  // including station staff and the view-only family logins. The api.js guard
+  // stopped view-only writes, but nothing stopped station staff. They now need
+  // the same "Correct a mistaken payment amount" permission (edit_payments)
+  // the rest of the app already defines for exactly this.
+  const { can, isViewOnly } = useAuth();
+  const mayCorrect = can("edit_payments") && !isViewOnly;
+  const [actionError, setActionError] = useState("");
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editPayment, setEditPayment] = useState(null);
@@ -934,11 +949,20 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
   // voiding and deleting. It shows greyed out with its reason, so the
   // history reads as what actually happened rather than as if the payment
   // never existed.
+  // [2026-09-19] A failed load is said, with Retry — it used to stay on
+  // "Loading…" for ever.
+  const [loadFailed, setLoadFailed] = useState(false);
   async function load() {
     setLoading(true);
-    const data = await api.getPaymentsForTransaction(tx.id, { includeVoided: true });
-    setPayments(data);
-    setLoading(false);
+    setLoadFailed(false);
+    try {
+      const data = await api.getPaymentsForTransaction(tx.id, { includeVoided: true });
+      setPayments(data);
+    } catch {
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -977,9 +1001,18 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
         <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200">
           {loading ? (
             <p className="p-4 text-center text-sm text-slate-400">{t("loading_label")}</p>
+          ) : loadFailed ? (
+            <div className="flex items-center justify-between gap-3 p-4 text-sm text-rose-600">
+              <span>{t("err_payments_load")}</span>
+              <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
+            </div>
           ) : payments.length === 0 ? (
             <p className="p-4 text-center text-sm text-slate-400">{t("tx_no_payments")}</p>
           ) : (
+            <>
+            {actionError && (
+              <p className="mx-3 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">{actionError}</p>
+            )}
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-400">
@@ -1016,11 +1049,19 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                       <td className={`px-3 py-2 font-medium ${voided ? "text-slate-400 line-through" : "text-slate-800"}`}>{fmtRiel(p.amount)}</td>
                       <td className={`px-3 py-2 ${voided ? "text-slate-400" : "text-slate-500"}`}>{p.createdByName}</td>
                       <td className="px-3 py-2 text-right">
-                        {voided ? (
+                        {!mayCorrect ? null : voided ? (
                           byCancel ? (
                             <span className="text-[11px] text-slate-400">{t("tx_comes_back")}</span>
                           ) : (
-                            <button onClick={() => api.unvoidPayment(p.id).then(() => { load(); onChanged?.(); })}
+                            <button
+                              onClick={() => {
+                                setActionError("");
+                                // A failed un-void used to do nothing at all,
+                                // leaving the person to assume it worked.
+                                api.unvoidPayment(p.id)
+                                  .then(() => { load(); onChanged?.(); })
+                                  .catch((err) => setActionError(err?.message || String(err)));
+                              }}
                               className="text-[11px] font-medium text-slate-400 hover:text-brand-600">{t("tx_undo_void")}</button>
                           )
                         ) : (
@@ -1035,6 +1076,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                 })}
               </tbody>
             </table>
+            </>
           )}
         </div>
 
@@ -1556,6 +1598,10 @@ export default function Transactions({ setPage }) {
   // [2026-09-15] Who may move a weight or a price directly. Everyone else
   // raises a Change Request with a reason and a second person approves it.
   const canEditWeights = can("edit_weights") && !isViewOnly;
+  // [2026-09-19] The view-only login is shown the list, not money actions.
+  // Pay, Edit, Cancel, Restore and Confirm Sale were gated on isAdmin only,
+  // which is also true for the view-only "boss" login (audit).
+  const canAct = isAdmin && !isViewOnly;
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
   // [2026-09-09] { transactionId: { edit_count, last_changed_at } } for the
@@ -1645,6 +1691,10 @@ export default function Transactions({ setPage }) {
   // "can't reach the server right now" instead of leaving them staring at
   // a spinner forever, or a blank list, with no explanation.
   const [loadError, setLoadError] = useState(false);
+  // [2026-09-19] A cancel or restore that fails used to flip the row on
+  // screen, then quietly flip it back on reload with no word about why —
+  // so someone could walk away believing a transaction was cancelled.
+  const [statusError, setStatusError] = useState("");
   const [syncStatus, setSyncStatus] = useState({ online: true, syncing: false, pending: 0 });
   // Which rows have their detail panel open (Price/kg, Weigh In, Weigh
   // Out, etc.) — a Set so more than one row can be expanded at once,
@@ -1659,7 +1709,11 @@ export default function Transactions({ setPage }) {
     });
   }
 
+  // [2026-09-19] Only the newest load may fill the list: a slow "All" answer
+  // arriving after a quick "Sell" one showed Buys on the Sell tab.
+  const loadSeqRef = useRef(0);
   async function load() {
+    const mySeq = ++loadSeqRef.current;
     // Only show the big "Loading…" state the very first time — once
     // something's already on screen, a background refresh (e.g. right
     // after the offline queue finishes syncing) shouldn't make the whole
@@ -1691,12 +1745,17 @@ export default function Transactions({ setPage }) {
       // real error, so both paths land in the same fallback.
       const result = await withTimeout(
         Promise.all([
-          api.getTransactions({ type: type || undefined }),
-          api.getPayments(isAdmin ? {} : { locationId: profile?.location_id }),
+          // [2026-09-19] SPEED: when a date range is chosen, only that range is
+          // downloaded (it used to download everything and hide the rest).
+          api.getTransactions({ type: type || undefined, from: startDate || undefined, to: endDate || undefined }),
+          // [2026-09-19] SPEED: only the payment kinds this page uses —
+          // expenses, capital and loans were downloaded here for nothing.
+          api.getPayments({ type: ["pay_supplier", "receive_customer"], ...(isAdmin ? {} : { locationId: profile?.location_id }) }),
         ]),
         LOAD_TIMEOUT_MS,
         null
       );
+      if (mySeq !== loadSeqRef.current) return;
       if (!result) throw new Error("Timed out waiting for a response.");
       const [txData, payData] = result;
       // Folds the server's confirmed rows together with anything still
@@ -1719,6 +1778,7 @@ export default function Transactions({ setPage }) {
       // Keep showing whatever was already on screen; if this is a fresh
       // load with nothing there yet, fall back to the on-device cache
       // rather than an empty list, same as the offline branch above.
+      if (mySeq !== loadSeqRef.current) return;
       console.warn("[Transactions] load failed:", err?.message || err);
       setRows((prev) => (prev.length > 0 ? prev : getCachedTransactions().filter((tx) => !type || tx.type === type)));
       setPayments((prev) => (prev.length > 0 ? prev : getCachedPayments()));
@@ -1728,7 +1788,7 @@ export default function Transactions({ setPage }) {
     }
   }
 
-  useEffect(() => { load(); }, [type]);
+  useEffect(() => { load(); }, [type, startDate, endDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Same pattern as the Weighing Tickets board: watch the offline sync
   // queue and refresh this list on its own once there's actually
@@ -1739,7 +1799,11 @@ export default function Transactions({ setPage }) {
     const unsub = onSyncStatusChange(setSyncStatus);
     return unsub;
   }, []);
+  // [2026-09-19] SPEED: not on the first render — the [type] effect above
+  // has just loaded, and this used to download everything a second time.
+  const syncEffectReady = useRef(false);
   useEffect(() => {
+    if (!syncEffectReady.current) { syncEffectReady.current = true; return; }
     if (!syncStatus.syncing && syncStatus.pending === 0) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [syncStatus.syncing, syncStatus.pending]);
@@ -1760,7 +1824,7 @@ export default function Transactions({ setPage }) {
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadError]);
+  }, [loadError, type, startDate, endDate]);
 
   // Only HQ Admin sees every location's transactions — staff logins are
   // already scoped to their own location, so the picker only makes sense
@@ -1824,6 +1888,9 @@ export default function Transactions({ setPage }) {
     let out = rows;
     if (unpaidBuysOnly || notReceivedOnly) {
       out = out.filter((tx) => {
+        // [2026-09-19] A cancelled bill is owed by nobody (its payments are
+        // voided, so it used to read as fully unpaid and pad this list).
+        if ((tx.hq_status || "processing") === "cancelled") return false;
         const owed = (remainingByTx[tx.id] || 0) > 0.01;
         if (!owed) return false;
         return tx.type === "BUY" ? unpaidBuysOnly : notReceivedOnly;
@@ -1892,6 +1959,11 @@ export default function Transactions({ setPage }) {
       // failure here lands in the catch below instead of an unhandled
       // rejection, and so the "Exporting…" spinner doesn't stop before
       // the file's actually finished generating.
+      // [2026-09-19] SPEED: the spreadsheet code is loaded only when someone
+      // actually exports, not with the Transactions page itself.
+      const [{ downloadLedgerWorkbook }, { cambodiaTimestamp }] = await Promise.all([
+        import("../ledgerExport.js"), import("../reportExport.js"),
+      ]);
       await downloadLedgerWorkbook(
         { txs: allTxs, selectedLocationIds, startDate, endDate, companyName },
         `PaddyTrade_Ledger_${cambodiaTimestamp()}.xlsx`
@@ -1922,6 +1994,19 @@ export default function Transactions({ setPage }) {
   }
 
   async function submitPayment(amount, method, memo, payDate) {
+    // [2026-09-19] Asked of the SERVER at the moment of paying, as Edit →
+    // Paid already does. The amount owed on screen can be hours old: another
+    // admin may have paid this farmer since, and paying again from the stale
+    // figure paid twice.
+    const bill = Number(payTx.total_with_tax ?? payTx.amount) || 0;
+    const fresh = await api.getPaymentsForTransaction(payTx.id);
+    const paidNow = (fresh || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const owedNow = Math.max(0, bill - paidNow);
+    if (amount > owedNow + 0.01) {
+      throw new Error(owedNow <= 0.01
+        ? t("tx_pay_already_paid")
+        : t("tx_pay_more_than_owed", { owed: Math.round(owedNow).toLocaleString("en-US") }));
+    }
     const created = await api.createPayment({
       type: payTx.type === "BUY" ? "pay_supplier" : "receive_customer",
       transactionId: payTx.id,
@@ -1961,6 +2046,7 @@ export default function Transactions({ setPage }) {
         userId: session.user.id,
       });
     } catch (err) {
+      setStatusError(`${t("tx_not_restored", { code: tx.code || "" })} ${err?.message || err}`);
       load();
     }
   }
@@ -1985,7 +2071,7 @@ export default function Transactions({ setPage }) {
         userId: session.user.id,
       });
     } catch (err) {
-      // fall through to load() — the row's true state comes from the server
+      setStatusError(`${t("tx_not_cancelled", { code: tx.code || "" })} ${err?.message || err}`);
     } finally {
       load();
     }
@@ -2028,8 +2114,16 @@ export default function Transactions({ setPage }) {
     // receipt dated today (audit #1). An unchanged "paid" is left alone.
     if (updated.payment_status === "paid" && editTx.payment_status !== "paid") {
       const payType = editTx.type === "BUY" ? "pay_supplier" : "receive_customer";
-      const alreadyPaid = payments
-        .filter((p) => p.transaction_id === editTx.id && p.type === payType)
+      // [2026-09-19] Asked of the SERVER, at the moment of saving — not read
+      // from this page's list. That list is whatever loaded when the page
+      // opened: it may be the offline cache after a timeout, or simply older
+      // than another admin's payment made since. Reading it could see
+      // nothing paid and record a second full cash payment for a load that
+      // was already settled. If the server cannot be asked, this throws and
+      // nothing is created — a refused save beats a double payment.
+      const freshPayments = await api.getPaymentsForTransaction(editTx.id);
+      const alreadyPaid = freshPayments
+        .filter((p) => p.type === payType)
         .reduce((s, p) => s + Number(p.amount), 0);
       const stillOwed = Math.max(0, Number(updated.total_with_tax ?? updated.amount) - alreadyPaid);
       if (stillOwed > 0.01) {
@@ -2112,7 +2206,7 @@ export default function Transactions({ setPage }) {
             ? t("all_locations")
             : selectedLocationIds.length === 1
             ? locations.find((l) => l.id === selectedLocationIds[0])?.name || t("all_locations")
-            : `${selectedLocationIds.length} locations selected`
+            : t("st_stations_n", { n: selectedLocationIds.length })
         }
       />
       {/* The global "unsynced changes" banner in Topbar.jsx now covers the
@@ -2126,6 +2220,12 @@ export default function Transactions({ setPage }) {
         </div>
       )}
       <main className="flex-1 overflow-y-auto p-6">
+        {statusError && (
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <span>{statusError}</span>
+            <button onClick={() => setStatusError("")} className="shrink-0 text-xs font-medium hover:underline">{t("ok_label")}</button>
+          </div>
+        )}
         {!isAdmin && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-gold-300 bg-gold-50 px-3 py-2 text-xs text-gold-700">
             <Lock size={14} /> {t("cannot_edit")}
@@ -2254,8 +2354,10 @@ export default function Transactions({ setPage }) {
             <button onClick={exportLedger} disabled={exportingLedger} title={exportingLedger ? t("exporting_btn") : t("export_ledger")} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               {exportingLedger ? <Loader2 size={15} className="animate-spin text-slate-400" /> : <Download size={15} />}
             </button>
+            {!isViewOnly && (<>
             <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
             <button onClick={() => setPage("new-sell")} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"><Plus size={14} /> {t("new_sell")}</button>
+            </>)}
           </div>
         </div>
         {exportLedgerError && (
@@ -2409,7 +2511,7 @@ export default function Transactions({ setPage }) {
                       ) : isUnpriced ? (
                         <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700" title="Finished without an agreed price — set the price in Edit, then the amount owed appears here.">{t("tx_no_price_yet")}</span>
                       ) : remaining > 0.01 ? (
-                        isAdmin ? (
+                        canAct ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </button>
@@ -2443,7 +2545,7 @@ export default function Transactions({ setPage }) {
                         <button onClick={() => setReceiptTx(tx)} title={t("tx_t_view_receipt")} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
                           <Printer size={12} /> {t("tx_receipt")}
                         </button>
-                        {isAdmin ? (
+                        {isViewOnly ? null : isAdmin ? (
                           <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
                             <Pencil size={12} /> {t("tx_edit")}
                           </button>
@@ -2452,12 +2554,12 @@ export default function Transactions({ setPage }) {
                             <Flag size={12} /> {t("request_change")}
                           </button>
                         )}
-                        {isAdmin && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
+                        {canAct && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
                           <button onClick={() => setConfirmSaleTx(tx)} title={t("tx_t_record_buyer")} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100">
                             <CheckCircle2 size={12} /> {t("tx_confirm_sale")}
                           </button>
                         )}
-                        {isAdmin && (
+                        {canAct && (
                           isCancelled ? (
                             <button onClick={() => restoreTransaction(tx)} title={t("tx_t_uncancel")} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-emerald-300 hover:text-emerald-700">
                               <Undo2 size={12} /> {t("tx_restore")}
@@ -2670,7 +2772,7 @@ export default function Transactions({ setPage }) {
                       ) : isUnpriced ? (
                         <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700">{t("hq_unpriced")}</span>
                       ) : remaining > 0.01 ? (
-                        isAdmin ? (
+                        canAct ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {t("tx_due", { amount: fmtRiel(remaining) })}
                           </button>
@@ -2717,15 +2819,15 @@ export default function Transactions({ setPage }) {
                     <button onClick={() => setReceiptTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Printer size={12} /> {t("btn_receipt")}</button>
                     <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Camera size={12} /> {t("btn_photos")} ({photoCount})</button>
                     <button onClick={() => setViewPaymentsTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Wallet size={12} /> {t("btn_payments")}</button>
-                    {isAdmin ? (
+                    {isViewOnly ? null : isAdmin ? (
                       <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Pencil size={12} /> {t("btn_edit")}</button>
                     ) : (
                       <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Flag size={12} /> {t("request_change")}</button>
                     )}
-                    {isAdmin && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
+                    {canAct && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
                       <button onClick={() => setConfirmSaleTx(tx)} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700"><CheckCircle2 size={12} /> {t("btn_confirm_sale")}</button>
                     )}
-                    {isAdmin && (
+                    {canAct && (
                       isCancelled ? (
                         <button onClick={() => restoreTransaction(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Undo2 size={12} /> {t("btn_restore")}</button>
                       ) : (
@@ -2845,7 +2947,7 @@ export default function Transactions({ setPage }) {
       {cancelConfirmTx && (
         <ConfirmCancelModal
           tx={cancelConfirmTx}
-          alreadyPaid={Math.max(0, cancelConfirmTx.amount - (remainingByTx[cancelConfirmTx.id] || 0))}
+          alreadyPaid={Math.max(0, Number(cancelConfirmTx.total_with_tax ?? cancelConfirmTx.amount) - (remainingByTx[cancelConfirmTx.id] || 0))}
           userEmail={session.user.email}
           t={t}
           onClose={() => setCancelConfirmTx(null)}
