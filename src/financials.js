@@ -19,6 +19,7 @@
 // up to the period end — and this file takes the period slice itself.
 
 import { buildDays, rollup } from "./periodBook.js";
+import { effectiveAdjDateStr } from "./dailyLedger.js";
 
 const num = (v) => Number(v) || 0;
 
@@ -95,8 +96,9 @@ export function computeFinancials({
   // one station's sales partly at another's cost. Overview and the Balance
   // Sheet read from different modules, so the fix has to exist in both or the
   // two screens disagree the moment more than one station is selected.
+  // [2026-09-19] Dated by the shared after-midnight rule (see statements.js).
   const scopedAdj = adjustments.filter(
-    (a) => inScope(a.location_id) && notAfterEnd(String(a.created_at || "").slice(0, 10)));
+    (a) => inScope(a.location_id) && a.created_at && notAfterEnd(effectiveAdjDateStr(a)));
   const perStation = [...stationIds].map((id) => buildDays({
     txs: active.filter((t) => t.location_id === id),
     payments: expensesAll.filter((p) => p.location_id === id),
@@ -104,6 +106,9 @@ export function computeFinancials({
     locationIds: [id],
   }));
   const add = (rs) => {
+    // [2026-09-19] No stations loaded: an empty rollup of zeros, not {} —
+    // {} made every profit and stock figure NaN, exported as 0.
+    if (rs.length === 0) return rollup([]);
     if (rs.length === 1) return rs[0];
     const o = {};
     for (const k of Object.keys(rs[0] || {})) o[k] = rs.reduce((s, r) => s + (Number(r[k]) || 0), 0);
@@ -130,7 +135,8 @@ export function computeFinancials({
   // FIX 6 — stock written off on a physical count never reached the profit at
   // all. It is a real cost and now appears as one. (A counted SURPLUS is not
   // taken as income; found paddy is not a sale.)
-  const stockLossValue = Math.min(0, period.lostValue);
+  // [2026-09-19] Loss by loss — a surplus never cancels a loss.
+  const stockLossValue = num(period.lossValue);
   const netProfit = grossProfit - totalExpenses + stockLossValue;
 
   // -------------------------------------------------------------------------
@@ -155,8 +161,10 @@ export function computeFinancials({
   const inventoryKg = toDate.closingKg;
   const inventoryCostPerKg = toDate.costPerKg;
 
-  const scopedCapital = capitalEntries.filter((e) => inScope(e.location_id));
-  const scopedLoans = loanEntries.filter((e) => inScope(e.location_id));
+  // [2026-09-19] Only entries dated by the period end, as on the Balance
+  // Sheet page — a loan drawn on 10 Sep appeared on the 31 Aug overview.
+  const scopedCapital = capitalEntries.filter((e) => inScope(e.location_id) && notAfterEnd(e.entry_date));
+  const scopedLoans = loanEntries.filter((e) => inScope(e.location_id) && notAfterEnd(e.entry_date));
   const bankLoansOutstanding = scopedLoans.reduce(
     (s, e) => s + (e.type === "borrow" ? num(e.amount) : -num(e.amount)), 0);
   const partnerCapital = scopedCapital.reduce(
@@ -177,7 +185,7 @@ export function computeFinancials({
   // business earned. It is now the accumulated profit since the system began,
   // computed exactly the way this period's profit is.
   const retainedEarnings =
-    toDate.received - toDate.cogs - allExpensesToDate + Math.min(0, toDate.lostValue);
+    toDate.received - toDate.cogs - allExpensesToDate + num(toDate.lossValue);
 
   const totalLiabilities = accountsPayable + bankLoansOutstanding;
   const equity = partnerCapital + retainedEarnings;

@@ -243,6 +243,51 @@ function cambodiaNow() {
 // Supabase's functions.invoke() gives a generic "non-2xx status" message on
 // error by default — this pulls out the actual reason our admin-users Edge
 // Function sent back (e.g. "Only the Owner account can do this."), if any.
+// [2026-09-19] "Cannot coerce the result to a single JSON object" is what
+// the database says when an update matched no row — a record that is gone,
+// or one this account is not allowed to change. That raw text reached the
+// screen. It is replaced here with what it means.
+function friendlyWriteError(error) {
+  if (error?.code === "PGRST116") {
+    const e = new Error("Nothing was changed: this record was not found, or this account is not allowed to change it. Refresh and try again; if it keeps happening, ask the Owner.");
+    e.code = "PGRST116";
+    return e;
+  }
+  return error;
+}
+
+// [2026-09-19] Puts a new account's role, station and view-only flag onto
+// the profile row the signup trigger creates.
+//
+// It used to wait a fixed 0.7 s and update once. If the trigger had not
+// finished, or the row could not be seen, the update matched nothing, raised
+// no error, and the screen said "Account created" — for an account with no
+// role and no station. Now it retries for a few seconds, checks that a row
+// was really changed, keeps the older admin/staff column in step with the
+// role (as the Users page does), and says plainly if it could not.
+async function applyNewAccountProfile(userId, patch) {
+  const full = { ...patch };
+  if (patch.role_id) {
+    const { data: r } = await supabase.from("roles").select("scope").eq("id", patch.role_id).maybeSingle();
+    if (r?.scope) full.role = r.scope === "all" ? "admin" : "staff";
+  }
+  let lastError = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await new Promise((res) => setTimeout(res, attempt === 0 ? 700 : 750));
+    const { data, error } = await supabase.from("profiles").update(full).eq("id", userId).select("id");
+    if (!error && data && data.length === 1) return;
+    lastError = error;
+  }
+  throw new Error(
+    "The login was created, but its role and station could not be set" +
+    (lastError?.message ? ` (${lastError.message})` : "") +
+    ". Set them on the Users page before anyone uses this account."
+  );
+}
+
+// The columns a total needs — see getTransactions({ lean: true }).
+const LEAN_TX_COLUMNS = "id, code, type, location_id, party_id, product_id, quantity_kg, deduction_kg, price_per_kg, amount, total_with_tax, payment_status, hq_status, tx_date, tx_time, created_at";
+
 async function extractFnError(error) {
   try {
     if (error?.context && typeof error.context.json === "function") {
@@ -446,7 +491,7 @@ const rawApi = {
     // flip an existing account between "can edit" and "view only".
     if (viewOnly !== undefined) patch.view_only = viewOnly;
     const { data, error } = await supabase.from("profiles").update(patch).eq("id", id).select().single();
-    if (error) throw error;
+    if (error) throw friendlyWriteError(error);
     return data;
   },
 
@@ -623,7 +668,7 @@ const rawApi = {
     const patch = { name, scope, permissions };
     if (viewOnly !== undefined) patch.view_only = !!viewOnly;
     const { data, error } = await supabase.from("roles").update(patch).eq("id", id).select().single();
-    if (error) throw error;
+    if (error) throw friendlyWriteError(error);
     return data;
   },
 
@@ -634,7 +679,7 @@ const rawApi = {
 
   async updateLocation(id, { name, nameKh }) {
     const { data, error } = await supabase.from("locations").update({ name, name_kh: nameKh }).eq("id", id).select().single();
-    if (error) throw error;
+    if (error) throw friendlyWriteError(error);
     return data;
   },
 
@@ -651,8 +696,13 @@ const rawApi = {
     const makeQuery = () => {
     let query = supabase
       .from("stock_adjustments")
-      .select("*, locations(name), profiles(full_name)")
-      .order("created_at", { ascending: false });
+      .select("*, locations(name), profiles(full_name)");
+    // [2026-09-19] No .order() inside a paged query. postgrest-js's .order()
+    // ADDS to the sort rather than replacing it, so fetchAll's own
+    // `order=id.asc` + `id > last` walk became `order=created_at.desc,id.asc`
+    // — and page 2 was no longer "the rows after page 1". Past 1,000 rows,
+    // some were never fetched, and the de-duplication hid the repeats. The
+    // sort now happens after the walk (the `sort:` option below).
     if (locationId) query = query.eq("location_id", locationId);
     // created_at is a full timestamp, not a plain date — bracket the whole
     // day in Cambodia's own calendar (UTC+7, no DST) rather than UTC's, so
@@ -771,7 +821,14 @@ const rawApi = {
       if (status) query = query.eq("status", status);
       if (locationId) query = query.eq("location_id", locationId);
       const { data, error } = await query;
-      if (error) return [];
+      // [2026-09-19] Only a table that does not exist yet means "none". Any
+      // other failure — a lapsed login, a timeout — used to come back as an
+      // empty list too, so HQ saw "nothing pending" while a station sat
+      // waiting on a stock reset that nobody knew about.
+      if (error) {
+        if (/relation .* does not exist|schema cache|could not find/i.test(error.message || "")) return [];
+        throw error;
+      }
       return (data || []).map((r) => ({
         ...r,
         stationName: r.locations?.name || "—",
@@ -779,8 +836,9 @@ const rawApi = {
         requestedByName: r.requester?.full_name || "—",
         resolvedByName: r.resolver?.full_name || "",
       }));
-    } catch {
-      return [];
+    } catch (err) {
+      if (/relation .* does not exist|schema cache|could not find/i.test(err?.message || "")) return [];
+      throw err;
     }
   },
 
@@ -842,10 +900,7 @@ const rawApi = {
     // — no separate "flip it on after" step needed, e.g. for a family
     // member who should never accidentally be able to save/edit anything.
     if (viewOnly) patch.view_only = true;
-    // Small delay to let the DB trigger finish inserting the profile row first.
-    await new Promise((r) => setTimeout(r, 700));
-    const { error: updateError } = await supabase.from("profiles").update(patch).eq("id", userId);
-    if (updateError) throw updateError;
+    await applyNewAccountProfile(userId, patch);
     return { id: userId, emailConfirmed: !!data.user?.confirmed_at, session: data.session };
   },
 
@@ -875,9 +930,7 @@ const rawApi = {
     if (roleId) patch.role_id = roleId;
     if (locationId !== undefined) patch.location_id = locationId || null;
     if (viewOnly) patch.view_only = true;
-    await new Promise((r) => setTimeout(r, 700));
-    const { error: updateError } = await supabase.from("profiles").update(patch).eq("id", userId);
-    if (updateError) throw updateError;
+    await applyNewAccountProfile(userId, patch);
     const { error: resetError } = await tempClient.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/?setpassword=1`,
     });
@@ -970,10 +1023,14 @@ const rawApi = {
     const makeQuery = () =>
       supabase
         .from("partner_capital_entries")
-        .select("*, partners(name), locations(name)")
-        .order("entry_date", { ascending: false })
-        .order("created_at", { ascending: false });
-    const data = await fetchAll(makeQuery, { sort: desc("entry_date") });
+        .select("*, partners(name), locations(name)");
+    // [2026-09-19] No .order() inside a paged query. postgrest-js's .order()
+    // ADDS to the sort rather than replacing it, so fetchAll's own
+    // `order=id.asc` + `id > last` walk became `order=created_at.desc,id.asc`
+    // — and page 2 was no longer "the rows after page 1". Past 1,000 rows,
+    // some were never fetched, and the de-duplication hid the repeats. The
+    // sort now happens after the walk (the `sort:` option below).
+    const data = await fetchAll(makeQuery, { sort: desc("entry_date", "created_at") });
     return data.map((e) => ({ ...e, partnerName: e.partners?.name || "—", stationName: e.locations?.name || "—" }));
   },
 
@@ -1002,6 +1059,12 @@ const rawApi = {
       });
     } catch (linkErr) {
       console.warn("Capital entry saved, but mirroring it to the cash ledger failed:", linkErr);
+      // [2026-09-19] Reported back, not just logged. The entry itself saved,
+      // so throwing would invite a second entry; staying silent left Partner
+      // Capital / Bank Loans moved while Cash Flow and the cash estimate did
+      // not, with the screen saying everything had worked. The caller now
+      // shows this.
+      return { ...data, cashLedgerError: linkErr?.message || String(linkErr) };
     }
     return data;
   },
@@ -1128,6 +1191,12 @@ const rawApi = {
       });
     } catch (linkErr) {
       console.warn("Loan entry saved, but mirroring it to the cash ledger failed:", linkErr);
+      // [2026-09-19] Reported back, not just logged. The entry itself saved,
+      // so throwing would invite a second entry; staying silent left Partner
+      // Capital / Bank Loans moved while Cash Flow and the cash estimate did
+      // not, with the screen saying everything had worked. The caller now
+      // shows this.
+      return { ...data, cashLedgerError: linkErr?.message || String(linkErr) };
     }
     return data;
   },
@@ -1142,6 +1211,14 @@ const rawApi = {
   // or an HQ Admin view spanning every station) — pass it whenever the
   // lookup is meant to stay scoped to one station, so a same-named
   // buyer/seller at a different location doesn't get matched instead.
+  // [2026-09-19] One farmer or buyer by id — the profile page used to
+  // download every farmer to find one.
+  async getPartyById(id) {
+    const { data, error } = await supabase.from("parties").select("*").eq("id", id).maybeSingle();
+    if (error) throw error;
+    return data || null;
+  },
+
   async getParties({ type, q, qPhone, phone, locationId } = {}) {
     // [2026-09-09] Paged — see fetchAll.
     const makeQuery = () => {
@@ -1277,16 +1354,20 @@ const rawApi = {
   // first, in one bounded request. That is what the dashboard's live feed
   // wants — eight rows — and it should never have been getting them by
   // downloading the table and slicing it.
-  async getTransactions({ type, locationId, from, to, partyId, limit } = {}) {
+  async getTransactions({ type, locationId, from, to, partyId, limit, lean = false } = {}) {
     // [2026-09-09] Paged. Before this it returned the newest 1,000 rows and
     // every all-time total in the app was computed from that slice.
+    //
+    // [2026-09-19] SPEED: `lean: true` fetches only the columns needed to add
+    // up weights and money, with no joined names. For screens that only
+    // total things (stock, station tiles), that is a fraction of the download.
     const makeQuery = () => {
     let query = supabase
       .from("transactions")
       // address/phone: per-location fields (see add_location_address_phone.sql)
       // used on the printed receipt header — falls back to "—" below if a
       // location hasn't had them filled in yet.
-      .select("*, locations(name, address, phone), parties(name, id_number, phone), products(name)");
+      .select(lean ? LEAN_TX_COLUMNS : "*, locations(name, address, phone), parties(name, id_number, phone), products(name)");
     if (type) query = query.eq("type", type);
     if (locationId) query = query.eq("location_id", locationId);
     if (partyId) query = query.eq("party_id", partyId);
@@ -1402,7 +1483,10 @@ const rawApi = {
       // [2026-09-04] See checkAndFlagPaperTicketDuplicate above — checked
       // before the insert so the flag lands in this SAME row the moment
       // it's created, not as a separate update right after.
-      paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("transactions", locationId, paperTicketNo),
+      // [2026-09-19] excludeId: a retry (or the station relay saving the same
+      // entry at the same moment) found its OWN earlier copy and flagged it
+      // a duplicate of itself, burying the real duplicates.
+      paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("transactions", locationId, paperTicketNo, id),
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
     };
@@ -1646,7 +1730,7 @@ const rawApi = {
       gross_by: hasGross ? userId : null,
       created_by: userId,
       paper_ticket_no: normalizePaperTicketNo(paperTicketNo),
-      paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("weighing_tickets", locationId, paperTicketNo),
+      paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("weighing_tickets", locationId, paperTicketNo, id),
       bank_qr_url: bankQrUrl || null,
       recorded_by_name: recordedByName || null,
       // [2026-09-15] weighing_tickets.note — text, nullable, verified against
@@ -1663,6 +1747,39 @@ const rawApi = {
     } catch (error) {
       throw friendlyPaperTicketNoError(error, paperTicketNo) || error;
     }
+  },
+
+  // [2026-09-18] "The update matched zero rows" means two completely
+  // different things, and the offline queue could only hear one of them.
+  //
+  //   (a) the ticket is GONE from the server — a database reset ran while
+  //       this device was offline. Nothing to do, and everything else queued
+  //       for that ticket is equally pointless.
+  //   (b) the ticket is FINALIZED, so the .neq("stage","finalized") guard
+  //       matched nothing. The ticket is perfectly fine; this one step is
+  //       simply already past.
+  //
+  // Both returned null. offlineQueue's runOp reads null as (a) and calls
+  // dropOtherOpsForGoneTicket, which deletes the queued finalizeTicket AND
+  // the createPayment behind it, AND the cached copy of the transaction —
+  // so the farmer's cash payment is thrown away while the purchase itself,
+  // delivered by the station relay under its own login, sits on the server
+  // marked unpaid. Receipt in hand, nothing in the books, no error anywhere.
+  //
+  // This tells them apart by asking. Found → hand back the row, so the step
+  // counts as done and the rest of the queue proceeds. Not found → null,
+  // which now genuinely means gone.
+  async ticketStepAlreadyDoneOrGone(id) {
+    const { data, error } = await supabase
+      .from("weighing_tickets")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    // Could not check (offline, server error) — say nothing rather than
+    // claim the ticket is gone. Throwing leaves the op queued for a retry,
+    // which is the safe direction: nothing is deleted on a guess.
+    if (error) throw error;
+    return data || null;
   },
 
   async setTicketGross(id, { grossKg, userId }) {
@@ -1691,7 +1808,7 @@ const rawApi = {
   // touch `stage` — editing a ticket's info doesn't move it through the
   // board, only Finish Ticket / Decline do that. Only the fields actually
   // passed in get updated, so a partial edit never blanks out the rest.
-  async updateTicketInfo(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId }) {
+  async updateTicketInfo(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, grossAt, userId }) {
     const patch = {};
     if (partyId !== undefined) patch.party_id = partyId || null;
     if (partyName !== undefined) patch.party_name = partyName;
@@ -1711,10 +1828,18 @@ const rawApi = {
         patch.paper_ticket_dup_flag = await checkAndFlagPaperTicketDuplicate("weighing_tickets", existingTicket.location_id, paperTicketNo, id);
       }
     }
+    // [2026-09-19] "Don't ever change the weigh-in date." An edit only ever
+    // CORRECTS the weight; the weigh-in time stays what it was. It used to be
+    // re-stamped to now (and again, later, at sync time) on every edit, even a
+    // plate typo, because the edit form always sends the weight. The time is
+    // set only when this is the ticket's FIRST weigh-in, and then it is the
+    // moment staff saved it on the device (grossAt), not the sync time.
     if (grossKg !== undefined) {
       patch.gross_kg = grossKg;
-      patch.gross_at = getAccurateNow().toISOString();
-      patch.gross_by = userId;
+      if (grossAt) {
+        patch.gross_at = grossAt;
+        patch.gross_by = userId;
+      }
     }
     const { data, error } = await supabase
       .from("weighing_tickets")
@@ -1749,6 +1874,15 @@ const rawApi = {
       priced_by: userId,
       stage: decline ? "declined" : "priced",
     };
+    // [2026-09-18] The guard below (.neq("stage","finalized")) is the same one
+    // setTicketTare has carried since 2026-09-07, and it was missing here.
+    // That mattered because Finish Ticket queues setTicketPrice BEFORE
+    // setTicketTare: a replayed price write knocked a finalized ticket back
+    // to "priced", which re-opened the door for the tare write, which knocked
+    // it to "weighed_out", which blinded finalize_weighing_ticket's
+    // already-finalized check — and a second transaction, with a second
+    // payment, went through for one truckload. The tare guard alone could not
+    // hold that line, because this write ran first and undid it.
     // Which bank (or Cash) and QR to pay this farmer with — left out
     // entirely (not overwritten with a blank) on calls that don't pass
     // them, like a quick Decline.
@@ -1759,12 +1893,14 @@ const rawApi = {
       .from("weighing_tickets")
       .update(patch)
       .eq("id", id)
+      .neq("stage", "finalized")
       .select()
       .single();
     if (error) {
-      // Same reasoning as setTicketGross above: the ticket is gone, not a
-      // real failure — nothing to retry.
-      if (error.code === "PGRST116") return null;
+      // Zero rows: either the ticket is finalized (fine — this step is
+      // already past) or it is genuinely gone. Ask, rather than assume the
+      // destructive one. See ticketStepAlreadyDoneOrGone above.
+      if (error.code === "PGRST116") return await api.ticketStepAlreadyDoneOrGone(id);
       throw error;
     }
     return data;
@@ -1788,7 +1924,10 @@ const rawApi = {
       .select()
       .single();
     if (error) {
-      if (error.code === "PGRST116") return null;
+      // See ticketStepAlreadyDoneOrGone: a finalized ticket matched zero rows
+      // here, and returning null for that used to make the queue delete this
+      // ticket's finalize AND the farmer's cash payment.
+      if (error.code === "PGRST116") return await api.ticketStepAlreadyDoneOrGone(id);
       throw error;
     }
     return data;
@@ -1921,12 +2060,35 @@ const rawApi = {
     const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
     if (fetchErr) throw fetchErr;
     if (ticket.stage !== "finalized") throw new Error("Only a finished ticket can be reopened.");
+    // [2026-09-19] Two fixes to a two-step operation.
+    //
+    //  1. The cancel below had no .select(), so an update that row-level
+    //     security let match zero rows came back as SUCCESS. The ticket was
+    //     then reset and unlinked while its old transaction stayed live —
+    //     and finishing the ticket again handed back that old transaction,
+    //     the wrong truck's numbers, as the "existing" one. Now a cancel that
+    //     changed nothing stops the reopen with a plain reason.
+    //  2. If the cancel worked but resetting the ticket then failed (a
+    //     timeout), the transaction was left cancelled while the ticket still
+    //     read finalized. It is now put back the way it was.
+    let previousHqStatus = null;
     if (ticket.transaction_id) {
-      const { error: cancelErr } = await supabase
+      const { data: before } = await supabase
+        .from("transactions").select("hq_status").eq("id", ticket.transaction_id).maybeSingle();
+      previousHqStatus = before?.hq_status ?? null;
+      const { data: cancelled, error: cancelErr } = await supabase
         .from("transactions")
         .update({ hq_status: "cancelled" })
-        .eq("id", ticket.transaction_id);
+        .eq("id", ticket.transaction_id)
+        .select("id")
+        .maybeSingle();
       if (cancelErr) throw cancelErr;
+      if (!cancelled) {
+        throw new Error(
+          "The transaction for this ticket could not be cancelled — this account is not allowed to, " +
+            "or it no longer exists. Nothing has been changed."
+        );
+      }
     }
     const { data, error } = await supabase
       .from("weighing_tickets")
@@ -1941,7 +2103,15 @@ const rawApi = {
       .eq("id", id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      if (ticket.transaction_id) {
+        await supabase.from("transactions")
+          .update({ hq_status: previousHqStatus })
+          .eq("id", ticket.transaction_id)
+          .then(() => {}, () => {});
+      }
+      throw error;
+    }
     // Fire-and-forget, same reasoning as every other logAudit call — this
     // runs right after the real mutation above already succeeded.
     this.logAudit({
@@ -2124,6 +2294,19 @@ const rawApi = {
   // that migration has not been run yet, the first update fails on the unknown
   // column and the second one writes the status alone, exactly as before. The
   // approval still lands; only the extra detail is missing.
+  // [2026-09-19] Read at the moment of deciding, not from the list as it was
+  // loaded: another admin may have decided it already, or the transaction
+  // may have been cancelled since.
+  async getChangeRequestState(id) {
+    const { data, error } = await supabase
+      .from("change_requests")
+      .select("status, transactions(hq_status)")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? { status: data.status, txCancelled: (data.transactions?.hq_status || "") === "cancelled" } : null;
+  },
+
   async resolveChangeRequest(id, status, { userId, rejectReason } = {}) {
     const full = {
       status,
@@ -2136,7 +2319,7 @@ const rawApi = {
       console.warn("resolveChangeRequest: falling back to status only —", error.message);
       ({ data, error } = await supabase.from("change_requests").update({ status }).eq("id", id).select().single());
     }
-    if (error) throw error;
+    if (error) throw friendlyWriteError(error);
     return data;
   },
 
@@ -2322,7 +2505,7 @@ const rawApi = {
 
   async updatePayment(id, amount) {
     const { data, error } = await supabase.from("payments").update({ amount }).eq("id", id).select().single();
-    if (error) throw error;
+    if (error) throw friendlyWriteError(error);
     return data;
   },
 
@@ -2357,7 +2540,7 @@ const rawApi = {
 
     const { data, error } = await supabase
       .from("payments").update(patch).eq("id", id).select().single();
-    if (error) throw error;
+    if (error) throw friendlyWriteError(error);
 
     // Fire-and-forget, like every other logAudit call: the amendment has
     // already succeeded, and a slow audit write must not turn it into a
@@ -2507,13 +2690,13 @@ const rawApi = {
   // getStockAdjustments does it.
   async getAuditLogs({ from = null, to = null } = {}) {
     const makeQuery = () => {
-      let q = supabase.from("audit_logs").select("*, profiles(full_name)");
+      let q = supabase.from("audit_logs").select("*, profiles(full_name, location_id)");
       if (from) q = q.gte("created_at", `${from}T00:00:00+07:00`);
       if (to) q = q.lte("created_at", `${to}T23:59:59+07:00`);
       return q;
     };
     const data = await fetchAll(makeQuery, { sort: desc("created_at") });
-    return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
+    return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—", userLocationId: l.profiles?.location_id || null }));
   },
 
   // [2026-09-16] Who last changed each of these expense rows, and when.
@@ -2858,7 +3041,8 @@ const rawApi = {
       let query = q;
       if (!includeVoided) query = query.is("voided_at", null);
       if (locationId) query = query.eq("location_id", locationId);
-      if (type) query = query.eq("type", type);
+      if (Array.isArray(type)) query = query.in("type", type);
+      else if (type) query = query.eq("type", type);
       if (from) query = query.gte("pay_date", from);
       if (to) query = query.lte("pay_date", to);
       return query;
@@ -2930,15 +3114,25 @@ const rawApi = {
     // possible in principle; two minutes apart, to the riel, is not.
     if (!id && transactionId && amount != null) {
       try {
-        const cutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-        const { data: recent } = await supabase
+        // [2026-09-19] Three holes closed in this match:
+        //   · it ignored voided rows — so voiding a 1,000,000 ៛ bank payment
+        //     and re-entering it as cash within two minutes handed back the
+        //     VOIDED row, the screen said "saved", and nothing was recorded;
+        //   · it ignored the method — so a farmer paid in two equal halves,
+        //     one cash and one bank, lost the second half;
+        //   · it used this PC's own clock — Thapedey's is hours out, which
+        //     stretches "two minutes" to hours, or switches the guard off.
+        const cutoff = new Date(getAccurateNow().getTime() - 2 * 60 * 1000).toISOString();
+        let q = supabase
           .from("payments")
           .select("*")
           .eq("transaction_id", transactionId)
           .eq("type", type)
           .eq("amount", amount)
-          .gte("created_at", cutoff)
-          .limit(1);
+          .is("voided_at", null)
+          .gte("created_at", cutoff);
+        q = method ? q.eq("method", method) : q.is("method", null);
+        const { data: recent } = await q.limit(1);
         if (recent && recent.length) return recent[0];
       } catch {
         // A failed lookup must never block a real payment — fall through

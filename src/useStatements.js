@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api.js";
 import { computeStatements } from "./statements.js";
-import { rangeKey } from "./reportQuery.js";
+import { rangeKey, dayAfter } from "./reportQuery.js";
 
 export function useStatements({ selectedLocationIds = [], startDate = null, endDate = null } = {}) {
   const [raw, setRaw] = useState({
@@ -44,6 +44,21 @@ export function useStatements({ selectedLocationIds = [], startDate = null, endD
     if (endDate) asAt.to = endDate;
 
     const soft = (p, fallback) => p.catch(() => fallback);
+    // [2026-09-19] Money inputs are NOT soft. Payments, stock adjustments,
+    // partner capital and loans used to go through soft() above, so a slow
+    // link that timed out the payments fetch produced a Balance Sheet, Income
+    // Statement and Cash Flow computed as if nobody had ever been paid:
+    // "owed to farmers" equal to every purchase ever made, cash collected 0,
+    // and no warning anywhere on the page. A table that does not exist yet is
+    // a setup step and still falls back quietly; any other failure now stops
+    // the page with its error, which is the only honest thing to show.
+    const money = (p) => p.catch((e) => {
+      if (/relation .* does not exist|schema cache|does not exist/i.test(e?.message || "")) {
+        setSetupMissing(true);
+        return [];
+      }
+      throw e;
+    });
     // A missing Finance Setup table must not take the whole page down, but it
     // must not pass silently either — the flag drives a visible notice.
     const setup = (p, fallback) => p.catch((e) => {
@@ -54,11 +69,11 @@ export function useStatements({ selectedLocationIds = [], startDate = null, endD
     Promise.all([
       api.getTransactions(asAt),
       api.getLocations(),
-      soft(api.getPayments(endDate ? { to: endDate } : {}), []),
-      soft(api.getStockAdjustments(endDate ? { endDate } : {}), []),
+      money(api.getPayments(endDate ? { to: endDate } : {})),
+      money(api.getStockAdjustments(endDate ? { endDate: dayAfter(endDate) } : {})),
       soft(api.getPartners(), []),
-      soft(api.getPartnerCapitalEntries(), []),
-      soft(api.getBankLoans(), []),
+      money(api.getPartnerCapitalEntries()),
+      money(api.getBankLoans()),
       setup(api.getFixedAssets(), null),      // null, not [] — see statements.js
       setup(api.getFinanceSettings(), {}),
     ])

@@ -116,6 +116,9 @@ async function lookupIpLocation() {
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
+  // The profile as it is now, for the heartbeat below (which is set up once).
+  const profileRef = useRef(null);
+  profileRef.current = profile;
   const [loading, setLoading] = useState(true);
   // [2026-09-08] True only after Supabase fired PASSWORD_RECOVERY for this
   // browser (an invite/reset link was clicked) or the link's hash says so
@@ -166,6 +169,18 @@ export function AuthProvider({ children }) {
       // Rather than lock everyone out of the app, fall back to the plain
       // profile so login still works — the new role features just won't
       // be active until that migration is applied.
+      // [2026-09-19] ONLY for the case the comment above describes — the roles
+      // table or column genuinely not existing. This used to fire on ANY
+      // error, including an 8-second timeout on a slow station link. The
+      // plain profile it built has no `roles`, so an account made view-only
+      // through its role lost that flag; and with empty permissions, an
+      // account whose base role is "admin" was granted everything. That copy
+      // was then cached and survived restarts. Any other failure now returns
+      // false, and the caller uses the last full profile this device cached.
+      if (!/relation .* does not exist|column .* does not exist|schema cache|could not find .* relationship/i.test(error?.message || "")) {
+        console.warn("Roles join failed for a reason other than a missing table — keeping the cached profile:", error?.message);
+        return false;
+      }
       console.warn("Roles join failed, falling back to plain profile:", error.message);
       const fallback = await supabase.from("profiles").select("*").eq("id", userId).single();
       if (fallback.error) {
@@ -208,11 +223,14 @@ export function AuthProvider({ children }) {
     // (WiFi connected to a router with no real internet behind it, which
     // is the more common real-world version of "offline" at these
     // stations, as opposed to the radio being fully off).
-    const ok = await withTimeout(loadProfile(userId), PROFILE_TIMEOUT_MS, false);
-    if (!ok) {
-      const cached = loadCachedProfile();
-      if (cached) setProfile(cached);
-    }
+    // [2026-09-19] With NO saved copy to fall back on (always the case right
+    // after a sign-in, since logging out clears it), cutting the load off
+    // at 2.5 s left the person on the login form, signed in but with no
+    // profile — on a slow station line they typed the password again and
+    // again. Then it waits properly (20 s); the heartbeat retries too.
+    const cachedNow = loadCachedProfile();
+    const ok = await withTimeout(loadProfile(userId), cachedNow ? PROFILE_TIMEOUT_MS : 20000, false);
+    if (!ok && cachedNow) setProfile(cachedNow);
   }
 
   useEffect(() => {
@@ -333,13 +351,38 @@ export function AuthProvider({ children }) {
         await supabase.rpc("touch_last_seen");
         const { data } = await supabase
           .from("profiles")
-          .select("logout_requested_at")
+          .select("logout_requested_at, role_id, view_only, location_id")
           .eq("id", session.user.id)
           .single();
+        // [2026-09-19] Picks up a change of role, station or view-only within
+        // a heartbeat (20 s), not at the next token refresh (up to an hour):
+        // a suspended or view-only account kept its old buttons until then.
+        // Also retries a profile that never loaded.
+        const cur = profileRef.current;
+        if (!cancelled && data && (!cur ||
+            (cur.role_id ?? null) !== (data.role_id ?? null) ||
+            !!cur.view_only !== !!data.view_only ||
+            (cur.location_id ?? null) !== (data.location_id ?? null))) {
+          loadProfile(session.user.id).catch(() => {});
+        }
         if (!cancelled && data?.logout_requested_at && new Date(data.logout_requested_at) > openedAtRef.current) {
           await supabase.rpc("acknowledge_logout");
           noteSignOut(REASONS.HQ_FORCED);
-          await supabase.auth.signOut();
+          // [2026-09-19] scope "local" — THIS DEVICE ONLY. supabase-js's signOut()
+          // with no argument defaults to "global" (Supabase docs: "JavaScript ... default
+          // to the global scope"), which ends every session on the account on every
+          // device. So one staff member pressing Log out, or one parent logging out on a
+          // phone, silently signed out every other device sharing that login. Those
+          // devices had no sign-out note, so their login screen said "expired" and blamed
+          // the token settings — this is very likely most of "why do we always get
+          // logged out". Only "Sign out everywhere" in Topbar is meant to be global.
+          await supabase.auth.signOut({ scope: "local" });
+          // [2026-09-19] Move the "opened at" mark past this request. The
+          // acknowledge_logout call above is not checked; if it failed, the
+          // flag stays set on the server, and the next person to sign in on
+          // this same tab was signed straight back out on the next tick —
+          // again and again, until someone thought to reload the page.
+          openedAtRef.current = new Date();
         }
       } catch (_err) {
         // Transient network/RPC errors here shouldn't crash the app or log
@@ -359,8 +402,14 @@ export function AuthProvider({ children }) {
   // including profile becoming null on sign-out (view_only on `undefined`
   // is falsy, so this correctly clears the flag on logout too).
   useEffect(() => {
-    setViewOnlyMode(!!profile?.view_only);
-  }, [profile?.view_only]);
+    // [2026-09-19] Both flags, exactly as isViewOnly below reads them. This
+    // line fed the api.js write guard and the offline queue's guard, and it
+    // only looked at the per-person tick. An account made view-only through
+    // its ROLE (the Viewer role) passed both guards, so any screen that did
+    // not hide its own buttons could write — protected only by whichever
+    // pages happened to check isViewOnly themselves.
+    setViewOnlyMode(!!profile?.view_only || !!profile?.roles?.view_only);
+  }, [profile?.view_only, profile?.roles?.view_only]);
 
   async function login(email, password) {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -381,7 +430,15 @@ export function AuthProvider({ children }) {
     // offline one — can never reopen the app as this user (audit #12).
     try { localStorage.removeItem(CACHED_PROFILE_KEY); } catch { /* ignore */ }
     noteSignOut(typeof reason === "string" ? reason : REASONS.USER);
-    const { error } = await supabase.auth.signOut();
+    // [2026-09-19] scope "local" — THIS DEVICE ONLY. supabase-js's signOut()
+    // with no argument defaults to "global" (Supabase docs: "JavaScript ... default
+    // to the global scope"), which ends every session on the account on every
+    // device. So one staff member pressing Log out, or one parent logging out on a
+    // phone, silently signed out every other device sharing that login. Those
+    // devices had no sign-out note, so their login screen said "expired" and blamed
+    // the token settings — this is very likely most of "why do we always get
+    // logged out". Only "Sign out everywhere" in Topbar is meant to be global.
+    const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error) {
       // Flaky WiFi: the server call failed, so supabase-js kept the local
       // session. Drop it locally anyway — the person pressed Log out.

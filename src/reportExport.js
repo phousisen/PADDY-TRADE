@@ -6,6 +6,7 @@
 import * as XLSX from "xlsx";
 import { getAccurateNow } from "./supabaseClient.js";
 import { computeFinancials, paidStatusMap } from "./financials.js";
+import { effectiveAdjDateStr, cambodiaDateStr } from "./dailyLedger.js";
 
 // Cambodia's current date/time (independent of the viewing device's own
 // timezone/clock), used to stamp the exported filename.
@@ -50,9 +51,16 @@ function groupSum(rows, keyFn) {
 
 function outstandingFor(rows, payments) {
   const today = getAccurateNow();
+  // [2026-09-19] SPEED: payments added up per transaction once, not searched
+  // again for every bill (3,000 bills x 30,000 payments was 90M comparisons).
+  const paidById = new Map();
+  for (const p of payments) {
+    if (!p.transaction_id) continue;
+    paidById.set(p.transaction_id, (paidById.get(p.transaction_id) || 0) + (Number(p.amount) || 0));
+  }
   return rows
     .map((tx) => {
-      const paid = payments.filter((p) => p.transaction_id === tx.id).reduce((s, p) => s + Number(p.amount), 0);
+      const paid = paidById.get(tx.id) || 0;
       const remaining = Math.max(0, Number(tx.total_with_tax ?? tx.amount) - paid);
       const days = Math.floor((today - new Date(tx.tx_date)) / (1000 * 60 * 60 * 24));
       return { ...tx, remaining, days, bucket: ageBucket(days) };
@@ -140,15 +148,21 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
     [],
     ["Profit & Loss", "Amount (៛)"],
     ["Total Sales (Revenue)", round2(calc.totalSell)],
-    ["Total Purchases (COGS)", round2(-calc.totalBuy)],
+    // [2026-09-19] The cost of the paddy SOLD, as on screen — this row showed
+    // everything bought, so the three rows did not add up. And the stock
+    // written off, which Net Profit already includes, now has its own row.
+    ["Cost of paddy sold (COGS)", round2(-calc.costOfGoodsSold)],
     ["Gross Profit", round2(calc.grossProfit)],
     ["Operating Expenses", round2(-calc.totalExpenses)],
+    ["Stock written off", round2(calc.stockLossValue)],
     ["Net Profit", round2(calc.netProfit)],
     [],
     ["Balance Sheet — Assets", "Amount (៛)"],
     ["Inventory on hand", round2(calc.inventoryValue)],
     ["Accounts Receivable", round2(calc.accountsReceivable)],
-    ["Cash (estimate)", round2(Math.max(0, calc.cashEstimate))],
+    // [2026-09-19] As computed, negative included (as on screen) — flooring
+    // it at 0 made the assets listed not add up to Total Assets.
+    ["Cash (estimate)", round2(calc.cashEstimate)],
     ["Total Assets", round2(calc.totalAssets)],
     [],
     ["Balance Sheet — Liabilities", "Amount (៛)"],
@@ -201,7 +215,12 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
   ]), "Sales");
 
   // ---------------- Accounts Payable ----------------
-  const payablesOutstanding = outstandingFor(buyRows, payments.filter((p) => p.type === "pay_supplier"));
+  // [2026-09-19] What is owed AS AT the end date — every bill up to then,
+  // not only this period's, and only payments made by then. The period's
+  // bills alone left out a farmer unpaid since July.
+  const asAtRows = activeFilter(txs, selectedLocationIds, null, endDate);
+  const paidByEnd = payments.filter((p) => !endDate || !p.pay_date || p.pay_date <= endDate);
+  const payablesOutstanding = outstandingFor(asAtRows.filter((t) => t.type === "BUY"), paidByEnd.filter((p) => p.type === "pay_supplier"));
   XLSX.utils.book_append_sheet(wb, sheet([
     ["Accounts Payable — Outstanding"],
     [rangeLabel],
@@ -213,7 +232,7 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
   ]), "Accounts Payable");
 
   // ---------------- Accounts Receivable ----------------
-  const receivablesOutstanding = outstandingFor(sellRows, payments.filter((p) => p.type === "receive_customer"));
+  const receivablesOutstanding = outstandingFor(asAtRows.filter((t) => t.type === "SELL"), paidByEnd.filter((p) => p.type === "receive_customer"));
   XLSX.utils.book_append_sheet(wb, sheet([
     ["Accounts Receivable — Outstanding"],
     [rangeLabel],
@@ -225,14 +244,35 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
   ]), "Accounts Receivable");
 
   // ---------------- Stock ----------------
-  const sortedAllTxs = txs.slice().sort((a, b) => (a.tx_date + a.tx_time > b.tx_date + b.tx_time ? 1 : -1));
-  const stockTxs = activeFilter(sortedAllTxs, selectedLocationIds, startDate, endDate);
+  // [2026-09-19] Same as the Stock screen: the balance is carried from the
+  // first movement ever recorded (not from 0 on the period's first day), and
+  // stock counts are movements too. Only the period's rows are listed.
+  const events = [];
+  for (const tx of activeFilter(txs, selectedLocationIds, null, endDate)) {
+    const kg = Number(tx.quantity_kg) || 0;
+    events.push({ date: tx.tx_date, key: `${tx.tx_date} ${tx.tx_time || ""}`, location_id: tx.location_id,
+      code: tx.code, stationName: tx.stationName, type: tx.type, delta: tx.type === "BUY" ? kg : -kg });
+  }
+  for (const a of adjustments) {
+    if (!a.created_at) continue;
+    if (selectedLocationIds.length && !selectedLocationIds.includes(a.location_id)) continue;
+    const date = effectiveAdjDateStr(a);
+    if (endDate && date > endDate) continue;
+    const back = date !== cambodiaDateStr(new Date(a.created_at));
+    const clock = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Phnom_Penh", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(a.created_at));
+    events.push({ date, key: `${date} ${back ? "99" : clock}`, location_id: a.location_id,
+      code: a.reason === "reset" ? "Stock reset" : "Stock count",
+      stationName: a.locations?.name || (stations.find((x) => x.id === a.location_id) || {}).name || "",
+      type: "COUNT", delta: Number(a.adjustment_kg) || 0 });
+  }
+  events.sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
   const running = {};
-  const movements = stockTxs.map((tx) => {
-    const delta = tx.type === "BUY" ? Number(tx.quantity_kg) : -Number(tx.quantity_kg);
-    running[tx.location_id] = (running[tx.location_id] || 0) + delta;
-    return { ...tx, delta, runningBalance: running[tx.location_id] };
-  });
+  const movements = [];
+  for (const e of events) {
+    running[e.location_id] = (running[e.location_id] || 0) + e.delta;
+    if (startDate && e.date < startDate) continue;
+    movements.push({ ...e, tx_date: e.date, runningBalance: running[e.location_id] });
+  }
   XLSX.utils.book_append_sheet(wb, sheet([
     ["Stock — Current Summary"],
     [],

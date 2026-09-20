@@ -37,6 +37,10 @@ import { tagError } from "./errText.js";
 
 const CACHE_KEY = "ptw_ticket_cache_v1";
 const QUEUE_KEY = "ptw_ticket_queue_v1";
+// [2026-09-18] Where a queue blob that will not parse is kept, instead of
+// being quietly written over. Suffixed with the time so a second occurrence
+// cannot erase the first.
+const QUEUE_DAMAGED_KEY = "ptw_ticket_queue_damaged";
 const PARTY_CACHE_KEY = "ptw_party_cache_v1";
 const PRODUCT_CACHE_KEY = "ptw_product_cache_v1";
 const PAPER_TICKET_KEY = "ptw_last_paper_ticket_no_v1";
@@ -105,6 +109,12 @@ const ONLINE_LOOKUP_TIMEOUT_MS = 1200;
 // bypassing supabaseClient's 8s cutoff), so the wait has to be at least
 // that long or a slow-but-working station would be refused every time.
 const FINISH_SYNC_TIMEOUT_MS = 30000;
+// [2026-09-18] How long to wait between confirmation attempts while Finish
+// Ticket is waiting for the server. Short enough that a save confirming in
+// half a second still feels instant; long enough that the browser gets a
+// turn, which is what stops the page freezing when the link drops mid-press.
+const FINISH_SYNC_POLL_MS = 250;
+const FINISH_SYNC_PASS_MS = 2000;
 
 // [2026-09-06] Shared wording for the one case that is now hard-blocked:
 // this device says it's online, the save is safely queued here, but the
@@ -317,13 +327,45 @@ function mutateQueue(mutator) {
   for (let attempt = 0; attempt < 25; attempt++) {
     let rawBefore;
     try { rawBefore = localStorage.getItem(QUEUE_KEY); } catch { rawBefore = null; }
+    // [2026-09-18] A queue blob that will not parse used to become an empty
+    // queue, which was then written straight over the damaged one — taking
+    // every unsent ticket, transaction and payment in it with no trace. The
+    // compare-and-swap below could not catch it either: rawNow and rawBefore
+    // are both the same damaged string, so they matched and the write went
+    // ahead. Worse, the app reported "All changes synced" the whole time,
+    // because an unreadable queue counts as zero pending.
+    //
+    // Now the damaged text is set aside under its own key first. Nothing is
+    // silently written over, the bytes stay on the device for recovery, and
+    // the console says so.
     let current;
-    try { current = rawBefore ? JSON.parse(rawBefore) : []; } catch { current = []; }
+    let salvaged = false;
+    try {
+      current = rawBefore ? JSON.parse(rawBefore) : [];
+    } catch {
+      current = [];
+      if (rawBefore) {
+        salvaged = true;
+        try {
+          localStorage.setItem(QUEUE_DAMAGED_KEY + "_" + Date.now(), rawBefore);
+        } catch { /* nothing more we can do — the console line below still fires */ }
+        console.error(
+          "[offlineQueue] this device's saved queue could not be read. The damaged copy has been kept " +
+            "under " + QUEUE_DAMAGED_KEY + "_* rather than overwritten. Anything queued in it has NOT " +
+            "reached PaddyTrade — do not clear this browser's data."
+        );
+      }
+    }
+    if (salvaged) queueWasDamaged = true;
     const next = mutator(current.slice());
 
     let rawNow;
     try { rawNow = localStorage.getItem(QUEUE_KEY); } catch { rawNow = null; }
     if (rawNow !== rawBefore) continue; // someone else wrote in between — redo against their latest state
+
+    // [2026-09-19] SPEED: nothing changed — don't rewrite the whole queue to
+    // storage or wake every screen. This happened on every 15 s sync pass.
+    if (!salvaged && rawBefore && JSON.stringify(next) === rawBefore) return { queue: next, persisted: true };
 
     const persisted = writeJSON(QUEUE_KEY, next);
     notifyStatus();
@@ -445,6 +487,35 @@ function removeCachedTransaction(id) {
   const list = getCachedTransactions().filter((t) => t.id !== id);
   writeJSON(TX_CACHE_KEY, list);
   return list;
+}
+
+// [2026-09-19] See the finalize success handler in trySync. Moves queued
+// work from this device's transaction id to the server's. A queued payment
+// of a kind the server transaction already has (the other device paid the
+// farmer) is dropped rather than moved: moving it would pay twice.
+async function repointToServerTransaction(localId, serverId) {
+  let serverPays = null;
+  try { serverPays = await api.getPaymentsForTransaction(serverId); } catch { serverPays = null; }
+  const alreadyPaid = (type) => Array.isArray(serverPays) && serverPays.some((p) => p.type === type && !p.voided_at);
+  const dropped = [];
+  mutateQueue((q) => q.flatMap((o) => {
+    const pl = o.payload || {};
+    if (o.type === "createPayment" && pl.transactionId === localId) {
+      if (alreadyPaid(pl.type)) { dropped.push(pl.id); return []; }
+      return [{ ...o, payload: { ...pl, transactionId: serverId } }];
+    }
+    if (o.type === "logAudit" && pl.tableName === "transactions" && pl.recordId === localId) {
+      return [{ ...o, payload: { ...pl, recordId: serverId } }];
+    }
+    return [o];
+  }));
+  const pays = getCachedPayments()
+    .filter((p) => !dropped.includes(p.id))
+    .map((p) => (p.transaction_id === localId ? { ...p, transaction_id: serverId } : p));
+  writeJSON(PAYMENT_CACHE_KEY, pays);
+  removeCachedTransaction(localId);
+  console.warn(`[sync] ticket already finished elsewhere: moved queued work from ${localId} to ${serverId}` +
+    (dropped.length ? `; dropped ${dropped.length} duplicate payment(s)` : ""));
 }
 
 // Every transaction id this device still has queued changes for — either
@@ -611,7 +682,18 @@ export function getCachedParties() {
   return readJSON(PARTY_CACHE_KEY, []);
 }
 export function setCachedParties(list) {
-  writeJSON(PARTY_CACHE_KEY, (list || []).slice(0, LOOKUP_CACHE_MAX_ROWS));
+  // [2026-09-19] Newest first before the cap, and anyone created on this
+  // device that has not reached the server yet is always kept. The list
+  // arrives sorted by NAME, so the cap used to keep the first 2,000 names
+  // alphabetically — Khmer names, which sort last, fell out — and a farmer
+  // added offline could be cut by the next save. The next offline ticket for
+  // them then created the farmer a second time.
+  const pendingIds = new Set(getQueue().filter((op) => op.type === "createParty").map((op) => op.payload?.id).filter(Boolean));
+  const all = list || [];
+  const keep = all.filter((p) => pendingIds.has(p.id));
+  const rest = all.filter((p) => !pendingIds.has(p.id))
+    .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  writeJSON(PARTY_CACHE_KEY, [...keep, ...rest].slice(0, Math.max(LOOKUP_CACHE_MAX_ROWS, keep.length)));
 }
 export function addCachedParty(party) {
   const list = getCachedParties();
@@ -747,14 +829,21 @@ export function addCachedProduct(product) {
 // Called whenever we're online and have a spare moment (e.g. on page
 // load, or right after a successful sync) so the lookup caches used
 // offline stay reasonably fresh.
+const IDLE_LOOKUP_REFRESH_MS = 10 * 60 * 1000;
+const BACKGROUND_LOOKUP_TIMEOUT_MS = 20000;
+let lastIdleLookupRefreshAt = 0;
+
 export async function refreshLookupCaches() {
   // No connection at all — skip straight out instead of spending up to
   // ONLINE_LOOKUP_TIMEOUT_MS x2 waiting on requests that have no chance of
   // succeeding. Whatever's already cached stays exactly as it was.
   if (!navigator.onLine) return;
+  // [2026-09-19] A background refresh, not a keystroke lookup: once there
+  // are over 1,000 farmers the list takes two requests, which never fitted
+  // the 1.2 s keystroke limit — the whole download ran and was thrown away.
   const [parties, products] = await Promise.all([
-    withTimeout(api.getParties().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null),
-    withTimeout(api.getProducts().catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null),
+    withTimeout(api.getParties().catch(() => null), BACKGROUND_LOOKUP_TIMEOUT_MS, null),
+    withTimeout(api.getProducts().catch(() => null), BACKGROUND_LOOKUP_TIMEOUT_MS, null),
   ]);
   // Offline, timed out, or failed — just keep whatever's already cached
   // rather than wiping it out with an empty/partial result.
@@ -809,7 +898,7 @@ export function enqueue(op) {
 // A save that could not be written down has to stop and say so. Nothing
 // is allowed to print, or to report success, on a change that was never
 // queued.
-function enqueueStrict(op, errKey = "err_storage_change", message) {
+export function enqueueStrict(op, errKey = "err_storage_change", message) {
   const { opId, persisted } = enqueue(op);
   if (!persisted) {
     throw tagError(
@@ -830,10 +919,19 @@ function isOpQueued(opId) {
 // Removes one specific op by id, wherever it currently sits in the queue —
 // used instead of a plain shift() so a later, unrelated op that finished
 // first (see trySync) is removed correctly even though it isn't at index 0.
+// [2026-09-18] Now reports whether the removal actually reached storage.
+// It used to ignore that, and the sync loop above set progressed = true
+// regardless — so on a device whose localStorage writes fail (site data
+// blocked, a locked-down profile, a private window), an op would succeed on
+// the server, fail to leave the queue, and be read back and re-sent on the
+// very next iteration of the same pass. Forever, with no delay: one core
+// pinned, the tab unresponsive, the audit log filling with duplicate rows,
+// and nothing short of a reload — which lands in the same state — to stop it.
 function removeOp(opId) {
-  if (!opId) return;
-  mutateQueue((q) => q.filter((o) => o._id !== opId));
+  if (!opId) return false;
+  const { persisted } = mutateQueue((q) => q.filter((o) => o._id !== opId));
   clearOpFailure(opId);
+  return persisted !== false;
 }
 // Every op the sync loop touches needs a real `_id` before it can be
 // safely removed by id (see removeOp above) — but ops already sitting in
@@ -980,6 +1078,38 @@ export function discardStuckManualEntry(opId) {
 // its stuck tracking cleared so the banner does not keep reporting ops
 // that are no longer in the queue. Called wherever a queued transaction
 // is deliberately taken back.
+// [2026-09-19] Before concluding "this ticket is gone" and deleting everything
+// queued behind it — its finalize, the farmer's cash payment, the cached copy
+// of the transaction — make sure the login that asked is still alive.
+//
+// Row-level security hides every row from a request that carries no valid
+// login. ensureFreshSession is checked once, at the start of a sync pass, but
+// a pass can run for minutes; if the session lapses partway through (another
+// device signing the same account out, a refresh token rejected), the next
+// request goes out as nobody, sees zero rows, and "zero rows" became "ticket
+// gone". The receipt was already printed; the payment was quietly deleted.
+//
+// Throwing here leaves the op queued. It is retried once someone signs in —
+// and then, with a login that can actually see the ticket, the answer is true.
+async function confirmTicketReallyGone(op) {
+  let live = false;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const s = data?.session;
+    live = !!(s && s.access_token && (!s.expires_at || s.expires_at * 1000 > getAccurateNow().getTime()));
+  } catch { live = false; }
+  if (!live) {
+    sessionExpired = true;
+    notifyStatus();
+    const e = new Error(
+      "This device's login lapsed during sync, so the server could not see ticket " + op.ticketId +
+        ". Nothing has been deleted — sign in again and it will carry on."
+    );
+    e.code = "SESSION_LAPSED";
+    throw e;
+  }
+}
+
 function dropOpsForGoneTransaction(txId) {
   if (!txId) return;
   const queue = getQueue();
@@ -1092,6 +1222,15 @@ function isConnectivityError(err) {
 }
 
 function noteOpFailure(op, err) {
+  // [2026-09-19] A lapsed login is not a broken save; don't count strikes
+  // against it, or a perfectly good op gets offered for Discard.
+  if (err && err.code === "SESSION_LAPSED") { stuckOps.delete(op._id); return; }
+  // [2026-09-19] An expired or rejected login token (HTTP 401, "JWT expired",
+  // PGRST301) is the login, not the save. Same treatment.
+  if (err && (err.status === 401 || err.code === "PGRST301" || /jwt (expired|is expired)|invalid jwt|jwt.*expired/i.test(String(err.message || "")))) {
+    stuckOps.delete(op._id);
+    return;
+  }
   if (!navigator.onLine || isConnectivityError(err)) {
     // Not actually stuck — either genuinely offline, or the request never
     // reached the server at all (see isConnectivityError above), both of
@@ -1099,7 +1238,21 @@ function noteOpFailure(op, err) {
     // again. Don't let failures recorded here linger and misreport as
     // "stuck" once the connection comes back and these same ops succeed on
     // their very first real attempt.
-    clearStuckTracking();
+    //
+    // [2026-09-18] This used to call clearStuckTracking(), which empties the
+    // WHOLE map — every op's count, not just this one's. On a station with a
+    // flapping link that is fatal to the entire stuck-detection idea: one
+    // genuinely broken save (a rejected payment, say) climbs to 1 or 2
+    // strikes, then ANY other op hits a dropped connection, and the broken
+    // one is reset to zero. It never reaches the threshold, so the red
+    // banner never appears, listStuckOps returns nothing, and the panel
+    // offers neither Recover nor Discard — the station sits on "N changes
+    // waiting" forever with no action available anywhere in the app. That is
+    // precisely the dead end this subsystem exists to prevent.
+    //
+    // Only THIS op's count is cleared. A connection problem on one save says
+    // nothing about whether another save is broken.
+    stuckOps.delete(op._id);
     return;
   }
   const existing = stuckOps.get(op._id);
@@ -1500,8 +1653,25 @@ function clearStuckTracking() {
 // long time before the real cause (this browser's session had expired)
 // was found.
 let sessionExpired = false;
+// [2026-09-18] True when this device saved something to the server but could
+// not update its own queue afterwards — i.e. localStorage is not writable.
+// Surfaced so the banner can say so, instead of the app looping silently.
+let storageBlocked = false;
+// [2026-09-18] True once this device has been found holding a queue it could
+// not read. Reported so the screen can stop claiming everything is synced.
+let queueWasDamaged = false;
 
 function getStatus() {
+  // [2026-09-19] A queue that cannot be read is also noticed when nothing
+  // new has been queued since — it used to report "0 waiting, all synced".
+  if (!queueWasDamaged) {
+    try {
+      const raw = localStorage.getItem(QUEUE_KEY);
+      if (raw) JSON.parse(raw);
+    } catch (e) {
+      if (e instanceof SyntaxError) queueWasDamaged = true;
+    }
+  }
   const stuck = [...stuckOps.values()].filter((e) => e.attempts >= STUCK_THRESHOLD);
   const mostRecent = stuck.length
     ? stuck.reduce((a, b) => (new Date(b.lastFailedAt || b.since) > new Date(a.lastFailedAt || a.since) ? b : a))
@@ -1511,6 +1681,8 @@ function getStatus() {
     syncing,
     pending: totalPending(),
     sessionExpired,
+    storageBlocked,
+    queueWasDamaged,
     stuck: stuck.length > 0,
     stuckCount: stuck.length,
     stuckSince: stuck.length ? new Date(Math.min(...stuck.map((e) => new Date(e.since).getTime()))).toISOString() : null,
@@ -1563,27 +1735,27 @@ async function runOp(op) {
       return api.createTicket(op.payload);
     case "setTicketGross": {
       const result = await api.setTicketGross(op.ticketId, op.payload);
-      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      if (result === null) { await confirmTicketReallyGone(op); dropOtherOpsForGoneTicket(op.ticketId); return null; }
       return result;
     }
     case "editTicket": {
       const result = await api.updateTicketInfo(op.ticketId, op.payload);
-      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      if (result === null) { await confirmTicketReallyGone(op); dropOtherOpsForGoneTicket(op.ticketId); return null; }
       return result;
     }
     case "setTicketPrice": {
       const result = await api.setTicketPrice(op.ticketId, op.payload);
-      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      if (result === null) { await confirmTicketReallyGone(op); dropOtherOpsForGoneTicket(op.ticketId); return null; }
       return result;
     }
     case "setTicketTare": {
       const result = await api.setTicketTare(op.ticketId, op.payload);
-      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      if (result === null) { await confirmTicketReallyGone(op); dropOtherOpsForGoneTicket(op.ticketId); return null; }
       return result;
     }
     case "finalizeTicket": {
       const result = await api.finalizeTicket(op.ticketId, op.payload);
-      if (result === null) { dropOtherOpsForGoneTicket(op.ticketId); return null; }
+      if (result === null) { await confirmTicketReallyGone(op); dropOtherOpsForGoneTicket(op.ticketId); return null; }
       return result;
     }
     case "createTransaction":
@@ -1676,7 +1848,15 @@ export function trySync() {
   // absolutely nothing had changed. Only a REAL sync (queue not empty)
   // should trigger that reload.
   if (getQueue().length === 0) {
-    if (navigator.onLine) refreshLookupCaches();
+    // [2026-09-19] SPEED: at most every 10 minutes from this idle path. It
+    // used to run every 15 seconds on every open device — downloading EVERY
+    // farmer and buyer, then writing them all to this browser's storage,
+    // which freezes the page while it writes. That was a large part of "the
+    // app is slow and laggy". After a real save it still refreshes at once.
+    if (navigator.onLine && Date.now() - lastIdleLookupRefreshAt >= IDLE_LOOKUP_REFRESH_MS) {
+      lastIdleLookupRefreshAt = Date.now();
+      refreshLookupCaches();
+    }
     return Promise.resolve();
   }
 
@@ -1816,9 +1996,27 @@ export function trySync() {
         ]);
         let progressed = false;
 
-        for (const op of q) {
-          const refId = op.payload?.partyId || op.payload?.productId || op.partyId || null;
-          if (refId && blockedLocalIds.has(refId)) {
+        for (let op of q) {
+          // [2026-09-19] Use the op as it is in the queue NOW, not as it was
+          // when this pass began: an earlier op in this same pass can move
+          // it to the server's transaction id, or drop it as a duplicate
+          // payment (repointToServerTransaction).
+          if (op._id) {
+            const current = getQueue().find((o) => o._id === op._id);
+            if (!current) continue;
+            op = current;
+          }
+          // [2026-09-18] Check EVERY local id this op depends on, not just
+          // the first one `||` happens to yield. A truck from a new farmer
+          // carrying a new paddy type queues createParty, createProduct and
+          // then a createTicket that references both. If the product create
+          // failed, the old single-value check saw only the party id, let the
+          // ticket through, and it was rejected by the server for a product
+          // that does not exist yet — which is not a connectivity error, so
+          // it counted strikes and put a perfectly good ticket in front of
+          // the operator as "stuck", with a Discard button beside it.
+          const refIds = [op.payload?.partyId, op.payload?.productId, op.partyId].filter(Boolean);
+          if (refIds.some((refId) => blockedLocalIds.has(refId))) {
             if (op.ticketId) blockedTicketIds.add(op.ticketId);
             continue;
           }
@@ -1868,6 +2066,16 @@ export function trySync() {
                 // that way, using the ticket's OWN id, never the
                 // transaction's (see the TX_OP_TYPES note above).
                 patchCachedTicket(op.ticketId, { stage: "finalized", transaction_id: result.id });
+                // [2026-09-19] The server may answer with a transaction that
+                // ALREADY existed for this ticket (another device finished it
+                // first), under a different id. Anything still queued against
+                // this device's own id is moved to the real one — before, the
+                // cash payment kept pointing at an id the server never had,
+                // failed forever, and "Recover" then booked the truck twice.
+                const localTxId = op.payload?.transactionId;
+                if (localTxId && result.id && result.id !== localTxId) {
+                  await repointToServerTransaction(localTxId, result.id);
+                }
               }
             }
             // And the "already Paid" cash payment recorded alongside a
@@ -1877,7 +2085,20 @@ export function trySync() {
             if (result && op.type === "createPayment") {
               upsertCachedPayment(result);
             }
-            removeOp(op._id);
+            // [2026-09-18] If the op could not be taken OUT of the queue,
+            // this pass has not progressed — carrying on would re-read the
+            // same op and send it again immediately, in a tight loop. Stop
+            // the pass instead and let the banner say something is wrong.
+            if (!removeOp(op._id)) {
+              storageBlocked = true;
+              notifyStatus();
+              console.error(
+                "[offlineQueue] the save went through but could not be removed from this device's queue — " +
+                  "storage is not writable. Stopping this pass instead of re-sending it in a loop."
+              );
+              progressed = false;
+              break;
+            }
             progressed = true;
           } catch (err) {
             // Network still down, or a real error — either way, this
@@ -2077,7 +2298,7 @@ export async function resolvePartyIdOffline(typedName, type, locationId, extra =
 // staff correct or add them at Finish Ticket and they differ from what's
 // already on file, so the next truckload from this same farmer has it
 // ready to prefill.
-export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl }) {
+export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl, verifiedAt, verifiedBy }) {
   assertNotViewOnly();
   if (!partyId) return;
   const list = getCachedParties();
@@ -2087,10 +2308,11 @@ export function updatePartyOffline(partyId, { bankName, bankAccount, bankQrUrl }
     if (bankName !== undefined) fields.bank_name = bankName || null;
     if (bankAccount !== undefined) fields.bank_account = bankAccount || null;
     if (bankQrUrl !== undefined) fields.bank_qr_url = bankQrUrl || null;
+    if (verifiedAt !== undefined) { fields.verified_at = verifiedAt; fields.verified_by = verifiedBy ?? null; }
     list[idx] = { ...list[idx], ...fields };
     setCachedParties(list);
   }
-  enqueueStrict({ type: "updateParty", partyId, payload: { bankName, bankAccount, bankQrUrl } });
+  enqueueStrict({ type: "updateParty", partyId, payload: { bankName, bankAccount, bankQrUrl, verifiedAt, verifiedBy } });
   trySync();
 }
 
@@ -2219,7 +2441,7 @@ export function setTicketGrossOffline(id, { grossKg, userId }) {
 // is queued for whenever the connection allows it. Only the fields that
 // were actually passed in get patched — a caller that only changed the
 // plate number, say, doesn't need to also resend everything else.
-export function editTicketOffline(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId }) {
+export function editTicketOffline(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, firstWeighIn = false, userId }) {
   assertNotViewOnly();
   const patch = {};
   if (partyId !== undefined) patch.party_id = partyId || null;
@@ -2230,16 +2452,22 @@ export function editTicketOffline(id, { partyId, partyName, phone, carPlate, dri
   if (productId !== undefined) patch.product_id = productId || null;
   if (productName !== undefined) patch.product_name = productName;
   if (paperTicketNo !== undefined) patch.paper_ticket_no = paperTicketNo || null;
+  // [2026-09-19] The weigh-in time is stamped only on a FIRST weigh-in, never
+  // on a correction — see api.updateTicketInfo.
+  let grossAt;
   if (grossKg !== undefined) {
     patch.gross_kg = grossKg;
-    patch.gross_at = getAccurateNow().toISOString();
-    patch.gross_by = userId;
+    if (firstWeighIn) {
+      grossAt = getAccurateNow().toISOString();
+      patch.gross_at = grossAt;
+      patch.gross_by = userId;
+    }
   }
   const updated = patchCachedTicket(id, patch);
   enqueueStrict({
     type: "editTicket",
     ticketId: id,
-    payload: { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, userId },
+    payload: { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, grossAt, userId },
   });
   if (paperTicketNo !== undefined) recordPaperTicketNo(updated.location_id, paperTicketNo);
   trySync();
@@ -2427,9 +2655,27 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   if (navigator.onLine) {
     const deadline = Date.now() + FINISH_SYNC_TIMEOUT_MS;
     let confirmed = !isOpQueued(opId); // e.g. a previous attempt already got it synced between attempts
+    // [2026-09-19] A new sync pass at most every 2 s; in between, only check.
+    // A pass every 250 ms re-sent every failing save ~120 times per press,
+    // so one brief server hiccup put good saves on the red "stuck" list.
+    let lastPassAt = 0;
     while (!confirmed && Date.now() < deadline) {
-      await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
+      if (Date.now() - lastPassAt >= FINISH_SYNC_PASS_MS) {
+        lastPassAt = Date.now();
+        await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
+      }
       confirmed = !isOpQueued(opId);
+      // [2026-09-18] A real pause between attempts. Without it this loop can
+      // spin for the full 30 seconds without the browser ever getting a turn:
+      // when the connection has just dropped, trySync() returns at its own
+      // `if (!navigator.onLine)` line having awaited nothing but microtasks,
+      // and the loop condition is wall-clock time. Millions of iterations, no
+      // task, timer or frame in between — the app freezes solid the moment
+      // someone presses Finish Ticket and Chrome offers to kill the page.
+      // Staff then press it again, which is where duplicates come from.
+      if (!confirmed && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, FINISH_SYNC_POLL_MS));
+      }
     }
     // [2026-09-07] Print ALWAYS — offline, slow, or unconfirmed. Refusing
     // the receipt on a slow connection (the 2026-09-06 rule) just moved the
@@ -2601,7 +2847,10 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
     payload: {
       id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId,
       qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg,
-      staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate,
+      // [2026-09-19] txTime: the moment staff saved it, not the moment it
+      // reached the server (an entry saved at 17:05 and synced next morning
+      // was stored at 07:10).
+      staffFee: staffFeeAmt, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate: txDate || nowDate, txTime: nowTime,
       paperTicketNo: paperTicketNo || null,
       grossKg: grossKg ?? null, grossAt: grossAt || null,
       tareKg: tareKg ?? null, tareAt: tareAt || null,
@@ -2641,9 +2890,27 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
   if (navigator.onLine) {
     const deadline = Date.now() + FINISH_SYNC_TIMEOUT_MS;
     let confirmed = !isOpQueued(opId);
+    // [2026-09-19] A new sync pass at most every 2 s; in between, only check.
+    // A pass every 250 ms re-sent every failing save ~120 times per press,
+    // so one brief server hiccup put good saves on the red "stuck" list.
+    let lastPassAt = 0;
     while (!confirmed && Date.now() < deadline) {
-      await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
+      if (Date.now() - lastPassAt >= FINISH_SYNC_PASS_MS) {
+        lastPassAt = Date.now();
+        await withTimeout(trySync(), Math.max(0, deadline - Date.now()), null);
+      }
       confirmed = !isOpQueued(opId);
+      // [2026-09-18] A real pause between attempts. Without it this loop can
+      // spin for the full 30 seconds without the browser ever getting a turn:
+      // when the connection has just dropped, trySync() returns at its own
+      // `if (!navigator.onLine)` line having awaited nothing but microtasks,
+      // and the loop condition is wall-clock time. Millions of iterations, no
+      // task, timer or frame in between — the app freezes solid the moment
+      // someone presses Finish Ticket and Chrome offers to kill the page.
+      // Staff then press it again, which is where duplicates come from.
+      if (!confirmed && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, FINISH_SYNC_POLL_MS));
+      }
     }
     needsVerification = !confirmed;
   } else {
@@ -2731,9 +2998,11 @@ export function createPaymentOffline({ type, transactionId, locationId, amount, 
   // a given transaction is the most that can be correct. If one already
   // exists — still queued, or already synced and sitting in the payment
   // cache — this returns it instead of creating another.
+  // [2026-09-19] Matched on the purchase and the payment type only, not the
+  // amount: a re-finish with a re-captured weight (12,350 instead of 12,340)
+  // has a different amount and slipped past, recording two payments.
   const sameMoney = (p) =>
-    p && p.transaction_id === transactionId && p.type === type &&
-    Math.round(Number(p.amount) || 0) === Math.round(Number(amount) || 0);
+    p && p.transaction_id === transactionId && p.type === type && !p.voided_at;
   const queuedTwin = getQueue().find(
     (op) => op.type === "createPayment" && sameMoney({
       transaction_id: op.payload?.transactionId, type: op.payload?.type, amount: op.payload?.amount,

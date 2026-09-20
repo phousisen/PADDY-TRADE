@@ -42,3 +42,12 @@ export function queryRangeAdj({ selectedLocationIds = [], startDate = null, endD
 export function rangeKey({ selectedLocationIds = [], startDate = null, endDate = null } = {}) {
   return `${[...selectedLocationIds].sort().join(",")}|${startDate || ""}|${endDate || ""}`;
 }
+
+// [2026-09-19] The day after a plain date. Stock counts are fetched one day
+// past a period's end: a reset entered after midnight belongs to the night
+// before (effectiveAdjDateStr), so the last night's reset was otherwise in
+// no period at all — not the month it belongs to, and filed outside the next.
+export function dayAfter(d) {
+  if (!d) return d;
+  return new Date(Date.parse(`${d}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+}

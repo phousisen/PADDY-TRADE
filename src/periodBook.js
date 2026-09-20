@@ -206,6 +206,10 @@ export function rollup(days) {
   }
   o.profit = days.reduce((a, d) => a + num(d.profit), 0);
   o.cash = days.reduce((a, d) => a + num(d.cash), 0);
+  // [2026-09-19] Losses only, day by day. lostValue nets a surplus on one day
+  // against a loss on another; a surplus is not income, so it must never
+  // cancel a loss (the Daily Book already takes each day on its own).
+  o.lossValue = days.reduce((a, d) => a + Math.min(0, num(d.lostValue)), 0);
 
   // Levels, not totals — take them from the last day, never the sum.
   const last = days[days.length - 1];

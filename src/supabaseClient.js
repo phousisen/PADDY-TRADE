@@ -172,9 +172,29 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // exactly as they are in this browser and pick right back up the moment
 // someone signs back in, no re-typing needed.
 const SESSION_REFRESH_BUFFER_SECONDS = 120;
+
+// [2026-09-19] "Could not reach the server" is not "your login is dead".
+// supabase-js reports a failed refresh through a returned error rather than
+// by throwing — so a station whose internet had dropped (PC asleep, WiFi up
+// but no route out) reached the `return false` below, and the banner told
+// staff their login had EXPIRED. Pressing "Sign in again" then signed them
+// out locally with a refresh token that was still perfectly good, and the
+// login screen could not reach the server either — the station could not weigh
+// anything until the internet came back. The sign-out log recorded "expired",
+// sending the diagnosis to the token settings once more.
+export function isNetworkAuthError(err) {
+  if (!err) return false;
+  if (err.name === "AuthRetryableFetchError") return true;
+  if (err.status === 0) return true;
+  return /fetch|network|timed? ?out|abort|ECONN|ENOTFOUND|offline/i.test(String(err.message || ""));
+}
+
 export async function ensureFreshSession() {
   try {
-    const { data } = await supabase.auth.getSession();
+    const { data, error: getError } = await supabase.auth.getSession();
+    // An outage, not an expiry — let the queue fail the ordinary way and
+    // retry, exactly as it would for any other dropped connection.
+    if (getError && isNetworkAuthError(getError)) return true;
     const session = data?.session;
     // [2026-09-17] This line used to `return true` — "no session just means
     // nobody's logged in on this device; AuthContext's login screen handles
@@ -210,12 +230,15 @@ export async function ensureFreshSession() {
     if (!session) return false;
 
     const expiresAt = session.expires_at; // unix seconds
-    const nowSeconds = Date.now() / 1000;
+    // [2026-09-19] Server-corrected clock: a station PC whose clock is off by
+    // an hour judged a live login expired, or an expired one live.
+    const nowSeconds = getAccurateNow().getTime() / 1000;
     if (!expiresAt || expiresAt - nowSeconds > SESSION_REFRESH_BUFFER_SECONDS) {
       return true; // Comfortably valid — nothing to do.
     }
 
     const { data: refreshed, error } = await supabase.auth.refreshSession();
+    if (error && isNetworkAuthError(error)) return true; // outage, not expiry — see above
     return !error && !!refreshed?.session;
   } catch (_err) {
     // Couldn't even check right now (e.g. genuinely offline) — that's a

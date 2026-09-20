@@ -1,35 +1,58 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { useLanguage } from "./i18n.jsx";
 import { api } from "./api.js";
 import { startAutoSync } from "./offlineQueue.js";
 import Login from "./pages/Login.jsx";
 import Sidebar from "./components/Sidebar.jsx";
-import DailyBook from "./pages/DailyBook.jsx";
 import MobileNav from "./components/MobileNav.jsx";
 import UpdateBanner from "./components/UpdateBanner.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
-import StockInventory from "./pages/StockInventory.jsx";
 import Transactions from "./pages/Transactions.jsx";
 import TransactionForm from "./pages/TransactionForm.jsx";
 import WeighingTickets from "./pages/WeighingTickets.jsx";
-import ChangeRequests from "./pages/ChangeRequests.jsx";
-import Reports from "./pages/Reports.jsx";
-import Expenses from "./pages/Expenses.jsx";
-import SimpleListPage from "./pages/SimpleListPage.jsx";
-import LocationsPage from "./pages/LocationsPage.jsx";
-import StationHealth from "./pages/StationHealth.jsx";
-import DataCheck from "./pages/DataCheck.jsx";
-import LocationDetail from "./pages/LocationDetail.jsx";
-import PartyDetail from "./pages/PartyDetail.jsx";
-import UsersPage from "./pages/UsersPage.jsx";
-import RolesPage from "./pages/RolesPage.jsx";
-import SettingsPage from "./pages/SettingsPage.jsx";
-import ReceiptTemplateEditor from "./pages/ReceiptTemplateEditor.jsx";
-import RegisterFarmer from "./pages/RegisterFarmer.jsx";
-import RegisterPartyStaff from "./pages/RegisterPartyStaff.jsx";
-import RegistrarShell from "./pages/RegistrarShell.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
+
+
+// [2026-09-19] SPEED: screens most people rarely open are loaded when first
+// opened, not all at start-up. The weighing board, Transactions, New Buy/Sell
+// and the Dashboard stay in the first download. The service worker keeps
+// every piece on the device, so this still works offline once installed.
+// A piece that fails to arrive (a bad moment on the line) is asked for once
+// more before giving up.
+// If it still fails, the app has almost certainly just been updated and the
+// old piece is gone from the server: reload once onto the new version.
+const lazyPage = (load) => lazy(() => load()
+  .catch(() => new Promise((r) => setTimeout(r, 1500)).then(load))
+  .catch((err) => {
+    let reloaded = false;
+    try { reloaded = sessionStorage.getItem("ptw_chunk_reload") === "1"; } catch { /* storage blocked */ }
+    if (!reloaded) {
+      try { sessionStorage.setItem("ptw_chunk_reload", "1"); } catch { /* storage blocked */ }
+      window.location.reload();
+      return new Promise(() => {});
+    }
+    throw err;
+  })
+  .then((mod) => { try { sessionStorage.removeItem("ptw_chunk_reload"); } catch { /* fine */ } return mod; }));
+const DailyBook = lazyPage(() => import("./pages/DailyBook.jsx"));
+const StockInventory = lazyPage(() => import("./pages/StockInventory.jsx"));
+const ChangeRequests = lazyPage(() => import("./pages/ChangeRequests.jsx"));
+const Reports = lazyPage(() => import("./pages/Reports.jsx"));
+const Expenses = lazyPage(() => import("./pages/Expenses.jsx"));
+const SimpleListPage = lazyPage(() => import("./pages/SimpleListPage.jsx"));
+const LocationsPage = lazyPage(() => import("./pages/LocationsPage.jsx"));
+const StationHealth = lazyPage(() => import("./pages/StationHealth.jsx"));
+const DataCheck = lazyPage(() => import("./pages/DataCheck.jsx"));
+const LocationDetail = lazyPage(() => import("./pages/LocationDetail.jsx"));
+const PartyDetail = lazyPage(() => import("./pages/PartyDetail.jsx"));
+const UsersPage = lazyPage(() => import("./pages/UsersPage.jsx"));
+const RolesPage = lazyPage(() => import("./pages/RolesPage.jsx"));
+const SettingsPage = lazyPage(() => import("./pages/SettingsPage.jsx"));
+const ReceiptTemplateEditor = lazyPage(() => import("./pages/ReceiptTemplateEditor.jsx"));
+const RegisterFarmer = lazyPage(() => import("./pages/RegisterFarmer.jsx"));
+const RegisterPartyStaff = lazyPage(() => import("./pages/RegisterPartyStaff.jsx"));
+const RegistrarShell = lazyPage(() => import("./pages/RegistrarShell.jsx"));
 
 export default function App() {
   const { session, profile, loading, hasPermission, can, isViewOnly, passwordRecovery } = useAuth();
@@ -75,7 +98,9 @@ export default function App() {
       .then((n) => { if (!cancelled) setPendingRequests(n); })
       .catch(() => {}); // a failed count just means no badge, never an error banner
     return () => { cancelled = true; };
-  }, [profile]);
+    // [2026-09-19] Keyed on who is signed in, not the profile object, which
+    // is replaced on every token refresh and re-ran this each time.
+  }, [profile?.id, profile?.role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Start the offline sync/safety-net once someone's actually signed in —
   // app-wide, not just while the Weighing Tickets screen happens to be
@@ -144,10 +169,16 @@ export default function App() {
   // directory (see RegistrarShell.jsx). Same permission gate, same "no
   // other page in the app is reachable" guarantee; just more than one
   // screen behind it now.
+  // [2026-09-19] A suspended account gets this screen and nothing else. It
+  // used to fall through to the full Staff screens, including New Buy/Sell.
+  if (profile.roles && profile.roleName === "Suspended") {
+    return <SuspendedScreen />;
+  }
+
   const permissions = Array.isArray(profile.permissions) ? profile.permissions : [];
   const isRegistrationOnly = permissions.length > 0 && permissions.every((p) => p === "manage_parties");
   if (isRegistrationOnly) {
-    return <RegistrarShell />;
+    return <Suspense fallback={<PageLoading />}><RegistrarShell /></Suspense>;
   }
 
   const isAdmin = profile.role === "admin";
@@ -259,7 +290,7 @@ export default function App() {
   return (
     <div className="flex bg-paper">
       <Sidebar page={page} setPage={setPage} pendingRequests={pendingRequests} />
-      {renderPage()}
+      <Suspense fallback={<PageLoading />}>{renderPage()}</Suspense>
       {/* [2026-08-31] Phone-only bottom tab bar + "More" sheet — takes
           over navigation below the `md` breakpoint, where Sidebar above
           is hidden. Fixed-positioned, so its place in this tree doesn't
@@ -276,4 +307,23 @@ export default function App() {
       <UpdateBanner />
     </div>
   );
+}
+
+function SuspendedScreen() {
+  const { logout } = useAuth();
+  const { t } = useLanguage();
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-slate-50 p-6">
+      <div className="max-w-sm rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+        <p className="text-sm font-semibold text-slate-700">{t("suspended_title")}</p>
+        <p className="mt-2 text-xs text-slate-500">{t("suspended_body")}</p>
+        <button onClick={() => logout()} className="mt-4 rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">{t("logout")}</button>
+      </div>
+    </div>
+  );
+}
+
+function PageLoading() {
+  const { t } = useLanguage();
+  return <div className="flex flex-1 items-center justify-center text-sm text-slate-400">{t("loading_label")}</div>;
 }

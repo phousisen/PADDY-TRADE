@@ -52,7 +52,13 @@ function partsOf(value) {
 
 // A plain YYYY-MM-DD is already a business date — it has no time and no
 // timezone, and must never be pushed through a Date, which would shift it.
-const isPlainDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v);
+// [2026-09-19] Anchored at BOTH ends. Without the $, a full timestamp such as
+// "2026-09-18T23:30:00+00:00" also matched, and its first ten characters —
+// the UTC day — were used. That is 19/09 06:30 in Phnom Penh, printed as
+// 18/09. Every receipt and weigh slip for a truck weighed between midnight
+// and 07:00 showed the previous day's date, disagreeing with the transaction
+// date on the same piece of paper. Display only: no stored date was touched.
+const isPlainDate = (v) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 
 function ymdOf(value) {
   if (isPlainDate(value)) {

@@ -35,6 +35,7 @@
 // distinction, which applies here identically.
 
 import { buildDays, rollup, SUM_FIELDS } from "./periodBook.js";
+import { effectiveAdjDateStr } from "./dailyLedger.js";
 import { categoryKey } from "./expenseCategories.js";
 
 const num = (v) => Number(v) || 0;
@@ -201,8 +202,11 @@ export function computeStatements({
   // cost — 50,000 ៛ of cost of goods sold appeared out of nowhere on a
   // three-station consolidation, and the same consolidation no longer equalled
   // the three stations added up. Caught by scripts-check-statements.mjs.
+  // [2026-09-19] Dated by the shared after-midnight rule, not the UTC date
+  // of created_at: a reset at 02:00 on the 1st belongs to the last day of the
+  // previous month (the fetch reaches one day past the end for it).
   const scopedAdjustments = adjustments.filter(
-    (a) => inScope(a.location_id) && notAfterEnd(String(a.created_at || "").slice(0, 10)));
+    (a) => inScope(a.location_id) && a.created_at && notAfterEnd(effectiveAdjDateStr(a)));
   const daysByStation = [...stationIds].map((id) => buildDays({
     txs: active.filter((t) => t.location_id === id),
     payments: expensesAll.filter((p) => p.location_id === id),
@@ -236,7 +240,9 @@ export function computeStatements({
   const costOfGoodsSold = period.cogs;
   // A counted SHORTAGE is a real cost. A counted SURPLUS is not income —
   // paddy is not sold by being found — so only the negative side is taken.
-  const inventoryLost = Math.min(0, period.lostValue);
+  // [2026-09-19] Summed loss by loss (see rollup.lossValue): a surplus on
+  // one day or at one station used to cancel a loss elsewhere.
+  const inventoryLost = num(period.lossValue);
 
   const depreciation = depreciationFor(scopedAssets, startDate, endDate);
   // Interest actually recorded as an expense. If the business carries loans
@@ -293,14 +299,21 @@ export function computeStatements({
     .reduce((s, e) => s + num(e.amount), 0);
   const capitalNet = partnerCapital - drawings;   // what actually moved in cash
 
-  const assetCost = scopedAssets === null ? null : scopedAssets.reduce((s, a) => s + num(a.cost), 0);
-  const accumDep = accumulatedDepreciation(scopedAssets, endDate);
+  // [2026-09-19] Only assets in service by the period end: a truck bought
+  // on 5 October sat at full cost on the 30 September sheet.
+  const assetsAtEnd = scopedAssets === null ? null
+    : scopedAssets.filter((a) => !endDate || !a.in_service_date || a.in_service_date <= endDate);
+  const assetCost = assetsAtEnd === null ? null : assetsAtEnd.reduce((s, a) => s + num(a.cost), 0);
+  const accumDep = accumulatedDepreciation(assetsAtEnd, endDate);
+  const assetsBoughtToDate = assetsAtEnd === null ? 0
+    : assetsAtEnd.filter((a) => a.in_service_date).reduce((s, a) => s + num(a.cost), 0);
   const fixedAssetsNet = addKnown(assetCost, accumDep === null ? null : -accumDep);
 
   const openingCash = sumSetting(settings, stationIds, "opening_cash");
   // Cash MOVED since the system began. Adding the opening balance turns it
   // into cash HELD; without one it is a movement, and saying so is the point.
-  const cashMovement = paidSell - paidBuy + capitalNet + loansOutstanding - expAllToDate;
+  // [2026-09-19] Less what was spent on fixed assets, as the Cash Flow does.
+  const cashMovement = paidSell - paidBuy + capitalNet + loansOutstanding - expAllToDate - assetsBoughtToDate;
   const cash = addKnown(openingCash, cashMovement);
 
   // Current assets are always knowable — cash movement, debts and the shed all
@@ -310,14 +323,26 @@ export function computeStatements({
   const currentAssets = addKnown(cash, accountsReceivable, inventoryValue);
   const totalAssets = addKnown(currentAssets, fixedAssetsNet);
   const accrued = 0;   // no accruals ledger yet — see the note on the page
-  const totalLiabilities = accountsPayable + loansOutstanding + accrued;
+  // [2026-09-19] VAT: what customers paid on top of the price, less what was
+  // paid to farmers on top of theirs, is owed on — it is in cash and debts
+  // but was never in sales or costs, so it widened the "unexplained" gap.
+  const vatOf = (t) => num(t.total_with_tax ?? t.amount) - num(t.amount);
+  const vatNet = sells.reduce((s, t) => s + vatOf(t), 0) - buys.reduce((s, t) => s + vatOf(t), 0);
+  const totalLiabilities = accountsPayable + loansOutstanding + accrued + vatNet;
 
   // Retained earnings is EARNED, never the figure required to make the sheet
   // balance. Accumulated profit since the system began, computed exactly the
   // way this period's profit is, less what partners have drawn out.
+  // [2026-09-19] Losses counted loss by loss, and depreciation charged, as
+  // in the income statement.
   const retainedEarnings =
-    toDate.received - toDate.cogs - expAllToDate + Math.min(0, toDate.lostValue);
-  const equity = partnerCapital - drawings + retainedEarnings;
+    toDate.received - toDate.cogs - expAllToDate + num(toDate.lossValue) - (accumDep || 0);
+  // [2026-09-19] The cash the business held when the system started belongs
+  // to the owners. Entering it used to OPEN a gap of exactly that size (it
+  // was an asset with nothing on the other side), the opposite of what the
+  // page says it does.
+  const openingEquity = num(openingCash);
+  const equity = partnerCapital - drawings + retainedEarnings + openingEquity;
 
   // Nothing is plugged, so the two sides can differ — and the gap is
   // meaningful: it is the cash the business held before the system started.
@@ -327,8 +352,11 @@ export function computeStatements({
   // =========================================================================
   // CASH FLOW
   // =========================================================================
-  const collected = sumPaymentsInPeriod(scopedPays, inPeriod, ["receive_payment", "payment"], sells);
-  const paidOut = sumPaymentsInPeriod(scopedPays, inPeriod, ["pay_supplier", "payment"], buys);
+  // [2026-09-19] "receive_customer" is what a customer's payment is saved as.
+  // The old list named types nothing ever saves, so cash collected always
+  // read 0 on the Cash Flow.
+  const collected = sumPaymentsInPeriod(scopedPays, inPeriod, ["receive_customer"], sells);
+  const paidOut = sumPaymentsInPeriod(scopedPays, inPeriod, ["pay_supplier"], buys);
   const expensesPaidPeriod = expensesPeriod.reduce((s, e) => s + num(e.amount), 0);
   const capitalInPeriod = scopedCapital
     .filter((e) => e.entry_date && inPeriod(e.entry_date))
@@ -365,8 +393,8 @@ export function computeStatements({
       cash, cashMovement, openingCash,
       accountsReceivable, inventoryValue, inventoryKg, inventoryCostPerKg,
       currentAssets, assetCost, accumDep, fixedAssetsNet, totalAssets,
-      accountsPayable, loansOutstanding, accrued, totalLiabilities,
-      partnerCapital, drawings, retainedEarnings, equity,
+      accountsPayable, loansOutstanding, accrued, vatNet, totalLiabilities,
+      partnerCapital, drawings, retainedEarnings, openingEquity, equity,
       unreconciled,
     },
 
@@ -381,11 +409,17 @@ export function computeStatements({
       expensesPaidOther: expensesPaidPeriod - expP.intermediary,
       assetsBought: assetsBoughtInPeriod, cfInvesting,
       capitalIn: capitalInPeriod, loansIn: loansInPeriod, drawings: drawingsInPeriod, cfFinancing,
-      cfNet, openingCash, closingCash: addKnown(openingCash, cfNet),
+      // [2026-09-19] Closing cash IS the Balance Sheet's cash at the end
+      // date, and the period starts from it less this period's movement.
+      // It used to be the system's opening balance plus this period only, so
+      // every month before was missing from it.
+      cfNet,
+      openingCash: cash === null || cfNet === null ? null : cash - cfNet,
+      closingCash: cash,
     },
 
     inventory: inventoryByStation({ stations, active, expensesAll, adjustments: scopedAdjustments, inPeriod }),
-    shareholders: shareholders({ stations, partners, active, periodTxs, capitalEntries, notAfterEnd,
+    shareholders: shareholders({ stations, partners, active, periodTxs, capitalEntries, notAfterEnd, adjustments: scopedAdjustments,
                                  inPeriod, expensesPeriod }),
   };
 }
@@ -401,7 +435,7 @@ function mergeRollups(rs) {
   const o = {};
   // SUM_FIELDS already carries cogs — adding it again in the second list would
   // double every station's cost of goods sold.
-  const extra = ["profit", "cash", "openingKg", "openingValue", "closingKg", "closingValue"];
+  const extra = ["profit", "cash", "lossValue", "openingKg", "openingValue", "closingKg", "closingValue"];
   for (const f of [...SUM_FIELDS, ...extra]) o[f] = rs.reduce((s, r) => s + (Number(r[f]) || 0), 0);
   // Days are calendar days, not a quantity: three stations trading the same
   // 30 days is 30 days, not 90.
@@ -489,7 +523,7 @@ function inventoryByStation({ stations, active, expensesAll, adjustments, inPeri
 // done honestly is: give each holding its station's share, then add each
 // PERSON up across the stations in scope. That second figure is a sum of
 // amounts, never a blended percentage.
-function shareholders({ stations, partners, active, periodTxs, capitalEntries, notAfterEnd, inPeriod, expensesPeriod }) {
+function shareholders({ stations, partners, active, periodTxs, capitalEntries, notAfterEnd, inPeriod, expensesPeriod, adjustments = [] }) {
   const holdings = [];
   for (const s of stations) {
     const mine = partners.filter((p) => p.location_id === s.id);
@@ -500,10 +534,13 @@ function shareholders({ stations, partners, active, periodTxs, capitalEntries, n
     const sDays = buildDays({
       txs: active.filter((t) => t.location_id === s.id),
       payments: expensesPeriod.filter((p) => p.location_id === s.id),
-      adjustments: [], locationIds: [s.id],
+      // [2026-09-19] The station's stock counts too: a write-off is a cost
+      // the partners share. Profit shares added up to more than the income
+      // statement by exactly the losses.
+      adjustments: adjustments.filter((a) => a.location_id === s.id), locationIds: [s.id],
     });
     const p = rollup(sDays.filter((d) => inPeriod(d.date)));
-    const stationProfit = p.received - p.cogs - p.expenses + Math.min(0, p.lostValue);
+    const stationProfit = p.received - p.cogs - p.expenses + num(p.lossValue);
 
     const capOf = (partnerId) => capitalEntries
       .filter((e) => e.location_id === s.id && e.partner_id === partnerId && notAfterEnd(e.entry_date))
