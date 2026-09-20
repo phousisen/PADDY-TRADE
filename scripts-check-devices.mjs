@@ -363,7 +363,11 @@ ok("the sign-out request is read and cleared at once, so it cannot loop",
    /set signout_requested_at = null,[\s\S]{0,120}signout_requested_at is not null/.test(netSql));
 ok("who pressed it is recorded", netSql.includes("signout_by = auth.uid()"));
 ok("signing back in clears the note", /signed_out_at = null/.test(netSql));
-ok("the browser signs itself out when told", banner.includes("supabase.auth.signOut()"));
+// [2026-09-19] ...and ONLY itself. A bare signOut() defaults to "global" in
+// supabase-js, which would sign out every device on that account — the
+// opposite of "sign THIS machine out".
+ok("the browser signs itself out when told — this machine only",
+   banner.includes('supabase.auth.signOut({ scope: "local" })') && !/auth\.signOut\(\s*\)/.test(banner));
 ok("the screen names the person and the machine before asking",
    panel.includes("st_confirm_title") && panel.includes("st_confirm_warn"));
 ok("only the owner sees a sign-out button", panel.includes("const canSignOut = !!profile?.isOwner;"));

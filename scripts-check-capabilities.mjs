@@ -136,13 +136,29 @@ ok(JSON.stringify(sidebarIds) === JSON.stringify(VIEW_ONLY_PAGES),
 ok(JSON.stringify(mobileIds) === JSON.stringify(VIEW_ONLY_PAGES),
    `a view-only account's phone tabs are ${JSON.stringify(mobileIds)}, expected ${JSON.stringify(VIEW_ONLY_PAGES)}`);
 
-// Nothing behind "More" for this account, and no More button offering an
-// empty sheet.
+// Nothing behind "More" for this account — its three pages are all tabs.
 const mob = readFileSync("src/components/MobileNav.jsx", "utf8");
 ok(/const moreItems = isViewOnly\s*\n\s*\? \[\]/.test(mob),
    "a view-only account has pages hidden behind More");
-ok(mob.includes("{(moreItems.length > 0 || systemItems.length > 0) && ("),
-   "the More button is shown even when there is nothing in it");
+
+// [2026-09-16] THIS ASSERTION USED TO SAY THE OPPOSITE.
+//
+// It required the More button to be HIDDEN when the sheet had no pages in
+// it, which is what I had built, and it dutifully held that in place:
+//
+//     "where where to change language wtf. so not professional"
+//
+// The sheet is not only pages. It is also the only place on a phone with
+// the language switch and Log out in it, so hiding the button took both
+// away from the one account type that had no pages behind it — the one
+// made for two people who read Khmer. A green guard asserting the wrong
+// thing is worse than no guard, because it makes the bug look deliberate.
+//
+// scripts-check-escape.mjs now owns this rule properly, from the side that
+// matters: those two controls must be reachable by every account. This
+// line stays as the record of which way round it goes.
+ok(!mob.includes("{(moreItems.length > 0 || systemItems.length > 0) && ("),
+   "the More button is NEVER hidden — the language switch and Log out live inside it");
 
 // The pages themselves must still be reachable by this account.
 const app = readFileSync("src/App.jsx", "utf8");

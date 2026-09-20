@@ -133,6 +133,11 @@ for (const file of allSourceFiles) {
   }
   for (const m of src.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?function\s+([\w$]+)/g)) available.add(m[1]);
   for (const m of src.matchAll(/(?:^|\n)\s*(?:export\s+)?(?:const|let|var)\s+([\w$]+)/g)) available.add(m[1]);
+  // [2026-09-19] Loaded on demand: const { a, b } = await import("…"), or
+  // const [{ a }, { b }] = await Promise.all([import("…"), import("…")]).
+  for (const m of src.matchAll(/(?:const|let|var)\s*(\[[^=]*\]|\{[^=]*\})\s*=\s*await\s+(?:import\(|Promise\.all\(\s*\[\s*import\()/g)) {
+    for (const n of m[1].matchAll(/[A-Za-z_$][\w$]*/g)) available.add(n[0]);
+  }
 
   lines.forEach((line, i) => {
     if (/^\s*(\/\/|\*)/.test(line)) return;   // a comment is not a call

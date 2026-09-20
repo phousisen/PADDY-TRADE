@@ -66,7 +66,8 @@ eq("the printed code and the stored code come from the same space",
 // ---------------------------------------------------------------------
 ok("the party lookup cache is capped", queue.includes("LOOKUP_CACHE_MAX_ROWS"));
 ok("setCachedParties applies the cap",
-   /export function setCachedParties\(list\) \{\s*writeJSON\(PARTY_CACHE_KEY, \(list \|\| \[\]\)\.slice\(0, LOOKUP_CACHE_MAX_ROWS\)\)/.test(queue));
+   // [2026-09-19] Newest first and unsynced farmers kept, then capped.
+   /export function setCachedParties\(list\) \{[\s\S]{0,1400}?writeJSON\(PARTY_CACHE_KEY, \[\.\.\.keep, \.\.\.rest\]\.slice\(0, Math\.max\(LOOKUP_CACHE_MAX_ROWS, keep\.length\)\)\)/.test(queue));
 ok("setCachedProducts applies the cap",
    /export function setCachedProducts\(list\) \{[\s\S]{0,400}?slice\(0, LOOKUP_CACHE_MAX_ROWS\)/.test(queue));
 

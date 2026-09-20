@@ -252,5 +252,111 @@ for (const good of ['<option value="A">A</option>', '<option value="B">B</option
   if (!wt.includes(good)) { console.error(`FAIL  ticket quality dropdown missing ${good}`); failed++; }
 }
 
+// ── [2026-09-18] The full-system audit ──────────────────────────────────────
+//
+// Five defects found by reading the code rather than waiting for them to
+// happen. Each one is a real sequence that ends in lost money, a duplicate,
+// or a station with no safe action. These assertions are what stops them
+// coming back the way this week's faults kept coming back.
+
+{
+  const q = readFileSync("src/offlineQueue.js", "utf8");
+  const a = readFileSync("src/api.js", "utf8");
+  const cases = [
+    // A connection blip used to wipe EVERY op's stuck count, not just the
+    // failing one — so a genuinely broken save never reached the threshold,
+    // never turned the banner red, and never offered Recover or Discard.
+    ["a connection blip clears only the failing op's strikes",
+     /stuckOps\.delete\(op\._id\);\s*\n\s*return;/.test(q)],
+    ["and no longer wipes the whole map on a network error",
+     !/if \(!navigator\.onLine \|\| isConnectivityError\(err\)\) \{[\s\S]{0,600}?clearStuckTracking\(\);\s*\n\s*return;/.test(q)],
+
+    // An op that succeeded on the server but could not be removed from the
+    // queue used to be re-sent immediately, forever, pinning the tab.
+    ["removeOp reports whether the removal reached storage",
+     /function removeOp\(opId\) \{[\s\S]{0,400}?return persisted !== false;/.test(q)],
+    ["a failed removal stops the pass instead of re-sending",
+     /if \(!removeOp\(op\._id\)\) \{/.test(q)],
+
+    // "Zero rows" meant both "ticket gone" and "ticket already finalized".
+    // The queue heard only the first and deleted the finalize AND the
+    // farmer's cash payment.
+    ["a step that matched no rows asks whether the ticket is really gone",
+     /async ticketStepAlreadyDoneOrGone\(id\)/.test(a)],
+    ["setTicketPrice will not knock a finalized ticket backwards",
+     /stage: decline \? "declined" : "priced",/.test(a) && /\.neq\("stage", "finalized"\)/.test(a)],
+    ["both price and tare use the gone-or-done check",
+     (a.match(/api\.ticketStepAlreadyDoneOrGone\(id\)/g) || []).length >= 2],
+
+    // The confirm loop spun on microtasks and froze the page for 30s.
+    ["the Finish Ticket wait gives the browser a turn",
+     /FINISH_SYNC_POLL_MS/.test(q) &&
+       (q.match(/await new Promise\(\(r\) => setTimeout\(r, FINISH_SYNC_POLL_MS\)\)/g) || []).length === 2],
+
+    // A queue blob that would not parse was silently overwritten.
+    ["an unreadable queue is kept, not written over",
+     /QUEUE_DAMAGED_KEY/.test(q) && /queueWasDamaged = true/.test(q)],
+
+    // The dependency gate checked only the first of an op's local ids.
+    ["every local id an op depends on is checked, not just the first",
+     /const refIds = \[op\.payload\?\.partyId, op\.payload\?\.productId, op\.partyId\]\.filter\(Boolean\)/.test(q)],
+  ];
+  for (const [what, ok] of cases) {
+    if (!ok) { console.error(`FAIL  ${what}`); failed++; }
+  }
+}
+
+
+
+// ── [2026-09-19] Second audit pass: login, API layer and screens ─────────────
+{
+  const rd = (p) => readFileSync(p, "utf8");
+  const api = rd("src/api.js"), q = rd("src/offlineQueue.js"), sc = rd("src/supabaseClient.js");
+  const auth = rd("src/AuthContext.jsx"), df = rd("src/dateFormat.js");
+  const txf = rd("src/pages/TransactionForm.jsx"), txs = rd("src/pages/Transactions.jsx");
+  const exp = rd("src/pages/Expenses.jsx"), stm = rd("src/useStatements.js");
+  const cases = [
+    ["an outage is not reported as an expired login",
+      /export function isNetworkAuthError/.test(sc) && /if \(getError && isNetworkAuthError\(getError\)\) return true;/.test(sc)],
+    ["a ticket is only treated as gone with a live login",
+      (q.match(/await confirmTicketReallyGone\(op\); dropOtherOpsForGoneTicket/g) || []).length === 5],
+    ["the duplicate-payment guard ignores voided rows and respects the method",
+      /\.eq\("amount", amount\)\s*\n\s*\.is\("voided_at", null\)\s*\n\s*\.gte\("created_at", cutoff\)/.test(api) &&
+        /q = method \? q\.eq\("method", method\)/.test(api)],
+    ["the duplicate-payment guard uses the corrected clock",
+      /new Date\(getAccurateNow\(\)\.getTime\(\) - 2 \* 60 \* 1000\)/.test(api)],
+    ["no paged query sorts inside itself",
+      !/partner_capital_entries"\)\s*\.select\([^)]*\)\s*\.order\(/.test(api) &&
+      !/stock_adjustments"\)\s*\.select\([^)]*\)\s*\.order\(/.test(api)],
+    ["reopening a ticket refuses a cancel that changed nothing",
+      /The transaction for this ticket could not be cancelled/.test(api)],
+    ["a cash-ledger failure on capital/loans is reported, not swallowed",
+      (api.match(/cashLedgerError: linkErr\?\.message/g) || []).length === 2],
+    ["the write guard reads both view-only flags",
+      /setViewOnlyMode\(!!profile\?\.view_only \|\| !!profile\?\.roles\?\.view_only\)/.test(auth)],
+    ["a timeout never builds a profile without its roles",
+      /keeping the cached profile/.test(auth)],
+    ["a timestamp is never read as a plain date",
+      /\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(v\)/.test(df)],
+    ["New Buy/Sell cannot be submitted twice at once",
+      /const submittingRef = useRef\(false\);/.test(txf) && /if \(submittingRef\.current\) return;/.test(txf)],
+    ["a farmer's bank details are never blanked implicitly",
+      /if \(bankName && bankName !== \(party\.bank_name \|\| ""\)\)/.test(txf)],
+    ["expense retries reuse the same id",
+      /pendingExpenseIds\.current\.get\(idKey\)/.test(exp)],
+    ["marking Paid reads payments fresh from the server",
+      /const freshPayments = await api\.getPaymentsForTransaction\(editTx\.id\);/.test(txs)],
+    ["payment corrections need edit_payments",
+      /const mayCorrect = can\("edit_payments"\) && !isViewOnly;/.test(txs)],
+    ["a failed money load stops the statements instead of showing zero",
+      /money\(api\.getPayments/.test(stm) && !/soft\(api\.getPayments/.test(stm)],
+    ["a buyer-confirmed Sell keeps the buyer's weight in a change request",
+      /const buyerConfirmedReq = !isBuy && !!tx\.buyer_confirmed_at;/.test(txs)],
+  ];
+  for (const [what, ok] of cases) {
+    if (!ok) { console.error(`FAIL  ${what}`); failed++; }
+  }
+}
+
 if (failed) { console.error(`\n${failed} integrity check(s) FAILED.`); process.exit(1); }
 console.log("Checked 35 integrity cases — nothing lost silently, nothing orphaned, no money queued twice.");

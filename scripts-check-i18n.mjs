@@ -52,10 +52,10 @@ const BASELINE = {
   "src/pages/RegisterFarmer.jsx": 11,
   "src/pages/SetPassword.jsx": 8,
   "src/components/StationDaysReview.jsx": 7,
-  "src/pages/ReportAuditLog.jsx": 6,
+  "src/pages/ReportAuditLog.jsx": 0,
   "src/components/AddLocationModal.jsx": 5,
   "src/pages/SettingsPage.jsx": 5,
-  "src/components/DateRangeFilter.jsx": 4,
+  "src/components/DateRangeFilter.jsx": 0,
   "src/components/EditedBadge.jsx": 4,
   "src/pages/RegisterPartyStaff.jsx": 3,
   "src/App.jsx": 2,
@@ -161,7 +161,14 @@ function entries(lang) {
   const j = dict.indexOf("\n  },", i);
   const m = new Map();
   // several keys share a line, and values contain escaped quotes
-  for (const x of dict.slice(i, j).matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*:\s*"((?:[^"\\]|\\.)*)"/g)) m.set(x[1], x[2]);
+  for (const x of dict.slice(i, j).matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*:\s*"((?:[^"\\]|\\.)*)"/g)) {
+    // [2026-09-19] A key written twice: JavaScript keeps the LATER one and
+    // says nothing, so the screen that used the first wording silently shows
+    // the second. Found when a new err_adjustments_load replaced the
+    // Overview's own message.
+    if (m.has(x[1])) fail(`${lang}: key "${x[1]}" is defined twice — the second silently replaces the first`);
+    m.set(x[1], x[2]);
+  }
   return m;
 }
 const en = entries("en"), km = entries("km");
@@ -178,7 +185,8 @@ for (const f of files("src").concat(
   fs.readdirSync("src").filter((n) => /\.js$/.test(n)).map((n) => path.join("src", n)),
 )) {
   const src = fs.readFileSync(f, "utf8");
-  for (const k of new Set([...src.matchAll(/\bt\(\s*"([a-z][a-z0-9_]*)"\s*\)/g)].map((m) => m[1]))) {
+  // [2026-09-19] Also t("key", { ... }) — calls with values were not checked.
+  for (const k of new Set([...src.matchAll(/\bt\(\s*"([a-z][a-z0-9_]*)"\s*[,)]/g)].map((m) => m[1]))) {
     if (!en.has(k)) { fail(`t("${k}") in ${f} has no English`); unresolved += 1; }
     else if (!km.has(k)) { fail(`t("${k}") in ${f} has no Khmer`); unresolved += 1; }
   }

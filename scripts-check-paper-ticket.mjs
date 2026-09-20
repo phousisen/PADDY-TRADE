@@ -171,7 +171,9 @@ ok("hop 4/5 — buildTransactionRow accepts it",
 ok("hop 4/5 — it is written normalized, never raw",
    api.includes("paper_ticket_no: normalizePaperTicketNo(paperTicketNo),"));
 ok("hop 4/5 — a duplicate is flagged on the row itself",
-   api.includes('paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("transactions", locationId, paperTicketNo)'));
+   // [2026-09-19] ...excluding the row's own id, so a retry is not flagged
+   // as a duplicate of itself.
+   api.includes('paper_ticket_dup_flag: await checkAndFlagPaperTicketDuplicate("transactions", locationId, paperTicketNo, id)'));
 
 // 5.5 A STUCK save that gets recovered must carry the number back. This
 //     is the subtlest hop: recoverStuckOps rebuilds the queued op from
@@ -210,8 +212,10 @@ ok("editing the number clears a standing warning",
 ok("the saved number is recorded for the next suggestion",
    form.includes("recordPaperTicketNo(effectiveStationId, paperTicketNo.trim());"));
 ok("the suggestion only fills a blank box",
-   form.includes("if (!suggestStationId || paperTicketNo) return undefined;") &&
-   form.includes("setPaperTicketNo((cur) => (cur ? cur : suggested));"));
+   // [2026-09-19] "blank" now also means "still the number this screen filled
+   // in itself" — so an admin switching station gets the new station's number.
+   form.includes("if (paperTicketNo && paperTicketNo !== autoTicketNoRef.current) return undefined;") &&
+   form.includes("if (cur && cur !== autoTicketNoRef.current) return cur;"));
 ok("the suggestion uses the SAME counter as the weighbridge board",
    form.includes("suggestNextPaperTicketNo(suggestStationId)"));
 
@@ -279,7 +283,7 @@ ok("a suggestion that arrives late never overwrites what staff typed",
    // The board does this with applyIfUntouched(); the form with a
    // functional setState. Different spelling, same guarantee.
    board.includes("if (current && current !== autoValue) return current;") &&
-   form.includes("setPaperTicketNo((cur) => (cur ? cur : suggested));"));
+   form.includes("if (cur && cur !== autoTicketNoRef.current) return cur;"));
 // The board's offline fallback must see manual entries too.
 ok("the board's offline fallback checks manually-entered loads as well",
    board.includes(") || getCachedTransactions().find("));

@@ -9,6 +9,7 @@ const src = readFileSync("src/pages/ReportShrinkage.jsx", "utf8");
 const api = readFileSync("src/api.js", "utf8");
 
 let failed = 0;
+const ok = (name, cond) => { if (!cond) { console.error(`FAIL  ${name}`); failed++; } };
 const eq = (name, got, want) => {
   if (JSON.stringify(got) !== JSON.stringify(want)) {
     console.error(`FAIL  ${name}\n      want ${JSON.stringify(want)}\n      got  ${JSON.stringify(got)}`);
@@ -123,5 +124,30 @@ if (!api.includes("Now stored for a GAIN as well as a loss")) {
   console.error("FAIL  api.js no longer documents that gains carry a price"); failed++;
 }
 
+
+// ---------------------------------------------------------------------
+// 6. The Daily Stock Ledger uses the SAME signed rule as Shrinkage.
+//    Two screens showing the same adjustment must never disagree about
+//    what it was worth, or which direction it went.
+// ---------------------------------------------------------------------
+const stockPage = readFileSync("src/pages/StockInventory.jsx", "utf8");
+ok("the ledger computes one signed value", stockPage.includes("const adjustmentValueToday"));
+ok("a loss still uses the figure written on the day",
+   stockPage.includes("if (a.valueLost != null) return sum - Math.abs(Number(a.valueLost));"));
+ok("a gain is valued from its price",
+   stockPage.includes("if (a.kg > 0 && a.pricePerKg != null) return sum + a.kg * Number(a.pricePerKg);"));
+ok("the price is carried into the ledger rows", stockPage.includes("pricePerKg: a.price_per_kg"));
+ok("the column is no longer losses-only", stockPage.includes('t("col_adj_value")'));
+ok("green for a gain, red for a loss",
+   stockPage.includes('r.adjustmentValueToday < -0.5 ? "text-rose-600" : r.adjustmentValueToday > 0.5 ? "text-emerald-600"'));
+// The month-summary figure above it still means LOSSES, and must keep
+// doing so — it feeds "Est. Value Lost This Month".
+ok("the losses-only month total is untouched", stockPage.includes("const valueLostToday = adjustmentDetails.reduce"));
+const i18nSrc = readFileSync("src/i18n.jsx", "utf8");
+for (const key of ["col_adj_value", "adj_detail_lost", "adj_detail_gained"]) {
+  const n = (i18nSrc.match(new RegExp(`\\b${key}:`, "g")) || []).length;
+  if (n !== 2) { console.error(`FAIL  i18n ${key} appears ${n} time(s), expected 2 (en + km)`); failed++; }
+}
+
 if (failed) { console.error(`\n${failed} shrinkage-value check(s) FAILED.`); process.exit(1); }
-console.log("Checked 20 shrinkage-value cases — a missing price shows a dash, never a zero.");
+console.log("Checked 30 shrinkage-value cases — a missing price shows a dash, never a zero.");

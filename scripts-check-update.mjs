@@ -134,7 +134,15 @@ ok("an idle screen is not busy",
 ok("no document at all is treated as busy", upd.looksBusy({ doc: null }));
 
 // Run the reload decision on a fake clock.
-function runReload({ busyFor = 0, deadlineMs = null, ticks = 60 }) {
+// [2026-09-16] async, because the reload itself is now async.
+//
+// reloadWhenFree() used to call registration.update() and reload on the very
+// next line without waiting for it — which is what reloaded a station onto
+// the OLD precached bundle and put the update strip straight back up, three
+// or four times in a row. It now awaits the service worker before reloading,
+// so the fake reload below lands a microtask later than it used to and this
+// helper has to wait for it. The timings it asserts are unchanged.
+async function runReload({ busyFor = 0, deadlineMs = null, ticks = 60 }) {
   let t = 0;
   let reloaded = null;
   const timers = [];
@@ -148,21 +156,27 @@ function runReload({ busyFor = 0, deadlineMs = null, ticks = 60 }) {
     idleMs: 20000,
     now: () => t,
   });
-  for (let i = 0; i < ticks; i += 1) { t += 2000; timers.forEach((fn) => fn()); }
+  for (let i = 0; i < ticks; i += 1) {
+    t += 2000;
+    timers.forEach((fn) => fn());
+    // Let go()'s awaits settle inside the same simulated instant, so the
+    // recorded time is still the tick the reload was DECIDED on.
+    if (reloaded === null) await Promise.resolve().then(() => {}).then(() => {}).then(() => {});
+  }
   globalThis.setInterval = realSet; globalThis.clearInterval = realClear;
   return reloaded;
 }
 
 ok("an idle screen reloads after the quiet period, not instantly",
-   runReload({ busyFor: 0 }) >= 20000 && runReload({ busyFor: 0 }) <= 24000,
-   `reloaded at ${runReload({ busyFor: 0 })}ms`);
+   await runReload({ busyFor: 0 }) >= 20000 && await runReload({ busyFor: 0 }) <= 24000,
+   `reloaded at ${await runReload({ busyFor: 0 })}ms`);
 ok("a busy screen is left alone until it goes quiet",
-   runReload({ busyFor: 60000 }) >= 80000, `reloaded at ${runReload({ busyFor: 60000 })}ms`);
+   await runReload({ busyFor: 60000 }) >= 80000, `reloaded at ${await runReload({ busyFor: 60000 })}ms`);
 ok("an automatic update NEVER interrupts somebody who keeps working",
-   runReload({ busyFor: Infinity, ticks: 200 }) === null);
+   await runReload({ busyFor: Infinity, ticks: 200 }) === null);
 ok("a push from HQ does give up waiting eventually",
-   runReload({ busyFor: Infinity, deadlineMs: 60000, ticks: 200 }) >= 60000,
-   `reloaded at ${runReload({ busyFor: Infinity, deadlineMs: 60000, ticks: 200 })}ms`);
+   await runReload({ busyFor: Infinity, deadlineMs: 60000, ticks: 200 }) >= 60000,
+   `reloaded at ${await runReload({ busyFor: Infinity, deadlineMs: 60000, ticks: 200 })}ms`);
 ok("the deadline for a pushed update is five minutes",
    upd.FORCED_RELOAD_AFTER_MS === 5 * 60 * 1000);
 ok("the version check runs every five minutes, not once an hour",
@@ -186,8 +200,15 @@ ok("the banner reports this browser's version", banner.includes("api.reportAppVe
 ok("the banner obeys a push from HQ", banner.includes("reload_requested_at"));
 // A push made BEFORE this page loaded must not count, or every reload would
 // see the same timestamp and reload again, forever.
+// [2026-09-19] Compared against the first value THIS page read, never this
+// PC's own clock: a PC whose clock is behind saw every old push as new and
+// reloaded forever (audit F28).
 ok("an old push cannot cause a reload loop",
-   banner.includes("openedAt.current"), "the push timestamp must be compared against page load");
+   /seenReloadAt\.current === undefined\)\s*\{\s*seenReloadAt\.current = at;\s*return;/.test(banner),
+   "the first reload time read after load must be taken as the baseline, not acted on");
+ok("a push is never judged by this PC's clock",
+   !/reload_requested_at[\s\S]{0,600}Date\.now\(\)/.test(banner) && !banner.includes("openedAt"),
+   "the push must not be compared with Date.now()");
 // The banner is a top strip, not a full-screen overlay — if it matched the
 // modal selector it would report itself as "somebody is busy" and nothing
 // would ever reload.

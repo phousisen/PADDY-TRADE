@@ -37,13 +37,22 @@ const VOID = new Set(["br", "hr", "img", "input", "meta", "link", "area",
 // Returns the index to continue from: past the string if it was one, one
 // character on if it was not.
 function skipQuote(src, i) {
+  return isStringOpener(src, i) ? skipString(src, i) : i + 1;
+}
+
+// Does a literal START here, or is this character an operator?
+//
+// The tell is what comes before it: a literal follows an operator, a bracket
+// or a keyword — never a name or a digit. Used for quotes and, since
+// [2026-09-17], for regex literals too.
+function isStringOpener(src, i) {
   const before = src.slice(0, i).trimEnd();
   const prev = before.slice(-1);
-  const isOpener =
+  return (
     prev === "" ||
     "=(,:[{;?&|+-*/!<>%^~".includes(prev) ||
-    /\b(return|typeof|case|await|yield|new|delete|void|in|of|do|else|instanceof)$/.test(before);
-  return isOpener ? skipString(src, i) : i + 1;
+    /\b(return|typeof|case|await|yield|new|delete|void|in|of|do|else|instanceof)$/.test(before)
+  );
 }
 
 // Past a string that is known to start at i. Template literals hold `${…}`
@@ -60,6 +69,26 @@ function skipString(src, i) {
     if (c === "\\") { j += 2; continue; }
     if (c === q) return j + 1;
     if (q === "`" && c === "$" && src[j + 1] === "{") { j = skipBraces(src, j + 1); continue; }
+    j++;
+  }
+  return j;
+}
+
+// Past a regex literal known to start at i. A `/` inside a character class
+// does not end it, and neither does one that is escaped.
+function skipRegex(src, i) {
+  let j = i + 1, inClass = false;
+  while (j < src.length) {
+    const c = src[j];
+    if (c === "\\") { j += 2; continue; }
+    if (c === "\n") return j;                 // not a regex after all
+    if (c === "[") inClass = true;
+    else if (c === "]") inClass = false;
+    else if (c === "/" && !inClass) {
+      j++;
+      while (j < src.length && /[a-z]/.test(src[j])) j++;   // flags
+      return j;
+    }
     j++;
   }
   return j;
@@ -109,6 +138,19 @@ function scanTags(src) {
     // operator or a bracket, never a letter or a digit.
     if (c === '"' || c === "'" || c === "`") { i = skipQuote(src, i); continue; }
 
+    // [2026-09-17] REGEX LITERALS ARE A KNOWN BLIND SPOT, left alone.
+    //
+    // A character class can hold angle brackets — `/[&<>"]/g`, which is how
+    // HTML gets escaped — and this scanner reads that `<>` as an unclosed
+    // fragment. I tried teaching it to skip regex literals and it promptly
+    // reported six phantom failures in files that build perfectly, because
+    // telling a regex from a division needs more context than the character
+    // before it. A guard that cries wolf is worse than one with a known gap.
+    //
+    // So the gap stays, and the rule is on THIS side: no regex literal in a
+    // .jsx file may contain an unbalanced angle bracket. ExpenseSheetPrint.jsx
+    // escapes with separate replaces rather than one character class, which
+    // is what this comment exists to explain to whoever writes the next one.
     if (c !== "<") { i++; continue; }
 
     // <name …>, </name>, or <> / </>  — anything else is a comparison operator

@@ -173,9 +173,12 @@ ok(cashOnly.balance.totalAssets === null,
 ok(near(withCash.balance.totalAssets,
         withCash.balance.totalLiabilities + withCash.balance.equity + withCash.balance.unreconciled),
    "assets do not equal liabilities + equity + the unexplained gap");
+// [2026-09-19] ...plus the opening balance: the cash the business held when
+// the system started belongs to the owners ("opening balance equity").
 ok(near(withCash.balance.equity,
-        withCash.balance.partnerCapital - withCash.balance.drawings + withCash.balance.retainedEarnings),
-   "equity is not capital, less drawings, plus retained earnings");
+        withCash.balance.partnerCapital - withCash.balance.drawings + withCash.balance.retainedEarnings
+        + withCash.balance.openingEquity),
+   "equity is not capital, less drawings, plus retained earnings, plus the opening balance");
 // A drawing must reduce equity ONCE. It was being taken off capital and off
 // retained earnings both, so a 1,000,000 drawing moved equity by 2,000,000 —
 // a page could show partners drawing nothing and equity falling anyway.
@@ -203,10 +206,15 @@ const gapA = run(ST, { assets: FULL_ASSETS, settings: {
   rk: { opening_cash: 20000000 }, jn: { opening_cash: 5000000 }, pp: { opening_cash: 3000000 } } });
 const gapB = run(ST, { assets: FULL_ASSETS, settings: {
   rk: { opening_cash: 21000000 }, jn: { opening_cash: 5000000 }, pp: { opening_cash: 3000000 } } });
-ok(near(gapB.balance.unreconciled - gapA.balance.unreconciled, 1000000),
-   "the unexplained gap does not track opening cash — it is not what the page claims it is",
+// [2026-09-19] REVERSED, deliberately. The gap used to grow riel for riel
+// with the opening cash entered (an asset with nothing on the other side),
+// while the page told the owner that entering it CLOSES the gap. The opening
+// balance is now owners' equity, so entering it moves both sides equally and
+// the gap is left meaning only "something recorded does not add up".
+ok(near(gapB.balance.unreconciled - gapA.balance.unreconciled, 0),
+   "entering opening cash changed the unexplained gap — the opening balance must sit in equity",
    `${money(gapB.balance.unreconciled - gapA.balance.unreconciled)}`);
-console.log(`  4b. a drawing moves equity once · the unexplained gap tracks opening cash riel for riel`);
+console.log(`  4b. a drawing moves equity once · opening cash is balanced by opening equity`);
 
 // Retained earnings must be EARNED, not the figure that makes it balance.
 const plug = withCash.balance.totalAssets - withCash.balance.totalLiabilities - withCash.balance.partnerCapital;

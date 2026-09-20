@@ -150,19 +150,37 @@ console.log("\n6. EVERY sign-out path writes a reason first");
 // The one that matters most. A path that forgets makes its own sign-outs
 // indistinguishable from an expired login, which is the answer that sends
 // somebody to change a Supabase setting that was never the problem.
+// Between the note and the sign-out, only comment lines may appear.
+const C = String.raw`(?:\s*\/\/[^\n]*\n)*\s*`;
 const paths = [
-  // [2026-09-17] This used to insist on a literal REASONS.USER here. It now
-  // records whatever reason the CALLER gave, because the expired-login banner
-  // calls the very same function and must not be recorded as a person
-  // pressing Log out. The default is still USER, checked in section 6b.
-  ["src/AuthContext.jsx", "the person pressing Log out", /noteSignOut\([^\n]*REASONS\.USER\);\s*\n\s*const \{ error \} = await supabase\.auth\.signOut\(\);/],
-  ["src/AuthContext.jsx", "the heartbeat's forced logout", /noteSignOut\(REASONS\.HQ_FORCED\);\s*\n\s*await supabase\.auth\.signOut\(\);/],
-  ["src/components/UpdateBanner.jsx", "HQ signing this machine out", /noteSignOut\(REASONS\.HQ_DEVICE\);\s*\n\s*try \{ await supabase\.auth\.signOut\(\)/],
-  ["src/components/Topbar.jsx", "sign out everywhere", /noteSignOut\(REASONS\.EVERYWHERE\);\s*\n\s*const \{ error \} = await supabase\.auth\.signOut\(\{ scope: "global" \}\)/],
-  ["src/pages/SetPassword.jsx", "finishing a password change", /noteSignOut\(REASONS\.PASSWORD\);\s*\n\s*await supabase\.auth\.signOut\(\)/],
+  // [2026-09-19] Each path must now also say its SCOPE. supabase-js defaults
+  // signOut() to "global" — every device on the account — so a bare call is
+  // exactly the bug that silently signed out every other device sharing a
+  // login. "local" everywhere, except the two places that mean everywhere.
+  ["src/AuthContext.jsx", "the person pressing Log out (this device only)",
+    new RegExp(String.raw`noteSignOut\([^\n]*REASONS\.USER\);\s*\n` + C + String.raw`const \{ error \} = await supabase\.auth\.signOut\(\{ scope: "local" \}\);`)],
+  ["src/AuthContext.jsx", "the heartbeat's forced logout (this device only)",
+    new RegExp(String.raw`noteSignOut\(REASONS\.HQ_FORCED\);\s*\n` + C + String.raw`await supabase\.auth\.signOut\(\{ scope: "local" \}\);`)],
+  ["src/components/UpdateBanner.jsx", "HQ signing this machine out (this machine only)",
+    new RegExp(String.raw`noteSignOut\(REASONS\.HQ_DEVICE\);\s*\n` + C + String.raw`try \{ await supabase\.auth\.signOut\(\{ scope: "local" \}\)`)],
+  ["src/components/Topbar.jsx", "sign out everywhere (deliberately global)",
+    new RegExp(String.raw`noteSignOut\(REASONS\.EVERYWHERE\);\s*\n` + C + String.raw`const \{ error \} = await supabase\.auth\.signOut\(\{ scope: "global" \}\)`)],
+  ["src/pages/SetPassword.jsx", "finishing a password change (deliberately global)",
+    new RegExp(String.raw`noteSignOut\(REASONS\.PASSWORD\);\s*\n` + C + String.raw`await supabase\.auth\.signOut\(\{ scope: "global" \}\)`)],
 ];
 for (const [file, what, re] of paths) {
   ok(`  ${what}`, re.test(readFileSync(file, "utf8")), `${file} signs out without saying why`);
+}
+
+// [2026-09-19] No sign-out may leave its scope to the library default.
+{
+  const { readdirSync, statSync } = await import("node:fs");
+  const walk = (d) => readdirSync(d).flatMap((n) => {
+    const p = d + "/" + n;
+    return statSync(p).isDirectory() ? walk(p) : /\.(jsx?|mjs)$/.test(n) ? [p] : [];
+  });
+  const bare = walk("src").filter((p) => /auth\.signOut\(\s*\)/.test(readFileSync(p, "utf8")));
+  ok("no sign-out leaves its scope to the default (which is every device)", bare.length === 0, bare.join(", "));
 }
 
 // And nothing new has crept in unrecorded.
