@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity, ChevronRight } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import SettleDifferenceModal, { canSettle } from "../components/SettleDifferenceModal.jsx";
+import StationStockCard from "../components/StationStockCard.jsx";
+import { canRequestReset } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -79,7 +81,7 @@ const PERIOD_IDS = [
 
 export default function Dashboard({ setPage, setSelectedLocationId }) {
   const { t } = useLanguage();
-  const { profile, session, loading: authLoading, isViewOnly } = useAuth();
+  const { profile, session, loading: authLoading, isViewOnly, hasPermission } = useAuth();
   const isAdmin = profile?.role === "admin";
   // [2026-09-03] A view-only account can already reach LocationDetail
   // directly (App.jsx gates "station-detail" on `isAdmin || isViewOnly`,
@@ -106,7 +108,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // Admin only — a view-only account reaches the same table and must not
   // get the button, and neither should a station login looking at its own
   // row.
-  const canSettleRole = isAdmin && !isViewOnly;
+  const canSettleRole = isAdmin && !isViewOnly && profile?.roleScope === "all";
   const [locations, setLocations] = useState([]);
   const [txs, setTxs] = useState([]);
   // [2026-09-10] Stock adjustments, for the Adjusted column in Location
@@ -304,6 +306,21 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // nothing was bought in this range, so the card can say so instead of
   // showing a misleading "0 ៛/kg".
   const avgBuyPrice = totalBuyKg > 0 ? totalBuyAmt / totalBuyKg : null;
+
+  // [2026-09-20] A station's own Dashboard. SISEN, looking at "Active
+  // locations: 1": "why do we even need this". A station account always sees
+  // exactly one station, so that box and the one-row Location Performance
+  // table only repeated the numbers above them. A station gets three boxes
+  // instead — Buy, Sell, and its stock with the count/reset buttons (sample
+  // approved 20 Sept). HQ's Dashboard is unchanged.
+  const isStationView = !isAdmin && !!profile?.location_id;
+  const myStation = isStationView ? locations.find((l) => l.id === profile.location_id) || null : null;
+  const canAskReset = canRequestReset({
+    isViewOnly,
+    canAdjustStock: false,
+    hasRequestPermission: hasPermission("request_stock_reset"),
+    isOwnStation: isStationView,
+  });
   // This one is deliberately NOT period-filtered — it's the real running
   // total on hand right now, not "how much moved during the period".
   const netStockKg = locations.reduce((s, l) => s + Number(l.current_stock_kg), 0);
@@ -452,7 +469,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-brand-100 text-brand-600 lg:mb-3.5 lg:h-9 lg:w-9"><TrendingUp size={15} /></div>
             <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_total_buy", { range: rangeLabel })}</p>
             <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(totalBuyKg)} kg</p>
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalBuyAmt)} {t("dash_paid_out")}</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalBuyAmt)} {t("dash_paid_out")}{isStationView && <> · {t("dash_n_tickets", { n: periodBuy.length })}</>}</p>
             {avgBuyPrice != null && (
               <div className="mt-1.5 inline-flex items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[9.5px] font-semibold text-brand-700 lg:mt-2 lg:px-2.5 lg:py-1 lg:text-[11px]">
                 ⚖ {t("dash_avg_price", { price: fmtRiel(avgBuyPrice) })}
@@ -463,8 +480,20 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-rose-100 text-rose-600 lg:mb-3.5 lg:h-9 lg:w-9"><TrendingDown size={15} /></div>
             <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_total_sell", { range: rangeLabel })}</p>
             <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(totalSellKg)} kg</p>
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalSellAmt)} {t("dash_received")}</p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{fmtRiel(totalSellAmt)} {t("dash_received")}{isStationView && <> · {t("dash_n_tickets", { n: periodSell.length })}</>}</p>
           </div>
+          {myStation ? (
+            <StationStockCard
+              station={myStation}
+              adjustments={adjustments}
+              priceSuggestion={avgBuyPrice != null ? { price: avgBuyPrice, source: "today" } : null}
+              canAsk={canAskReset}
+              userId={session?.user?.id}
+              t={t}
+              onChanged={() => load()}
+            />
+          ) : (
+            <>
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 lg:mb-3.5 lg:h-9 lg:w-9"><Warehouse size={15} /></div>
             <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_current_stock")}</p>
@@ -478,12 +507,18 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                 glance instead of looking like a math error. */}
             <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_on_hand", { n: locations.length })}</p>
           </div>
+            </>
+          )}
+          {!isStationView && (
+            <>
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
             <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-gold-100 text-gold-700 lg:mb-3.5 lg:h-9 lg:w-9"><MapPin size={15} /></div>
             <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_active_locations")}</p>
             <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{locations.length}</p>
             <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_tx_count", { n: periodTxs.length, range: rangeLabel })}</p>
           </div>
+            </>
+          )}
         </div>
 
 
@@ -493,6 +528,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             squeezed into a third of the screen each. Unchanged on desktop
             (lg: and up), where this was already the right layout. */}
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+          {!isStationView && (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
               <div className="flex items-baseline gap-2.5">
@@ -730,8 +766,9 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
               </>
             )}
           </div>
+          )}
 
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${isStationView ? "lg:col-span-3" : ""}`}>
             <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4">
               <Activity size={15} className="text-brand-600" />
               <h3 className="font-bold text-slate-800">{t("dash_live_feed")}</h3>

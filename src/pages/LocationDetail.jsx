@@ -4,7 +4,7 @@ import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
 import { StockResetModal } from "../components/StockResetModal.jsx";
-import { canRequestReset } from "../stockReset.js";
+import { canRequestReset, canAdjustDirectly } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -62,7 +62,11 @@ export default function LocationDetail({ locationId, setPage }) {
   // `&& !isViewOnly` is what actually keeps this write control out of its
   // hands, matching every other write entry point in the app, see
   // App.jsx's `isViewOnly` comments).
-  const canAdjustStock = (isAdmin || hasPermission("adjust_stock")) && !isViewOnly;
+  // [2026-09-20] HQ only. A station-bound account never sets stock directly,
+  // even with "adjust_stock" on its role — it asks HQ. See canAdjustDirectly.
+  const canAdjustStock = canAdjustDirectly({
+    isAdmin, hasAdjustPermission: hasPermission("adjust_stock"), isViewOnly, roleScope: profile?.roleScope,
+  });
   // [2026-09-17] A station cannot set its own stock. It asks, HQ answers —
   // see stockReset.js and stock_reset_requests.sql.
   const canAskReset = canRequestReset({

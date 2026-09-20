@@ -3,7 +3,7 @@ import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers
 import Topbar from "../components/Topbar.jsx";
 import { AdjustStockModal, reasonLabel } from "../components/AdjustStockModal.jsx";
 import { StockResetModal } from "../components/StockResetModal.jsx";
-import { canRequestReset } from "../stockReset.js";
+import { canRequestReset, canAdjustDirectly } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { stockByType, avgCostByType } from "../stockByType.js";
@@ -58,7 +58,11 @@ export default function StockInventory() {
   // without this it could see and open the Adjust Stock button/modal on
   // the one other page that already showed it that way (see the matching
   // fix + comment on LocationDetail.jsx's own canAdjustStock).
-  const canAdjustStock = (isAdmin || hasPermission("adjust_stock")) && !isViewOnly;
+  // [2026-09-20] HQ only. A station-bound account never sets stock directly,
+  // even with "adjust_stock" on its role — it asks HQ. See canAdjustDirectly.
+  const canAdjustStock = canAdjustDirectly({
+    isAdmin, hasAdjustPermission: hasPermission("adjust_stock"), isViewOnly, roleScope: profile?.roleScope,
+  });
   // [2026-09-17] The station's side of the same column. A station cannot set
   // its own stock — it asks, and HQ answers. See stockReset.js.
   const canAskReset = canRequestReset({
