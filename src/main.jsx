@@ -96,3 +96,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </ErrorBoundary>
   </React.StrictMode>
 );
+
+// [2026-09-20] The app started: tell the self-heal in index.html it may
+// act again on a future deploy. See index.html.
+setTimeout(() => { try { window.__ptShellOk?.(); } catch { /* ignore */ } }, 3000);

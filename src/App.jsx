@@ -118,7 +118,7 @@ export default function App() {
   // Example link: https://yourapp.vercel.app/?register=1&loc=<location id>
   const regParams = new URLSearchParams(window.location.search);
   if (regParams.get("register") === "1") {
-    return <RegisterFarmer locationId={regParams.get("loc") || null} />;
+    return <Suspense fallback={<PageLoading />}><RegisterFarmer locationId={regParams.get("loc") || null} /></Suspense>;
   }
 
   // [2026-09-01] Where the "Email Invite" link (AddUserModal.jsx /
