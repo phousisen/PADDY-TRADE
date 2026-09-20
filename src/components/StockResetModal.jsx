@@ -64,9 +64,12 @@ function DiffStrip({ d, t }) {
   );
 }
 
-export function StockResetModal({ station, priceSuggestion, pending, t, onClose, onSubmit, onCancelRequest }) {
+// [2026-09-20] `initialCount` — the Dashboard's "Reset to 0" button opens the
+// form with 0 already in the box; "Weigh leftover" opens it empty. Either way
+// the station still types a reason and HQ still has to approve.
+export function StockResetModal({ station, priceSuggestion, pending, t, onClose, onSubmit, onCancelRequest, initialCount = "" }) {
   const book = Number(station.current_stock_kg) || 0;
-  const [counted, setCounted] = useState("");
+  const [counted, setCounted] = useState(initialCount === "" || initialCount == null ? "" : String(initialCount));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
