@@ -3,6 +3,7 @@ import { AlertTriangle, CheckCircle2, Loader2, Inbox } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { dm } from "../dateFormat.js";
+import { useLanguage } from "../i18n.jsx";
 
 // [2026-09-09 v4] The second signature — HQ's.
 //
@@ -26,6 +27,8 @@ function fmtDay(iso) {
 
 export default function StationDaysReview() {
   const { profile, isViewOnly } = useAuth();
+  const { t } = useLanguage();
+  const [loadFailed, setLoadFailed] = useState(false);
   const canAccept = !!profile?.isOwner && !isViewOnly;
 
   const [rows, setRows] = useState(null);
@@ -35,19 +38,39 @@ export default function StationDaysReview() {
 
   const load = useCallback(async () => {
     try {
-      setRows(await api.getDaysAwaitingHq(14));
+      // [2026-09-19] 62 days, not 14: this sits above Monthly Close, and
+      // closing last month on the 20th needs days up to 50 days back. With 14
+      // it said "Nothing waiting" over days it had simply not looked at
+      // (audit F20).
+      setRows(await api.getDaysAwaitingHq(62));
       setHidden(false);
-    } catch {
+      setLoadFailed(false);
+    } catch (err) {
       // Not installed in this database yet — the block simply does not
-      // appear. It must never break the monthly close screen.
-      setRows(null);
-      setHidden(true);
+      // appear. It must never break the monthly close screen. Any OTHER
+      // failure used to hide it the same way, so the owner closed a month
+      // without the one check that finds a missing ticket. Now it says so.
+      if (/does not exist|schema cache|could not find the function/i.test(String(err?.message || ""))) {
+        setRows(null);
+        setHidden(true);
+      } else {
+        setLoadFailed(true);
+      }
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  if (hidden || !rows) return null;
+  if (hidden) return null;
+  if (!rows) {
+    if (!loadFailed) return null;
+    return (
+      <div className="mb-5 flex items-center justify-between gap-3 rounded-xl border-2 border-rose-200 bg-rose-50 p-4 text-xs font-semibold text-rose-700">
+        <span>{t("days_load_failed")}</span>
+        <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
+      </div>
+    );
+  }
 
   async function accept(row) {
     const key = `${row.location_id}|${row.business_date}`;

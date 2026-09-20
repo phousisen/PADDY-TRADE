@@ -206,9 +206,15 @@ export default function StationVersions() {
 
   const load = useCallback(async () => {
     try {
+      // [2026-09-19] Only the last 30 days of transactions — enough for
+      // "today" and "last trade". This used to download the whole
+      // transactions table every 30 seconds for as long as the page was open
+      // (audit F25).
+      const since = new Date(getAccurateNow().getTime() - 30 * 24 * 60 * 60 * 1000);
+      const sinceStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Phnom_Penh" }).format(since);
       const [ps, locs, ctrl, devs, transactions] = await Promise.all([
         api.getProfiles(), api.getLocations(), api.getAppControl(),
-        api.getDeviceSessions(), api.getTransactions(),
+        api.getDeviceSessions(), api.getTransactions({ from: sinceStr }),
       ]);
       setProfiles(ps || []);
       setLocations(locs || []);
@@ -218,12 +224,19 @@ export default function StationVersions() {
       // transaction must not make a station look busier than it was.
       setTxs((transactions || []).filter((x) => x.hq_status !== "cancelled"));
       setError("");
-    } catch {
-      setHidden(true);
+      setHidden(false);
+    } catch (err) {
+      // [2026-09-19] Hidden only when this account may not read the panel, or
+      // the database does not have it yet. A dropped connection used to hide
+      // the whole panel until the page was reloaded — the one time HQ most
+      // needs it (audit F19). Now the last answer stays up with a warning.
+      const msg = String(err?.message || "");
+      if (err?.code === "42501" || /permission denied|row-level security|does not exist|schema cache/i.test(msg)) setHidden(true);
+      else setError(t("st_load_stale"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load();

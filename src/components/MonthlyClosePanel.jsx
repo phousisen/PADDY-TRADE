@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Lock, LockOpen, CalendarCheck, AlertTriangle, CheckCircle2, Loader2, X } from "lucide-react";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import StationDaysReview from "./StationDaysReview.jsx";
 import { dmy } from "../dateFormat.js";
+import { useLanguage } from "../i18n.jsx";
 
 // [2026-09-09] Monthly Close — the screen for what used to be two SQL
 // commands typed into Supabase.
@@ -29,6 +30,7 @@ function cambodiaToday() {
 }
 
 function pad(n) { return String(n).padStart(2, "0"); }
+function dayAfterIso(d) { return new Date(Date.parse(`${d}T00:00:00Z`) + 86400000).toISOString().slice(0, 10); }
 function firstOf(y, m) { return `${y}-${pad(m)}-01`; }
 function lastOf(y, m) { return `${y}-${pad(m)}-${pad(new Date(Date.UTC(y, m, 0)).getUTCDate())}`; }
 function label(y, m) { return `${pad(m)}/${y}`; }
@@ -132,10 +134,14 @@ function ReopenModal({ month, onClose, onConfirm }) {
 
 export default function MonthlyClosePanel() {
   const { profile, isViewOnly } = useAuth();
+  const { t } = useLanguage();
   const canClose = !!profile?.isOwner && !isViewOnly;
 
-  const months = useMemo(() => recentMonths(), []);
-  const today = useMemo(() => cambodiaToday(), []);
+  const months = recentMonths();
+  // [2026-09-19] Read fresh on every render (not remembered from when the
+  // page opened), so a page left open past month-end still knows which month
+  // is running.
+  const today = cambodiaToday();
 
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -174,6 +180,9 @@ export default function MonthlyClosePanel() {
   }
 
   async function doClose(month, force) {
+    // [2026-09-19] A month still running cannot be closed: it would lock
+    // today and every station's work for the rest of the month (audit F17).
+    if (isRunning(month)) { setError(t("close_err_running")); return; }
     setClosing(month.to); setNotice(""); setError("");
     try {
       await api.closePeriod({ through: month.to, reason: `${month.name} closed`, force });
@@ -199,6 +208,13 @@ export default function MonthlyClosePanel() {
   const closedThrough = status?.closedThrough || null;
   const isClosed = (month) => !!closedThrough && month.to <= closedThrough;
   const isRunning = (month) => month.y === today.y && month.m === today.m;
+  // [2026-09-19] Months close and reopen IN ORDER. Closing 08 while 07 was
+  // open locked July too (after checking only August), and reopening 05
+  // while closed through 08 reopened June, July and August too — neither
+  // said so. Now: Close only on the month straight after the closed line
+  // (any month for a first close), Reopen only on the latest closed month.
+  const nextToClose = (month) => !closedThrough || month.from === dayAfterIso(closedThrough);
+  const isLatestClosed = (month) => !!closedThrough && month.to === closedThrough;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:col-span-2">
@@ -284,7 +300,7 @@ export default function MonthlyClosePanel() {
                         </button>
                       )}
 
-                      {!closed && ready && canClose && (
+                      {!closed && !running && ready && canClose && nextToClose(month) && (
                         <button
                           onClick={() => doClose(month, false)}
                           disabled={closing === month.to}
@@ -294,7 +310,7 @@ export default function MonthlyClosePanel() {
                         </button>
                       )}
 
-                      {!closed && blocked && canClose && (
+                      {!closed && !running && blocked && canClose && nextToClose(month) && (
                         <button
                           onClick={() => doClose(month, true)}
                           disabled={closing === month.to}
@@ -305,7 +321,7 @@ export default function MonthlyClosePanel() {
                         </button>
                       )}
 
-                      {closed && canClose && (
+                      {closed && canClose && isLatestClosed(month) && (
                         <button
                           onClick={() => setReopenFor(month)}
                           className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
@@ -316,7 +332,10 @@ export default function MonthlyClosePanel() {
                     </div>
                   </div>
 
-                  {blocked && (
+                  {running && !closed && Array.isArray(rows) && (
+                    <p className="mt-2 text-[11px] font-medium text-slate-500">{t("close_running_note")}</p>
+                  )}
+                  {blocked && !running && (
                     <p className="mt-2 text-[11px] font-medium text-rose-600">
                       Fix these before closing. Closing anyway is allowed, but what you closed over
                       is written into the record.

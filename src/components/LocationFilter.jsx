@@ -52,8 +52,14 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
 
   // Defensive: an array arriving with two in it (a stale filter saved before
   // this change) collapses to the first rather than showing a count again.
-  const current = selectedIds.length ? selectedIds[0] : null;
+  // [2026-09-19] The statement reports' station chips can pick SEVERAL
+  // stations into the same shared filter. This button used to show only the
+  // first one, so it said "Pong Ro" over figures for three stations (audit
+  // F1). It now says how many, and ticks every one that is in.
+  const many = selectedIds.length > 1;
+  const current = selectedIds.length === 1 ? selectedIds[0] : null;
   const chosen = current ? locations.find((l) => l.id === current) : null;
+  const active = !!chosen || many;
 
   function choose(id) {
     setSelectedIds(id ? [id] : []);
@@ -63,7 +69,7 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
   const kg = (v) => (Number(v) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
 
   const Row = ({ id, name, sub }) => {
-    const on = current === id;
+    const on = id === null ? selectedIds.length === 0 : selectedIds.includes(id);
     return (
       <button
         type="button"
@@ -98,13 +104,13 @@ export default function LocationFilter({ locations, selectedIds, setSelectedIds 
         type="button"
         onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
-          chosen
+          active
             ? "border-brand-600 bg-brand-50 font-semibold text-brand-700"
             : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
       >
-        <MapPin size={14} className={chosen ? "text-brand-600" : "text-slate-400"} />
-        <span className="max-w-[150px] truncate">{chosen ? chosen.name : t("loc_all")}</span>
-        <ChevronDown size={14} className={chosen ? "text-brand-600" : "text-slate-400"} />
+        <MapPin size={14} className={active ? "text-brand-600" : "text-slate-400"} />
+        <span className="max-w-[150px] truncate">{many ? t("st_stations_n", { n: selectedIds.length }) : chosen ? chosen.name : t("loc_all")}</span>
+        <ChevronDown size={14} className={active ? "text-brand-600" : "text-slate-400"} />
       </button>
 
       {open && (

@@ -69,7 +69,11 @@ export default function EditedBadge({ transactionId, editCount }) {
     if (entries || loading) return;
     setLoading(true); setError("");
     try {
-      const rows = await api.getRowHistory({ recordId: transactionId, limit: 20 });
+      // [2026-09-19] 500, not 20. Every status change (paid, confirmed…) is a
+      // row here too, so on a busy transaction the 20 newest could all be
+      // bookkeeping and the real weight or price edit fell off the end
+      // (audit F27).
+      const rows = await api.getRowHistory({ recordId: transactionId, limit: 500 });
       setEntries(rows.filter((r) => r.action === "UPDATE" && changedFields(r).length > 0));
     } catch (err) {
       setError("Couldn't load the history for this transaction.");

@@ -45,7 +45,12 @@ export default function UpdateBanner() {
   // Reloaded for this version already and still not running it.
   const [stuck, setStuck] = useState(false);
   const activity = useRef(null);
-  const openedAt = useRef(Date.now());
+  // [2026-09-19] The reload-request time as first read after this page
+  // loaded. A push counts only when a LATER read shows a different, newer
+  // time. This used to compare the server's time with this PC's own clock —
+  // a PC whose clock is behind (a wrong timezone, a flat BIOS battery) saw
+  // every old push as "new" and reloaded itself forever (audit F28).
+  const seenReloadAt = useRef(undefined);
 
   // ── 1 & 3. report this version, and watch for a push from HQ ───────────
   useEffect(() => {
@@ -97,15 +102,26 @@ export default function UpdateBanner() {
       // it answered, so this happens once and cannot loop.
       if (signOut) {
         noteSignOut(REASONS.HQ_DEVICE);
-        try { await supabase.auth.signOut(); } catch { /* already gone */ }
+        // [2026-09-19] scope "local" — THIS DEVICE ONLY. supabase-js's signOut()
+        // with no argument defaults to "global" (Supabase docs: "JavaScript ... default
+        // to the global scope"), which ends every session on the account on every
+        // device. So one staff member pressing Log out, or one parent logging out on a
+        // phone, silently signed out every other device sharing that login. Those
+        // devices had no sign-out note, so their login screen said "expired" and blamed
+        // the token settings — this is very likely most of "why do we always get
+        // logged out". Only "Sign out everywhere" in Topbar is meant to be global.
+        try { await supabase.auth.signOut({ scope: "local" }); } catch { /* already gone */ }
         return;
       }
       try {
         const control = await api.getAppControl();
-        const at = control?.reload_requested_at;
+        const at = control?.reload_requested_at || null;
         // Only a push made AFTER this page loaded counts. Otherwise every
         // reload would see the same old timestamp and reload again, forever.
-        if (!cancelled && at && new Date(at).getTime() > openedAt.current) setPushed(true);
+        if (cancelled) return;
+        if (seenReloadAt.current === undefined) { seenReloadAt.current = at; return; }
+        const before = seenReloadAt.current ? new Date(seenReloadAt.current).getTime() : 0;
+        if (at && at !== seenReloadAt.current && new Date(at).getTime() > before) setPushed(true);
       } catch {
         // Offline, or not migrated yet. Nothing here is worth an error.
       }

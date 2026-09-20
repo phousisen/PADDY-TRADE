@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Calendar, ChevronDown } from "lucide-react";
 import { getAccurateNow } from "../supabaseClient.js";
+import { useLanguage } from "../i18n.jsx";
 
 // All date-range math below works with a Date object whose LOCAL
 // year/month/day fields represent Cambodia's calendar date — this keeps
@@ -26,18 +27,20 @@ function startOfWeek(d) { const r = new Date(d); const day = (r.getDay() + 6) % 
 function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 function endOfMonth(d) { return new Date(d.getFullYear(), d.getMonth() + 1, 0); }
 
+// [2026-09-19] Labels in both languages — this filter heads every report and
+// the Transactions list, and was English on a Khmer screen.
 function presets() {
   const t = today();
   return [
-    { label: "Today", start: toIso(t), end: toIso(t) },
-    { label: "Yesterday", start: toIso(addDays(t, -1)), end: toIso(addDays(t, -1)) },
-    { label: "This Week", start: toIso(startOfWeek(t)), end: toIso(t) },
-    { label: "Last Week", start: toIso(addDays(startOfWeek(t), -7)), end: toIso(addDays(startOfWeek(t), -1)) },
-    { label: "This Month", start: toIso(startOfMonth(t)), end: toIso(t) },
-    { label: "Last Month", start: toIso(startOfMonth(addDays(startOfMonth(t), -1))), end: toIso(endOfMonth(addDays(startOfMonth(t), -1))) },
-    { label: "Last 7 Days", start: toIso(addDays(t, -6)), end: toIso(t) },
-    { label: "Last 30 Days", start: toIso(addDays(t, -29)), end: toIso(t) },
-    { label: "All Time", start: null, end: null },
+    { k: "drf_today", start: toIso(t), end: toIso(t) },
+    { k: "drf_yesterday", start: toIso(addDays(t, -1)), end: toIso(addDays(t, -1)) },
+    { k: "drf_this_week", start: toIso(startOfWeek(t)), end: toIso(t) },
+    { k: "drf_last_week", start: toIso(addDays(startOfWeek(t), -7)), end: toIso(addDays(startOfWeek(t), -1)) },
+    { k: "drf_this_month", start: toIso(startOfMonth(t)), end: toIso(t) },
+    { k: "drf_last_month", start: toIso(startOfMonth(addDays(startOfMonth(t), -1))), end: toIso(endOfMonth(addDays(startOfMonth(t), -1))) },
+    { k: "drf_last_7", start: toIso(addDays(t, -6)), end: toIso(t) },
+    { k: "drf_last_30", start: toIso(addDays(t, -29)), end: toIso(t) },
+    { k: "drf_all_time", start: null, end: null },
   ];
 }
 
@@ -48,6 +51,7 @@ function fmtDisplay(iso) {
 }
 
 export default function DateRangeFilter({ startDate, endDate, onChange }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [tempStart, setTempStart] = useState(startDate);
   const [tempEnd, setTempEnd] = useState(endDate);
@@ -78,14 +82,21 @@ export default function DateRangeFilter({ startDate, endDate, onChange }) {
     setOpen(false);
   }
 
-  const label = !startDate && !endDate ? "All Time" : `${fmtDisplay(startDate)} – ${fmtDisplay(endDate)}`;
+  // [2026-09-19] (audit F13) Only one end chosen used to read " – 18/09/2026"
+  // or "01/09/2026 – ", which looks like a broken filter. It now says
+  // "From …" / "Until …".
+  const label = !startDate && !endDate
+    ? t("drf_all_time")
+    : !endDate ? t("drf_from", { d: fmtDisplay(startDate) })
+    : !startDate ? t("drf_until", { d: fmtDisplay(endDate) })
+    : `${fmtDisplay(startDate)} – ${fmtDisplay(endDate)}`;
   const matchingPreset = PRESETS.find((p) => p.start === startDate && p.end === endDate);
 
   return (
     <div className="relative" ref={ref}>
       <button onClick={openPopover} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
         <Calendar size={14} className="text-slate-400" />
-        {matchingPreset ? matchingPreset.label : label}
+        {matchingPreset ? t(matchingPreset.k) : label}
         <ChevronDown size={14} className="text-slate-400" />
       </button>
 
@@ -93,22 +104,22 @@ export default function DateRangeFilter({ startDate, endDate, onChange }) {
         <div className="absolute right-0 z-20 mt-1 flex w-80 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
           <div className="w-36 border-r border-slate-100 py-2">
             {PRESETS.map((p) => (
-              <button key={p.label} onClick={() => applyPreset(p)}
+              <button key={p.k} onClick={() => applyPreset(p)}
                 className={`block w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${tempStart === p.start && tempEnd === p.end ? "bg-brand-50 font-medium text-brand-700" : "text-slate-600"}`}>
-                {p.label}
+                {t(p.k)}
               </button>
             ))}
           </div>
           <div className="flex flex-1 flex-col p-3">
-            <label className="mb-1 text-xs text-slate-500">Start date</label>
+            <label className="mb-1 text-xs text-slate-500">{t("drf_start")}</label>
             <input type="date" value={tempStart || ""} onChange={(e) => setTempStart(e.target.value || null)}
               className="mb-3 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-            <label className="mb-1 text-xs text-slate-500">End date</label>
+            <label className="mb-1 text-xs text-slate-500">{t("drf_end")}</label>
             <input type="date" value={tempEnd || ""} onChange={(e) => setTempEnd(e.target.value || null)}
               className="mb-4 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             <div className="mt-auto flex justify-end gap-2">
-              <button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50">Cancel</button>
-              <button onClick={done} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">Done</button>
+              <button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50">{t("drf_cancel")}</button>
+              <button onClick={done} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">{t("drf_done")}</button>
             </div>
           </div>
         </div>

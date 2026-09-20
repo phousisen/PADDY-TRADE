@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { withTimeout } from "../offlineQueue.js";
+import { getAccurateNow } from "../supabaseClient.js";
 
 // Bounds the Supabase cloud-fallback read below — this path only runs when
 // the local bridge (same-machine, effectively instant) didn't answer, e.g.
@@ -35,6 +36,10 @@ const LOCAL_BRIDGE_URL = "http://127.0.0.1:8787/weight";
 // closely enough that further lowering it would not show anything sooner,
 // since bridge.js can't report a reading it hasn't received yet.
 const POLL_INTERVAL_MS = 150;
+// A PC with no scale program answering is re-asked this often, not every
+// 150 ms; the cloud reading (another station's scale) is fetched this often.
+const LOCAL_RETRY_MS = 5000;
+const CLOUD_POLL_MS = 1000;
 
 async function pollLocalBridge() {
   try {
@@ -45,7 +50,7 @@ async function pollLocalBridge() {
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || data.weight_kg === null || data.weight_kg === undefined) return null;
-    return { weight_kg: data.weight_kg, updated_at: data.updated_at, source: "local" };
+    return { weight_kg: data.weight_kg, updated_at: data.updated_at, location_id: data.location_id || null, source: "local" };
   } catch {
     // Nothing running on localhost:8787 — either the bridge program isn't
     // running on THIS computer, or this is a different device (e.g. an
@@ -64,7 +69,10 @@ export function useLiveWeight(locationId) {
   const [reading, setReading] = useState(null);
 
   useEffect(() => {
-    if (!locationId) { setReading(null); return; }
+    // [2026-09-19] Forget the previous station's reading at once, so it is
+    // never shown (or captured) as the newly selected station's weight.
+    setReading(null);
+    if (!locationId) return;
     let cancelled = false;
     // [2026-08-26] Pause this poll (and the re-renders it causes) while a
     // print is in progress. This component can still be mounted (just
@@ -78,31 +86,82 @@ export function useLiveWeight(locationId) {
     // index.css, whether or not it turns out to be the actual cause.
     let printing = typeof window !== "undefined" && window.matchMedia?.("print").matches;
 
+    // [2026-09-19] SPEED. "The app is slow and laggy."
+    //
+    // This used to be setInterval(poll, 150): a new request every 150 ms
+    // whether or not the last one had finished. On a PC with no scale
+    // program (HQ, a phone) each local try waits up to 800 ms, so five or six
+    // piled up at once, and every one of them then asked Supabase too — about
+    // seven cloud requests a second from every open New Ticket screen. And
+    // every answer, even the same weight again, re-drew the whole weighing
+    // form seven times a second, which is what made typing in it lag.
+    //
+    // Now: one request at a time (the next is scheduled when this one ends);
+    // a PC whose own scale program does not answer is only re-asked every 5 s,
+    // and the cloud reading is fetched once a second; and the screen is only
+    // re-drawn when the weight or its source changes, or once a second to
+    // keep "connected" honest. The weight on screen is exactly as live as
+    // before — the scale itself only sends 5–7 readings a second.
+    let timer = null;
+    let localMissAt = 0;
+    let shown = { w: undefined, src: undefined, at: 0 };
+    function publish(r) {
+      const now = Date.now();
+      const w = r ? r.weight_kg : null;
+      const src = r ? r.source : null;
+      if (w === shown.w && src === shown.src && now - shown.at < 1000) return;
+      shown = { w, src, at: now };
+      setReading(r);
+    }
+
     async function poll() {
-      if (printing) return;
-      const local = await pollLocalBridge();
       if (cancelled) return;
-      if (local) { setReading(local); return; }
-      const cloud = await withTimeout(api.getLiveWeight(locationId).catch(() => null), CLOUD_FALLBACK_TIMEOUT_MS, null);
-      if (!cancelled) setReading(cloud ? { ...cloud, source: "cloud" } : null);
+      let next = POLL_INTERVAL_MS;
+      if (!printing) {
+        const tryLocal = !localMissAt || Date.now() - localMissAt >= LOCAL_RETRY_MS;
+        const local = tryLocal ? await pollLocalBridge() : null;
+        if (cancelled) return;
+        if (tryLocal) localMissAt = local ? 0 : Date.now();
+        // [2026-09-19] The bridge on THIS PC only ever knows THIS PC's scale.
+        // An admin sitting at the Pong Ro PC who picked Jomnoum on New Buy was
+        // shown — and could capture — Pong Ro's live weight as Jomnoum's. The
+        // bridge reports which station it belongs to; a reading for a different
+        // station is set aside and the selected station's own reading is used.
+        if (local && (!local.location_id || !locationId || local.location_id === locationId)) {
+          publish(local);
+        } else {
+          const cloud = await withTimeout(api.getLiveWeight(locationId).catch(() => null), CLOUD_FALLBACK_TIMEOUT_MS, null);
+          if (cancelled) return;
+          publish(cloud ? { ...cloud, source: "cloud" } : null);
+          next = CLOUD_POLL_MS;
+        }
+      }
+      timer = setTimeout(poll, next);
     }
 
     const handleBeforePrint = () => { printing = true; };
-    const handleAfterPrint = () => { printing = false; poll(); };
+    // The loop keeps running while printing (it just skips the fetch), so
+    // there is nothing to restart here — calling poll() again would start a
+    // second loop.
+    const handleAfterPrint = () => { printing = false; };
     window.addEventListener("beforeprint", handleBeforePrint);
     window.addEventListener("afterprint", handleAfterPrint);
 
     poll();
-    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearTimeout(timer);
       window.removeEventListener("beforeprint", handleBeforePrint);
       window.removeEventListener("afterprint", handleAfterPrint);
     };
   }, [locationId]);
 
-  const ageMs = reading?.updated_at ? Date.now() - new Date(reading.updated_at).getTime() : Infinity;
+  // [2026-09-19] A local reading was stamped by this same PC, so this PC's own
+  // clock is the right one to compare with. A cloud reading was stamped by
+  // another station's PC; comparing it against a tablet whose clock runs
+  // slow let a minutes-old weight show as live and be captured.
+  const nowMs = reading?.source === "cloud" ? getAccurateNow().getTime() : Date.now();
+  const ageMs = reading?.updated_at ? nowMs - new Date(reading.updated_at).getTime() : Infinity;
   const connected = ageMs < 6000;
   return { connected, weightKg: reading?.weight_kg, source: reading?.source };
 }

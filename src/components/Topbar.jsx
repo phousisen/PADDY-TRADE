@@ -46,7 +46,8 @@ function SyncStatusBanner({ onSignInAgain }) {
   // can save at all can open this panel and put an entry back; only an
   // admin sees Discard.
   const canDiscard = bannerProfile?.role === "admin";
-  const canFix = !!bannerProfile && !bannerProfile.view_only;
+  // [2026-09-19] Both view-only flags, as everywhere else.
+  const canFix = !!bannerProfile && !bannerProfile.view_only && !bannerProfile.roles?.view_only;
   const [discardList, setDiscardList] = useState(null);
   const [discarded, setDiscarded] = useState(0);
   // [2026-09-11] Recover comes FIRST. Discard throws real work away;
@@ -517,6 +518,12 @@ function NotificationBell() {
 // session for this account at once without needing to know what they are,
 // and a plain password change.
 function AccountSecurityModal({ onClose }) {
+  // [2026-09-19] A view-only login is shared (the family's phones). From it,
+  // anyone could change the password, turn on 2FA with their own phone, or
+  // sign every other phone out — and lock the rest of the family out. Those
+  // three are the Owner's to do from Users (audit, view-only findings).
+  const { isViewOnly } = useAuth();
+  const { t: tr } = useLanguage();
   const [factors, setFactors] = useState(null); // null = still loading
   const [loadErr, setLoadErr] = useState("");
   const [enrolling, setEnrolling] = useState(null); // { factorId, qrCode, secret } while mid-setup
@@ -617,6 +624,15 @@ function AccountSecurityModal({ onClose }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
 
+        {isViewOnly ? (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs text-slate-500">{tr("acct_viewonly_note")}</div>
+        ) : (<>
+        {/* [2026-09-19] Two-factor sign-in is only offered where it is
+            ENFORCED. The login screen never asks for the code, so turning it
+            on here protected nothing while saying "2FA is on". It stays
+            visible only to an account that already turned it on, so it can
+            be turned off. */}
+        {verifiedFactor && (
         <div className="mb-4 rounded-lg border border-slate-200 p-4">
           <p className="mb-1 text-sm font-semibold text-slate-700">Two-Factor Authentication</p>
           <p className="mb-3 text-xs text-slate-400">Require a 6-digit code from an authenticator app in addition to your password.</p>
@@ -657,6 +673,8 @@ function AccountSecurityModal({ onClose }) {
           )}
         </div>
 
+        )}
+
         <div className="mb-4 rounded-lg border border-slate-200 p-4">
           <p className="mb-1 text-sm font-semibold text-slate-700">Sign Out Everywhere</p>
           <p className="mb-3 text-xs text-slate-400">Ends every login for this account on every device at once — including this one, so you'll need to sign back in here too.</p>
@@ -686,6 +704,7 @@ function AccountSecurityModal({ onClose }) {
             {busy ? "Saving…" : "Change Password"}
           </button>
         </div>
+        </>)}
       </div>
     </div>
   );
