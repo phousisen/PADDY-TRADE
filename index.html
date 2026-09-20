@@ -2,6 +2,43 @@
 <html lang="km">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      [2026-09-20] THE WHITE SCREEN. SISEN, Thapedey: "wtf why is it white".
+      DevTools showed /assets/index-DTUAOm5B.js -> 404: the installed app
+      opened an OLD saved copy of this page, which asks for the old build's
+      files, and those are gone from the server. The main file never loads,
+      so nothing in the app runs - not even chunkGuard, which only works once
+      the app has started. This small script is inside the page itself, so it
+      runs even then: if one of the app's own files fails to load, it drops
+      the saved copy of the app (the service worker and its cache - NOT the
+      unsent tickets, which live elsewhere) and reloads ONCE from the server.
+      Only when online; the flag stops it looping if the server is broken.
+    -->
+    <script>
+      (function () {
+        var KEY = "pt_shell_healed";
+        function heal() {
+          if (!navigator.onLine) return;
+          try { if (sessionStorage.getItem(KEY) === "1") return; sessionStorage.setItem(KEY, "1"); } catch (e) { return; }
+          var jobs = [];
+          try { if (navigator.serviceWorker) jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })); } catch (e) {}
+          try { if (window.caches) jobs.push(caches.keys().then(function (ks) { return Promise.all(ks.filter(function (k) { return k.indexOf("workbox-precache") === 0; }).map(function (k) { return caches.delete(k); })); })); } catch (e) {}
+          var done = false;
+          function go() { if (done) return; done = true; location.reload(); }
+          Promise.all(jobs).then(go, go);
+          setTimeout(go, 4000);
+        }
+        window.addEventListener("error", function (e) {
+          var el = e && e.target;
+          if (!el || el === window || (el.tagName !== "SCRIPT" && el.tagName !== "LINK")) return;
+          var url = el.src || el.href || "";
+          if (url.indexOf("/assets/") !== -1) heal();
+        }, true);
+        // Called by main.jsx once the app is on screen: a later bad deploy
+        // may be healed again.
+        window.__ptShellOk = function () { try { sessionStorage.removeItem(KEY); } catch (e) {} };
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#217A4F" />
     <link rel="icon" href="/favicon.png" />
