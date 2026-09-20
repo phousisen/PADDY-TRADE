@@ -111,6 +111,24 @@ export function validateRequest({ count, reason, bookKg, pendingRequest } = {}) 
  * ends in tonnes being written off. Checked again in the database; this is
  * only what decides whether the button is drawn.
  */
+/**
+ * [2026-09-20] Who may change a station's stock DIRECTLY, with no approval.
+ *
+ * SISEN: "make sure these changes they made are not confirmed unless the top
+ * confirms or accept it."
+ *
+ * Only an all-station (HQ) account. Before this, a station role that had been
+ * given the "adjust_stock" permission on the Roles page could set its own
+ * stock straight away and skip HQ entirely. A station-bound account now only
+ * ever ASKS, whatever its role says. The database refuses it too — see
+ * stations_cannot_change_stock.sql.
+ */
+export function canAdjustDirectly({ isAdmin, hasAdjustPermission, isViewOnly, roleScope } = {}) {
+  if (isViewOnly) return false;
+  if (roleScope !== "all") return false;
+  return !!(isAdmin || hasAdjustPermission);
+}
+
 export function canRequestReset({ isViewOnly, canAdjustStock, hasRequestPermission, isOwnStation } = {}) {
   if (isViewOnly) return false;
   if (canAdjustStock) return false;   // HQ already adjusts directly — no request needed
