@@ -256,6 +256,34 @@ function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, o
 // change request moves one ticket's figures, this writes off a shed. It leads
 // with the riel, because a number of kilograms does not tell anyone whether
 // they are approving a rounding error or a lorry.
+// One line of stock-count history: what was counted, what it meant, and who
+// (or what) decided it. Read-only — nothing here can be re-decided.
+function StockHistoryRow({ req, t }) {
+  const d = describeReset({ bookKg: req.book_kg_at_request, countedKg: req.counted_kg, pricePerKg: req.price_per_kg });
+  const tag = req.auto_applied
+    ? <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[11.5px] font-semibold text-brand-700">{t("cr_h_auto")}</span>
+    : req.status === "approved"
+      ? <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[11.5px] font-semibold text-brand-700">{t("cr_h_approved", { name: req.resolvedByName || "—" })}</span>
+      : req.status === "rejected"
+        ? <span className="rounded-full bg-rose-50 px-2.5 py-0.5 text-[11.5px] font-semibold text-rose-700">{t("cr_h_rejected", { name: req.resolvedByName || "—" })}</span>
+        : <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11.5px] font-semibold text-slate-500">{t("cr_h_withdrawn")}</span>;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-100 px-4 py-3 last:border-0">
+      <div className="min-w-[9rem] flex-1">
+        <p className="text-[13.5px] font-semibold text-slate-800">{req.stationName}</p>
+        <p className="text-[12px] text-slate-400">{req.requestedByName} · {dmyTime(req.requested_at)}</p>
+      </div>
+      <p className="text-[12.5px] tabular-nums text-slate-600">
+        {fmt2(d.bookKg)} → {fmt2(d.countedKg)} kg ·{" "}
+        <b className={d.isGain ? "text-brand-700" : d.isLoss ? "text-rose-600" : "text-slate-600"}>{d.isGain ? "+" : d.isLoss ? "−" : ""}{fmt2(Math.abs(d.diffKg))} kg</b>
+        {req.loss_pct != null && <> · {fmt1(req.loss_pct)}%</>}
+      </p>
+      {tag}
+      {req.reject_reason && <p className="w-full text-[12px] italic text-slate-500">“{req.reject_reason}”</p>}
+    </div>
+  );
+}
+
 function StockResetCard({ req, viewerId, viewerEmail, isOwner, policy, busy, t, onApprove, onReject, readOnly = false }) {
   const [rejecting, setRejecting] = useState(false);
   const [why, setWhy] = useState("");
@@ -435,6 +463,13 @@ export default function ChangeRequests() {
   // this page — a database without stock_reset_requests.sql yet simply has
   // none, and the change-request list must still work.
   const [resets, setResets] = useState([]);
+  // [2026-09-21] SISEN: "in the change request we still need to create a
+  // section to decide a changes of request for transaction or stock. dont mix
+  // this up". Two tabs, each with its own count, filter and history. The menu
+  // badge is the total of both.
+  const [tab, setTab] = useState(null);                 // "tx" | "stock"; null = pick the busier one
+  const [txFilter, setTxFilter] = useState("pending");  // pending | approved | rejected
+  const [stFilter, setStFilter] = useState("pending");  // pending | approved | rejected | auto
   // The limits that decided what is on this page, so the card can show them.
   const [policy, setPolicy] = useState(null);
   const [resetBusy, setResetBusy] = useState(false);
@@ -452,7 +487,10 @@ export default function ChangeRequests() {
     } catch (err) {
       setLoadError(err?.message || String(err));
     }
-    api.getStockResetRequests({ status: "pending" }).then(setResets)
+    // [2026-09-21] Every status, not only pending: the stock tab has its own
+    // history (approved / rejected / applied automatically), the same way the
+    // transaction tab always had.
+    api.getStockResetRequests({}).then(setResets)
       .catch((err) => setLoadError((prev) => prev || `${t("err_resets_load")} ${err?.message || err}`));
   }
   useEffect(() => { load(); }, []);
@@ -500,6 +538,26 @@ export default function ChangeRequests() {
     const rejected = rows.filter((r) => r.status === "rejected" && cambodiaDateStr(new Date(r.created_at)).startsWith(thisMonthStr)).length;
     return { pending, approved, rejected };
   }, [rows, thisMonthStr]);
+
+  const inMonth = (iso) => !!iso && cambodiaDateStr(new Date(iso)).startsWith(thisMonthStr);
+  const stockCounts = useMemo(() => ({
+    pending: resets.filter((r) => r.status === "pending").length,
+    approved: resets.filter((r) => r.status === "approved" && !r.auto_applied && inMonth(r.requested_at)).length,
+    rejected: resets.filter((r) => r.status === "rejected" && inMonth(r.requested_at)).length,
+    auto: resets.filter((r) => r.auto_applied && inMonth(r.requested_at)).length,
+  }), [resets, thisMonthStr]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pendingResets = resets.filter((r) => r.status === "pending");
+  const todayStr = cambodiaDateStr();
+  const autoToday = resets.filter((r) => r.auto_applied && cambodiaDateStr(new Date(r.requested_at)) === todayStr);
+  // Open on the tab that has something waiting; transactions if both or neither.
+  const activeTab = tab || (counts.pending === 0 && stockCounts.pending > 0 ? "stock" : "tx");
+  // Waiting ones are always all shown; decided ones are this month's, the
+  // same window the counts on the filter buttons use.
+  const txShown = rows.filter((r) => r.status === txFilter && (txFilter === "pending" || inMonth(r.created_at)));
+  const stShown = (stFilter === "auto"
+    ? resets.filter((r) => r.auto_applied)
+    : resets.filter((r) => r.status === stFilter && !r.auto_applied)
+  ).filter((r) => inMonth(r.requested_at));
 
   async function approveAndApply(req) {
     // The modal hides the approve button for your own request; this makes sure
@@ -618,33 +676,36 @@ export default function ChangeRequests() {
             <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
           </div>
         )}
-        <div className="mb-5 flex flex-wrap items-baseline gap-x-5 gap-y-1 px-0.5 text-[13px] text-slate-400">
-          <span><b className={`font-semibold tabular-nums ${counts.pending > 0 ? "text-amber-700" : "text-slate-900"}`}>{counts.pending}</b> pending</span>
-          <span className="text-slate-300">·</span>
-          <span><b className="font-semibold tabular-nums text-slate-900">{counts.approved}</b> approved this month</span>
-          <span className="text-slate-300">·</span>
-          <span><b className="font-semibold tabular-nums text-slate-900">{counts.rejected}</b> rejected this month</span>
+        {/* ── the two tabs ─────────────────────────────────────────────── */}
+        <div className="mb-4 flex gap-1 border-b border-slate-200">
+          {[
+            ["tx", t("cr_tab_tx"), counts.pending],
+            ["stock", t("cr_tab_stock"), stockCounts.pending],
+          ].map(([k, label, n]) => (
+            <button key={k} type="button" onClick={() => setTab(k)}
+              className={`-mb-px flex items-center gap-2 border-b-[2.5px] px-3.5 py-2.5 text-sm font-semibold ${activeTab === k ? "border-brand-600 text-slate-800" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
+              {label}
+              <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${n > 0 ? "bg-rose-600 text-white" : "bg-slate-200 text-slate-500"}`}>{n}</span>
+            </button>
+          ))}
         </div>
 
-        {resets.length > 0 && (
-          <div className="mb-6">
-            <h3 className="mb-2 px-0.5 text-[13px] font-semibold uppercase tracking-wide text-slate-400">
-              {t("sr_section_title")}
-            </h3>
-            {resetError && <p className="mb-2 text-sm text-rose-600">{resetError}</p>}
-            {resets.map((r) => (
-              <StockResetCard key={r.id} req={r} viewerId={session.user.id} viewerEmail={session.user.email}
-                isOwner={!!profile?.isOwner} policy={policy} busy={resetBusy} t={t} readOnly={isViewOnly}
-                onApprove={approveReset} onReject={rejectReset} />
-            ))}
-          </div>
-        )}
-
-        {rows.length === 0 && resets.length === 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t("no_requests")}</div>
-        )}
-
-        {rows.map((r) => {
+        {activeTab === "tx" && (
+          <>
+            <p className="mb-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[12.5px] leading-relaxed text-slate-600">{t("cr_tab_tx_intro")}</p>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+                {[["pending", t("cr_f_pending"), counts.pending], ["approved", t("cr_f_approved"), counts.approved], ["rejected", t("cr_f_rejected"), counts.rejected]].map(([k, label, n]) => (
+                  <button key={k} type="button" onClick={() => setTxFilter(k)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium ${txFilter === k ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{label} <span className="opacity-70">{n}</span></button>
+                ))}
+              </div>
+              {txFilter !== "pending" && <span className="text-[12px] text-slate-400">{t("cr_this_month_note")}</span>}
+            </div>
+            {txShown.length === 0 && (
+              <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t("cr_tx_empty")}</div>
+            )}
+        {txShown.map((r) => {
           const tx = r.transactions || {};
           const ticketNo = tx.paper_ticket_no;
           const changes = summarizeChanges(r);
@@ -678,6 +739,46 @@ export default function ChangeRequests() {
             </div>
           );
         })}
+          </>
+        )}
+
+        {activeTab === "stock" && (
+          <>
+            <p className="mb-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-[12.5px] leading-relaxed text-slate-600">{t("cr_tab_stock_intro", { pct: fmt1(policy?.tolerance_pct ?? 1) })}</p>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="inline-flex flex-wrap rounded-lg border border-slate-200 bg-white p-1">
+                {[["pending", t("cr_f_pending"), stockCounts.pending], ["approved", t("cr_f_approved"), stockCounts.approved], ["rejected", t("cr_f_rejected"), stockCounts.rejected], ["auto", t("cr_f_auto"), stockCounts.auto]].map(([k, label, n]) => (
+                  <button key={k} type="button" onClick={() => setStFilter(k)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-medium ${stFilter === k ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{label} <span className="opacity-70">{n}</span></button>
+                ))}
+              </div>
+              {stFilter !== "pending" && <span className="text-[12px] text-slate-400">{t("cr_this_month_note")}</span>}
+            </div>
+            {resetError && <p className="mb-2 text-sm text-rose-600">{resetError}</p>}
+            {stFilter === "pending" ? (
+              <>
+                {pendingResets.map((r) => (
+                  <StockResetCard key={r.id} req={r} viewerId={session.user.id} viewerEmail={session.user.email}
+                    isOwner={!!profile?.isOwner} policy={policy} busy={resetBusy} t={t} readOnly={isViewOnly}
+                    onApprove={approveReset} onReject={rejectReset} />
+                ))}
+                {pendingResets.length === 0 && (
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t("cr_stock_empty")}</div>
+                )}
+                {autoToday.length > 0 && (
+                  <p className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-[12.5px] text-brand-700">
+                    ✓ {t("cr_auto_today")} {autoToday.map((r) => `${r.stationName} ${r.loss_pct == null ? "0" : fmt1(r.loss_pct)}%`).join(" · ")}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                {stShown.map((r) => <StockHistoryRow key={r.id} req={r} t={t} />)}
+                {stShown.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-400">{t("cr_stock_none_here")}</p>}
+              </div>
+            )}
+          </>
+        )}
       </main>
       {reviewReq && (
         <ReviewRequestModal

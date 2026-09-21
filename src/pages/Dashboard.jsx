@@ -820,7 +820,9 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
               previousStockKg: Number(settleLoc.loc.current_stock_kg) || 0,
               newStockKg,
               reason,
-              note,
+              // [2026-09-21] Marked, so the stock ledger can label it a Settle
+              // and not an ordinary gain or loss.
+              note: note ? `Settle · ${note}` : "Settle",
               userId: session?.user?.id,
               pricePerKg,
               // Which day it counts against — see SettleDifferenceModal.
