@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, X, Eye, Warehouse } from "lucide-react";
+import { Check, X, Eye, Warehouse, ChevronDown, ChevronUp } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -7,6 +7,7 @@ import { useAuth } from "../AuthContext.jsx";
 import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { dmy, dmyTime } from "../dateFormat.js";
 import { describeReset } from "../stockReset.js";
+import { matchDecisions, beforeSide } from "../changeRequestTrail.js";
 
 // [2026-09-01] "Ticket Queue" design (Option B) — status carried by a
 // colored left edge on each row/card instead of a filled pill background,
@@ -51,13 +52,18 @@ function fmtCambodiaDate(iso) {
 // so a change here can never affect the modal's already-working approve/
 // reject logic. Returns null for an older-style, reason-only request (no
 // proposed_data at all) so the caller can render the reason text instead.
-function summarizeChanges(req) {
-  const tx = req.transactions || {};
+// [2026-09-21] `side` = what to compare the request against (see
+// changeRequestTrail.beforeSide): the ticket as it was before, for an
+// approved request — not the ticket as it is now, which already holds the
+// new values and so showed "No field differences on file".
+function summarizeChanges(req, side = null, t = null) {
+  const tx = side?.tx || req.transactions || {};
+  const partyNow = side ? side.partyName : req.currentPartyName;
   const p = req.proposed_data;
   if (!p) return null;
   const isBuy = tx.type === "BUY";
   const fields = [
-    { label: isBuy ? "Seller" : "Buyer", cur: req.currentPartyName, next: p.partyName },
+    { label: isBuy ? "Seller" : "Buyer", cur: partyNow, next: p.partyName },
     { label: "Weight (kg)", cur: fmt2(tx.quantity_kg), next: fmt2(p.quantityKg) },
     { label: "Price/kg", cur: fmtRiel(tx.price_per_kg), next: fmtRiel(p.pricePerKg) },
     ...(isBuy ? [{ label: "Quality Grade", cur: tx.quality_grade || "—", next: p.qualityGrade || "—" }] : []),
@@ -73,6 +79,8 @@ function summarizeChanges(req) {
     { label: "Car Plate", cur: tx.car_plate || "—", next: p.carPlate || "—" },
     { label: "Truck/Driver Name", cur: tx.driver_name || "—", next: p.driverName || "—" },
     { label: "Note", cur: tx.note || "—", next: p.note || "—" },
+    ...(t && p.grossKg !== undefined ? [{ label: `${t("reg_weighin")} (kg)`, cur: tx.gross_kg == null ? "—" : fmt2(tx.gross_kg), next: p.grossKg == null ? "—" : fmt2(p.grossKg) }] : []),
+    ...(t && p.tareKg !== undefined ? [{ label: `${t("reg_weighout")} (kg)`, cur: tx.tare_kg == null ? "—" : fmt2(tx.tare_kg), next: p.tareKg == null ? "—" : fmt2(p.tareKg) }] : []),
   ];
   const changed = fields.filter((f) => String(f.cur ?? "") !== String(f.next ?? ""));
   // Same total-amount formula as ReviewRequestModal's own proposedAmount —
@@ -454,6 +462,113 @@ function StockResetCard({ req, viewerId, viewerEmail, isOwner, policy, busy, t, 
   );
 }
 
+// [2026-09-21] This month / last month / all time, for decided requests.
+function PeriodSwitch({ period, setPeriod, t }) {
+  return (
+    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+      {[["month", t("cr_p_month")], ["last", t("cr_p_last")], ["all", t("cr_p_all")]].map(([k, label]) => (
+        <button key={k} type="button" onClick={() => setPeriod(k)}
+          className={`rounded-md px-3 py-1.5 text-xs font-medium ${period === k ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{label}</button>
+      ))}
+    </div>
+  );
+}
+
+// One change request in the list. A waiting one opens the Review box; a
+// decided one says who asked, who approved or rejected and when, and opens
+// in place to show every field before → after.
+function TxRow({ r, t, decision, open, onToggle, onReview }) {
+  const tx = r.transactions || {};
+  const ticketNo = tx.paper_ticket_no;
+  const decided = r.status === "approved" || r.status === "rejected";
+  const side = decided ? beforeSide(r, decision) : null;
+  // An approved request whose "before" is not on record: the ticket now holds
+  // the new values, so the comparison would say nothing changed. Show what
+  // was asked for instead of pretending.
+  const noBefore = r.status === "approved" && !side;
+  const changes = noBefore ? null : summarizeChanges(r, side, t);
+  const extra = changes && changes.length > 1 ? changes.length - 1 : 0;
+  const whoKey = r.status === "approved" ? "cr_h_tx_approved" : "cr_h_tx_rejected";
+  return (
+    <div className={`mb-2.5 overflow-hidden rounded-lg border border-slate-200 border-l-[3px] bg-white hover:shadow-sm ${LEFT_BORDER[r.status] || "border-l-slate-300"}`}>
+      <div className="flex items-center gap-4 px-4 py-3.5">
+        <div className="w-20 shrink-0">
+          <div className={`text-[15px] font-bold tabular-nums leading-tight ${ticketNo ? "text-slate-900" : "text-[12px] font-semibold text-slate-400"}`}>{ticketNo || t("cr_no_ticket")}</div>
+          {tx.type && <div className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-400">{tx.type}</div>}
+        </div>
+        <div className="min-w-0 flex-1">
+          {noBefore || changes === null ? (
+            <p className="truncate text-[13.5px] italic text-slate-600">{r.reason}</p>
+          ) : changes.length === 0 ? (
+            <p className="text-[13.5px] text-slate-400">{t("cr_no_diff")}</p>
+          ) : (
+            <p className="truncate text-[13.5px] text-slate-900">
+              <span className="font-medium text-slate-500">{changes[0].label}:</span>{" "}
+              {changes[0].cur} <span className="mx-1 text-slate-300">→</span> <span className="font-semibold">{changes[0].next}</span>
+              {extra > 0 && <span className="ml-1.5 text-[12px] font-normal text-slate-400">{t("cr_n_more", { n: extra })}</span>}
+            </p>
+          )}
+          <p className="mt-0.5 truncate text-[12px] text-slate-400">
+            {t("cr_h_asked", { name: r.requestedByName })} · {fmtCambodiaDate(r.created_at)}
+            {decided && (
+              <> · <b className={`font-semibold ${r.status === "approved" ? "text-brand-700" : "text-rose-600"}`}>{t(whoKey, { name: decision?.byName || "—" })}</b>
+                {decision?.at && <> · {fmtCambodiaDateTime(decision.at)}</>}</>
+            )}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-4">
+          <StatusPill status={r.status} label={t(`status_${r.status}`)} />
+          {r.status === "pending" ? (
+            <button onClick={onReview} className="flex items-center gap-1 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"><Eye size={12} /> {t("cr_review_btn")}</button>
+          ) : (
+            <button type="button" onClick={onToggle} aria-expanded={open}
+              className="flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+              {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {t(open ? "cr_hide_btn" : "cr_details_btn")}
+            </button>
+          )}
+        </div>
+      </div>
+      {open && decided && (
+        <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3.5 text-[12.5px]">
+          {noBefore ? (
+            <p className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">{t("cr_before_missing")}</p>
+          ) : changes && changes.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[420px] border-collapse">
+                <thead>
+                  <tr className="text-left text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+                    <th className="px-2 py-1">{t("cr_d_what")}</th>
+                    <th className="px-2 py-1">{t("cr_d_before")}</th>
+                    <th className="px-2 py-1">{t(r.status === "approved" ? "cr_d_after" : "cr_d_asked_for")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {changes.map((c) => (
+                    <tr key={c.label} className="border-t border-slate-200/70">
+                      <td className="px-2 py-1.5 text-slate-500">{c.label}</td>
+                      <td className="px-2 py-1.5 tabular-nums text-slate-600">{c.cur}</td>
+                      <td className={`px-2 py-1.5 font-semibold tabular-nums ${r.status === "approved" ? "text-amber-800" : "text-slate-400 line-through"}`}>{c.next}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : changes === null ? null : <p className="text-slate-400">{t("cr_no_diff")}</p>}
+          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+            <dt className="text-slate-400">{t("cr_d_asked_by")}</dt><dd className="text-slate-700">{r.requestedByName} · {fmtCambodiaDateTime(r.created_at)}</dd>
+            <dt className="text-slate-400">{t("cr_d_reason")}</dt><dd className="text-slate-700">“{r.reason || "—"}”</dd>
+            <dt className="text-slate-400">{t(r.status === "approved" ? "cr_d_approved_by" : "cr_d_rejected_by")}</dt>
+            <dd className="font-semibold text-slate-800">{decision?.byName || "—"}{decision?.at && <span className="font-normal text-slate-500"> · {fmtCambodiaDateTime(decision.at)}</span>}</dd>
+            {r.status === "rejected" && (
+              <><dt className="text-slate-400">{t("cr_d_reject_reason")}</dt><dd className="text-slate-700">{decision?.rejectReason ? `“${decision.rejectReason}”` : "—"}</dd></>
+            )}
+          </dl>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ChangeRequests() {
   const { t } = useLanguage();
   const { session, profile, isViewOnly } = useAuth();
@@ -470,6 +585,13 @@ export default function ChangeRequests() {
   const [tab, setTab] = useState(null);                 // "tx" | "stock"; null = pick the busier one
   const [txFilter, setTxFilter] = useState("pending");  // pending | approved | rejected
   const [stFilter, setStFilter] = useState("pending");  // pending | approved | rejected | auto
+  // [2026-09-21] SISEN: "where are the old changes". Decided requests were
+  // only ever this month's. Now: this month, last month, or all time.
+  const [period, setPeriod] = useState("month");         // month | last | all
+  // Who decided each request and the ticket's values from before (see
+  // changeRequestTrail.js). Loaded after the list; the list never waits on it.
+  const [decisions, setDecisions] = useState(new Map());
+  const [openId, setOpenId] = useState(null);
   // The limits that decided what is on this page, so the card can show them.
   const [policy, setPolicy] = useState(null);
   const [resetBusy, setResetBusy] = useState(false);
@@ -483,7 +605,9 @@ export default function ChangeRequests() {
   async function load() {
     setLoadError("");
     try {
-      setRows(await api.getChangeRequests());
+      const list = await api.getChangeRequests();
+      setRows(list);
+      loadDecisions(list);
     } catch (err) {
       setLoadError(err?.message || String(err));
     }
@@ -492,6 +616,24 @@ export default function ChangeRequests() {
     // transaction tab always had.
     api.getStockResetRequests({}).then(setResets)
       .catch((err) => setLoadError((prev) => prev || `${t("err_resets_load")} ${err?.message || err}`));
+  }
+  // A failure here only means the "who / before" lines are missing — the
+  // requests themselves are already on screen.
+  async function loadDecisions(list) {
+    const decided = (list || []).filter((r) => r.status === "approved" || r.status === "rejected");
+    if (!decided.length) { setDecisions(new Map()); return; }
+    try {
+      const [logs, names] = await Promise.all([
+        api.getChangeRequestDecisions({
+          txIds: decided.filter((r) => r.status === "approved").map((r) => r.transaction_id),
+          requestIds: decided.filter((r) => r.status === "rejected").map((r) => r.id),
+        }),
+        api.getProfileNames(decided.map((r) => r.resolved_by)),
+      ]);
+      setDecisions(matchDecisions(decided, logs, names));
+    } catch {
+      setDecisions(new Map());
+    }
   }
   useEffect(() => { load(); }, []);
   useEffect(() => { api.getStockCountPolicy().then(setPolicy).catch(() => {}); }, []);
@@ -532,20 +674,28 @@ export default function ChangeRequests() {
   // the app uses — grouped by the request's own date (created_at), since
   // change_requests doesn't keep a separate resolved-on timestamp.
   const thisMonthStr = cambodiaDateStr().slice(0, 7);
+  const lastMonthStr = (() => {
+    const [y, m] = thisMonthStr.split("-").map(Number);
+    return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+  })();
+  // "In the chosen period" — by the request's own date, as before.
+  const inMonth = (iso) => {
+    if (period === "all") return true;
+    if (!iso) return false;
+    return cambodiaDateStr(new Date(iso)).startsWith(period === "last" ? lastMonthStr : thisMonthStr);
+  };
   const counts = useMemo(() => {
     const pending = rows.filter((r) => r.status === "pending").length;
-    const approved = rows.filter((r) => r.status === "approved" && cambodiaDateStr(new Date(r.created_at)).startsWith(thisMonthStr)).length;
-    const rejected = rows.filter((r) => r.status === "rejected" && cambodiaDateStr(new Date(r.created_at)).startsWith(thisMonthStr)).length;
+    const approved = rows.filter((r) => r.status === "approved" && inMonth(r.created_at)).length;
+    const rejected = rows.filter((r) => r.status === "rejected" && inMonth(r.created_at)).length;
     return { pending, approved, rejected };
-  }, [rows, thisMonthStr]);
-
-  const inMonth = (iso) => !!iso && cambodiaDateStr(new Date(iso)).startsWith(thisMonthStr);
+  }, [rows, thisMonthStr, period]); // eslint-disable-line react-hooks/exhaustive-deps
   const stockCounts = useMemo(() => ({
     pending: resets.filter((r) => r.status === "pending").length,
     approved: resets.filter((r) => r.status === "approved" && !r.auto_applied && inMonth(r.requested_at)).length,
     rejected: resets.filter((r) => r.status === "rejected" && inMonth(r.requested_at)).length,
     auto: resets.filter((r) => r.auto_applied && inMonth(r.requested_at)).length,
-  }), [resets, thisMonthStr]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [resets, thisMonthStr, period]); // eslint-disable-line react-hooks/exhaustive-deps
   const pendingResets = resets.filter((r) => r.status === "pending");
   const todayStr = cambodiaDateStr();
   const autoToday = resets.filter((r) => r.auto_applied && cambodiaDateStr(new Date(r.requested_at)) === todayStr);
@@ -554,6 +704,13 @@ export default function ChangeRequests() {
   // Waiting ones are always all shown; decided ones are this month's, the
   // same window the counts on the filter buttons use.
   const txShown = rows.filter((r) => r.status === txFilter && (txFilter === "pending" || inMonth(r.created_at)));
+  // Under the waiting list: the latest few decided, whatever the period, so
+  // an empty "Waiting" never looks like the history has gone.
+  const decidedAt = (r) => new Date(r.resolved_at || decisions.get(r.id)?.at || r.created_at).getTime();
+  const txRecent = rows.filter((r) => r.status === "approved" || r.status === "rejected")
+    .sort((a, b) => decidedAt(b) - decidedAt(a)).slice(0, 5);
+  const stRecent = resets.filter((r) => r.status !== "pending")
+    .sort((a, b) => new Date(b.resolved_at || b.requested_at) - new Date(a.resolved_at || a.requested_at)).slice(0, 5);
   const stShown = (stFilter === "auto"
     ? resets.filter((r) => r.auto_applied)
     : resets.filter((r) => r.status === stFilter && !r.auto_applied)
@@ -700,45 +857,28 @@ export default function ChangeRequests() {
                     className={`rounded-md px-3 py-1.5 text-xs font-medium ${txFilter === k ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{label} <span className="opacity-70">{n}</span></button>
                 ))}
               </div>
-              {txFilter !== "pending" && <span className="text-[12px] text-slate-400">{t("cr_this_month_note")}</span>}
+              {txFilter !== "pending" && <PeriodSwitch period={period} setPeriod={setPeriod} t={t} />}
             </div>
             {txShown.length === 0 && (
-              <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t("cr_tx_empty")}</div>
+              <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t(txFilter === "pending" ? "cr_tx_empty" : "cr_none_in_period")}</div>
             )}
-        {txShown.map((r) => {
-          const tx = r.transactions || {};
-          const ticketNo = tx.paper_ticket_no;
-          const changes = summarizeChanges(r);
-          const extra = changes && changes.length > 1 ? changes.length - 1 : 0;
-          return (
-            <div key={r.id} className={`mb-2.5 flex items-center gap-4 rounded-lg border border-slate-200 border-l-[3px] bg-white px-4 py-3.5 hover:shadow-sm ${LEFT_BORDER[r.status] || "border-l-slate-300"}`}>
-              <div className="w-20 shrink-0">
-                <div className={`text-[15px] font-bold tabular-nums leading-tight ${ticketNo ? "text-slate-900" : "text-[12px] font-semibold text-slate-400"}`}>{ticketNo || "no ticket #"}</div>
-                {tx.type && <div className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-400">{tx.type}</div>}
+            {txShown.map((r) => (
+              <TxRow key={r.id} r={r} t={t} decision={decisions.get(r.id)}
+                open={openId === r.id} onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                onReview={() => setReviewReq(r)} />
+            ))}
+            {txFilter === "pending" && txRecent.length > 0 && (
+              <div className="mt-6">
+                <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[.08em] text-slate-400">{t("cr_recent_title")}</h4>
+                {txRecent.map((r) => (
+                  <TxRow key={r.id} r={r} t={t} decision={decisions.get(r.id)}
+                    open={openId === r.id} onToggle={() => setOpenId(openId === r.id ? null : r.id)}
+                    onReview={() => setReviewReq(r)} />
+                ))}
+                <button type="button" onClick={() => { setTxFilter("approved"); setPeriod("all"); }}
+                  className="mt-1 text-[12.5px] font-semibold text-brand-700 hover:underline">{t("cr_see_all_decided")} →</button>
               </div>
-              <div className="min-w-0 flex-1">
-                {changes === null ? (
-                  <p className="truncate text-[13.5px] italic text-slate-600">{r.reason}</p>
-                ) : changes.length === 0 ? (
-                  <p className="text-[13.5px] text-slate-400">No field differences on file</p>
-                ) : (
-                  <p className="truncate text-[13.5px] text-slate-900">
-                    <span className="font-medium text-slate-500">{changes[0].label}:</span>{" "}
-                    {changes[0].cur} <span className="mx-1 text-slate-300">→</span> <span className="font-semibold">{changes[0].next}</span>
-                    {extra > 0 && <span className="ml-1.5 text-[12px] font-normal text-slate-400">+{extra} more field{extra === 1 ? "" : "s"}</span>}
-                  </p>
-                )}
-                <p className="mt-0.5 truncate text-[12px] text-slate-400">{r.requestedByName} · {fmtCambodiaDate(r.created_at)}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-4">
-                <StatusPill status={r.status} label={t(`status_${r.status}`)} />
-                {r.status === "pending" ? (
-                  <button onClick={() => setReviewReq(r)} className="flex items-center gap-1 rounded-md bg-brand-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-800"><Eye size={12} /> Review</button>
-                ) : <span className="px-1 text-xs text-slate-300">—</span>}
-              </div>
-            </div>
-          );
-        })}
+            )}
           </>
         )}
 
@@ -752,7 +892,7 @@ export default function ChangeRequests() {
                     className={`rounded-md px-3 py-1.5 text-xs font-medium ${stFilter === k ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>{label} <span className="opacity-70">{n}</span></button>
                 ))}
               </div>
-              {stFilter !== "pending" && <span className="text-[12px] text-slate-400">{t("cr_this_month_note")}</span>}
+              {stFilter !== "pending" && <PeriodSwitch period={period} setPeriod={setPeriod} t={t} />}
             </div>
             {resetError && <p className="mb-2 text-sm text-rose-600">{resetError}</p>}
             {stFilter === "pending" ? (
@@ -764,6 +904,14 @@ export default function ChangeRequests() {
                 ))}
                 {pendingResets.length === 0 && (
                   <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t("cr_stock_empty")}</div>
+                )}
+                {stRecent.length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[.08em] text-slate-400">{t("cr_recent_title")}</h4>
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      {stRecent.map((r) => <StockHistoryRow key={r.id} req={r} t={t} />)}
+                    </div>
+                  </div>
                 )}
                 {autoToday.length > 0 && (
                   <p className="mt-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-[12.5px] text-brand-700">

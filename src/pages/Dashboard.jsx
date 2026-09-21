@@ -9,6 +9,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { getAccurateNow } from "../supabaseClient.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
+import ScaleAlertBanner from "../components/ScaleAlertBanner.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
@@ -412,6 +413,9 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isAdmin ? t("dash_hq_overview") : t("dash_location_overview")} subtitle={t("dash_ops_summary")} />
       <main className="flex-1 overflow-y-auto p-6">
+        {(isAdmin || isViewOnly) && !isStationView && (
+          <ScaleAlertBanner locations={locations} t={t} onOpen={() => setPage("station-health")} />
+        )}
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>

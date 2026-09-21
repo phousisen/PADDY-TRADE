@@ -30,6 +30,9 @@ const ACTION_META = {
   change_role: "user", set_password: "user", list_emails: "user",
   add_partner: "capital", add_capital_entry: "capital", add_loan_entry: "capital",
   adjust_stock: "stock", request_stock_reset: "stock", approve_stock_reset: "stock", reverse_stock_adjustment: "stock",
+  // [2026-09-21] The scale guard (scaleGuard.js): a station's scale going
+  // below zero and back, and an Owner allowing one capture past the guard.
+  scale_below_zero: "transaction", scale_back_to_zero: "transaction", scale_capture_override: "transaction",
 };
 
 const CATEGORIES = ["all", "payment", "transaction", "request", "stock", "user", "capital", "other"];
@@ -96,6 +99,13 @@ function describeChange(log, t) {
           parts.push(t("al_price", { v: `${fmtRiel(before.price_per_kg)} → ${fmtRiel(after.price_per_kg)}` }));
         }
       }
+      break;
+
+    case "scale_below_zero":
+    case "scale_back_to_zero":
+    case "scale_capture_override":
+      if (after.weightKg !== undefined) parts.push(t("al_scale_weight", { v: new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(after.weightKg) }));
+      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
       break;
 
     case "cancel_transaction":
