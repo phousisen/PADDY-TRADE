@@ -41,6 +41,12 @@ function kindOf(a) {
   if (a.reversed_at) return "gone";
   return num(a.adjustment_kg) < 0 ? "loss" : "gain";
 }
+/** A Settle from the Dashboard: marked since 21/09, and recognisable before
+ *  that by the note the database writes on a back-dated correction. */
+function isSettle(a) {
+  const n = String(a.note || "");
+  return /^Settle\b/.test(n) || /counted against/i.test(n);
+}
 /** Riel for one row: the recorded loss value when there is one, else kg × price. */
 function valueOf(a) {
   const kg = num(a.adjustment_kg);
@@ -150,6 +156,7 @@ export default function StockAdjustmentsLedger({ txs = [], stations = [], isOwne
 
   const tagFor = (a) => {
     const k = kindOf(a);
+    if (k !== "rev" && isSettle(a)) return <span className="inline-flex whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11.5px] font-semibold text-blue-700">{t("sl_tag_settle")}</span>;
     if (k === "rev") return <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11.5px] font-semibold text-violet-700"><Undo2 size={11} /> {t("sl_tag_rev")}</span>;
     if (num(a.adjustment_kg) < 0) {
       return a.reason === "reset"
@@ -288,7 +295,18 @@ function UndoModal({ row, station, userEmail, userId, t, onClose, onDone }) {
   const v = valueOf(row);
   const nowKg = station ? num(station.current_stock_kg) : null;
   const afterKg = nowKg == null ? null : nowKg - kg;
-  const ok = reason.trim().length >= MIN_REASON && password.length > 0 && !busy;
+  // [2026-09-21] An undo that would leave the station below zero is almost
+  // always the wrong one — typically a Settle, which exists precisely to
+  // clear a negative. It is not forbidden, but it has to be meant.
+  const goesNegative = afterKg != null && afterKg < -0.005;
+  const [accepted, setAccepted] = useState(false);
+  const short = Math.max(0, MIN_REASON - reason.trim().length);
+  const missing = [
+    short > 0 && t("sl_need_reason", { n: short }),
+    !password && t("sl_need_password"),
+    goesNegative && !accepted && t("sl_need_tick"),
+  ].filter(Boolean);
+  const ok = missing.length === 0 && !busy;
 
   async function go() {
     if (!ok) return;
@@ -330,8 +348,9 @@ function UndoModal({ row, station, userEmail, userId, t, onClose, onDone }) {
                 <div className="flex justify-between border-t border-slate-100 px-3.5 py-2.5">
                   <span className="text-slate-500">{t("sl_undo_now")}</span><b className="text-slate-700">{fmt(nowKg)} kg</b>
                 </div>
-                <div className="flex justify-between border-t border-slate-100 bg-violet-50 px-3.5 py-2.5">
-                  <span className="font-semibold text-violet-700">{t("sl_undo_after")}</span><b className="text-violet-700">{fmt(afterKg)} kg</b>
+                <div className={`flex justify-between border-t border-slate-100 px-3.5 py-2.5 ${goesNegative ? "bg-rose-50" : "bg-violet-50"}`}>
+                  <span className={`font-semibold ${goesNegative ? "text-rose-700" : "text-violet-700"}`}>{t("sl_undo_after")}</span>
+                  <b className={goesNegative ? "text-rose-700" : "text-violet-700"}>{afterKg < 0 ? "−" : ""}{fmt(Math.abs(afterKg))} kg</b>
                 </div>
               </>
             )}
@@ -342,11 +361,30 @@ function UndoModal({ row, station, userEmail, userId, t, onClose, onDone }) {
             <span>{t("sl_undo_warning")}</span>
           </div>
 
+          {goesNegative && (
+            <>
+              <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-3 text-[12.5px] leading-relaxed text-rose-800">
+                <b className="block">{t("sl_neg_title", { kg: fmt(Math.abs(afterKg)) })}</b>
+                {isSettle(row) ? t("sl_neg_settle") : t("sl_neg_body")}
+              </div>
+              <button type="button" onClick={() => setAccepted((v) => !v)}
+                className="mt-2.5 flex w-full items-start gap-2.5 text-left text-[12.5px] leading-relaxed text-rose-800">
+                <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${accepted ? "border-rose-600 bg-rose-600 text-white" : "border-rose-400 bg-white"}`}>{accepted ? "✓" : ""}</span>
+                <span>{t("sl_neg_tick", { kg: fmt(Math.abs(afterKg)) })}</span>
+              </button>
+            </>
+          )}
+
           <label className="mb-1.5 mt-4 block text-xs font-medium text-slate-500" htmlFor="undo-why">{t("sl_undo_reason", { n: MIN_REASON })}</label>
           <textarea id="undo-why" rows={2} value={reason} onChange={(e) => setReason(e.target.value)}
             placeholder={t("sl_undo_reason_ph")}
             className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm outline-none focus:border-violet-400 focus:ring-4 focus:ring-violet-100" />
-          <p className={`mt-1 text-right text-[11px] ${reason.trim().length >= MIN_REASON ? "text-brand-700" : "text-slate-400"}`}>{reason.trim().length} / {MIN_REASON}</p>
+          <div className="mt-1 flex items-center justify-between text-[11.5px]">
+            {short > 0
+              ? <span className="font-semibold text-rose-600">{reason.trim().length === 0 ? t("sl_reason_empty", { n: MIN_REASON }) : t("sl_need_reason", { n: short })}</span>
+              : <span className="font-semibold text-brand-700">✓</span>}
+            <span className={short > 0 ? "text-slate-400" : "text-brand-700"}>{reason.trim().length} / {MIN_REASON}</span>
+          </div>
 
           <label className="mb-1.5 mt-2 block text-xs font-medium text-slate-500" htmlFor="undo-pw">{t("cr_sc_password")}</label>
           <input id="undo-pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
@@ -355,7 +393,8 @@ function UndoModal({ row, station, userEmail, userId, t, onClose, onDone }) {
 
           {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-3">
+          {missing.length > 0 && <span className="mr-auto text-[11.5px] text-slate-500">{t("sl_still_needed")} {missing.join(" · ")}</span>}
           <button type="button" onClick={onClose} disabled={busy}
             className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
           <button type="button" onClick={go} disabled={!ok}
