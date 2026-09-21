@@ -12,6 +12,7 @@ import Transactions from "./pages/Transactions.jsx";
 import TransactionForm from "./pages/TransactionForm.jsx";
 import WeighingTickets from "./pages/WeighingTickets.jsx";
 import SetPassword from "./pages/SetPassword.jsx";
+import { subscribeScale, setScaleWatchUser } from "./scaleWatch.js";
 
 
 // [2026-09-19] SPEED: screens most people rarely open are loaded when first
@@ -110,6 +111,17 @@ export default function App() {
     // [2026-09-19] Keyed on who is signed in, not the profile object, which
     // is replaced on every token refresh and re-ran this each time.
   }, [profile?.id, profile?.role]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // [2026-09-21] SCALE GUARD. On a station PC the station's own scale is
+  // watched all day, not only while a weight box is open — the moment that
+  // matters (a truck driving off a scale that was zeroed with it on board)
+  // happens between tickets. See scaleWatch.js / scaleGuard.js.
+  useEffect(() => {
+    setScaleWatchUser(profile?.id || null);
+    const loc = profile?.location_id;
+    if (!loc || profile?.roleScope === "all") return undefined;
+    return subscribeScale(loc, () => {}, { foreground: false });
+  }, [profile?.id, profile?.location_id, profile?.roleScope]);
 
   // Start the offline sync/safety-net once someone's actually signed in —
   // app-wide, not just while the Weighing Tickets screen happens to be

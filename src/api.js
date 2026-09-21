@@ -460,6 +460,15 @@ const rawApi = {
     return data;
   },
 
+  // [2026-09-21] Every station's latest scale reading, for Station Health and
+  // the HQ "scale below zero" alert. One row per station; a table missing on
+  // an older database is "no readings", not an error.
+  async getScaleReadings() {
+    const { data, error } = await supabase.from("scale_readings").select("location_id, weight_kg, updated_at");
+    if (error) return [];
+    return data || [];
+  },
+
   async getProfiles() {
     const { data, error } = await supabase.from("profiles").select("*, locations(name), roles(id, name, scope, permissions, view_only)").order("full_name");
     if (error) {
@@ -2320,6 +2329,44 @@ const rawApi = {
       requestedByName: r.profiles?.full_name || "—",
       currentPartyName: r.transactions?.parties?.name || "—",
     }));
+  },
+
+  // [2026-09-21] SISEN: "before we could track the details on what have
+  // changed in details etc, and who accepted it". Once a change is approved
+  // the ticket already holds the NEW values, so comparing the request with
+  // the ticket shows nothing — the values from before live only in the
+  // Activity Log entry written at the moment of approval. This reads those
+  // entries back (approve: keyed by the transaction; reject: keyed by the
+  // request), with the name of whoever decided.
+  async getChangeRequestDecisions({ txIds = [], requestIds = [] } = {}) {
+    const run = async (action, ids) => {
+      const uniq = [...new Set(ids.filter(Boolean))];
+      const out = [];
+      for (let i = 0; i < uniq.length; i += 150) {
+        const { data, error } = await supabase
+          .from("audit_logs")
+          .select("record_id, action, old_data, new_data, user_id, created_at, profiles(full_name)")
+          .eq("action", action)
+          .in("record_id", uniq.slice(i, i + 150));
+        if (error) throw error;
+        out.push(...(data || []));
+      }
+      return out;
+    };
+    const [approved, rejected] = await Promise.all([
+      run("approve_change_request", txIds),
+      run("reject_change_request", requestIds),
+    ]);
+    return [...approved, ...rejected].map((l) => ({ ...l, userName: l.profiles?.full_name || "" }));
+  },
+
+  // Names for a handful of people (who decided a request).
+  async getProfileNames(ids) {
+    const uniq = [...new Set((ids || []).filter(Boolean))];
+    if (!uniq.length) return {};
+    const { data, error } = await supabase.from("profiles").select("id, full_name").in("id", uniq);
+    if (error) return {};
+    return Object.fromEntries((data || []).map((p) => [p.id, p.full_name || ""]));
   },
 
   async createChangeRequest({ transactionId, requestedBy, locationId, reason, proposedData }) {
