@@ -29,7 +29,7 @@ const ACTION_META = {
   update_party_bank: "payment",
   change_role: "user", set_password: "user", list_emails: "user",
   add_partner: "capital", add_capital_entry: "capital", add_loan_entry: "capital",
-  adjust_stock: "stock", request_stock_reset: "stock", approve_stock_reset: "stock",
+  adjust_stock: "stock", request_stock_reset: "stock", approve_stock_reset: "stock", reverse_stock_adjustment: "stock",
 };
 
 const CATEGORIES = ["all", "payment", "transaction", "request", "stock", "user", "capital", "other"];

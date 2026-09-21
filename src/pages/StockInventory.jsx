@@ -4,6 +4,7 @@ import Topbar from "../components/Topbar.jsx";
 import { AdjustStockModal, reasonLabel } from "../components/AdjustStockModal.jsx";
 import { StockResetModal } from "../components/StockResetModal.jsx";
 import StockCountModal from "../components/StockCountModal.jsx";
+import StockAdjustmentsLedger from "../components/StockAdjustmentsLedger.jsx";
 import { canRequestReset, canAdjustDirectly } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -819,55 +820,20 @@ export default function StockInventory() {
           </table>
         </div>
 
-        <div className="mt-6 rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h3 className="flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-rose-500" /> {t("loss_log_title")}</h3>
-            <p className="mt-0.5 text-xs text-slate-400">{t("loss_log_subtitle")}</p>
-          </div>
-          <div className="grid grid-cols-1 divide-y divide-slate-100 border-b border-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-            <div className="px-5 py-3.5">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("lost_today_label")}</p>
-              <p className="mt-0.5 text-lg font-bold text-rose-600">{fmt2(lostTodayKg)} kg</p>
-            </div>
-            <div className="px-5 py-3.5">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("lost_month_label")}</p>
-              <p className="mt-0.5 text-lg font-bold text-rose-600">{fmt2(lostMonthKg)} kg</p>
-            </div>
-            <div className="px-5 py-3.5">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400">{t("est_value_lost_month_label")}</p>
-              <p className="mt-0.5 text-lg font-bold text-rose-600">{fmtRiel(lostMonthValue)}</p>
-            </div>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-2 font-medium">{t("col_date")}</th>
-                <th className="px-5 py-2 font-medium">{t("station")}</th>
-                <th className="px-5 py-2 font-medium">{t("col_weight_lost")}</th>
-                <th className="px-5 py-2 font-medium">{t("col_price_used")}</th>
-                <th className="px-5 py-2 font-medium">{t("col_value_lost")}</th>
-                <th className="px-5 py-2 font-medium">{t("col_recorded_by")}</th>
-                <th className="px-5 py-2 font-medium">{t("col_note")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lossRows.map((a) => (
-                <tr key={a.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/60">
-                  <td className="px-5 py-3 text-slate-500">{a.created_at ? effectiveAdjDateStr(a) : "—"}</td>
-                  <td className="px-5 py-3 font-medium text-slate-700">{a.stationName}</td>
-                  <td className="px-5 py-3 font-medium text-rose-600">{fmt2(Math.abs(a.adjustment_kg))} kg</td>
-                  <td className="px-5 py-3 text-slate-600">{a.price_per_kg != null ? fmtRiel(a.price_per_kg) : <span className="text-slate-300">—</span>}</td>
-                  <td className="px-5 py-3 font-medium text-rose-600">{a.value_lost != null ? fmtRiel(a.value_lost) : <span className="font-normal text-slate-300">{t("not_valued_label")}</span>}</td>
-                  <td className="px-5 py-3 text-slate-500">{a.adjustedByName}</td>
-                  <td className="px-5 py-3 text-slate-400">{a.note || reasonLabel(t, a.reason)}</td>
-                </tr>
-              ))}
-              {lossRows.length === 0 && !loading && !loadError && (
-                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-slate-400">{t("no_stock_loss")}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        {/* [2026-09-21] The Stock Loss Log became the stock ledger: losses,
+            gains and the Owner's reversals in one list, with Lost / Gained /
+            Reversed / Net and Net as a % of the paddy bought. See
+            StockAdjustmentsLedger.jsx. */}
+        <StockAdjustmentsLedger
+          txs={txs}
+          stations={stations}
+          isOwner={!!profile?.isOwner}
+          isViewOnly={isViewOnly}
+          userEmail={session.user.email}
+          userId={session.user.id}
+          t={t}
+          onChanged={load}
+        />
 
         {/* [2026-09-01] Daily Stock Ledger — a real daily finance-and-stock
             record per station: one row per day (Opening / Bought In /
