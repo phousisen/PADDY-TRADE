@@ -17,13 +17,21 @@ const ok = (name, cond) => { if (cond) console.log(`  ok    ${name}`); else { fa
 
 // Comments are removed first: the explanation of the old bug quotes it.
 const code = (f) => readFileSync(f, "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
-const lw = code("src/components/LiveWeightBox.jsx");
-ok("live weight: no fixed 150 ms interval (requests cannot pile up)", !/setInterval\(poll/.test(lw));
-ok("live weight: the next request is scheduled when this one ends", /timer = setTimeout\(poll, next\)/.test(lw));
+// [2026-09-21] The loop moved to scaleWatch.js (one watcher per station
+// scale, shared by every weight box and the background scale guard). The
+// same rules are checked there.
+const lw = code("src/scaleWatch.js");
+const box = code("src/components/LiveWeightBox.jsx");
+ok("live weight: no fixed 150 ms interval (requests cannot pile up)", !/setInterval\(/.test(lw) && !/setInterval\(/.test(box));
+ok("live weight: the next request is scheduled when this one ends", /store\.timer = setTimeout\(\(\) => tick\(store, gen\), next\)/.test(lw));
 ok("live weight: a PC with no scale program is re-asked every 5 s, not every 150 ms", /const LOCAL_RETRY_MS = 5000;/.test(lw) && /tryLocal \? await pollLocalBridge\(\) : null/.test(lw));
-ok("live weight: the cloud reading is fetched once a second", /const CLOUD_POLL_MS = 1000;/.test(lw) && /next = CLOUD_POLL_MS;/.test(lw));
-ok("live weight: the form is only re-drawn when the weight changes (or once a second)", /if \(w === shown\.w && src === shown\.src && now - shown\.at < 1000\) return;/.test(lw));
-ok("live weight: printing does not start a second loop", !/handleAfterPrint = \(\) => \{ printing = false; poll\(\); \}/.test(lw));
+ok("live weight: the cloud reading is fetched once a second while a weight box is open, every 5 s otherwise",
+   /const CLOUD_FAST_MS = 1000;/.test(lw) && /const CLOUD_SLOW_MS = 5000;/.test(lw) && /next = fg \? CLOUD_FAST_MS : CLOUD_SLOW_MS;/.test(lw));
+ok("live weight: the form is only re-drawn when the weight changes (or once a second)",
+   /if \(reading\?\.weight_kg !== prevW \|\| reading\?\.source !== prevSrc \|\| live !== prevLive \|\| now - \(store\.drawnAt \|\| 0\) >= 1000\)/.test(lw));
+ok("live weight: printing does not start a second loop", /if \(!printing\)/.test(lw) && !/afterprint", \(\) => \{[^}]*tick\(/.test(lw));
+ok("live weight: a stopped and restarted watcher does not leave two loops", /store\.running && store\.gen === gen/.test(lw));
+ok("live weight: two weight boxes on one station share one poll", /const stores = new Map\(\);/.test(lw) && /subscribeScale\(locationId, redraw/.test(box));
 
 const q = code("src/offlineQueue.js");
 ok("idle sync: the farmer/buyer download is at most every 10 minutes",
