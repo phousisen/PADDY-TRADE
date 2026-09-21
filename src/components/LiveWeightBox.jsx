@@ -1,169 +1,26 @@
-import { useEffect, useState } from "react";
-import { api } from "../api.js";
-import { withTimeout } from "../offlineQueue.js";
-import { getAccurateNow } from "../supabaseClient.js";
+import { useEffect, useReducer } from "react";
+import { subscribeScale, scaleSnapshot } from "../scaleWatch.js";
 
-// Bounds the Supabase cloud-fallback read below — this path only runs when
-// the local bridge (same-machine, effectively instant) didn't answer, e.g.
-// this station's bridge.js isn't running, or someone's checking a location's
-// live weight from a different computer entirely. A degraded-but-not-fully-
-// down connection could otherwise leave this fetch hanging indefinitely,
-// which — combined with poll() re-firing every POLL_INTERVAL_MS — could
-// stack up an unbounded number of pending requests, the same class of bug
-// fixed earlier
-// on the Weighing Tickets and Transactions pages (see BOARD_LOAD_TIMEOUT_MS /
-// LOAD_TIMEOUT_MS there).
-const CLOUD_FALLBACK_TIMEOUT_MS = 2500;
-
-// The small bridge program running at each location (see the
-// weighbridge-agent folder) now also runs its own tiny local web server on
-// this computer, at this address — reading it is a same-machine request
-// that never touches the internet at all, unlike the Supabase table below
-// which does. Checking this FIRST means the scale stays "connected" here
-// 24/7 whenever the bridge program is running and the scale is plugged in,
-// completely independent of whether this computer's internet is working.
-const LOCAL_BRIDGE_URL = "http://127.0.0.1:8787/weight";
-
-// How often to check the local bridge for a fresh reading. This is a
-// same-machine request answered straight from bridge.js's in-memory state
-// (no disk, no network) — real-world measured cost is low single-digit
-// milliseconds, so polling faster does not meaningfully add load. [2026-08-27]
-// Lowered from 400ms after on-site feedback that the display looked
-// noticeably behind a fast-changing scale — the KELI D2008 sends a new frame
-// roughly every 150-200ms (confirmed from a real debug-mode console capture
-// at the Ping Pong station), so 400ms meant the screen could lag up to
-// ~400ms behind the true reading. 150ms tracks the scale's own frame rate
-// closely enough that further lowering it would not show anything sooner,
-// since bridge.js can't report a reading it hasn't received yet.
-const POLL_INTERVAL_MS = 150;
-// A PC with no scale program answering is re-asked this often, not every
-// 150 ms; the cloud reading (another station's scale) is fetched this often.
-const LOCAL_RETRY_MS = 5000;
-const CLOUD_POLL_MS = 1000;
-
-async function pollLocalBridge() {
-  try {
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 800);
-    const res = await fetch(LOCAL_BRIDGE_URL, { signal: ctrl.signal });
-    clearTimeout(timeout);
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (!data || data.weight_kg === null || data.weight_kg === undefined) return null;
-    return { weight_kg: data.weight_kg, updated_at: data.updated_at, location_id: data.location_id || null, source: "local" };
-  } catch {
-    // Nothing running on localhost:8787 — either the bridge program isn't
-    // running on THIS computer, or this is a different device (e.g. an
-    // admin checking in from home). Not an error, just means we fall back
-    // to the cloud reading below.
-    return null;
-  }
-}
-
-// Live weighbridge connection — tries this same computer's local bridge
-// server first (works with zero internet), and only falls back to
-// Supabase's `scale_readings` table (needs internet) if nothing answers
-// locally. Either way, a reading older than a few seconds is treated as
-// "not connected" so a stale number never gets mistaken for a live one.
-export function useLiveWeight(locationId) {
-  const [reading, setReading] = useState(null);
-
+// [2026-09-21] The poll loop that used to be here now lives in scaleWatch.js,
+// one per station scale, shared by every weight box and by the background
+// watcher App.jsx keeps on a station PC. Everything it learned here still
+// holds there: the PC's own scale program is asked first (works with no
+// internet), a reading for another station is never shown as this one's, a
+// cloud reading is judged by the corrected clock, a reading older than 6 s
+// is "not connected", and nothing is fetched while a print dialog is open.
+//
+// What is new is `status` — whether this weight may be captured right now
+// (see scaleGuard.js). `by` names the weight box asking, so pressing Capture
+// twice on the same ticket is not mistaken for a second truck.
+export function useLiveWeight(locationId, { by = null, foreground = true } = {}) {
+  const [, redraw] = useReducer((n) => n + 1, 0);
   useEffect(() => {
-    // [2026-09-19] Forget the previous station's reading at once, so it is
-    // never shown (or captured) as the newly selected station's weight.
-    setReading(null);
-    if (!locationId) return;
-    let cancelled = false;
-    // [2026-08-26] Pause this poll (and the re-renders it causes) while a
-    // print is in progress. This component can still be mounted (just
-    // hidden underneath the receipt/slip overlay — see index.css) when
-    // someone prints, and Chrome's print-preview renderer has been hanging
-    // on "Loading preview…" on some station PCs. A component re-rendering
-    // several times a second the whole time a print dialog is open is a
-    // plausible way to stop the page from ever reaching the idle state
-    // Chrome needs to finish generating a preview — pausing it is a safe,
-    // free bit of extra insurance on top of the animation fix in
-    // index.css, whether or not it turns out to be the actual cause.
-    let printing = typeof window !== "undefined" && window.matchMedia?.("print").matches;
-
-    // [2026-09-19] SPEED. "The app is slow and laggy."
-    //
-    // This used to be setInterval(poll, 150): a new request every 150 ms
-    // whether or not the last one had finished. On a PC with no scale
-    // program (HQ, a phone) each local try waits up to 800 ms, so five or six
-    // piled up at once, and every one of them then asked Supabase too — about
-    // seven cloud requests a second from every open New Ticket screen. And
-    // every answer, even the same weight again, re-drew the whole weighing
-    // form seven times a second, which is what made typing in it lag.
-    //
-    // Now: one request at a time (the next is scheduled when this one ends);
-    // a PC whose own scale program does not answer is only re-asked every 5 s,
-    // and the cloud reading is fetched once a second; and the screen is only
-    // re-drawn when the weight or its source changes, or once a second to
-    // keep "connected" honest. The weight on screen is exactly as live as
-    // before — the scale itself only sends 5–7 readings a second.
-    let timer = null;
-    let localMissAt = 0;
-    let shown = { w: undefined, src: undefined, at: 0 };
-    function publish(r) {
-      const now = Date.now();
-      const w = r ? r.weight_kg : null;
-      const src = r ? r.source : null;
-      if (w === shown.w && src === shown.src && now - shown.at < 1000) return;
-      shown = { w, src, at: now };
-      setReading(r);
-    }
-
-    async function poll() {
-      if (cancelled) return;
-      let next = POLL_INTERVAL_MS;
-      if (!printing) {
-        const tryLocal = !localMissAt || Date.now() - localMissAt >= LOCAL_RETRY_MS;
-        const local = tryLocal ? await pollLocalBridge() : null;
-        if (cancelled) return;
-        if (tryLocal) localMissAt = local ? 0 : Date.now();
-        // [2026-09-19] The bridge on THIS PC only ever knows THIS PC's scale.
-        // An admin sitting at the Pong Ro PC who picked Jomnoum on New Buy was
-        // shown — and could capture — Pong Ro's live weight as Jomnoum's. The
-        // bridge reports which station it belongs to; a reading for a different
-        // station is set aside and the selected station's own reading is used.
-        if (local && (!local.location_id || !locationId || local.location_id === locationId)) {
-          publish(local);
-        } else {
-          const cloud = await withTimeout(api.getLiveWeight(locationId).catch(() => null), CLOUD_FALLBACK_TIMEOUT_MS, null);
-          if (cancelled) return;
-          publish(cloud ? { ...cloud, source: "cloud" } : null);
-          next = CLOUD_POLL_MS;
-        }
-      }
-      timer = setTimeout(poll, next);
-    }
-
-    const handleBeforePrint = () => { printing = true; };
-    // The loop keeps running while printing (it just skips the fetch), so
-    // there is nothing to restart here — calling poll() again would start a
-    // second loop.
-    const handleAfterPrint = () => { printing = false; };
-    window.addEventListener("beforeprint", handleBeforePrint);
-    window.addEventListener("afterprint", handleAfterPrint);
-
-    poll();
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      window.removeEventListener("beforeprint", handleBeforePrint);
-      window.removeEventListener("afterprint", handleAfterPrint);
-    };
-  }, [locationId]);
-
-  // [2026-09-19] A local reading was stamped by this same PC, so this PC's own
-  // clock is the right one to compare with. A cloud reading was stamped by
-  // another station's PC; comparing it against a tablet whose clock runs
-  // slow let a minutes-old weight show as live and be captured.
-  const nowMs = reading?.source === "cloud" ? getAccurateNow().getTime() : Date.now();
-  const ageMs = reading?.updated_at ? nowMs - new Date(reading.updated_at).getTime() : Infinity;
-  const connected = ageMs < 6000;
-  return { connected, weightKg: reading?.weight_kg, source: reading?.source };
+    if (!locationId) return undefined;
+    redraw();
+    return subscribeScale(locationId, redraw, { foreground });
+  }, [locationId, foreground]);
+  if (!locationId) return { connected: false, weightKg: undefined, source: undefined, status: "offline" };
+  return scaleSnapshot(locationId, { by });
 }
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }

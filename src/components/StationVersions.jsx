@@ -12,6 +12,7 @@ import { deviceLabel, describeDevice } from "../deviceId.js";
 import { buildBoard } from "../deviceWatch.js";
 import { placeLabel } from "../deviceNet.js";
 import { getAccurateNow } from "../supabaseClient.js";
+import { scaleState } from "../scaleAlert.js";
 
 // Everything about a station, on one line.
 //
@@ -203,6 +204,9 @@ export default function StationVersions() {
   const [tick, setTick] = useState(0);
   const [confirming, setConfirming] = useState(null);
   const [kicking, setKicking] = useState(false);
+  // [2026-09-21] Each station's latest scale reading — a scale below zero
+  // weighs every truck too light, so it belongs on this page.
+  const [scales, setScales] = useState(new Map());
 
   const load = useCallback(async () => {
     try {
@@ -212,6 +216,9 @@ export default function StationVersions() {
       // (audit F25).
       const since = new Date(getAccurateNow().getTime() - 30 * 24 * 60 * 60 * 1000);
       const sinceStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Phnom_Penh" }).format(since);
+      // Kept out of the Promise.all below: a failed scale read must not hide
+      // the rest of the page.
+      api.getScaleReadings().then((rows) => setScales(new Map((rows || []).map((r) => [r.location_id, r])))).catch(() => {});
       const [ps, locs, ctrl, devs, transactions] = await Promise.all([
         api.getProfiles(), api.getLocations(), api.getAppControl(),
         api.getDeviceSessions(), api.getTransactions({ from: sinceStr }),
@@ -373,6 +380,7 @@ export default function StationVersions() {
             <tr className="bg-slate-50 text-[9.5px] font-bold uppercase tracking-[.11em] text-slate-400">
               <th className="border-y border-slate-100 px-4 py-2 text-left">{t("st_col_station")}</th>
               <th className="border-y border-slate-100 px-4 py-2 text-left">{t("st_col_connection")}</th>
+              <th className="border-y border-slate-100 px-4 py-2 text-left">{t("st_col_scale")}</th>
               <th className="border-y border-slate-100 px-4 py-2 text-left">{t("st_col_version")}</th>
               <th className="border-y border-slate-100 px-4 py-2 text-left">{t("st_col_trading")}</th>
               <th className="border-y border-slate-100 px-4 py-2 text-right">{t("st_col_users")}</th>
@@ -403,6 +411,9 @@ export default function StationVersions() {
                           ? ` · ${t("st_n_min").replace("{n}", String(mins))}` : ""}
                       </span>
                     </td>
+                    <td className="whitespace-nowrap px-4 py-2.5">
+                      <ScaleCell reading={scales.get(s.id)} now={now} t={t} />
+                    </td>
                     <td className="px-4 py-2.5">
                       {shown ? (
                         <span className={`rounded-full px-2 py-0.5 font-mono text-[11.5px] font-semibold ${
@@ -425,7 +436,7 @@ export default function StationVersions() {
                   </tr>
                   {s.devices.length > 0 && (
                     <tr>
-                      <td colSpan={5} className="px-4 pb-2 pl-[38px] pt-0">
+                      <td colSpan={6} className="px-4 pb-2 pl-[38px] pt-0">
                         {s.devices.map((dv) => (
                           <DeviceLine key={`${dv.device_id}:${dv.user_id}`} d={dv} t={t}
                             canSignOut={canSignOut} onSignOut={setConfirming} />
@@ -490,10 +501,22 @@ export default function StationVersions() {
 // A <tbody> cannot hold a fragment with a key in older React without this
 // wrapper, and two <tr>s per station is exactly what the layout needs: the
 // station, then its machines indented underneath it.
+function ScaleCell({ reading, now, t }) {
+  const st = scaleState(reading, now);
+  if (st === "none") return <span className="text-slate-300">—</span>;
+  const w = Number(reading.weight_kg);
+  const kg = `${w < 0 ? "−" : ""}${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.abs(w))} kg`;
+  if (st === "below") {
+    return <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11.5px] font-semibold text-rose-700">{t("st_scale_below")} · {kg}</span>;
+  }
+  if (st === "quiet") return <span className="text-[12px] text-slate-400">{t("st_scale_quiet")}</span>;
+  return <span className="text-[12.5px] tabular-nums text-slate-600">{kg}</span>;
+}
+
 function Fragmentish({ children, first }) {
   return (
     <>
-      {!first && <tr className="h-px"><td colSpan={5} className="border-t border-slate-100 p-0" /></tr>}
+      {!first && <tr className="h-px"><td colSpan={6} className="border-t border-slate-100 p-0" /></tr>}
       {children}
     </>
   );
