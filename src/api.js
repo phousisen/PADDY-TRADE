@@ -794,6 +794,39 @@ const rawApi = {
     return data;
   },
 
+  // [2026-09-21] THE EVENING COUNT. One call does the whole thing: the
+  // database works out the difference, measures it against the paddy bought
+  // since the last count, and either applies it (inside the allowance) or
+  // files it for HQ. Nothing here decides anything — see daily_stock_count.sql.
+  //
+  // Returns {status:"applied"|"pending", expected_kg, counted_kg, loss_kg,
+  //          loss_pct, bought_since_kg, requires_owner, tolerance_pct}.
+  async submitStockCount({ locationId, countedKg, note, photoUrl, pricePerKg }) {
+    const { data, error } = await supabase.rpc("submit_stock_count", {
+      p_location_id: locationId,
+      p_counted_kg: countedKg,
+      p_note: note || null,
+      p_photo_url: photoUrl || null,
+      p_price_per_kg: pricePerKg ?? null,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  // The limits, kept in one database row so they can be changed without a
+  // new version of the app. Falls back to the same defaults the database
+  // ships with, so a screen still works if the table is not there yet.
+  async getStockCountPolicy() {
+    const fallback = { tolerance_pct: 1, owner_pct: 2, owner_zero_book_kg: 500, require_photo: true };
+    try {
+      const { data, error } = await supabase.from("stock_count_policy").select("*").eq("id", 1).single();
+      if (error || !data) return fallback;
+      return data;
+    } catch {
+      return fallback;
+    }
+  },
+
   async cancelStockReset(id) {
     const { error } = await supabase.rpc("cancel_stock_reset", { p_id: id });
     if (error) throw error;
@@ -2235,13 +2268,20 @@ const rawApi = {
   // profile of whoever asked — on EVERY page change. Three screens visited
   // meant three downloads of a table nobody had opened. This asks the
   // database to count and send back no rows at all.
+  // [2026-09-20] Includes stations' stock counts waiting for HQ. SISEN:
+  // "where will HQ see the request?" — on Change Requests, but the red number
+  // on the menu only counted edit requests, so a station's stock count sat
+  // there with no badge at all. Now both are counted.
   async getPendingChangeRequestCount() {
-    const { count, error } = await supabase
-      .from("change_requests")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending");
-    if (error) throw error;
-    return count || 0;
+    const [cr, sr] = await Promise.all([
+      supabase.from("change_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      supabase.from("stock_reset_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    ]);
+    if (cr.error) throw cr.error;
+    // The stock-count table may not exist on a database that has not had
+    // stock_reset_requests.sql run; that is "none", not a failure.
+    const resets = sr.error ? 0 : (sr.count || 0);
+    return (cr.count || 0) + resets;
   },
 
   // `status` filters in the DATABASE. Every caller wants pending only; the

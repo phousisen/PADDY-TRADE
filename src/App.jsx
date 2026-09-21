@@ -94,10 +94,19 @@ export default function App() {
   useEffect(() => {
     if (profile?.role !== "admin") return;
     let cancelled = false;
-    api.getPendingChangeRequestCount()
-      .then((n) => { if (!cancelled) setPendingRequests(n); })
-      .catch(() => {}); // a failed count just means no badge, never an error banner
-    return () => { cancelled = true; };
+    // [2026-09-20] Asked again every 2 minutes and when the window comes
+    // back, not only at sign-in: a station's stock count sent at 18:00 has
+    // to show on an HQ screen that has been open since the morning.
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      api.getPendingChangeRequestCount()
+        .then((n) => { if (!cancelled) setPendingRequests(n); })
+        .catch(() => {}); // a failed count just means no badge, never an error banner
+    };
+    refresh();
+    const id = setInterval(refresh, 120000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", refresh); };
     // [2026-09-19] Keyed on who is signed in, not the profile object, which
     // is replaced on every token refresh and re-ran this each time.
   }, [profile?.id, profile?.role]); // eslint-disable-line react-hooks/exhaustive-deps
