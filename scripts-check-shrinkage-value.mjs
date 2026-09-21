@@ -114,7 +114,8 @@ if (!src.includes('value == null ? "—"')) {
   console.error("FAIL  an adjustment with no price must render a dash, not a number"); failed++;
 }
 // The column counts on the two empty/loading rows must match the new headers.
-for (const [table, cols] of [["By Location", 8], ["Adjustment History", 9]]) {
+// [2026-09-21] By Location gained two columns: Bought (kg) and Loss % of bought.
+for (const [table, cols] of [["By Location", 10], ["Adjustment History", 9]]) {
   if (!src.includes(`colSpan={${cols}}`)) {
     console.error(`FAIL  ${table}: empty-state colSpan is not ${cols} — it will not span the new columns`); failed++;
   }

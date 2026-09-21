@@ -173,7 +173,13 @@ ok("zero is one tap", /setCounted\("0"\)/.test(modal));
 ok("but the box does not start at zero", /useState\(""\)/.test(modal));
 ok("HQ's card leads with riel", /text-\[19px\] font-extrabold[\s\S]{0,200}fmtRiel/.test(hq));
 ok("HQ is told when no price could be put on the loss", /sr_no_price_warning/.test(hq));
-ok("HQ's approve button is disabled on your own request", /disabled=\{busy \|\| isOwn\}/.test(hq));
+// [2026-09-21] The approve button moved behind a tick box and a password
+// (see the evening count). Your own count now shows a line saying so instead
+// of a dead button, and the press itself is gated on !isOwn either way.
+ok("HQ cannot approve its own count", /const canPress = !busy && !isOwn/.test(hq) && /\{isOwn \? \(/.test(hq));
+ok("approving needs the tick box and the password", /canPress = !busy && !isOwn && !blocked && checked && password\.length > 0/.test(hq));
+ok("the password is checked against the server, not the screen", /signInWithPassword\(\{ email: viewerEmail, password \}\)/.test(hq));
+ok("an owner-only count offers HQ no approve button at all", /const blocked = req\.requires_owner && !isOwner;/.test(hq));
 ok("rejecting requires a reason", /disabled=\{busy \|\| !why\.trim\(\)\}/.test(hq));
 ok("the Stock page offers the button to stations", /canAskReset/.test(stockPage));
 ok("and the Location page too", /canAskReset/.test(locPage));

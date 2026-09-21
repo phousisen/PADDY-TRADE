@@ -17,11 +17,18 @@ for (const f of ["pages/StockInventory.jsx", "pages/LocationDetail.jsx"]) {
   ok(`${f} uses the HQ-only rule`, /canAdjustDirectly\(\{/.test(src(f)) && !/const canAdjustStock = \(isAdmin \|\| hasPermission\("adjust_stock"\)\)/.test(src(f)));
 }
 
-console.log("\nThe Dashboard card");
+console.log("\nThe Dashboard card and the evening count");
 const card = src("components/StationStockCard.jsx");
 const dash = src("pages/Dashboard.jsx");
-ok("the card only ever files a request", /api\.requestStockReset\(/.test(card) && !/recordStockAdjustment/.test(card));
-ok("Reset to 0 opens the form with 0 in it", /setModal\(\{ initialCount: "0" \}\)/.test(card));
+const count = src("components/StockCountModal.jsx");
+ok("the card never writes stock itself", !/recordStockAdjustment/.test(card) && !/recordStockAdjustment/.test(count));
+ok("one button: count the stock (0 is just a count of 0)", /sc_open_btn/.test(card) && !/ssc_reset0/.test(card));
+ok("the count is sent through submit_stock_count", /api\.submitStockCount\(/.test(count));
+ok("the count form is BLIND — it never shows the book figure",
+   !/station\.current_stock_kg/.test(count) && /sc_blind_note/.test(count));
+ok("a blank box is not read as zero", /countedKg = typed === "" \? null/.test(count));
+ok("what came back is shown: expected, counted, difference, % of bought",
+   ["sc_expected", "sc_counted", "sc_pct_of_bought"].every((k) => count.includes(k)));
 ok("the form accepts a starting count", /initialCount = ""/.test(src("components/StockResetModal.jsx")));
 ok("withdraw needs a second tap", /if \(!confirmWithdraw\) \{ setConfirmWithdraw\(true\); return; \}/.test(card));
 ok("Dashboard shows the card to station accounts", /<StationStockCard/.test(dash) && /const isStationView = !isAdmin && !!profile\?\.location_id;/.test(dash));
