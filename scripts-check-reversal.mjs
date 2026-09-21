@@ -28,7 +28,11 @@ ok("the ledger shows gains, not only losses", /sl_gained/.test(led) && /kind ===
 ok("Lost / Gained / Undone / Net, with Net as % of paddy bought", ["sl_lost", "sl_gained", "sl_reversed", "sl_net_pct"].every((k) => led.includes(k)));
 ok("an undone original is in no total", /"gone" \(an undone original\) is in no total/.test(led));
 ok("Undo is Owner-only on screen too", /if \(!isOwner \|\| isViewOnly\) return false;/.test(led));
-ok("Undo needs the reason AND the password", /reason\.trim\(\)\.length >= MIN_REASON && password\.length > 0/.test(led) && /signInWithPassword\(\{ email: userEmail, password \}\)/.test(led));
+ok("Undo needs the reason AND the password", /short > 0 && t\("sl_need_reason"/.test(led) && /!password && t\("sl_need_password"\)/.test(led) && /const ok = missing\.length === 0/.test(led) && /signInWithPassword\(\{ email: userEmail, password \}\)/.test(led));
+ok("the screen says what is still missing instead of a pale button", /sl_still_needed/.test(led));
+ok("an undo that would put stock below zero has to be ticked", /goesNegative && !accepted && t\("sl_need_tick"\)/.test(led));
+ok("a Settle is labelled as one", /function isSettle/.test(led) && /sl_tag_settle/.test(led));
+ok("new Settles are marked when they are saved", /note: note \? `Settle · \$\{note\}` : "Settle"/.test(readFileSync("src/pages/Dashboard.jsx", "utf8")));
 ok("the Stock page uses the ledger", /<StockAdjustmentsLedger/.test(inv));
 
 console.log(failed ? `\n${failed} FAILED` : "\nA wrong reset can be undone, once, by the Owner, with a reason — and gains are finally on the page.");

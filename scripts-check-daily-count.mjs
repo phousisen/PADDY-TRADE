@@ -50,5 +50,11 @@ ok("Shrinkage reports the loss as a percentage of the paddy bought",
    /rs_loss_pct_label/.test(shrink) && /lossPct\(/.test(shrink));
 ok("the percentage divides by the SELECTED stations' buying only", /wanted\.size && !wanted\.has\(tx\.location_id\)/.test(shrink));
 
+console.log("\nChange Requests: two tabs, not mixed");
+ok("a Transaction tab and a Stock tab, each with its own count", /cr_tab_tx/.test(hq) && /cr_tab_stock/.test(hq) && /stockCounts\.pending/.test(hq));
+ok("each tab has its own waiting / approved / rejected filter", /setTxFilter/.test(hq) && /setStFilter/.test(hq));
+ok("the stock tab shows the automatic ones too", /stFilter === "auto"/.test(hq) && /cr_h_auto/.test(hq));
+ok("the stock tab loads every status, not only pending", /getStockResetRequests\(\{\}\)/.test(hq));
+
 console.log(failed ? `\n${failed} FAILED` : "\nThe evening count holds: measured against buying, small ones close themselves, the rest reach HQ.");
 process.exit(failed ? 1 : 0);
