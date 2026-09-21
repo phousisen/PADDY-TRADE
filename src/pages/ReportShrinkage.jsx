@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { api } from "../api.js";
+import { useLanguage } from "../i18n.jsx";
 // [2026-09-12] These were CALLED on this page but never imported, so the
 // whole tab threw a ReferenceError before it painted anything.
-import { queryRangeAdj, rangeKey } from "../reportQuery.js";
+import { queryRange, queryRangeAdj, rangeKey } from "../reportQuery.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 import { dmy, hm } from "../dateFormat.js";
 import { effectiveAdjDateStr } from "../dailyLedger.js";
@@ -70,7 +71,15 @@ function fmtDateTime(iso) {
 // loss from anything else, since that's exactly the number staff already
 // measured by hand when they recorded each adjustment.
 export default function ReportShrinkage({ selectedLocationIds = [], startDate = null, endDate = null }) {
+  const { t } = useLanguage();
   const [allAdjustments, setAllAdjustments] = useState([]);
+  // [2026-09-21] SISEN: "i would like to know the percentage that is lost too
+  // with the total buy". A loss in kilograms says nothing on its own — 300 kg
+  // out of 30 tonnes is drying, 300 kg out of 400 kg is not. These are the
+  // BUY tickets of the same period and stations, and they are the denominator
+  // of every percentage on this page.
+  const [buyTxs, setBuyTxs] = useState([]);
+  const [buysFailed, setBuysFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const loadSeq = useRef(0);
   const [loadError, setLoadError] = useState("");
@@ -92,6 +101,12 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
     // 2 a.m. reset for 31 August showed in September. The query now reaches
     // one day either side, and the rows are dated by the shared rule below.
     const pad = (d, n) => (d ? new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10) : d);
+    // Its own call, allowed to fail on its own: without it the page still
+    // shows every kilogram, just without the percentage column.
+    setBuysFailed(false);
+    api.getTransactions({ ...queryRange({ selectedLocationIds, startDate, endDate }), type: "BUY", lean: true })
+      .then((v) => { if (live()) setBuyTxs(v); })
+      .catch(() => { if (live()) { setBuyTxs([]); setBuysFailed(true); } });
     api.getStockAdjustments(queryRangeAdj({ selectedLocationIds, startDate: pad(startDate, 0), endDate: pad(endDate, 1) }))
       .then((v) => { if (live()) setAllAdjustments(v); })
       .catch((err) => {
@@ -132,11 +147,31 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
     };
   }, [adjustments]);
 
+  // Paddy bought per station in the same window. Cancelled tickets are not
+  // paddy that ever arrived, so they are not in the denominator either.
+  const boughtByLocation = useMemo(() => {
+    const map = {};
+    let all = 0;
+    const wanted = new Set(selectedLocationIds);
+    for (const tx of buyTxs) {
+      if ((tx.hq_status || "processing") === "cancelled") continue;
+      // The database filters by station only when exactly one is chosen
+      // (queryRange), so the rest is filtered here — otherwise picking two
+      // stations would divide their loss by all five stations' buying.
+      if (wanted.size && !wanted.has(tx.location_id)) continue;
+      const kg = Number(tx.quantity_kg) || 0;
+      map[tx.location_id] = (map[tx.location_id] || 0) + kg;
+      all += kg;
+    }
+    return { map, all };
+  }, [buyTxs, selectedLocationIds]);
+  const lossPct = (lossKg, boughtKg) => (boughtKg > 0 ? (lossKg / boughtKg) * 100 : null);
+
   const byLocation = useMemo(() => {
     const map = {};
     for (const a of adjustments) {
       const key = a.location_id;
-      map[key] = map[key] || { locationName: a.stationName, lossKg: 0, gainKg: 0, lossRiel: 0, gainRiel: 0, count: 0 };
+      map[key] = map[key] || { locationId: key, locationName: a.stationName, lossKg: 0, gainKg: 0, lossRiel: 0, gainRiel: 0, count: 0 };
       const kg = Number(a.adjustment_kg) || 0;
       const v = adjustmentValue(a);
       if (kg < 0) map[key].lossKg += -kg; else map[key].gainKg += kg;
@@ -160,6 +195,14 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
           sub={totals.lossRiel > 0 ? `worth ${fmtRiel(totals.lossRiel)}` : "moisture, spillage, and other recorded loss"} tone="neg" />
         <SummaryCell label="Total Gain" value={`${fmt2(totals.gainKg)} kg`}
           sub={totals.gainRiel > 0 ? `worth ${fmtRiel(totals.gainRiel)}` : "from recount corrections, if any"} tone="pos" />
+        <SummaryCell label={t("rs_loss_pct_label")}
+          value={boughtByLocation.all > 0 ? `${((totals.lossKg / boughtByLocation.all) * 100).toFixed(1)}%` : "—"}
+          sub={buysFailed
+            ? t("rs_buys_failed")
+            : boughtByLocation.all > 0
+              ? t("rs_loss_pct_sub", { loss: fmt2(totals.lossKg), bought: fmt2(boughtByLocation.all) })
+              : t("rs_no_buys")}
+          tone={boughtByLocation.all > 0 && (totals.lossKg / boughtByLocation.all) * 100 > 1 ? "neg" : "pos"} />
         <SummaryCell label="Net difference" value={`${totals.netKg >= 0 ? "+" : "−"}${fmt2(Math.abs(totals.netKg))} kg`}
           sub={`${totals.valued > 0 ? `${fmtSignedRiel(totals.netRiel)} across ` : ""}${totals.count} adjustment(s)${totals.unpriced > 0 ? ` · ${totals.unpriced} with no price recorded` : ""}`}
           tone={totals.netKg < 0 ? "neg" : "pos"} />
@@ -185,6 +228,7 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
           <thead>
             <tr>
               <Th>Location</Th><Th num>Adjustments</Th>
+              <Th num>{t("rs_bought_kg")}</Th><Th num>{t("rs_loss_pct_col")}</Th>
               <Th num>Loss (kg)</Th><Th num>Loss (៛)</Th>
               <Th num>Gain (kg)</Th><Th num>Gain (៛)</Th>
               <Th num>Net (kg)</Th><Th num>Net (៛)</Th>
@@ -195,10 +239,15 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
               const netKg = l.gainKg - l.lossKg;
               const netRiel = l.gainRiel - l.lossRiel;
               const netCls = netKg < 0 ? "!text-rose-600 !font-semibold" : "!text-brand-700 !font-semibold";
+              const bought = boughtByLocation.map[l.locationId] || 0;
+              const pct = lossPct(l.lossKg, bought);
+              const pctCls = pct == null ? "" : pct <= 1 ? "!text-brand-700 !font-semibold" : pct <= 2 ? "!text-amber-700 !font-semibold" : "!text-rose-600 !font-bold";
               return (
                 <Tr key={l.locationName}>
                   <Td name>{l.locationName}</Td>
                   <Td num>{l.count}</Td>
+                  <Td num>{bought > 0 ? fmt2(bought) : "—"}</Td>
+                  <Td num className={pctCls}>{pct == null ? "—" : `${(Math.round(pct * 10) / 10).toFixed(1)}%`}</Td>
                   <Td num className="!text-rose-600">{l.lossKg > 0 ? `-${fmt2(l.lossKg)}` : "—"}</Td>
                   <Td num className="!text-rose-600">{l.lossRiel > 0 ? `−${new Intl.NumberFormat("en-US").format(Math.round(l.lossRiel))}` : "—"}</Td>
                   <Td num className="!text-brand-700">{l.gainKg > 0 ? `+${fmt2(l.gainKg)}` : "—"}</Td>
@@ -210,8 +259,8 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
                 </Tr>
               );
             })}
-            {loading && byLocation.length === 0 && <Tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
-            {byLocation.length === 0 && !loading && !loadError && <Tr><td colSpan={8} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No stock adjustments recorded for this period.</td></Tr>}
+            {loading && byLocation.length === 0 && <Tr><td colSpan={10} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
+            {byLocation.length === 0 && !loading && !loadError && <Tr><td colSpan={10} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No stock adjustments recorded for this period.</td></Tr>}
           </tbody>
         </Table>
       </TableCard>

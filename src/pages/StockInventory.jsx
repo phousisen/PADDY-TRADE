@@ -3,6 +3,7 @@ import { RefreshCw, TrendingUp, Gauge, MapPin, ChevronRight, ChevronDown, Layers
 import Topbar from "../components/Topbar.jsx";
 import { AdjustStockModal, reasonLabel } from "../components/AdjustStockModal.jsx";
 import { StockResetModal } from "../components/StockResetModal.jsx";
+import StockCountModal from "../components/StockCountModal.jsx";
 import { canRequestReset, canAdjustDirectly } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -1071,7 +1072,20 @@ export default function StockInventory() {
         />
       )}
 
-      {resetStation && (
+      {/* [2026-09-21] A station's count from this page goes through the SAME
+          evening count as the Dashboard — blind, measured against buying,
+          small ones closing themselves. The old form is kept only to show
+          one that is already waiting. */}
+      {resetStation && !pendingResets[resetStation.id] && (
+        <StockCountModal
+          station={resetStation}
+          priceSuggestion={priceSuggestionByLocation[resetStation.id] ?? null}
+          userId={session.user.id}
+          onClose={() => { setResetStation(null); load(); }}
+          onDone={() => load()}
+        />
+      )}
+      {resetStation && pendingResets[resetStation.id] && (
         <StockResetModal
           station={resetStation}
           priceSuggestion={priceSuggestionByLocation[resetStation.id] ?? null}

@@ -4,6 +4,7 @@ import Topbar from "../components/Topbar.jsx";
 import RenameLocationModal from "../components/RenameLocationModal.jsx";
 import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
 import { StockResetModal } from "../components/StockResetModal.jsx";
+import StockCountModal from "../components/StockCountModal.jsx";
 import { canRequestReset, canAdjustDirectly } from "../stockReset.js";
 import { api } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -686,7 +687,16 @@ export default function LocationDetail({ locationId, setPage }) {
         />
       )}
 
-      {resetOpen && !isCombined && location && (
+      {resetOpen && !isCombined && location && !pendingReset && (
+        <StockCountModal
+          station={location}
+          priceSuggestion={priceSuggestion}
+          userId={session.user.id}
+          onClose={() => { setResetOpen(false); load(); }}
+          onDone={() => load()}
+        />
+      )}
+      {resetOpen && !isCombined && location && pendingReset && (
         <StockResetModal
           station={location}
           priceSuggestion={priceSuggestion}

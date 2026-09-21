@@ -18,6 +18,7 @@ const STATUS_TEXT = { pending: "text-amber-700", approved: "text-brand-700", rej
 const STATUS_DOT = { pending: "bg-amber-500", approved: "bg-brand-600", rejected: "bg-rose-500" };
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
+function fmt1(n) { return (Math.round((Number(n) || 0) * 10) / 10).toFixed(1); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 // Cambodia's current calendar date (YYYY-MM-DD), independent of the
 // viewing device's own timezone/clock setting.
@@ -255,9 +256,17 @@ function ReviewRequestModal({ req, userEmail, viewerId, t, onClose, onApprove, o
 // change request moves one ticket's figures, this writes off a shed. It leads
 // with the riel, because a number of kilograms does not tell anyone whether
 // they are approving a rounding error or a lorry.
-function StockResetCard({ req, viewerId, busy, t, onApprove, onReject, readOnly = false }) {
+function StockResetCard({ req, viewerId, viewerEmail, isOwner, policy, busy, t, onApprove, onReject, readOnly = false }) {
   const [rejecting, setRejecting] = useState(false);
   const [why, setWhy] = useState("");
+  // [2026-09-21] Approving is no longer one click. SISEN: "what if its just
+  // staff reseting without anything and the hq didnt even bother to check".
+  // The box and the password are the two seconds that make someone read the
+  // figures above them — and the password is what puts a NAME on the
+  // approval, which is the part that survives into the monthly report.
+  const [checked, setChecked] = useState(false);
+  const [password, setPassword] = useState("");
+  const [pwError, setPwError] = useState("");
   const d = describeReset({
     bookKg: req.book_kg_at_request,
     countedKg: req.counted_kg,
@@ -266,6 +275,25 @@ function StockResetCard({ req, viewerId, busy, t, onApprove, onReject, readOnly 
   // The same rule the database enforces. Shown as a reason, not as a button
   // that silently does nothing.
   const isOwn = req.requested_by && viewerId && req.requested_by === viewerId;
+  // Green / amber / red on ONE rule, the same one the database used when it
+  // decided this had to come here at all.
+  const tol = Number(policy?.tolerance_pct ?? 1);
+  const ownerPct = Number(policy?.owner_pct ?? 2);
+  const pctLevel = req.loss_pct == null ? "crit"
+    : Number(req.loss_pct) <= tol ? "good"
+    : Number(req.loss_pct) <= ownerPct ? "warn" : "crit";
+  const blocked = req.requires_owner && !isOwner;
+  const canPress = !busy && !isOwn && !blocked && checked && password.length > 0;
+
+  async function approveWithPassword() {
+    setPwError("");
+    // Their own login, checked against the server — the same proof the
+    // change-request approval above has always asked for.
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: viewerEmail, password });
+    if (authError) { setPwError(t("cr_sc_bad_password")); return; }
+    setPassword(""); setChecked(false);
+    await onApprove(req);
+  }
 
   return (
     <div className="mb-2.5 rounded-lg border border-slate-200 border-l-[3px] border-l-amber-500 bg-white px-4 py-3.5">
@@ -291,7 +319,51 @@ function StockResetCard({ req, viewerId, busy, t, onApprove, onReject, readOnly 
         </div>
       </div>
 
+      {/* [2026-09-21] THE FIGURES THAT MAKE THE DECISION POSSIBLE. Before
+          this, HQ was shown a station name, two weights and a riel figure —
+          nothing about the day's trading, so "is 12,450 kg missing normal?"
+          could not be answered from the screen at all. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-slate-50 px-3 py-2 text-[12.5px] tabular-nums text-slate-600">
+        <span>{t("cr_sc_book")} <b className="text-slate-800">{fmt2(d.bookKg)}</b></span>
+        <span className="text-slate-300">→</span>
+        <span>{t("cr_sc_counted")} <b className="text-slate-800">{fmt2(d.countedKg)}</b></span>
+        <span className="text-slate-300">·</span>
+        <span>{d.isGain ? t("sr_extra") : t("sr_missing")} <b className={d.isGain ? "text-brand-700" : "text-rose-700"}>{d.isGain ? "+" : "−"}{fmt2(Math.abs(d.diffKg))} kg</b></span>
+        {req.bought_since_kg != null && (
+          <>
+            <span className="text-slate-300">·</span>
+            <span>{t("cr_sc_bought_since")} <b className="text-slate-800">{fmt2(req.bought_since_kg)} kg</b></span>
+          </>
+        )}
+      </div>
+
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] text-slate-600">
+          {req.loss_pct == null
+            ? t("cr_sc_no_buys")
+            : <>{t("cr_sc_pct_label")} <b className={pctLevel === "good" ? "text-brand-700" : pctLevel === "warn" ? "text-amber-700" : "text-rose-700"}>{fmt1(req.loss_pct)}%</b> <span className="text-slate-400">({t("cr_sc_normal", { pct: fmt1(policy?.tolerance_pct ?? 1) })})</span></>}
+        </p>
+        <span className={`rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold ${pctLevel === "good" ? "bg-brand-50 text-brand-700" : pctLevel === "warn" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>
+          {pctLevel === "good" ? t("cr_sc_lvl_ok") : pctLevel === "warn" ? t("cr_sc_lvl_watch") : t("cr_sc_lvl_high")}
+        </span>
+      </div>
+
       {req.note && <p className="mt-2 rounded-md bg-slate-50 px-3 py-2 text-[13.5px] italic text-slate-600">{req.note}</p>}
+
+      {req.photo_url ? (
+        <a href={req.photo_url} target="_blank" rel="noreferrer"
+           className="mt-2 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-brand-700 hover:underline">
+          <Eye size={13} /> {t("cr_sc_photo")}
+        </a>
+      ) : (
+        <p className="mt-2 text-[12px] text-rose-600">{t("cr_sc_no_photo")}</p>
+      )}
+
+      {req.requires_owner && (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12.5px] text-amber-800">
+          {isOwner ? t("cr_sc_owner_you") : t("cr_sc_owner_only")}
+        </p>
+      )}
 
       {!d.hasPrice && (
         <p className="mt-2 text-[12px] text-amber-700">{t("sr_no_price_warning")}</p>
@@ -312,16 +384,42 @@ function StockResetCard({ req, viewerId, busy, t, onApprove, onReject, readOnly 
           </div>
         </div>
       ) : (
-        <div className="mt-3 flex items-center justify-end gap-2">
-          {isOwn && <span className="mr-auto text-[12px] text-slate-400">{t("sr_own_request")}</span>}
-          <button onClick={() => setRejecting(true)} disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40">
-            <X size={13} /> {t("reject")}
-          </button>
-          <button onClick={() => onApprove(req)} disabled={busy || isOwn}
-            className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
-            <Check size={13} /> {t("sr_approve")}
-          </button>
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          {isOwn ? (
+            <p className="text-[12.5px] text-slate-400">{t("sr_own_request")}</p>
+          ) : blocked ? (
+            <div className="flex justify-end">
+              <button onClick={() => setRejecting(true)} disabled={busy}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40">
+                <X size={13} /> {t("reject")}
+              </button>
+            </div>
+          ) : (
+            <>
+              <button type="button" onClick={() => setChecked((v) => !v)}
+                className="flex w-full items-start gap-2.5 text-left text-[12.5px] leading-relaxed text-slate-600">
+                <span className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${checked ? "border-brand-600 bg-brand-600 text-white" : "border-slate-300 bg-white"}`}>
+                  {checked && <Check size={11} />}
+                </span>
+                <span>{t("cr_sc_confirm", { kg: fmt2(Math.abs(d.diffKg)), value: d.hasPrice ? fmtRiel(d.isGain ? d.gainValue : d.lossValue) : "—" })}</span>
+              </button>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                autoComplete="off" name="approve-count-password-not-autofillable"
+                placeholder={t("cr_sc_password")}
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+              {pwError && <p className="mt-1.5 text-[12.5px] text-rose-600">{pwError}</p>}
+              <div className="mt-2.5 flex items-center justify-end gap-2">
+                <button onClick={() => setRejecting(true)} disabled={busy}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:border-rose-300 hover:text-rose-600 disabled:opacity-40">
+                  <X size={13} /> {t("reject")}
+                </button>
+                <button onClick={approveWithPassword} disabled={!canPress}
+                  className="flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">
+                  <Check size={13} /> {t("sr_approve")}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -330,13 +428,15 @@ function StockResetCard({ req, viewerId, busy, t, onApprove, onReject, readOnly 
 
 export default function ChangeRequests() {
   const { t } = useLanguage();
-  const { session, isViewOnly } = useAuth();
+  const { session, profile, isViewOnly } = useAuth();
   const [rows, setRows] = useState([]);
   const [reviewReq, setReviewReq] = useState(null);
   // [2026-09-17] Stock resets. Loaded separately and never allowed to fail
   // this page — a database without stock_reset_requests.sql yet simply has
   // none, and the change-request list must still work.
   const [resets, setResets] = useState([]);
+  // The limits that decided what is on this page, so the card can show them.
+  const [policy, setPolicy] = useState(null);
   const [resetBusy, setResetBusy] = useState(false);
   const [resetError, setResetError] = useState("");
 
@@ -356,6 +456,7 @@ export default function ChangeRequests() {
       .catch((err) => setLoadError((prev) => prev || `${t("err_resets_load")} ${err?.message || err}`));
   }
   useEffect(() => { load(); }, []);
+  useEffect(() => { api.getStockCountPolicy().then(setPolicy).catch(() => {}); }, []);
 
   async function approveReset(req) {
     setResetError(""); setResetBusy(true);
@@ -532,7 +633,8 @@ export default function ChangeRequests() {
             </h3>
             {resetError && <p className="mb-2 text-sm text-rose-600">{resetError}</p>}
             {resets.map((r) => (
-              <StockResetCard key={r.id} req={r} viewerId={session.user.id} busy={resetBusy} t={t} readOnly={isViewOnly}
+              <StockResetCard key={r.id} req={r} viewerId={session.user.id} viewerEmail={session.user.email}
+                isOwner={!!profile?.isOwner} policy={policy} busy={resetBusy} t={t} readOnly={isViewOnly}
                 onApprove={approveReset} onReject={rejectReset} />
             ))}
           </div>
