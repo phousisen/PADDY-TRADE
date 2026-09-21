@@ -691,7 +691,13 @@ const rawApi = {
   // right now, and the location's stock is reset to match exactly, with
   // the difference logged (why, how much, by whom, when) instead of just
   // silently overwritten.
-  async getStockAdjustments({ locationId, startDate, endDate } = {}) {
+  // [2026-09-21] `includeReversed`. An adjustment the Owner has UNDONE, and
+  // the reversal that undid it, are left out by default — both of them — so
+  // every screen that adds up losses, stock or profit sees that day exactly
+  // as if the wrong reset had never happened. The pair lands on the same
+  // business day (stock_reversal.sql), so leaving both out changes no stock
+  // figure. Only the stock ledger, which shows the history, asks for them.
+  async getStockAdjustments({ locationId, startDate, endDate, includeReversed = false } = {}) {
     // [2026-09-09] Paged — see fetchAll.
     const makeQuery = () => {
     let query = supabase
@@ -713,7 +719,15 @@ const rawApi = {
       return query;
     };
     const data = await fetchAll(makeQuery, { sort: desc("created_at") });
-    return data.map((a) => ({ ...a, stationName: a.locations?.name || "—", adjustedByName: a.profiles?.full_name || "—" }));
+    const rows = includeReversed ? data : data.filter((a) => !a.reversed_at && !a.reverses_adjustment_id);
+    return rows.map((a) => ({ ...a, stationName: a.locations?.name || "—", adjustedByName: a.profiles?.full_name || "—" }));
+  },
+
+  // Owner only, reason ≥ 15 characters — both checked by the database.
+  async reverseStockAdjustment(id, reason) {
+    const { data, error } = await supabase.rpc("reverse_stock_adjustment", { p_adjustment_id: id, p_reason: reason });
+    if (error) throw error;
+    return data;
   },
 
   // `pricePerKg` puts a real riel figure on an adjustment — typically the
