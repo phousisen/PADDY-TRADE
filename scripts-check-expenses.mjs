@@ -332,9 +332,11 @@ console.log("\n9. A written figure is locked\n");
 
 const src3 = fs.readFileSync(path.join("src", "pages", "Expenses.jsx"), "utf8");
 check("a figure already saved renders locked, not as an open box",
-  /const locked = !!saved && !unlocked;/.test(src3));
+  // [2026-09-21] Also locked when the sheet cannot be edited at all (a day the
+  // manager has confirmed, seen by staff) — the rule is unchanged.
+  /const locked = !!saved && \(!unlocked \|\| !canEdit\);/.test(src3));
 check("an EMPTY box stays open — adding is not editing",
-  /!!saved && !unlocked/.test(src3) && !/const locked = !unlocked;/.test(src3));
+  /const locked = !!saved && \(!unlocked/.test(src3) && !/const locked = !unlocked;/.test(src3));
 check("unlocking asks for the password",
   /onUnlock=\{\(\) => setPwPrompt\(\{ unlockOnly: true \}\)\}/.test(src3));
 check("unlocking alone changes nothing — it opens the boxes",
