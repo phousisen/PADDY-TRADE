@@ -49,6 +49,18 @@ registerSW({
 // database, and then tells the screens to ask again. See sessionWatch.js.
 startSessionWatch({ ensureFresh: ensureFreshSession });
 
+// [2026-09-22] The strip's "Refresh now" comes back on ?u=<time> so that no
+// cache between here and the server can answer with the old app (appUpdate.js
+// → hardReload). Once the page is up, the marker has done its job — take it
+// out of the address bar so it is not carried into bookmarks or shared links.
+try {
+  const url = new URL(window.location.href);
+  if (url.searchParams.has("u")) {
+    url.searchParams.delete("u");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }
+} catch { /* an old browser — a leftover ?u= in the bar harms nothing */ }
+
 // [2026-09-16] A page open since before the last deploy is holding the OLD
 // file names, and every one of them changed. The first screen it opens that
 // it has not opened before asks for a file that is gone, the import rejects,

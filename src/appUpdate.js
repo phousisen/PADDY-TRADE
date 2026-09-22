@@ -349,3 +349,73 @@ export function reloadWhenFree({
   const timer = setInterval(tick, pollMs);
   return () => { done = true; clearInterval(timer); };
 }
+
+// ── the escape hatch: a refresh that CANNOT be served from the old copy ───
+//
+// [2026-09-22] SISEN, on the strip's own button: "why does this refresh now
+// not work. also i click it so many times and it never work".
+//
+// He was right, and the button was the worst offender on the screen. It ran
+// window.location.reload() — a plain reload, which the service worker answers
+// out of the copy of the app it has already saved on that PC. If that saved
+// copy is the OLD one (a worker that will not hand over, a precache that did
+// not finish downloading), the page comes back on exactly the same version,
+// notices it is out of date, and puts the strip up again. Pressing it ten
+// times runs the same failing step ten times: nothing about the second press
+// is different from the first.
+//
+// So the button no longer asks nicely. In order:
+//
+//   1. tell a waiting worker to take over now (skipWaiting),
+//   2. DELETE every cache this app has on this device — that is where the old
+//      copy actually lives,
+//   3. unregister the service workers, so nothing can answer from disk,
+//   4. reload on a URL the browser has never seen (?u=<time>), which no HTTP
+//      cache in between can answer either.
+//
+// Nothing is lost: the caches hold the app's own files, never data. Tickets
+// waiting to be sent live in localStorage (offlineQueue) and are untouched,
+// and main.jsx registers the worker again on the way back in, so the station
+// is offline-capable again as soon as the page loads.
+export const FRESH_PARAM = "u";
+
+export async function hardReload({ registration, sw, cacheStore, location: loc } = {}) {
+  const worker = sw || (typeof navigator !== "undefined" ? navigator.serviceWorker : null);
+  const store = cacheStore || (typeof caches !== "undefined" ? caches : null);
+  const where = loc || (typeof window !== "undefined" ? window.location : null);
+
+  // 1. a worker that downloaded the new code but is waiting its turn.
+  try {
+    const reg = registration || (worker && worker.ready ? await Promise.race([
+      worker.ready, new Promise((r) => setTimeout(() => r(null), 2000)),
+    ]) : null);
+    const waiting = reg && reg.waiting;
+    if (waiting && typeof waiting.postMessage === "function") waiting.postMessage({ type: "SKIP_WAITING" });
+  } catch { /* no worker, or the browser refused — the next steps still work */ }
+
+  // 2. the saved copy of the app.
+  try {
+    if (store && typeof store.keys === "function") {
+      const names = await store.keys();
+      await Promise.all((names || []).map((n) => store.delete(n).catch(() => {})));
+    }
+  } catch { /* private window, or storage refused */ }
+
+  // 3. nothing left to answer from disk.
+  try {
+    if (worker && typeof worker.getRegistrations === "function") {
+      const regs = await worker.getRegistrations();
+      await Promise.all((regs || []).map((r) => r.unregister().catch(() => {})));
+    }
+  } catch { /* fine — the caches are already gone */ }
+
+  // 4. a web address this browser has not got an answer for.
+  if (!where) return;
+  try {
+    const url = new URL(where.href);
+    url.searchParams.set(FRESH_PARAM, String(Date.now()));
+    where.replace(url.toString());
+  } catch {
+    where.reload();
+  }
+}
