@@ -2657,6 +2657,74 @@ const rawApi = {
     return data;
   },
 
+  // [2026-09-21] EXPENSE CONFIRMATION — see expense_confirmation.sql.
+  //
+  // SISEN: "i want to let the manager go through it and confirm the expenses
+  // and all so we know that the expenses is there because 2 people has agreed
+  // so they can be responsible."
+  //
+  // Every rule (who may confirm, nobody confirms a day they entered alone, a
+  // confirmed day is locked for staff) lives in the database. These only call
+  // it. `null` from getExpenseReviews means the SQL has not been run yet — the
+  // screens then carry on exactly as before.
+  async getExpenseReviews() {
+    try {
+      return await fetchAll(() => supabase.from("expense_day_review_status").select("*"), { sort: desc("day", "location_id") });
+    } catch (error) {
+      if (/does not exist|schema cache|could not find/i.test(error?.message || "")) return null;
+      throw error;
+    }
+  },
+
+  async getExpenseChangeRequests() {
+    let data;
+    try {
+      data = await fetchAll(() => supabase
+        .from("expense_change_requests")
+        .select("*, requester:profiles!expense_change_requests_requested_by_fkey(full_name), decider:profiles!expense_change_requests_decided_by_fkey(full_name)"),
+        { sort: desc("requested_at", "id") });
+    } catch (error) {
+      if (/does not exist|schema cache|could not find/i.test(error?.message || "")) return [];
+      throw error;
+    }
+    return (data || []).map((r) => ({ ...r, requestedByName: r.requester?.full_name || "—", decidedByName: r.decider?.full_name || "" }));
+  },
+
+  async confirmExpenseDay({ locationId, day, corrected = false }) {
+    const { error } = await supabase.rpc("confirm_expense_day", { p_location_id: locationId, p_day: day, p_corrected: !!corrected });
+    if (error) throw error;
+  },
+
+  async sendBackExpenseDay({ locationId, day, note }) {
+    const { error } = await supabase.rpc("send_back_expense_day", { p_location_id: locationId, p_day: day, p_note: note });
+    if (error) throw error;
+  },
+
+  async resubmitExpenseDay({ locationId, day, reply }) {
+    const { error } = await supabase.rpc("resubmit_expense_day", { p_location_id: locationId, p_day: day, p_reply: reply });
+    if (error) throw error;
+  },
+
+  async requestExpenseChange({ locationId, day, category, amount, reason }) {
+    const { data, error } = await supabase.rpc("request_expense_change", {
+      p_location_id: locationId, p_day: day, p_category: category, p_requested_amount: amount, p_reason: reason,
+    });
+    if (error) throw error;
+    return data;
+  },
+
+  async decideExpenseChange({ id, approve, note }) {
+    const { error } = await supabase.rpc("decide_expense_change", { p_request_id: id, p_approve: !!approve, p_note: note || null });
+    if (error) throw error;
+  },
+
+  // The number on the Expenses menu item. 0 on a database without the SQL.
+  async getExpenseReviewBadge() {
+    const { data, error } = await supabase.rpc("expense_review_badge");
+    if (error) return 0;
+    return Number(data) || 0;
+  },
+
   // [2026-09-16] "This station spent nothing on this day."
   //
   // On the month grid a blank cell and a genuine zero mean opposite things:

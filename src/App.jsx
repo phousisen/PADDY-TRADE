@@ -123,6 +123,25 @@ export default function App() {
     return subscribeScale(loc, () => {}, { foreground: false });
   }, [profile?.id, profile?.location_id, profile?.roleScope]);
 
+  // [2026-09-21] The number on Expenses: days waiting for the manager (and
+  // expense change requests), or — for the staff account — days sent back.
+  // The database works it out (expense_review_badge); 0 without the SQL.
+  const [expenseBadge, setExpenseBadge] = useState(0);
+  useEffect(() => {
+    const perms = Array.isArray(profile?.permissions) ? profile.permissions : [];
+    const wants = profile?.isOwner || perms.includes("confirm_expenses") || perms.includes("record_expenses");
+    if (!profile?.id || !wants) { setExpenseBadge(0); return undefined; }
+    let cancelled = false;
+    const refresh = () => {
+      if (document.visibilityState === "hidden") return;
+      api.getExpenseReviewBadge().then((n) => { if (!cancelled) setExpenseBadge(n); }).catch(() => {});
+    };
+    refresh();
+    const id = setInterval(refresh, 120000);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", refresh); };
+  }, [profile?.id, profile?.isOwner, profile?.roleName]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Start the offline sync/safety-net once someone's actually signed in —
   // app-wide, not just while the Weighing Tickets screen happens to be
   // open, so staff can be on Transactions/Reports/etc. and still have any
@@ -310,7 +329,7 @@ export default function App() {
 
   return (
     <div className="flex bg-paper">
-      <Sidebar page={page} setPage={setPage} pendingRequests={pendingRequests} />
+      <Sidebar page={page} setPage={setPage} pendingRequests={pendingRequests} expenseBadge={expenseBadge} />
       <Suspense fallback={<PageLoading />}>{renderPage()}</Suspense>
       {/* [2026-08-31] Phone-only bottom tab bar + "More" sheet — takes
           over navigation below the `md` breakpoint, where Sidebar above
@@ -318,7 +337,7 @@ export default function App() {
           affect layout; see index.css for the matching bottom padding
           added to every page's own scroll area so this doesn't cover
           content. */}
-      <MobileNav page={page} setPage={setPage} pendingRequests={pendingRequests} />
+      <MobileNav page={page} setPage={setPage} pendingRequests={pendingRequests} expenseBadge={expenseBadge} />
       {/* [2026-09-16] Renders nothing on a normal day. It appears only when
           this browser is running an older version than the server is
           serving, or when HQ has pressed "Update all stations now" — and it

@@ -30,6 +30,12 @@ export const PERMISSION_GROUPS = [
       // more often than a payment is.
       { key: "record_expenses", label: "Record daily expenses" },
       { key: "edit_expenses", label: "Correct a recorded expense" },
+      // [2026-09-21] The second person. SISEN: "i want to let the manager go
+      // through it and confirm the expenses ... so we know that the expenses
+      // is there because 2 people has agreed". Give this to the finance
+      // MANAGER's role only — never to the role of the person who types the
+      // expenses in. See expense_confirmation.sql.
+      { key: "confirm_expenses", label: "Confirm expenses & decide expense change requests (manager)" },
     ],
   },
   {
