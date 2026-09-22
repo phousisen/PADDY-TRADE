@@ -256,7 +256,7 @@ export default function App() {
     // [2026-09-14] Reports → Daily Book. Read-only and derived entirely from
     // transactions/payments/stock counts, so it needs no permission of its
     // own: anyone who can see Transactions can see the same days summarised.
-    if (page === "daily-book") return <DailyBook />;
+    if (page === "daily-book") return <DailyBook setPage={setPage} />;
     if (page === "tickets") return <WeighingTickets />;
     if (page === "new-buy") return !isViewOnly ? <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
     if (page === "new-sell") return !isViewOnly ? <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
