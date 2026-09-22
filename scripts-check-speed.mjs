@@ -23,7 +23,7 @@ const code = (f) => readFileSync(f, "utf8").split("\n").filter((l) => !/^\s*\/\/
 const lw = code("src/scaleWatch.js");
 const box = code("src/components/LiveWeightBox.jsx");
 ok("live weight: no fixed 150 ms interval (requests cannot pile up)", !/setInterval\(/.test(lw) && !/setInterval\(/.test(box));
-ok("live weight: the next request is scheduled when this one ends", /store\.timer = setTimeout\(\(\) => tick\(store, gen\), next\)/.test(lw));
+ok("live weight: the next request is scheduled when this one ends", /finally \{\s*if \(alive\(\)\) store\.timer = setTimeout\(\(\) => tick\(store, gen\), next\);/.test(lw));
 ok("live weight: a PC with no scale program is re-asked every 5 s, not every 150 ms", /const LOCAL_RETRY_MS = 5000;/.test(lw) && /tryLocal \? await pollLocalBridge\(\) : null/.test(lw));
 ok("live weight: the cloud reading is fetched once a second while a weight box is open, every 5 s otherwise",
    /const CLOUD_FAST_MS = 1000;/.test(lw) && /const CLOUD_SLOW_MS = 5000;/.test(lw) && /next = fg \? CLOUD_FAST_MS : CLOUD_SLOW_MS;/.test(lw));
