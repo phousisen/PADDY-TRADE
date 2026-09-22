@@ -164,23 +164,32 @@ async function tick(store, gen) {
   if (!alive()) return;
   const fg = store.foreground > 0;
   let next = fg ? FAST_MS : SLOW_MS;
-  if (!isPrinting()) {
-    const tryLocal = !store.localMissAt || Date.now() - store.localMissAt >= LOCAL_RETRY_MS;
-    const local = tryLocal ? await pollLocalBridge() : null;
-    if (!alive()) return;
-    if (tryLocal) store.localMissAt = local ? 0 : Date.now();
-    // The scale program on THIS PC only knows THIS PC's scale — a reading for
-    // another station is set aside and the chosen station's cloud reading used.
-    if (local && (!local.location_id || local.location_id === store.loc)) {
-      take(store, local);
-    } else {
-      const cloud = await withTimeout(api.getLiveWeight(store.loc).catch(() => null), CLOUD_TIMEOUT_MS, null);
+  // [2026-09-22] try/finally: whatever goes wrong inside one round, the next
+  // round is ALWAYS scheduled. A single error used to be able to end the loop
+  // for good, and the weight box would then say "Scale not connected" until
+  // the page was reloaded.
+  try {
+    if (!isPrinting()) {
+      const tryLocal = !store.localMissAt || Date.now() - store.localMissAt >= LOCAL_RETRY_MS;
+      const local = tryLocal ? await pollLocalBridge() : null;
       if (!alive()) return;
-      take(store, cloud ? { ...cloud, source: "cloud" } : null);
-      next = fg ? CLOUD_FAST_MS : CLOUD_SLOW_MS;
+      if (tryLocal) store.localMissAt = local ? 0 : Date.now();
+      // The scale program on THIS PC only knows THIS PC's scale — a reading for
+      // another station is set aside and the chosen station's cloud reading used.
+      if (local && (!local.location_id || local.location_id === store.loc)) {
+        take(store, local);
+      } else {
+        const cloud = await withTimeout(api.getLiveWeight(store.loc).catch(() => null), CLOUD_TIMEOUT_MS, null);
+        if (!alive()) return;
+        take(store, cloud ? { ...cloud, source: "cloud" } : null);
+        next = fg ? CLOUD_FAST_MS : CLOUD_SLOW_MS;
+      }
     }
+  } catch (err) {
+    console.warn("[scaleWatch] one round failed, trying again:", err?.message || err);
+  } finally {
+    if (alive()) store.timer = setTimeout(() => tick(store, gen), next);
   }
-  store.timer = setTimeout(() => tick(store, gen), next);
 }
 
 function start(store) {
