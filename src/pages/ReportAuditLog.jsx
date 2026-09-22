@@ -33,6 +33,9 @@ const ACTION_META = {
   // [2026-09-21] The scale guard (scaleGuard.js): a station's scale going
   // below zero and back, and an Owner allowing one capture past the guard.
   scale_below_zero: "transaction", scale_back_to_zero: "transaction", scale_capture_override: "transaction",
+  // [2026-09-21] Expense confirmation (expense_confirmation.sql).
+  confirm_expense_day: "payment", send_back_expense_day: "payment",
+  approve_expense_change: "payment", reject_expense_change: "payment",
 };
 
 const CATEGORIES = ["all", "payment", "transaction", "request", "stock", "user", "capital", "other"];
@@ -105,6 +108,22 @@ function describeChange(log, t) {
     case "scale_back_to_zero":
     case "scale_capture_override":
       if (after.weightKg !== undefined) parts.push(t("al_scale_weight", { v: new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(after.weightKg) }));
+      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
+      break;
+
+    case "confirm_expense_day":
+    case "send_back_expense_day":
+      if (after.stationName) parts.push(after.stationName);
+      if (after.day) parts.push(after.day);
+      if (after.total !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.total) }));
+      if (after.corrected) parts.push(t("xr_corrected"));
+      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
+      break;
+
+    case "approve_expense_change":
+    case "reject_expense_change":
+      if (after.day) parts.push(after.day);
+      if (after.category) parts.push(`${after.category}: ${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}`);
       if (after.reason) parts.push(t("al_reason", { v: after.reason }));
       break;
 

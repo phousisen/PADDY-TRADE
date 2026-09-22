@@ -57,6 +57,8 @@ import {
 import { checkCommission, MAX_PER_TONNE } from "../commissionRule.js";
 import { dmyTime, weekday } from "../dateFormat.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
+import ExpenseReview from "../components/ExpenseReview.jsx";
+import { buildReviewDays, confirmedShare, dayMark, lockedFor, dayKey } from "../expenseReview.js";
 
 const fmt = (n) => new Intl.NumberFormat("en-US").format(Math.round(n || 0));
 const riel = (n) => `${fmt(n)} ៛`;
@@ -356,7 +358,7 @@ function AddCategory({ existing, onAdd, onCancel }) {
 function DaySheet({
   day, setDay, locationId, setLocationId, locations, categories, existingRows,
   dayStates, onSave, saving, error, canEdit, needsPassword, onClose,
-  edits, justSaved, unlocked, onUnlock,
+  edits, justSaved, unlocked, onUnlock, lock = null, onRequestChange,
 }) {
   const { t } = useLanguage();
   const [amounts, setAmounts] = useState({});
@@ -443,6 +445,16 @@ function DaySheet({
         </div>
 
         <div className="p-5">
+          {/* [2026-09-21] A day the manager has confirmed is locked for staff.
+              The figures stay visible; a change goes through a request. */}
+          {lock && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2.5 text-[12.5px] text-brand-800">
+              <span><Lock size={12} className="mr-1 inline" />{t("xr_locked_line", { name: lock.by || "—", at: lock.at ? dmyTime(lock.at) : "" })}</span>
+              {onRequestChange && (
+                <button type="button" onClick={onRequestChange} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">{t("xr_request_change")}</button>
+              )}
+            </div>
+          )}
           <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-slate-400">{t("ex_which_station")}</label>
           <div className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {locations.map((l) => {
@@ -479,7 +491,10 @@ function DaySheet({
               // "make sure the written amount are locked if they need to edit
               // it, it will requires a password". An EMPTY box stays open:
               // adding a forgotten expense is not editing a recorded one.
-              const locked = !!saved && !unlocked;
+              const locked = !!saved && (!unlocked || !canEdit);
+              // [2026-09-21] A sheet nobody here may change (a confirmed day,
+              // seen by staff) shows an empty box as a dash, not a box to type in.
+              const readOnlyEmpty = !saved && !canEdit;
               const edit = saved ? edits?.[saved.rows[0].id] : null;
               return (
                 <div key={key}
@@ -496,7 +511,9 @@ function DaySheet({
                       </span>
                     )}
                   </span>
-                  {locked ? (
+                  {readOnlyEmpty ? (
+                    <span className="w-28 shrink-0 px-3 py-2 text-right text-sm text-slate-300">—</span>
+                  ) : locked ? (
                     <span className="flex w-28 shrink-0 items-center justify-end gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold tabular-nums text-slate-700">
                       <Lock size={11} className="text-slate-400" />
                       {fmt(saved.amount)}
@@ -663,6 +680,13 @@ export default function Expenses() {
   const [edits, setEdits] = useState({});
   const [unlocked, setUnlocked] = useState(false);
   const refetch = useRefetchSignal();
+  // [2026-09-21] Expense confirmation. `reviews` stays null on a database
+  // without expense_confirmation.sql — the page then works exactly as before.
+  const [reviews, setReviews] = useState(null);
+  const [xreqs, setXreqs] = useState([]);
+  const [tab, setTab] = useState("report");            // "report" | "review"
+  const [focus, setFocus] = useState(null);            // { key, request, n } — a day to open on the review tab
+  const canConfirm = !isViewOnly && (isOwner || (Array.isArray(profile?.permissions) && profile.permissions.includes("confirm_expenses")));
 
   async function load() {
     setLoading(true); setLoadError("");
@@ -679,16 +703,20 @@ export default function Expenses() {
       //
       // .catch(() => []) on purpose: this screen's job is expenses, and a
       // transactions call that fails must cost the check, not the page.
-      const [locs, exp, dm, txs] = await Promise.all([
+      const [locs, exp, dm, txs, rv, xr] = await Promise.all([
         api.getLocations(),
         api.getPayments({ type: "expense" }),
         api.getExpenseDayMarks().catch(() => []),
         api.getTransactions({ lean: true }).catch(() => []), // [2026-09-19] SPEED: tonnage columns only
+        api.getExpenseReviews().catch(() => null),
+        api.getExpenseChangeRequests().catch(() => []),
       ]);
       setLocations(locs || []);
       setAllExpenses(exp || []);
       setMarks(dm || []);
       setAllTx(txs || []);
+      setReviews(rv);
+      setXreqs(xr || []);
     } catch (err) {
       setLoadError(errText(null, err, "") || err.message || "Couldn't load expenses.");
     } finally { setLoading(false); }
@@ -767,6 +795,25 @@ export default function Expenses() {
     () => (scope.length ? locations.filter((l) => scope.includes(l.id)) : locations),
     [locations, scope],
   );
+
+  const reviewDays = useMemo(
+    () => (reviews ? buildReviewDays({ expenses: allExpenses, reviews, locations, userId: session?.user?.id }) : []),
+    [reviews, allExpenses, locations, session?.user?.id],
+  );
+  const share = useMemo(
+    () => (reviews ? confirmedShare(reviewDays, { from: win.from, to: win.to, locationIds: scope }) : null),
+    [reviews, reviewDays, win, scope],
+  );
+  const monthFrom = today.slice(0, 7) + "-01";
+  const reviewBadge = useMemo(() => {
+    if (!reviews) return 0;
+    if (canConfirm) {
+      return reviewDays.filter((d) => d.status === "waiting" && !d.onlyMine).length
+        + xreqs.filter((r) => r.status === "pending" && r.requested_by !== session?.user?.id).length;
+    }
+    return reviewDays.filter((d) => d.mine && d.status === "sent_back").length;
+  }, [reviews, reviewDays, xreqs, canConfirm, session?.user?.id]);
+  const showReviewTab = reviews !== null && (canConfirm || canRecord);
 
   const categories = useMemo(() => byCategory(rows), [rows]);
   const stations = useMemo(() => byStation(rows, scopedLocations), [rows, scopedLocations]);
@@ -848,6 +895,12 @@ export default function Expenses() {
     return out;
   }, [sheet, locations, allExpenses, marks]);
 
+  const sheetReview = useMemo(
+    () => (sheet && reviews ? reviewDays.find((d) => d.key === dayKey(sheet.locationId, sheet.day)) || null : null),
+    [sheet, reviews, reviewDays],
+  );
+  const sheetLocked = lockedFor(sheetReview, { canConfirm });
+
   const needsPassword = !!sheet && (sheet.day !== today
     || sheetRows.some((r) => r.created_by && r.created_by !== session?.user?.id));
 
@@ -920,7 +973,8 @@ export default function Expenses() {
       // next station is one tap away when that IS what you are doing.
       setJustSaved(true);
     } catch (err) {
-      setSaveError(errText(null, err, "") || err.message || "Could not save.");
+      setSaveError(/EXPENSE_DAY_CONFIRMED/.test(err?.message || "") ? t("xr_locked_error")
+        : (errText(null, err, "") || err.message || "Could not save."));
       // [2026-09-19] Show what DID land before the failure, so the sheet and
       // the next Save are working from the truth rather than the old figures.
       await load().catch(() => {});
@@ -949,7 +1003,33 @@ export default function Expenses() {
           {loadError && <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{loadError}</div>}
           {loading && <div className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />{t("ex_loading")}</div>}
 
-          {!loading && (
+          {/* [2026-09-21] Report | To confirm (manager) / My expenses (staff). */}
+          {!loading && showReviewTab && (
+            <div className="mb-4 flex gap-1 border-b border-slate-200">
+              {[["report", t("xr_tab_report"), 0], ["review", canConfirm ? t("xr_tab_confirm") : t("xr_tab_mine"), reviewBadge]].map(([k, label, n]) => (
+                <button key={k} type="button" onClick={() => setTab(k)}
+                  className={`-mb-px flex items-center gap-2 border-b-[2.5px] px-3.5 py-2.5 text-sm font-semibold ${tab === k ? "border-brand-600 text-slate-800" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
+                  {label}
+                  {n > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">{n}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!loading && showReviewTab && tab === "review" && (
+            <ExpenseReview
+              days={reviewDays} requests={xreqs} loading={false}
+              canConfirm={canConfirm} canRecord={canRecord}
+              userId={session?.user?.id} userEmail={session?.user?.email} t={t}
+              tonnageByDayLoc={tonnageByDayLoc}
+              monthFrom={monthFrom} monthTo={null}
+              focus={focus}
+              onChanged={load}
+              onOpenDay={(day, locationId) => setSheet({ day, locationId })}
+            />
+          )}
+
+          {!loading && (!showReviewTab || tab === "report") && (
             <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
 
               {/* one line of controls */}
@@ -996,6 +1076,15 @@ export default function Expenses() {
                     : `${scopeLabel}`}
                 </span>
               </div>
+              {share && (share.confirmed > 0 || share.open > 0) && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-3 text-xs text-slate-500">
+                  <span><b className="font-semibold text-brand-700">{riel(share.confirmed)} {t("xr_confirmed_word")}</b> · {riel(share.open)} {t("xr_not_yet_word")}</span>
+                  <span className="h-1.5 w-40 overflow-hidden rounded-full bg-slate-100">
+                    <span className="block h-full bg-brand-600" style={{ width: `${Math.round((share.confirmed / Math.max(1, share.confirmed + share.open)) * 100)}%` }} />
+                  </span>
+                  <span className="text-slate-400">{t("xr_still_counts")}</span>
+                </div>
+              )}
 
               {/* a strip, only when there is one */}
               {alerts.length > 0 && (
@@ -1054,6 +1143,13 @@ export default function Expenses() {
                               <b className={p.empty ? "font-medium text-slate-400" : ""}>{p.label}</b>
                               {grain === "day" && <span className="ml-1.5 text-[11px] text-slate-400">{weekday(p.key, t)}</span>}
                               {p.empty && <span className="ml-2 text-[11px] text-slate-400">{t("ex_not_entered")}</span>}
+                              {grain === "day" && !p.empty && reviews && (() => {
+                                const m = dayMark(reviewDays, p.key, scope);
+                                if (!m) return null;
+                                const cls = m.kind === "confirmed" ? "text-brand-700" : m.kind === "sent_back" ? "text-rose-600" : "text-amber-700";
+                                const label = m.kind === "confirmed" ? t("xr_mark_all") : m.kind === "sent_back" ? t("xr_mark_sent_back", { n: m.n }) : t("xr_mark_waiting", { n: m.n, of: m.of });
+                                return <span className={`ml-2 whitespace-nowrap text-[11px] font-semibold ${cls}`}>{label}</span>;
+                              })()}
                             </td>
                             <Num v={p.empty ? null : p.commission} cls="font-semibold text-amber-700" />
                             <Num v={p.empty ? null : p.other} cls="text-slate-600" hide />
@@ -1195,7 +1291,12 @@ export default function Expenses() {
           locationId={sheet.locationId} setLocationId={(id) => setSheet((s) => ({ ...s, locationId: id }))}
           locations={locations} categories={catList} existingRows={sheetRows} dayStates={dayStates}
           onSave={handleSave} saving={saving} error={saveError}
-          canEdit={canRecord} needsPassword={needsPassword}
+          canEdit={canRecord && !sheetLocked} needsPassword={needsPassword}
+          lock={sheetLocked ? { by: sheetReview?.review?.decided_by_name, at: sheetReview?.review?.decided_at } : null}
+          onRequestChange={sheetLocked && canRecord ? () => {
+            const key = dayKey(sheet.locationId, sheet.day);
+            setSheet(null); setTab("review"); setFocus({ key, request: true, n: Date.now() });
+          } : null}
           edits={edits} justSaved={justSaved} unlocked={unlocked}
           onUnlock={() => setPwPrompt({ unlockOnly: true })}
           onClose={() => { setSheet(null); setSaveError(""); }}
