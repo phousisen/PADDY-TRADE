@@ -232,6 +232,7 @@ export default function App() {
   // gates, so typing the address in does nothing either. Same capability
   // helper as the sidebar, so the two can never disagree.
   const canApproveRequests = can("approve_change_requests");
+  const canCreateTransactions = can("create_transactions");
   const canManageLocations = can("manage_locations");
   const canManageUsers = can("manage_users");
   const canManageRoles = can("manage_roles");
@@ -258,8 +259,14 @@ export default function App() {
     // own: anyone who can see Transactions can see the same days summarised.
     if (page === "daily-book") return <DailyBook setPage={setPage} />;
     if (page === "tickets") return <WeighingTickets />;
-    if (page === "new-buy") return !isViewOnly ? <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
-    if (page === "new-sell") return !isViewOnly ? <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
+    // [2026-09-22] SISEN: "make sure only finance team and admin have this
+    // buy and sell ticket option part in transaction. normal staff doesnt
+    // need this." It follows the role tick — "Record new buy/sell
+    // transactions" on the Roles page — so it can be moved without a
+    // release. The weighbridge's own Tickets screen is untouched: that is
+    // where a station records a truck.
+    if (page === "new-buy") return (!isViewOnly && canCreateTransactions) ? <TransactionForm type="BUY" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
+    if (page === "new-sell") return (!isViewOnly && canCreateTransactions) ? <TransactionForm type="SELL" setPage={setPage} prefillParty={prefillParty} clearPrefill={() => setPrefillParty(null)} /> : <PermissionDenied />;
     // `isAdmin || isViewOnly` on every line below — a view-only account
     // gets to SEE every one of these pages exactly like an HQ Admin does;
     // it's the pages themselves (and the api.js/offlineQueue.js backstop
