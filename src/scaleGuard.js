@@ -92,16 +92,18 @@ export function markCapture(guard, { now, by, weightKg }) {
 // form can capture again (a staff member pressing Capture twice on one ticket
 // is not a second truck).
 export function captureStatus(guard, samples, weightKg, now, { by = null } = {}) {
+  // [2026-09-22] SISEN: "why does it always disconnect after 1 weigh in" —
+  // "dont do that it makes the system error".
+  //
+  // The between-trucks rule ("the platform must read 0 before the next
+  // capture"), the not-reset-since-below-zero rule and the 3-second steady
+  // rule all blocked real weigh-ins at stations whose empty platform does
+  // not sit inside ±20 kg, and to the staff it looked like the scale had
+  // disconnected. They are switched off. The ONE block kept is the one that
+  // cannot be wrong: a reading below zero right now.
   const w = Number(weightKg);
   if (weightKg == null || !Number.isFinite(w)) return "empty";
   if (w < BELOW_KG) return "below";
-  if (guard?.belowSince) return "notZeroed";
-  if (w <= ZERO_BAND_KG) return "empty";
-  const g = guard || {};
-  if (g.lastCaptureAt && g.watchedSince && g.lastCaptureAt >= g.watchedSince
-      && !(by && g.lastCaptureBy === by)
-      && !(g.lastZeroAt && g.lastZeroAt > g.lastCaptureAt)) return "notCleared";
-  if (!isStable(samples, now)) return "moving";
   return "ok";
 }
 
