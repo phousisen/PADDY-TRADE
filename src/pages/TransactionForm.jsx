@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Save, ScanLine, ChevronDown, Ticket } from "lucide-react";
+import { Search, Save, Ticket } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import PhotoUpload from "../components/PhotoUpload.jsx";
-import WeightField from "../components/WeightField.jsx";
+import TypedWeight from "../components/TypedWeight.jsx";
 import Receipt from "./Receipt.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
@@ -42,30 +42,8 @@ const BANK_OPTIONS = [
   "Chipmong Bank",
 ];
 
-// [2026-09-12] A fold-away section. Everything this form ever collected is
-// still on it — the eight things that get filled in on every single ticket
-// sit on top, and the rest (vehicle, bank, deductions, VAT, photos) lives
-// in one of these, one click away. Nothing REQUIRED to save is ever hidden
-// inside one, so a fold can never be the reason a save is refused.
-//
-// `filled` puts a small green dot on a closed section that has something in
-// it, so a number typed in earlier and then folded away can't be forgotten.
-function Fold({ title, hint, filled, children }) {
-  return (
-    <details className="group rounded-xl border border-slate-200 bg-white shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-3.5 [&::-webkit-details-marker]:hidden">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium text-slate-600 group-open:text-slate-800">{title}</span>
-          {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
-          {filled && <span className="h-1.5 w-1.5 rounded-full bg-brand-500" title="Something is filled in here" />}
-        </span>
-        <ChevronDown size={16} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="border-t border-slate-100 px-5 py-4">{children}</div>
-    </details>
-  );
-}
-
+// [2026-09-22] The fold-away section component was removed with the
+// redesign: every part of the form is now its own numbered step, open.
 const inputCls = "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1 block text-xs text-slate-500";
 
@@ -658,33 +636,35 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     return <Receipt tx={savedTx} onDone={() => setPage("transactions")} />;
   }
 
+  // [2026-09-22] REBUILT AS NUMBERED STEPS. SISEN: "now i want a proper
+  // design make it very simple and understandble", and, on the extra
+  // sections: "it shouldnt be in an add more".
+  //
+  // The form is what it always was — a paper ticket being copied in — so it
+  // now reads in that order, one card per step, nothing folded away and
+  // nothing hidden behind a click. Quality deduction and VAT/photos are off
+  // the screen for now ("for now we dont need 8 and 9 yet"); the values they
+  // set still travel with a save, at their empty defaults, so nothing that
+  // reads a transaction had to change.
+  const Step = ({ n, title, hint, children }) => (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2.5 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
+        <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-brand-100 bg-brand-50 text-[12px] font-bold text-brand-700">{n}</span>
+        <b className="text-[13.5px] font-semibold text-slate-800">{title}</b>
+        {hint && <span className="ml-auto text-[11.5px] text-slate-400">{hint}</span>}
+      </div>
+      <div className="px-4 py-4">{children}</div>
+    </section>
+  );
+
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
       <Topbar title={isBuy ? t("new_buy_title") : t("new_sell_title")} />
-      <main className="flex-1 overflow-y-auto p-6">
-        {/* [2026-08-31] grid-cols-1 lg:grid-cols-3 instead of a flat
-            grid-cols-3 — same fix as Dashboard's Location Performance /
-            Live Feed row: this form + its summary panel used to squeeze
-            into a third of the screen each on phone. Now stacks full-width
-            (form first, summary panel below it) below the lg breakpoint,
-            unchanged on desktop/laptop. */}
+      <main className="flex-1 overflow-y-auto p-4 md:p-6">
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-          <div className="space-y-5 lg:col-span-2">
-            {/* ==============================================================
-                [2026-09-12] THE FAST PATH.
+          <div className="space-y-4 lg:col-span-2">
 
-                This used to be three numbered sections of roughly twenty
-                boxes, every one of them on screen at once, with the four
-                things that are actually typed on every ticket scattered
-                across all three. Rearranged — nothing removed — so the
-                eight fields a normal load needs read straight down in the
-                order they happen at the scale: which paper ticket, which
-                day, who, what, how heavy, what price, paid or not.
-
-                Everything else is still here, in the fold-away sections
-                below. Nothing required to save is hidden inside one.
-               ============================================================== */}
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <Step n={1} title="The paper ticket" hint="from the booklet">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-[190px_1fr_1fr]">
                 <div>
                   <label className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gold-700">
@@ -715,7 +695,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 </div>
               </div>
               {dupWarn ? (
-                <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
+                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
                   Ticket <b>{dupWarn.ticketNo}</b> has already been used at this station
                   {dupWarn.kind === "ticket" ? " — on a weighbridge ticket" : ""}
                   {dupWarn.code ? ` — ${dupWarn.code}` : ""}{dupWarn.partyName ? `, ${dupWarn.partyName}` : ""}.
@@ -723,13 +703,15 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   entries will be marked so they can be looked at later.
                 </p>
               ) : (
-                <p className="mt-1.5 text-[11px] text-slate-400">
+                <p className="mt-2 text-[11px] text-slate-400">
                   The number on the paper booklet ticket — this is what ties this entry back to the book.
                   Suggested from the last one used at this station; type over it if it's wrong.
                 </p>
               )}
+            </Step>
 
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Step n={2} title={isBuy ? "Who sold it" : "Who bought it"}>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="relative">
                   <label className={labelCls}>Phone number</label>
                   <Search size={15} className="pointer-events-none absolute left-3 top-[30px] text-slate-400" />
@@ -751,15 +733,52 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder="Type name, or pick a match" className={inputCls} />
                 </div>
               </div>
+            </Step>
 
-              <div className={`mt-3 grid grid-cols-1 gap-3 ${isBuy ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+            {/* [2026-09-12] The two boxes say which weigh they are and what
+                the truck is carrying, and the net is worked out by
+                direction: a BUY arrives loaded (in − out), a SELL arrives
+                empty (out − in). Getting that backwards is what recorded
+                real truckloads as 0 kg in August. Guarded by
+                scripts-check-weigh-direction.mjs — do not "simplify" it. */}
+            <Step n={3} title="Weight" hint="first weigh in, then weigh out">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <TypedWeight
+                  locationId={effectiveLocationId}
+                  label={isBuy ? "1. Weigh In — loaded truck" : "1. Weigh In — empty truck"}
+                  labelKm="ថ្លឹងទម្ងន់ចូល"
+                  hint={isBuy ? "The truck as it arrived, with the paddy on it" : "The truck as it arrived, still empty"}
+                  value={grossKg}
+                  onChange={onGrossChange}
+                />
+                <TypedWeight
+                  locationId={effectiveLocationId}
+                  label={isBuy ? "2. Weigh Out — empty truck" : "2. Weigh Out — loaded truck"}
+                  labelKm="ថ្លឹងទម្ងន់ចេញ"
+                  hint={isBuy ? "The same truck after unloading" : "The same truck once it is loaded"}
+                  value={tareKg}
+                  onChange={onTareChange}
+                />
+              </div>
+              <div className={`mt-4 flex items-baseline justify-between rounded-xl border px-4 py-3 ${weightsReversed ? "border-rose-200 bg-rose-50" : "border-brand-100 bg-brand-50"}`}>
+                <p className={`text-[12.5px] font-semibold ${weightsReversed ? "text-rose-700/80" : "text-brand-700"}`}>
+                  {t("net_weight")} — {isBuy ? "what was bought" : "what was sold"}
+                </p>
+                <p className={`text-2xl font-bold tabular-nums ${weightsReversed ? "text-rose-700" : "text-brand-800"}`}>
+                  {fmt2(netKg)} <span className={`text-base font-medium ${weightsReversed ? "text-rose-600" : "text-brand-600"}`}>KG</span>
+                </p>
+              </div>
+              {weightsReversed && (
+                <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[11.5px] leading-relaxed text-rose-700">
+                  <b>The two weights are the wrong way round.</b> {reversedMessage} Swap them — this cannot be saved as it stands.
+                </p>
+              )}
+            </Step>
+
+            <Step n={4} title="Paddy and price">
+              <div className={`grid grid-cols-1 gap-3 ${isBuy ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                 <div>
                   <label className={labelCls}>{t("product")}</label>
-                  {/* [2026-09-15] Was a free-text box with a datalist. A
-                      datalist SUGGESTS; it does not constrain — anything
-                      typed here became a brand new paddy type. Now it is a
-                      real dropdown over the shared list, same as the
-                      weighbridge form. */}
                   <select
                     value={paddyOptions.includes(productQuery) ? productQuery : ""}
                     onChange={(e) => setProductQuery(e.target.value)}
@@ -797,58 +816,22 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     : <p className="mt-1 text-[11px] text-slate-400">Optional — leave blank if no price agreed yet.</p>}
                 </div>
               </div>
-            </section>
+            </Step>
 
-            {/* ===== Weight ===== */}
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-                <ScanLine size={14} /> {t("section2_weighbridge")}
-              </h3>
-              {/* [2026-09-12] The labels now say which weigh this is and
-                  what state the truck is in, instead of "Gross"/"Tare" —
-                  which are only meaningful on a Buy and are the exact words
-                  that made a Sell get entered backwards. Same wording as the
-                  weighbridge board's Weigh In / Weigh Out steps. */}
+            <Step n={5} title="Vehicle & driver" hint="optional">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <WeightField
-                  locationId={effectiveLocationId}
-                  label={isBuy ? "Weigh In — loaded truck (kg)" : "Weigh In — empty truck (kg)"}
-                  labelKm="ថ្លឹងទម្ងន់ចូល"
-                  scaleLabel={isBuy ? "Live Scale Weight (loaded truck)" : "Live Scale Weight (empty truck)"}
-                  value={grossKg}
-                  onChange={onGrossChange}
-                  isAdmin={isAdmin}
-                />
-                <WeightField
-                  locationId={effectiveLocationId}
-                  label={isBuy ? "Weigh Out — empty truck (kg)" : "Weigh Out — loaded truck (kg)"}
-                  labelKm="ថ្លឹងទម្ងន់ចេញ"
-                  scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
-                  value={tareKg}
-                  onChange={onTareChange}
-                  isAdmin={isAdmin}
-                />
+                <div>
+                  <label className={labelCls}>{t("car_plate_number")}</label>
+                  <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234" className={inputCls} />
+                </div>
+                <div>
+                  <label className={labelCls}>{t("driver_name")}</label>
+                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith" className={inputCls} />
+                </div>
               </div>
-              <div className={`mt-3 flex items-baseline justify-between rounded-lg px-4 py-3 ${weightsReversed ? "bg-rose-50" : "bg-brand-50"}`}>
-                <p className={`text-xs font-medium ${weightsReversed ? "text-rose-700/80" : "text-brand-700/70"}`}>{t("net_weight")}</p>
-                <p className={`text-3xl font-bold ${weightsReversed ? "text-rose-700" : "text-brand-800"}`}>
-                  {fmt2(netKg)} <span className={`text-base font-medium ${weightsReversed ? "text-rose-600" : "text-brand-600"}`}>KG</span>
-                </p>
-              </div>
-              {weightsReversed && (
-                <p className="mt-1.5 rounded-lg bg-rose-50 px-3 py-2 text-[11px] leading-relaxed text-rose-700">
-                  <b>The two weights are the wrong way round.</b> {reversedMessage} Swap them, or re-capture from the scale — this cannot be saved as it stands.
-                </p>
-              )}
-              {parseFloat(deductionKg) > 0 && (
-                <p className="mt-1 text-right text-xs text-brand-700/70">
-                  Payable: <span className="font-semibold text-brand-800">{fmt2(payableKg)} kg</span> (after {fmt2(parseFloat(deductionKg))} kg deduction)
-                </p>
-              )}
-            </section>
+            </Step>
 
-            {/* ===== Payment status + note ===== */}
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <Step n={6} title="Payment" hint="optional">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className={labelCls}>{t("payment_status")}</label>
@@ -867,31 +850,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="anything worth remembering" className={inputCls} />
                 </div>
               </div>
-            </section>
-
-            {/* ==============================================================
-                Fold-away. Everything the old form showed all at once and
-                that a normal load never touches.
-               ============================================================== */}
-            <Fold title="Vehicle & driver" hint="plate, driver name" filled={!!(carPlate || driverName)}>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className={labelCls}>{t("car_plate_number")}</label>
-                  <input value={carPlate} onChange={(e) => setCarPlate(e.target.value)} placeholder="e.g. 2AB-1234" className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>{t("driver_name")}</label>
-                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith" className={inputCls} />
-                </div>
-              </div>
-            </Fold>
+            </Step>
 
             {isBuy ? (
-              <Fold
-                title="Bank details"
-                hint={bankName ? `${bankName}${bankAccount ? ` · ${bankAccount}` : ""}` : "how this seller gets paid"}
-                filled={!!(bankName || bankAccount)}
-              >
+              <Step n={7} title="Bank details" hint="how this seller gets paid · optional">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelCls}>{t("bank_name")}</label>
@@ -925,9 +887,9 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     />
                   </div>
                 )}
-              </Fold>
+              </Step>
             ) : (
-              <Fold title="Company & destination" hint="where this load is going" filled={!!company}>
+              <Step n={7} title="Company & destination" hint="where this load is going · optional">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelCls}>{t("company_name")}</label>
@@ -944,99 +906,30 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     </datalist>
                   </div>
                 </div>
-              </Fold>
+              </Step>
             )}
 
-            <Fold
-              title="Quality deduction"
-              hint="moisture, mixture, outthrow, kg off"
-              filled={!!(moisturePct || mixturePct || outthrowPct || deductionKg)}
-            >
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div>
-                  <label className="mb-1 block text-[11px] text-slate-400">Moisture %</label>
-                  <input type="number" min="0" step="0.1" value={moisturePct} onChange={(e) => setMoisturePct(e.target.value)} placeholder="0" className={inputCls} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[11px] text-slate-400">Mixture %</label>
-                  <input type="number" min="0" step="0.1" value={mixturePct} onChange={(e) => setMixturePct(e.target.value)} placeholder="0" className={inputCls} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[11px] text-slate-400">Outthrow %</label>
-                  <input type="number" min="0" step="0.1" value={outthrowPct} onChange={(e) => setOutthrowPct(e.target.value)} placeholder="0" className={inputCls} />
-                </div>
-                <div>
-                  <label className="mb-1 block text-[11px] text-slate-400">Deduction (kg)</label>
-                  <input type="number" min="0" step="0.01" value={deductionKg} onChange={(e) => setDeductionKg(e.target.value)} placeholder="0" className={inputCls} />
-                </div>
-              </div>
-              <p className="mt-2 text-[11px] text-slate-400">Moisture/Mixture/Outthrow are for your records — only Deduction (kg) actually reduces the payable weight used for pricing. Stock still reflects the full physical weight received.</p>
-            </Fold>
-
-            <Fold
-              title="VAT & photos"
-              hint="tax, receipt photo, payment proof"
-              filled={taxApplicable || !!receiptPhotoUrl || !!paymentProofUrl}
-            >
-              <div className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={taxApplicable} onChange={(e) => setTaxApplicable(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-400" />
-                  Apply VAT
-                </label>
-                {taxApplicable && (
-                  <div className="flex items-center gap-1.5">
-                    <input type="number" min="0" step="0.1" value={taxRate} onChange={(e) => setTaxRate(e.target.value)}
-                      className="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-                    <span className="text-sm text-slate-500">%</span>
-                  </div>
-                )}
-              </div>
-              <div className="mt-3">
-                <PhotoUpload
-                  label="Physical Receipt Photo" kind="receipt"
-                  url={receiptPhotoUrl} onUploaded={setReceiptPhotoUrl}
-                  hint="Photo of the printed weighbridge ticket/receipt (optional)"
-                />
-              </div>
-              {showPaymentProofUpload && (
-                <div className="mt-3">
-                  <PhotoUpload
-                    label="Bank QR / Payment Proof Photo" kind="payment-proof"
-                    url={paymentProofUrl} onUploaded={setPaymentProofUrl}
-                    hint="Photo of the bank transfer QR code or payment confirmation"
-                  />
-                </div>
-              )}
-            </Fold>
             {error && <p className="text-sm text-rose-500">{error}</p>}
           </div>
 
           <div className="lg:col-span-1">
-            <div className="sticky top-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 font-semibold text-slate-700">{t("summary")}</h3>
-              <div className="mb-4 rounded-xl bg-gradient-to-br from-brand-700 to-brand-900 p-4 text-white">
-                <p className="text-xs text-brand-100/80">{hasBreakdown ? "Goods Amount" : t("total_amount")}</p>
-                <p className="mt-1 text-3xl font-bold">{fmtRiel(total)}</p>
-                <p className="mt-2 text-xs text-brand-100/70">{fmt2(payableKg)} kg × {fmtRiel(parseFloat(pricePerKg) || 0)}/kg</p>
-                {hasBreakdown && (
-                  <div className="mt-3 space-y-1 border-t border-white/20 pt-3">
-                    {taxApplicable && (
-                      <div className="flex justify-between text-xs text-brand-100/80">
-                        <span>VAT ({taxRate || 0}%)</span>
-                        <span>{fmtRiel(taxAmount)}</span>
-                      </div>
-                    )}
-                    <div className="mt-1 flex justify-between text-sm font-bold">
-                      <span>{t("total_amount")}</span>
-                      <span>{fmtRiel(totalWithTax)}</span>
-                    </div>
-                  </div>
-                )}
+            <div className="sticky top-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <p className="text-[12px] text-slate-500">{isBuy ? "Total to pay the farmer" : "Total from the buyer"}</p>
+                <p className="mt-1 text-[30px] font-bold tabular-nums tracking-tight text-slate-900">{fmtRiel(total)}</p>
               </div>
-              <button type="submit" disabled={saving} className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-                <Save size={16} /> {saving ? "..." : t("save_transaction")}
-              </button>
-              <button type="button" onClick={() => setPage("transactions")} className="mt-2 w-full rounded-lg py-2 text-xs text-slate-400 hover:text-slate-600">← {t("back")}</button>
+              <div className="px-5 py-3 text-[13px]">
+                <div className="flex justify-between py-1 text-slate-600"><span>{t("net_weight")}</span><span className="font-semibold tabular-nums text-slate-800">{fmt2(payableKg)} kg</span></div>
+                <div className="flex justify-between py-1 text-slate-600"><span>{t("price_per_kg")}</span><span className="font-semibold tabular-nums text-slate-800">{fmtRiel(parseFloat(pricePerKg) || 0)}</span></div>
+                <div className="flex justify-between py-1 text-slate-400"><span>Paper ticket</span><span className="tabular-nums">{paperTicketNo || "—"}</span></div>
+                <div className="flex justify-between py-1 text-slate-400"><span>{t("station")}</span><span className="truncate pl-2">{myStation?.name || "—"}</span></div>
+              </div>
+              <div className="px-5 pb-5">
+                <button type="submit" disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+                  <Save size={16} /> {saving ? "..." : t("save_transaction")}
+                </button>
+                <button type="button" onClick={() => setPage("transactions")} className="mt-2 w-full rounded-lg py-2 text-xs text-slate-400 hover:text-slate-600">← {t("back")}</button>
+              </div>
             </div>
           </div>
         </form>

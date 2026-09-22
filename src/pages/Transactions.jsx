@@ -2354,7 +2354,9 @@ export default function Transactions({ setPage }) {
             <button onClick={exportLedger} disabled={exportingLedger} title={exportingLedger ? t("exporting_btn") : t("export_ledger")} className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50">
               {exportingLedger ? <Loader2 size={15} className="animate-spin text-slate-400" /> : <Download size={15} />}
             </button>
-            {!isViewOnly && (<>
+            {/* [2026-09-22] Only an account whose role has "Record new buy/sell
+                transactions" ticked sees these — see App.jsx. */}
+            {!isViewOnly && can("create_transactions") && (<>
             <button onClick={() => setPage("new-buy")} className="flex items-center gap-2 rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50"><Plus size={14} /> {t("new_buy")}</button>
             <button onClick={() => setPage("new-sell")} className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"><Plus size={14} /> {t("new_sell")}</button>
             </>)}
