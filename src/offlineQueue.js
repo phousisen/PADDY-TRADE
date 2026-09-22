@@ -2824,7 +2824,7 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
 // save made with no connection still prints a complete ticket, and they are
 // on the cached row so a stuck save rebuilt by recoverStuckOps carries them
 // back (cachedTxToCreateOpPayload already reads all four).
-export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, paperTicketNo, grossKg, grossAt, tareKg, tareAt, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
+export async function createTransactionOffline({ type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, staffFee, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, paperTicketNo, grossKg, grossAt, tareKg, tareAt, grossSource, tareSource, partyName, partyIdNumber, bankName, bankAccount, productName, stationName }) {
   assertNotViewOnly();
   const id = newId();
   const code = genLocalTxCode(type);
@@ -2854,6 +2854,9 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
       paperTicketNo: paperTicketNo || null,
       grossKg: grossKg ?? null, grossAt: grossAt || null,
       tareKg: tareKg ?? null, tareAt: tareAt || null,
+      // [2026-09-22] "scale" or "typed" — travels with an offline save too,
+      // so a ticket typed at a station with no internet still arrives marked.
+      grossSource: grossSource || null, tareSource: tareSource || null,
     },
   });
   if (!persisted) {
@@ -2870,6 +2873,7 @@ export async function createTransactionOffline({ type, locationId, partyId, prod
       paper_ticket_no: paperTicketNo || null,
       gross_kg: grossKg ?? null, gross_at: grossAt || null,
       tare_kg: tareKg ?? null, tare_at: tareAt || null,
+      gross_source: grossSource || null, tare_source: tareSource || null,
       receipt_photo_url: receiptPhotoUrl || null, payment_proof_url: paymentProofUrl || null, amount,
       station_quantity_kg: type === "SELL" ? quantityKg : null, station_price_per_kg: type === "SELL" ? pricePerKg : null,
       created_by: userId, status: "confirmed", hq_status: "processing",

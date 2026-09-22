@@ -127,7 +127,7 @@ export const translations = {
 
     filters_btn: "Filters", filter_unpaid_buys: "Unpaid (Buys)", filter_not_received: "Not Received (Sells)", clear_btn: "Clear",
     offline_banner_short: "Couldn't reach the server just now — showing the last data loaded. Retrying automatically.",
-    tx_confirmed: "Confirmed", tx_pending_confirm: "Pending buyer confirmation",
+    tx_typed_in: "Typed in", tx_t_typed_in: "The weights were typed in from the paper ticket, not taken from a scale here", tx_confirmed: "Confirmed", tx_pending_confirm: "Pending buyer confirmation",
     tx_due: "{amount} due", tx_incl_vat: "incl. {rate}% VAT",
     // [2026-09-09] An overpayment used to vanish behind "Settled" — the
     // remaining balance was clamped at zero, so paying a farmer too much
@@ -1533,7 +1533,7 @@ export const translations = {
 
     filters_btn: "តម្រង", filter_unpaid_buys: "មិនទាន់បង់ (ការទិញ)", filter_not_received: "មិនទាន់ទទួល (ការលក់)", clear_btn: "សម្អាត",
     offline_banner_short: "មិនអាចភ្ជាប់ទៅម៉ាស៊ីនមេបានទេពេលនេះ — កំពុងបង្ហាញទិន្នន័យចុងក្រោយ។ កំពុងព្យាយាមម្តងទៀតដោយស្វ័យប្រវត្តិ។",
-    tx_confirmed: "បានបញ្ជាក់", tx_pending_confirm: "រង់ចាំការបញ្ជាក់ពីអ្នកទិញ",
+    tx_typed_in: "បញ្ចូលដោយដៃ", tx_t_typed_in: "ទម្ងន់ត្រូវបានវាយបញ្ចូលពីសន្លឹកក្រដាស មិនមែនយកពីជញ្ជីងទេ", tx_confirmed: "បានបញ្ជាក់", tx_pending_confirm: "រង់ចាំការបញ្ជាក់ពីអ្នកទិញ",
     tx_due: "{amount} នៅជំពាក់", tx_incl_vat: "រួមបញ្ចូល VAT {rate}%",
     tx_overpaid: "បង់លើសចំនួន {amount}",
 

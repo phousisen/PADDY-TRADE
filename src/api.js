@@ -1464,7 +1464,7 @@ const rawApi = {
   // separate insert of its own. Pure aside from the one await (the
   // duplicate check needs to read the table first); nothing here touches
   // the database.
-  async buildTransactionRow({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, txTime, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, recordedByName }) {
+  async buildTransactionRow({ id, code, type, locationId, partyId, productId, quantityKg, pricePerKg, paymentStatus, userId, qualityGrade, taxApplicable, taxRate, moisturePct, mixturePct, outthrowPct, deductionKg, note, carPlate, driverName, receiptPhotoUrl, paymentProofUrl, txDate, txTime, staffFee, paperTicketNo, bankQrUrl, grossKg, grossAt, tareKg, tareAt, grossSource, tareSource, recordedByName }) {
     const payableKg = Math.max(0, quantityKg - (deductionKg || 0));
     // Staff/carrying fee (rare — only when our own staff carries the paddy
     // for a farmer who didn't bring labor) comes straight off what's paid,
@@ -1533,6 +1533,14 @@ const rawApi = {
       gross_at: grossAt || null,
       tare_kg: tareKg ?? null,
       tare_at: tareAt || null,
+      // [2026-09-22] Where each weight came from: "scale" (captured off a
+      // live weighbridge) or "typed" (copied off the paper book). SISEN:
+      // "mark it in the transaction on its ticket to note that we isnt the
+      // original weigh in, but its a typed down". Null on everything saved
+      // before this existed — an old ticket shows no mark rather than a
+      // wrong one. Needs weight_source.sql.
+      gross_source: grossSource || null,
+      tare_source: tareSource || null,
       payment_proof_url: paymentProofUrl || null,
       staff_fee: staffFee || 0,
       paper_ticket_no: normalizePaperTicketNo(paperTicketNo),
