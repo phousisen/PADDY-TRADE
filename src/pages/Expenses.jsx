@@ -684,7 +684,14 @@ export default function Expenses() {
   // without expense_confirmation.sql — the page then works exactly as before.
   const [reviews, setReviews] = useState(null);
   const [xreqs, setXreqs] = useState([]);
-  const [tab, setTab] = useState("report");            // "report" | "review"
+  // [2026-09-22] The Daily Book's "Open To confirm" lands on the review tab.
+  const [tab, setTab] = useState(() => {
+    try {
+      const want = sessionStorage.getItem("pt_expenses_tab");
+      sessionStorage.removeItem("pt_expenses_tab");
+      return want === "review" ? "review" : "report";
+    } catch { return "report"; }
+  });            // "report" | "review"
   const [focus, setFocus] = useState(null);            // { key, request, n } — a day to open on the review tab
   const canConfirm = !isViewOnly && (isOwner || (Array.isArray(profile?.permissions) && profile.permissions.includes("confirm_expenses")));
 

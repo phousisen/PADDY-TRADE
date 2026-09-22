@@ -17,6 +17,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { dayWithWeekday, range, my } from "../dateFormat.js";
 import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
+import { statusOf, dayKey } from "../expenseReview.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
 
 // [2026-09-16] These four were English labels sitting in a Khmer app —
@@ -81,7 +82,42 @@ const STK = "bg-sky-700/[0.04]";
 // was ALSO already taken: `const tot = variant === "total"` two lines
 // below. That duplicate declaration failed the Vercel build, so nothing
 // shipped that day until it was found. Hence `sums` — checked free.
-function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t }) {
+// [2026-09-22] Has the manager confirmed these expenses? SISEN: "what do u
+// think for the expenses part in the daily book, should it wait for
+// confirmation? to get the right number in" — and, on the answer (count them
+// straight away, but say which are not confirmed yet): "lets do that".
+//
+// The figures never wait: a day's spending counts the moment it is typed, so
+// profit is not flattered while the manager catches up. Under each expenses
+// total a short line says whether that number is final.
+//   mark = { n: station-days with expenses, waiting: how many not confirmed }
+//
+// [2026-09-22] SISEN: "that occurs only on manager's account right but make
+// sure other people and viewer only see like a circle of orange or green".
+// The words and the banner are for whoever confirms (the finance manager, or
+// the Owner). Everyone else — station staff, finance staff, the view-only
+// account — gets one small dot beside the figure: green final, orange not yet.
+function ExpMark({ mark, dark, day, t, detailed }) {
+  if (!mark || !mark.n) return null;
+  if (!detailed) {
+    const ok = !mark.waiting;
+    return (
+      <i title={ok ? t("db_exp_confirmed") : t(day ? "db_exp_waiting_day" : "db_exp_waiting", { n: mark.waiting, m: mark.n })}
+        className={`ml-1.5 inline-block h-2 w-2 rounded-full align-middle ${ok ? (dark ? "bg-brand-300" : "bg-brand-500") : (dark ? "bg-gold-300" : "bg-amber-500")}`} />
+    );
+  }
+  if (!mark.waiting) {
+    return <span className={`mt-0.5 block whitespace-nowrap text-[10.5px] font-semibold ${dark ? "text-brand-200" : "text-brand-600"}`}>✓ {t("db_exp_confirmed")}</span>;
+  }
+  return (
+    <span className={`mt-0.5 block whitespace-nowrap text-[10.5px] font-semibold ${dark ? "text-gold-300" : "text-amber-700"}`}>
+      <i className={`mr-1 inline-block h-1.5 w-1.5 rounded-full align-middle ${dark ? "bg-gold-300" : "bg-amber-500"}`} />
+      {t(day ? "db_exp_waiting_day" : "db_exp_waiting", { n: mark.waiting, m: mark.n })}
+    </span>
+  );
+}
+
+function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t, mark, isDay, detailed }) {
   const tot = variant === "total";
   const D = tot;   // dark row — placeholders need a lighter grey to be seen
   const wk = variant === "week";
@@ -118,7 +154,7 @@ function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t }) {
 
       <td className={`${cls()} border-l border-slate-200`}><Riel v={sums.commission} dark={D} /></td>
       <td className={cls()}><Riel v={sums.otherExp} dark={D} /></td>
-      <td className={cls()}><Riel v={sums.expenses} dark={D} /></td>
+      <td className={cls()}><Riel v={sums.expenses} dark={D} /><ExpMark mark={mark} dark={D} day={isDay} t={t} detailed={detailed} /></td>
 
       <td className={`${cls(STK)} border-l border-slate-200`}>{sums.lostKg ? <Signed v={sums.lostKg} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
       <td className={cls(STK)}>{sums.lostValue ? <Signed v={sums.lostValue} /> : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
@@ -167,18 +203,19 @@ function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t }) {
 //     Fold. No breakpoint decides that; the content does.
 //
 // md: and up this is not rendered at all — the table is untouched.
-function LedgerCard({ label, sub, sums, variant, onClick, open, t }) {
+function LedgerCard({ label, sub, sums, variant, onClick, open, t, mark, detailed }) {
   const tot = variant === "total";
   const wk = variant === "week";
   const money = (v) => Math.abs(Math.round(v || 0)).toLocaleString("en-US");
   const kg = (v) => (Number(v) || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
   const signed = (v) => `${(v || 0) < 0 ? "−" : "+"}${money(v)}`;
 
-  const Cell = ({ label: l, value, tone }) => (
+  const Cell = ({ label: l, value, tone, extra }) => (
     <div className={`min-w-0 px-2.5 py-1.5 ${tot ? "bg-brand-700" : tone === "stk" ? "bg-sky-50" : "bg-white"}`}>
       <p className={`truncate text-[9.5px] ${tot ? "text-brand-200" : "text-slate-400"}`}>{l}</p>
       <p className={`whitespace-nowrap text-[12.5px] font-bold tabular-nums ${
-        tot ? "text-white" : tone === "stk" ? "text-sky-800" : "text-slate-700"}`}>{value}</p>
+        tot ? "text-white" : tone === "stk" ? "text-sky-800" : "text-slate-700"}`}>{value}{!detailed && extra}</p>
+      {detailed && extra}
     </div>
   );
 
@@ -256,7 +293,7 @@ function LedgerCard({ label, sub, sums, variant, onClick, open, t }) {
           </>
         ) : (
           <>
-            <Cell label={t("db_expenses")} value={money(sums.expenses)} />
+            <Cell label={t("db_expenses")} value={money(sums.expenses)} extra={<ExpMark mark={mark} day t={t} detailed={detailed} />} />
             <Cell label={t("db_closing_kg")} value={`${kg(sums.closingKg)} ${t("db_weight_kg")}`} tone="stk" />
             <Cell label={t("db_cash")} value={signed(sums.cash)} />
           </>
@@ -499,9 +536,11 @@ function DayDrawer({ day, txs, payments }) {
 }
 
 // ---- the page -------------------------------------------------------------
-export default function DailyBook() {
+export default function DailyBook({ setPage } = {}) {
   const { t } = useLanguage();
-  const { isViewOnly } = useAuth();
+  const { isViewOnly, profile } = useAuth();
+  // Full words + the banner only for whoever confirms expenses.
+  const detailed = !isViewOnly && (!!profile?.isOwner || (Array.isArray(profile?.permissions) && profile.permissions.includes("confirm_expenses")));
   const today = cambodiaToday();
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
@@ -511,6 +550,8 @@ export default function DailyBook() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [raw, setRaw] = useState({ txs: [], payments: [], adjustments: [] });
+  // null = expense confirmation is not set up (or could not be read): no marks.
+  const [reviews, setReviews] = useState(null);
 
   // [2026-09-19] A year can be chosen — from January, last December could
   // not be opened at all.
@@ -526,6 +567,36 @@ export default function DailyBook() {
   // figures from hours earlier, or at zeros. See src/sessionWatch.js.
   const refetch = useRefetchSignal();
   useEffect(() => { api.getLocations().then(setLocations).catch(() => {}); }, [refetch]);
+  useEffect(() => {
+    let alive = true;
+    api.getExpenseReviews().then((r) => { if (alive) setReviews(r); }).catch(() => { if (alive) setReviews(null); });
+    return () => { alive = false; };
+  }, [refetch]);
+
+  // Every station-day with expenses → confirmed or not, and its amount.
+  const expDays = useMemo(() => {
+    if (!reviews) return null;
+    const byKey = new Map(reviews.map((v) => [dayKey(v.location_id, String(v.day).slice(0, 10)), v]));
+    const out = new Map();
+    for (const p of raw.payments || []) {
+      if (p.type !== "expense" || p.voided_at || !p.location_id) continue;
+      if (selectedLocationIds.length && !selectedLocationIds.includes(p.location_id)) continue;
+      const day = String(p.pay_date || "").slice(0, 10);
+      const k = dayKey(p.location_id, day);
+      let e = out.get(k);
+      if (!e) { e = { day, amount: 0, confirmed: statusOf(byKey.get(k) || null).status === "confirmed" }; out.set(k, e); }
+      e.amount += Number(p.amount) || 0;
+    }
+    return out;
+  }, [reviews, raw.payments, locKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const markFor = (dates) => {
+    if (!expDays) return null;
+    const set = new Set(dates);
+    let n = 0, waiting = 0;
+    for (const e of expDays.values()) if (set.has(e.day)) { n += 1; if (!e.confirmed) waiting += 1; }
+    return { n, waiting };
+  };
 
   useEffect(() => {
     let alive = true;
@@ -592,6 +663,18 @@ export default function DailyBook() {
   // same place. Guarded in scripts-check-periodbook.mjs.
   const periods = useMemo(() => buildPeriods(scoped, grain).slice().reverse(), [scoped, grain]);
   const totals = useMemo(() => rollup(scoped), [scoped]);
+  const scopedDates = useMemo(() => scoped.map((d) => d.date), [scoped]);
+  const unconfirmed = useMemo(() => {
+    if (!expDays) return 0;
+    const set = new Set(scopedDates);
+    let a = 0;
+    for (const e of expDays.values()) if (!e.confirmed && set.has(e.day)) a += e.amount;
+    return a;
+  }, [expDays, scopedDates]);
+  const openToConfirm = () => {
+    try { sessionStorage.setItem("pt_expenses_tab", "review"); } catch { /* private window — opens on the report */ }
+    setPage?.("expenses");
+  };
 
   const months = useMemo(() => [...new Set(days.map((d) => d.date.slice(0, 7)))].sort(), [days]);
 
@@ -693,7 +776,7 @@ export default function DailyBook() {
                 return (
                   <Fragment key={p.key}>
                     <LedgerCard
-                      label={main} sub={sub} sums={p.totals} t={t} open={isOpen}
+                      label={main} sub={sub} sums={p.totals} t={t} open={isOpen} mark={markFor(p.days.map((d) => d.date))} detailed={detailed}
                       onClick={isDay ? () => setOpen(isOpen ? null : p.key)
                         : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
                     />
@@ -701,14 +784,14 @@ export default function DailyBook() {
                     {weekDays && weekDays.length > 1 && (
                       <LedgerCard variant="week"
                         label={`${t("db_week")} ${isoWeek(p.key).week}`} sub={`${weekDays.length} ${t("db_trading_days")}`}
-                        sums={rollup(weekDays)} t={t} />
+                        sums={rollup(weekDays)} t={t} mark={markFor(weekDays.map((d) => d.date))} detailed={detailed} />
                     )}
                   </Fragment>
                 );
               })}
               <LedgerCard variant="total"
                 label={month ? `${my(month)} ${t("db_total")}` : `${year} ${t("db_total")}`}
-                sub={`${totals.days} ${t("db_trading_days")}`} sums={totals} t={t} />
+                sub={`${totals.days} ${t("db_trading_days")}`} sums={totals} t={t} mark={markFor(scopedDates)} detailed={detailed} />
             </div>
 
             <div className="hidden overflow-x-auto md:block">
@@ -761,7 +844,7 @@ export default function DailyBook() {
                       <Fragment key={p.key}>
                         <LedgerRow
                           label={main} sub={sub} sums={p.totals} t={t}
-                          open={isOpen}
+                          open={isOpen} mark={markFor(p.days.map((d) => d.date))} detailed={detailed} isDay={isDay}
                           onClick={isDay ? () => setOpen(isOpen ? null : p.key)
                             : () => { setGrain("days"); setMonth(p.days[0].date.slice(0, 7)); }}
                           onLoads={isDay ? () => setOpen(isOpen ? null : p.key) : undefined}
@@ -784,18 +867,31 @@ export default function DailyBook() {
                         {weekDays && weekDays.length > 1 && (
                           <LedgerRow variant="week"
                             label={`${t("db_week")} ${isoWeek(p.key).week}`} sub={`${weekDays.length} ${t("db_trading_days")}`}
-                            sums={rollup(weekDays)} t={t} />
+                            sums={rollup(weekDays)} t={t} mark={markFor(weekDays.map((d) => d.date))} detailed={detailed} />
                         )}
                       </Fragment>
                     );
                   })}
                   <LedgerRow variant="total"
                     label={month ? `${my(month)} ${t("db_total")}` : `${year} ${t("db_total")}`}
-                    sub={`${totals.days} ${t("db_trading_days")}`} sums={totals} t={t} />
+                    sub={`${totals.days} ${t("db_trading_days")}`} sums={totals} t={t} mark={markFor(scopedDates)} detailed={detailed} />
                 </tbody>
               </table>
             </div>
 
+            {detailed && unconfirmed > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200 bg-amber-50 px-5 py-2.5 text-[12.5px] text-amber-900">
+                <span>
+                  <i className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" />
+                  {t("db_exp_unconfirmed", { amount: `${Math.round(unconfirmed).toLocaleString("en-US")} ៛` })}
+                </span>
+                {setPage && (
+                  <button type="button" onClick={openToConfirm} className="font-semibold text-brand-700 hover:text-brand-800">
+                    {t("db_exp_open_confirm")} →
+                  </button>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-[11.5px] text-slate-400">
               <span><b className="font-semibold text-slate-600">{t("db_loads")}</b>{t("db_hint_loads")}</span>
               <span><b className="font-semibold text-slate-600">{t("db_price")}</b>{t("db_hint_spent")}<b className="font-semibold text-slate-600">{t("db_cost_per_kg")}</b>{t("db_hint_cost")}</span>
