@@ -13,7 +13,7 @@ import { useAuth } from "../AuthContext.jsx";
 // the Farmers/Buyers pages instead (see SimpleListPage.jsx), so the
 // sidebar itself stays exactly as many rows as it was before this
 // feature existed.
-export default function Sidebar({ page, setPage, pendingRequests }) {
+export default function Sidebar({ page, setPage, pendingRequests, expenseBadge = 0 }) {
   const { lang, setLang, t } = useLanguage();
   const { profile, hasPermission, can, logout, isViewOnly } = useAuth();
   const isAdmin = profile?.role === "admin";
@@ -70,7 +70,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
           label: t("fin_overview"),
           items: [
             { id: "daily-book", label: t("nav_daily_book"), icon: BookOpen },
-            { id: "expenses", label: t("nav_expenses"), icon: Wallet },
+            { id: "expenses", label: t("nav_expenses"), icon: Wallet, badge: expenseBadge },
           ],
         },
       ]
@@ -107,7 +107,7 @@ export default function Sidebar({ page, setPage, pendingRequests }) {
             // staff who log daily expenses shouldn't have to go through the
             // Reports section to reach it. Gated by the same canViewReports
             // permission as Financial Reports, since it's still financial data.
-            ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet }] : []),
+            ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet, badge: expenseBadge }] : []),
             // [2026-09-09] Data Check — lists any transaction that no longer
             // agrees with its own weighing ticket, plus the permanent record
             // of every change to money, weight, stock and permissions. Sits

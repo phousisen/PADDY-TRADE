@@ -29,7 +29,7 @@ import { useAuth } from "../AuthContext.jsx";
 // route in App.jsx's renderPage(), gated by the same isAdmin/isStaff/
 // hasPermission checks already enforced there; this only decides what's
 // offered to tap.
-export default function MobileNav({ page, setPage, pendingRequests }) {
+export default function MobileNav({ page, setPage, pendingRequests, expenseBadge = 0 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const { lang, setLang, t } = useLanguage();
   const { profile, hasPermission, can, logout, isViewOnly } = useAuth();
@@ -73,7 +73,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
     ? [
         { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
         { id: "daily-book", label: t("nav_daily_book"), icon: BookOpen },
-        { id: "expenses", label: t("nav_expenses"), icon: Wallet },
+        { id: "expenses", label: t("nav_expenses"), icon: Wallet, badge: expenseBadge },
       ]
     : [
         { id: "dashboard", label: t("nav_dashboard"), icon: LayoutGrid },
@@ -97,7 +97,7 @@ export default function MobileNav({ page, setPage, pendingRequests }) {
         ...(canApproveRequests ? [{ id: "requests", label: t("nav_requests"), icon: ClipboardList, badge: pendingRequests }] : []),
         { id: "stock", label: t("nav_stock"), icon: Warehouse },
         ...(canViewReports ? [{ id: "reports", label: t("nav_reports"), icon: BarChart3 }] : []),
-        ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet }] : []),
+        ...(canViewReports ? [{ id: "expenses", label: t("nav_expenses"), icon: Wallet, badge: expenseBadge }] : []),
       ];
 
   const systemItems = canSeeSystemGroup
