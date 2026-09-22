@@ -37,10 +37,33 @@ const STORE_KEY = (loc) => `pt_scale_guard_${loc}`;
 let auditUserId = null;
 export function setScaleWatchUser(id) { auditUserId = id || null; }
 
-let printing = typeof window !== "undefined" && !!window.matchMedia?.("print").matches;
+// [2026-09-22] THE "DISCONNECTS AFTER ONE WEIGH-IN" BUG — Pong Ro: "the
+// scaled always disconnect after 1 weight", screenshot showing "Scale not
+// connected" on the very next New Buy.
+//
+// Polling pauses while a print is in progress (Chrome's print preview hangs
+// if the page keeps re-drawing). When this loop moved here from the weight
+// box, the "printing" flag became one flag for the whole page, set on
+// `beforeprint` and cleared only on `afterprint`. The weigh-in slip prints
+// straight after the first capture — and on a station PC `afterprint` does
+// not always arrive (silent/kiosk printing, a dialog closed oddly). The flag
+// then stayed on for good, the scale was never asked again, and every weight
+// box after the first said "Scale not connected" until the page was reloaded.
+// Before the move, each weight box started with its own fresh flag, which is
+// why this never showed before.
+//
+// Now the pause can never outlive the print: it ends on `afterprint`, or 20
+// seconds after it began, or the moment a weight box is opened.
+const PRINT_PAUSE_MAX_MS = 20000;
+let printingSince = 0;
+function isPrinting() {
+  if (!printingSince) return false;
+  if (Date.now() - printingSince > PRINT_PAUSE_MAX_MS) { printingSince = 0; return false; }
+  return true;
+}
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeprint", () => { printing = true; });
-  window.addEventListener("afterprint", () => { printing = false; });
+  window.addEventListener("beforeprint", () => { printingSince = Date.now(); });
+  window.addEventListener("afterprint", () => { printingSince = 0; });
 }
 
 async function pollLocalBridge() {
@@ -141,7 +164,7 @@ async function tick(store, gen) {
   if (!alive()) return;
   const fg = store.foreground > 0;
   let next = fg ? FAST_MS : SLOW_MS;
-  if (!printing) {
+  if (!isPrinting()) {
     const tryLocal = !store.localMissAt || Date.now() - store.localMissAt >= LOCAL_RETRY_MS;
     const local = tryLocal ? await pollLocalBridge() : null;
     if (!alive()) return;
@@ -183,6 +206,8 @@ export function subscribeScale(loc, listener, { foreground = true } = {}) {
   // A box just opened: ask the PC's own scale program again straight away
   // instead of waiting out a background retry.
   if (foreground) store.localMissAt = 0;
+  // …and a weight box on screen means nobody is printing any more.
+  if (foreground) printingSince = 0;
   start(store);
   return () => {
     store.listeners.delete(listener);
