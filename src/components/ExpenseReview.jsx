@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronUp, Loader2, Lock } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Loader2, Lock, Pencil } from "lucide-react";
 import { api } from "../api.js";
 import { supabase } from "../supabaseClient.js";
 import { dmy, dmyTime, weekdayKey } from "../dateFormat.js";
@@ -59,16 +59,30 @@ function Pill({ kind, children }) {
   );
 }
 
-function Tile({ tone, label, n, sub, active, onClick }) {
-  const rail = tone === "w" ? "before:bg-amber-500" : tone === "c" ? "before:bg-brand-600" : tone === "b" ? "before:bg-rose-600" : "before:bg-violet-500";
+// [2026-09-22] SISEN, on the first version of the manager's screen: "so
+// unprofessional. seems very messy". A green button on every one of 93 rows,
+// a typing box on every figure, the station and date repeated in a side
+// panel, and the carrying-fee check squeezed into a chip beside the amount.
+// Now: one summary strip, one table grouped by month, figures shown as text
+// until "Correct a figure" is pressed, a warning as one sentence above the
+// items, and one action bar — "Confirm & next" opens the next day by itself.
+
+function Summary({ cells }) {
   return (
-    <button type="button" onClick={onClick}
-      className={`relative overflow-hidden rounded-xl border bg-white px-4 py-3 text-left before:absolute before:inset-y-0 before:left-0 before:w-[3px] ${rail} ${
-        active ? "border-slate-300 ring-2 ring-slate-100" : "border-slate-200 hover:border-slate-300"}`}>
-      <p className="text-[10.5px] font-semibold uppercase tracking-[.07em] text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-bold tabular-nums text-slate-800">{n}</p>
-      <p className="text-[12px] tabular-nums text-slate-400">{sub}</p>
-    </button>
+    <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-slate-200 bg-white lg:grid-cols-4">
+      {cells.map((c) => (
+        <button key={c.key} type="button" onClick={c.onClick}
+          className={`border-b border-r border-slate-100 px-4 py-3 text-left hover:bg-slate-50 lg:border-b-0 ${c.active ? "bg-slate-50" : ""}`}>
+          <p className="flex items-center gap-1.5 text-[10.5px] font-semibold uppercase tracking-[.07em] text-slate-500">
+            <i className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />{c.label}
+          </p>
+          <p className="mt-1 flex items-baseline gap-2">
+            <span className="text-xl font-bold tabular-nums text-slate-800">{c.n}</span>
+            {c.sub != null && <span className="text-[12.5px] tabular-nums text-slate-400">{c.sub}</span>}
+          </p>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -77,12 +91,16 @@ async function checkPassword(email, password) {
   return !error;
 }
 
+// Columns of the day table (sm and up). On a phone each row stacks.
+const COLS = "sm:grid sm:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1.3fr)_3.5rem_minmax(0,1fr)_8.5rem_1.25rem] sm:items-center sm:gap-4";
+
 export default function ExpenseReview({
   days, requests, loading, canConfirm, canRecord, userId, userEmail, t,
   tonnageByDayLoc, onChanged, onOpenDay, focus, monthFrom, monthTo,
 }) {
   const manager = !!canConfirm;
   const [filter, setFilter] = useState(manager ? "waiting" : "all");
+  const [station, setStation] = useState("");
   const [openKey, setOpenKey] = useState(null);
 
   // Opened from somewhere else (a locked day sheet's "Request a change").
@@ -98,58 +116,100 @@ export default function ExpenseReview({
   const sum = useMemo(() => summarize(scoped, { from: monthFrom, to: monthTo, requests: manager ? requests.filter((r) => r.requested_by !== userId) : myRequests }),
     [scoped, monthFrom, monthTo, requests, myRequests, manager, userId]);
 
+  const stations = useMemo(() => {
+    const m = new Map();
+    for (const d of scoped) m.set(d.locationId, d.stationName);
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [scoped]);
+
   const shown = useMemo(() => {
     if (filter === "requests") return [];
-    let list = scoped;
+    let list = station ? scoped.filter((d) => d.locationId === station) : scoped;
     if (filter === "waiting") list = list.filter((d) => d.status === "waiting");
     else if (filter === "confirmed") list = list.filter((d) => d.status === "confirmed" && (!monthFrom || d.day >= monthFrom));
     else if (filter === "sent_back") list = list.filter((d) => d.status === "sent_back");
     // Waiting: the oldest first — it has waited longest.
     if (filter === "waiting") list = [...list].reverse();
     return list.slice(0, 200);
-  }, [scoped, filter, monthFrom]);
+  }, [scoped, filter, monthFrom, station]);
+
+  // Grouped by month, in the order shown.
+  const groups = useMemo(() => {
+    const out = [];
+    for (const d of shown) {
+      const ym = d.day.slice(0, 7);
+      let g = out[out.length - 1];
+      if (!g || g.ym !== ym) { g = { ym, days: [], total: 0 }; out.push(g); }
+      g.days.push(d);
+      g.total += d.total;
+    }
+    return out;
+  }, [shown]);
 
   const filters = manager
     ? [["waiting", t("xr_f_waiting"), sum.waiting.n], ["requests", t("xr_f_requests"), sum.requests.n], ["confirmed", t("xr_f_confirmed"), sum.confirmed.n], ["sent_back", t("xr_f_sent_back"), sum.sentBack.n]]
     : [["all", t("xr_f_all"), scoped.length], ["waiting", t("xr_f_with_manager"), sum.waiting.n], ["confirmed", t("xr_f_confirmed"), sum.confirmed.n], ["sent_back", t("xr_f_sent_back"), sum.sentBack.n], ["requests", t("xr_f_my_requests"), myRequests.filter((r) => r.status === "pending").length]];
 
+  const cells = [
+    { key: "waiting", dot: "bg-amber-500", label: manager ? t("xr_tile_waiting_you") : t("xr_tile_with_manager"), n: sum.waiting.n, sub: riel(sum.waiting.amount), onClick: () => setFilter("waiting"), active: filter === "waiting" },
+    { key: "confirmed", dot: "bg-brand-600", label: t("xr_tile_confirmed_month"), n: sum.confirmed.n, sub: riel(sum.confirmed.amount), onClick: () => setFilter("confirmed"), active: filter === "confirmed" },
+    { key: "sent_back", dot: "bg-rose-600", label: manager ? t("xr_tile_sent_back") : t("xr_tile_sent_back_you"), n: sum.sentBack.n, sub: riel(sum.sentBack.amount), onClick: () => setFilter("sent_back"), active: filter === "sent_back" },
+    { key: "requests", dot: "bg-violet-500", label: t("xr_f_requests"), n: manager ? sum.requests.n : myRequests.filter((r) => r.status === "pending").length, sub: null, onClick: () => setFilter("requests"), active: filter === "requests" },
+  ];
+
+  const keys = shown.map((d) => d.key);
+  const nextAfter = (key) => { const i = keys.indexOf(key); return i >= 0 && i + 1 < keys.length ? keys[i + 1] : null; };
+
   return (
     <div className="grid gap-3.5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Tile tone="w" active={filter === "waiting"} onClick={() => setFilter("waiting")}
-          label={manager ? t("xr_tile_waiting_you") : t("xr_tile_with_manager")} n={sum.waiting.n}
-          sub={`${riel(sum.waiting.amount)}${manager && sum.requests.n ? ` · ${t("xr_plus_requests", { n: sum.requests.n })}` : ""}`} />
-        <Tile tone="c" active={filter === "confirmed"} onClick={() => setFilter("confirmed")}
-          label={t("xr_tile_confirmed_month")} n={sum.confirmed.n} sub={riel(sum.confirmed.amount)} />
-        <Tile tone="b" active={filter === "sent_back"} onClick={() => setFilter("sent_back")}
-          label={manager ? t("xr_tile_sent_back") : t("xr_tile_sent_back_you")} n={sum.sentBack.n} sub={riel(sum.sentBack.amount)} />
-      </div>
+      <Summary cells={cells} />
 
-      <div className="inline-flex max-w-full flex-wrap self-start rounded-lg border border-slate-200 bg-white p-1">
-        {filters.map(([k, label, n]) => (
-          <button key={k} type="button" onClick={() => setFilter(k)}
-            className={`rounded-md px-3 py-1.5 text-xs font-medium ${filter === k ? "bg-brand-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-            {label} <span className="opacity-70">{n}</span>
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex max-w-full flex-wrap rounded-lg border border-slate-200 bg-white p-1">
+          {filters.map(([k, label, n]) => (
+            <button key={k} type="button" onClick={() => setFilter(k)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium ${filter === k ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+              {label} <span className="opacity-70">{n}</span>
+            </button>
+          ))}
+        </div>
+        {filter !== "requests" && stations.length > 1 && (
+          <select value={station} onChange={(e) => setStation(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 outline-none">
+            <option value="">{t("all_locations")}</option>
+            {stations.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        )}
       </div>
 
       {loading && <p className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" />{t("ex_loading")}</p>}
 
       {filter === "requests" ? (
         <RequestList requests={manager ? requests : myRequests} manager={manager} userId={userId} userEmail={userEmail} t={t} onChanged={onChanged} />
+      ) : shown.length === 0 && !loading ? (
+        <p className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center text-sm text-slate-400">{t(filter === "waiting" && manager ? "xr_none_waiting" : "xr_none_here")}</p>
       ) : (
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-          {shown.length === 0 && !loading && (
-            <p className="px-5 py-10 text-center text-sm text-slate-400">{t(filter === "waiting" && manager ? "xr_none_waiting" : "xr_none_here")}</p>
-          )}
-          {shown.map((d) => (
-            <DayRow key={d.key} d={d} t={t} manager={manager} canRecord={canRecord} userId={userId} userEmail={userEmail}
-              open={openKey === d.key} onToggle={() => setOpenKey(openKey === d.key ? null : d.key)}
-              startRequest={focus?.key === d.key && focus?.request}
-              tonnage={tonnageByDayLoc?.get(`${d.day}|${d.locationId}`)}
-              pendingRequests={requests.filter((r) => r.status === "pending" && r.location_id === d.locationId && String(r.day).slice(0, 10) === d.day)}
-              onChanged={onChanged} onOpenDay={onOpenDay} />
+          <div className={`hidden border-b border-slate-100 px-5 py-2 text-[10.5px] font-semibold uppercase tracking-[.07em] text-slate-400 ${COLS}`}>
+            <span>{t("xr_col_day")}</span><span>{t("xr_station")}</span><span>{t("xr_entered")}</span>
+            <span className="text-right">{t("xr_col_items")}</span><span className="text-right">{t("xr_col_amount")}</span><span>{t("xr_col_status")}</span><span />
+          </div>
+          {groups.map((g) => (
+            <div key={g.ym}>
+              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-2 text-[11px] font-semibold uppercase tracking-[.07em] text-slate-500">
+                <span>{t(`mon_${Number(g.ym.slice(5, 7))}`)} {g.ym.slice(0, 4)} · {t("xr_n_days", { n: g.days.length })}</span>
+                <span className="tabular-nums">{riel(g.total)}</span>
+              </div>
+              {g.days.map((d) => (
+                <DayRow key={d.key} d={d} t={t} manager={manager} canRecord={canRecord} userId={userId} userEmail={userEmail}
+                  open={openKey === d.key} onToggle={() => setOpenKey(openKey === d.key ? null : d.key)}
+                  onDone={() => setOpenKey(nextAfter(d.key))}
+                  startRequest={focus?.key === d.key && focus?.request}
+                  tonnage={tonnageByDayLoc?.get(`${d.day}|${d.locationId}`)}
+                  pendingRequests={requests.filter((r) => r.status === "pending" && r.location_id === d.locationId && String(r.day).slice(0, 10) === d.day)}
+                  onChanged={onChanged} onOpenDay={onOpenDay} />
+              ))}
+            </div>
           ))}
         </div>
       )}
@@ -165,40 +225,42 @@ function whyLine(d, t) {
   return null;
 }
 
-function DayRow({ d, t, manager, canRecord, userId, userEmail, open, onToggle, startRequest, tonnage, pendingRequests, onChanged, onOpenDay }) {
+const shortName = (s) => String(s || "").replace(/@.*$/, "");
+
+function DayRow({ d, t, manager, canRecord, userId, userEmail, open, onToggle, onDone, startRequest, tonnage, pendingRequests, onChanged, onOpenDay }) {
   const statusLabel = d.status === "confirmed" ? t("xr_s_confirmed") : d.status === "sent_back" ? t("xr_s_sent_back")
     : manager ? t("xr_s_waiting") : t("xr_s_with_manager");
   const why = whyLine(d, t);
   const decided = d.review?.decided_by_name;
+  const k = weekdayKey(d.day);
   return (
     <div className="border-b border-slate-100 last:border-0">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-        <div className="min-w-[11rem] flex-1">
-          <p className="text-[13.5px] font-semibold text-slate-800">{fullDate(d.day, t)}</p>
-          <p className="text-[11.5px] text-slate-400">
-            {t("xr_entered_by", { name: d.enteredBy.join(", ") || "—" })}{d.lastAt && <> · {dmyTime(d.lastAt)}</>}
-          </p>
-          {why && <p className="mt-0.5 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[11.5px] text-amber-800">{why}</p>}
-        </div>
-        <span className="rounded-md border border-brand-100 bg-brand-50 px-2 py-0.5 text-[11.5px] font-semibold tracking-wide text-brand-700">{d.stationName}</span>
-        <span className="min-w-[7.5rem] text-right text-[13.5px] font-semibold tabular-nums text-slate-800">{riel(d.total)}</span>
-        <div className="min-w-[9rem]">
+      <button type="button" onClick={onToggle} aria-expanded={open}
+        className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3 text-left hover:bg-slate-50 ${open ? "bg-slate-50" : ""} ${COLS}`}>
+        <span className="min-w-0">
+          <b className="text-[13.5px] font-semibold text-slate-800">{dmy(d.day)}</b>
+          {k && <span className="ml-1.5 text-[12px] text-slate-400">{t(`xr_wd_${k.slice(4)}`)}</span>}
+          {why && <span className="mt-0.5 block text-[11.5px] text-amber-700">{why}</span>}
+        </span>
+        <span className="min-w-0"><span className="rounded-md border border-brand-100 bg-brand-50 px-2 py-0.5 text-[11.5px] font-semibold text-brand-700">{d.stationName}</span></span>
+        <span className="min-w-0 truncate text-[12.5px] text-slate-500">
+          {d.enteredBy.map(shortName).join(", ") || "—"}{d.lastAt && <> · {dmyTime(d.lastAt).slice(0, 5)} {dmyTime(d.lastAt).slice(-5)}</>}
+        </span>
+        <span className="hidden text-right text-[12.5px] tabular-nums text-slate-500 sm:block">{d.rows.length}</span>
+        <span className="ml-auto text-right text-[13.5px] font-semibold tabular-nums text-slate-800 sm:ml-0">{riel(d.total)}</span>
+        <span className="min-w-0">
           <Pill kind={d.status}>{statusLabel}</Pill>
           {d.status === "confirmed" && decided && (
-            <p className="mt-0.5 text-[11px] text-slate-400">{t("xr_by", { name: decided })}{d.review?.corrected ? ` · ${t("xr_corrected")}` : ""}</p>
+            <span className="mt-0.5 block truncate text-[11px] text-slate-400">{t("xr_by", { name: decided })}{d.review?.corrected ? ` · ${t("xr_corrected")}` : ""}</span>
           )}
-          {pendingRequests.length > 0 && <p className="mt-0.5 text-[11px] font-semibold text-violet-700">{t("xr_n_requests", { n: pendingRequests.length })}</p>}
-        </div>
-        <button type="button" onClick={onToggle} aria-expanded={open}
-          className={`flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold ${open ? "border border-slate-200 text-slate-600" : manager && d.status === "waiting" ? "bg-brand-600 text-white hover:bg-brand-700" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-          {open ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-          {open ? t("xr_close") : manager && d.status === "waiting" ? t("xr_review") : t("xr_details")}
-        </button>
-      </div>
+          {pendingRequests.length > 0 && <span className="mt-0.5 block text-[11px] font-semibold text-violet-700">{t("xr_n_requests", { n: pendingRequests.length })}</span>}
+        </span>
+        <span className="hidden text-slate-400 sm:block">{open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</span>
+      </button>
       {open && (
-        <div className="bg-slate-50/60 px-4 pb-4">
+        <div className="bg-slate-50 px-3 pb-4 sm:px-5">
           {manager
-            ? <ManagerPanel d={d} t={t} userId={userId} userEmail={userEmail} tonnage={tonnage} onChanged={onChanged} />
+            ? <ManagerPanel d={d} t={t} userId={userId} userEmail={userEmail} tonnage={tonnage} onChanged={onChanged} onDone={onDone} />
             : <StaffPanel d={d} t={t} canRecord={canRecord} tonnage={tonnage} startRequest={startRequest} onChanged={onChanged} onOpenDay={onOpenDay} pendingRequests={pendingRequests} />}
         </div>
       )}
@@ -206,57 +268,99 @@ function DayRow({ d, t, manager, canRecord, userId, userEmail, open, onToggle, s
   );
 }
 
+// The carrying-fee check, as one sentence above the items (or null).
+function commissionNote(d, tonnage, t) {
+  const merged = [...mergeByCategory(d.rows).values()];
+  const commission = merged.filter((m) => isCommission(m.category)).reduce((s, m) => s + m.amount, 0);
+  if (commission <= 0) return null;
+  const c = checkCommission({ commission, boughtKg: tonnage?.boughtKg, soldKg: tonnage?.soldKg });
+  const tn = c.tonnesBought ? `${c.tonnesBought.toFixed(1)} t · ${fmt(c.perTonne)} ៛/t` : "";
+  if (c.state === "unknown") return { tone: "amber", text: t("ex_kh_unknown") };
+  if (c.state === "over") return { tone: "rose", text: `${t("ex_kh_over")} ${riel(c.overBy)} · ${tn}` };
+  if (c.state === "at") return { tone: "amber", text: `${t("ex_kh_at")} · ${tn}` };
+  return { tone: "ok", text: tn };
+}
+
 function Items({ d, t, tonnage, amounts, setAmounts, editable }) {
   const merged = useMemo(() => [...mergeByCategory(d.rows).values()], [d.rows]);
-  const commission = merged.filter((m) => isCommission(m.category)).reduce((s, m) => s + m.amount, 0);
-  const check = commission > 0 ? checkCommission({ commission, boughtKg: tonnage?.boughtKg, soldKg: tonnage?.soldKg }) : null;
+  const note = commissionNote(d, tonnage, t);
   const total = merged.reduce((s, m) => {
     const v = editable ? parseAmount(amounts?.[m.key]) : m.amount;
     return s + (v == null ? 0 : v);
   }, 0);
   return (
     <table className="w-full text-[13px]">
+      <thead>
+        <tr className="border-b border-slate-100 text-[10.5px] font-semibold uppercase tracking-[.07em] text-slate-400">
+          <th className="py-2 text-left font-semibold">{t("xr_col_item")}</th>
+          <th className="hidden py-2 text-left font-semibold sm:table-cell">{t("xr_col_note")}</th>
+          <th className="py-2 text-right font-semibold">{t("xr_col_amount")}</th>
+        </tr>
+      </thead>
       <tbody>
         {merged.map((m) => {
           const now = editable ? parseAmount(amounts?.[m.key]) : m.amount;
           const changed = editable && now !== null && Math.round(now) !== Math.round(m.amount);
           const cleared = editable && now === null;
+          const memo = m.rows.map((r) => r.memo).filter(Boolean).join(" · ");
+          const okNote = isCommission(m.category) && note?.tone === "ok" ? note.text : "";
           return (
-            <tr key={m.key} className="border-b border-dashed border-slate-200">
-              <td className="py-1.5 text-slate-700">
-                {m.category}
-                {isCommission(m.category) && check && (
-                  <span className={`ml-2 rounded px-1.5 py-0.5 text-[11px] font-semibold ${check.state === "over" ? "bg-rose-50 text-rose-700" : check.state === "at" ? "bg-amber-50 text-amber-700" : "bg-brand-50 text-brand-700"}`}>
-                    {check.tonnesBought ? `${check.tonnesBought.toFixed(1)} t · ${fmt(check.perTonne)} ៛/t` : t("ex_kh_unknown")}
-                  </span>
-                )}
+            <tr key={m.key} className="border-b border-slate-100">
+              <td className="py-2.5 text-slate-800">{m.category}</td>
+              <td className="hidden py-2.5 text-[12.5px] text-slate-400 sm:table-cell">
+                {[memo, okNote].filter(Boolean).join(" · ") || "—"}
               </td>
-              <td className="py-1.5 text-right tabular-nums">
+              <td className="py-2.5 text-right tabular-nums">
                 {editable && m.rows.length === 1 ? (
                   <span className="inline-flex items-center gap-2">
                     {(changed || cleared) && <span className="text-[11.5px] text-slate-400 line-through">{fmt(m.amount)}</span>}
                     <input inputMode="numeric" value={amounts?.[m.key] ?? ""} onChange={(e) => setAmounts((a) => ({ ...a, [m.key]: e.target.value }))}
-                      className={`w-28 rounded-md border px-2 py-1 text-right text-[13px] font-semibold tabular-nums outline-none ${changed || cleared ? "border-violet-300 bg-violet-50 text-violet-800" : "border-slate-200 bg-white"}`} />
+                      className={`w-28 rounded-md border px-2 py-1 text-right text-[13px] font-semibold tabular-nums outline-none ${changed || cleared ? "border-violet-300 bg-violet-50 text-violet-800" : "border-slate-300 bg-white"}`} />
                   </span>
                 ) : (
-                  <span className="font-semibold text-slate-800">{riel(m.amount)}</span>
+                  <span className="text-slate-800">{riel(m.amount)}</span>
                 )}
               </td>
             </tr>
           );
         })}
         <tr>
-          <td className="pt-2 font-bold text-slate-800">{t("ex_total")}</td>
-          <td className="pt-2 text-right font-bold tabular-nums text-slate-900">{riel(total)}</td>
+          <td className="pt-2.5 font-bold text-slate-800">{t("ex_total")}</td>
+          <td className="hidden sm:table-cell" />
+          <td className="pt-2.5 text-right font-bold tabular-nums text-slate-900">{riel(total)}</td>
         </tr>
       </tbody>
     </table>
   );
 }
 
-function ManagerPanel({ d, t, userId, userEmail, tonnage, onChanged }) {
+function Warning({ d, tonnage, t }) {
+  const note = commissionNote(d, tonnage, t);
+  if (!note || note.tone === "ok") return null;
+  return (
+    <p className={`rounded-lg border px-3 py-2 text-[12.5px] ${note.tone === "rose" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+      {note.text}
+    </p>
+  );
+}
+
+function SheetHead({ d, t, right }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+      <div>
+        <p className="text-[14.5px] font-bold text-slate-800">{fullDate(d.day, t)} · {d.stationName}</p>
+        <p className="text-[12px] text-slate-500">{t("xr_entered_on", { name: d.enteredBy.join(", ") || "—", at: d.lastAt ? dmyTime(d.lastAt) : "—" })}</p>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function ManagerPanel({ d, t, userId, userEmail, tonnage, onChanged, onDone }) {
   const merged = useMemo(() => [...mergeByCategory(d.rows).values()], [d.rows]);
-  const [amounts, setAmounts] = useState(() => Object.fromEntries(merged.map((m) => [m.key, String(Math.round(m.amount))])));
+  const original = () => Object.fromEntries(merged.map((m) => [m.key, String(Math.round(m.amount))]));
+  const [amounts, setAmounts] = useState(original);
+  const [editing, setEditing] = useState(false);
   const [checked, setChecked] = useState(false);
   const [password, setPassword] = useState("");
   const [reason, setReason] = useState("");
@@ -265,10 +369,10 @@ function ManagerPanel({ d, t, userId, userEmail, tonnage, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const edits = merged.filter((m) => {
+  const edits = editing ? merged.filter((m) => {
     const v = parseAmount(amounts[m.key]);
     return v === null || Math.round(v) !== Math.round(m.amount);
-  });
+  }) : [];
   const correcting = edits.length > 0;
   const allowed = canConfirmDay(d, { canConfirm: true, userId });
   const reasonOk = !correcting || reason.trim().length >= 10;
@@ -293,6 +397,7 @@ function ManagerPanel({ d, t, userId, userEmail, tonnage, onChanged }) {
         userId,
       });
       await onChanged();
+      onDone?.();
     } catch (err) {
       setError(err?.message || String(err));
       setBusy(false);
@@ -307,67 +412,71 @@ function ManagerPanel({ d, t, userId, userEmail, tonnage, onChanged }) {
       api.logAudit({ action: "send_back_expense_day", tableName: "expense_day_reviews", recordId: null,
         newData: { stationName: d.stationName, day: d.day, total: d.total, reason: note.trim() }, userId });
       await onChanged();
+      onDone?.();
     } catch (err) {
       setError(err?.message || String(err));
       setBusy(false);
     }
   }
 
+  const canEdit = allowed && merged.some((m) => m.rows.length === 1);
+  const toggleEdit = () => { if (editing) { setAmounts(original()); setReason(""); } setEditing(!editing); };
+
   return (
-    <div className="grid overflow-hidden rounded-xl border border-slate-200 bg-white md:grid-cols-[1.4fr_1fr]">
-      <div className="border-b border-slate-200 px-4 py-3 md:border-b-0 md:border-r">
-        <Items d={d} t={t} tonnage={tonnage} amounts={amounts} setAmounts={setAmounts} editable={allowed} />
-        {merged.some((m) => m.rows.length > 1) && allowed && <p className="mt-2 text-[11.5px] text-slate-400">{t("xr_dupe_hint")}</p>}
-        {d.review?.status === "sent_back" && d.review?.note && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-800">{t("xr_your_note")}: “{d.review.note}”</p>}
-        {d.review?.reply && <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[12px] text-slate-700">{t("xr_staff_reply")}: “{d.review.reply}”</p>}
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <SheetHead d={d} t={t} right={canEdit && !sendingBack && (
+        <button type="button" onClick={toggleEdit}
+          className={`inline-flex items-center gap-1.5 text-[12.5px] font-semibold ${editing ? "text-slate-500 hover:text-slate-600" : "text-brand-600 hover:text-brand-700"}`}>
+          {editing ? t("cancel") : <><Pencil size={13} />{t("xr_correct_figure")}</>}
+        </button>
+      )} />
+      <div className="grid gap-3 px-4 py-3">
+        <Warning d={d} tonnage={tonnage} t={t} />
+        <Items d={d} t={t} tonnage={tonnage} amounts={amounts} setAmounts={setAmounts} editable={editing} />
+        {editing && merged.some((m) => m.rows.length > 1) && <p className="text-[11.5px] text-slate-400">{t("xr_dupe_hint")}</p>}
+        {correcting && (
+          <div className="grid gap-1.5">
+            <label className="text-[12.5px] font-semibold text-violet-800">{t("xr_why_changing")}</label>
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("xr_why_changing_ph")}
+              className="rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2 text-[13px] outline-none" />
+            {!reasonOk && <p className="text-[11.5px] text-slate-400">{t("xr_more_chars", { n: 10 - reason.trim().length })}</p>}
+          </div>
+        )}
+        {d.review?.status === "sent_back" && d.review?.note && <p className="rounded-lg bg-rose-50 px-3 py-2 text-[12.5px] text-rose-800">{t("xr_your_note")}: “{d.review.note}”</p>}
+        {d.review?.reply && <p className="rounded-lg bg-slate-50 px-3 py-2 text-[12.5px] text-slate-700">{t("xr_staff_reply")}: “{d.review.reply}”</p>}
       </div>
-      <div className="grid content-start gap-2.5 px-4 py-3 text-[12.5px]">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-          <dt className="text-slate-400">{t("xr_station")}</dt><dd className="text-slate-800">{d.stationName}</dd>
-          <dt className="text-slate-400">{t("xr_date")}</dt><dd className="text-slate-800">{fullDate(d.day, t)}</dd>
-          <dt className="text-slate-400">{t("xr_entered")}</dt><dd className="text-slate-800">{d.enteredBy.join(", ") || "—"}</dd>
-        </dl>
+
+      <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-[12.5px]">
         {!allowed ? (
-          <p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600">
-            {d.status === "confirmed" ? t("xr_already_confirmed") : t("xr_you_entered_it")}
-          </p>
+          <p className="text-slate-600">{d.status === "confirmed" ? t("xr_already_confirmed") : t("xr_you_entered_it")}</p>
         ) : sendingBack ? (
-          <>
-            <label className="text-slate-600">{t("xr_what_to_fix")}</label>
+          <div className="grid gap-2">
+            <label className="font-semibold text-slate-700">{t("xr_what_to_fix")}</label>
             <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("xr_what_to_fix_ph")}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-rose-300" />
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-rose-300" />
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setSendingBack(false)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">{t("cancel")}</button>
+              <button type="button" onClick={() => setSendingBack(false)} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600">{t("cancel")}</button>
               <button type="button" onClick={sendBack} disabled={note.trim().length < 5 || busy}
-                className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40">{t("xr_send_back")}</button>
+                className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-40">{t("xr_send_back")}</button>
             </div>
-          </>
+          </div>
         ) : (
-          <>
-            {correcting && (
-              <>
-                <label className="text-violet-800">{t("xr_why_changing")}</label>
-                <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("xr_why_changing_ph")}
-                  className="rounded-lg border border-violet-200 bg-violet-50/50 px-3 py-2 text-[13px] outline-none" />
-                {!reasonOk && <p className="text-[11.5px] text-slate-400">{t("xr_more_chars", { n: 10 - reason.trim().length })}</p>}
-              </>
-            )}
-            <label className="flex items-center gap-2 text-slate-600">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <label className="flex min-w-[14rem] flex-1 items-center gap-2 text-slate-700">
               <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} /> {t("xr_checked_receipts")}
             </label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("xr_password")}
-              autoComplete="current-password" className="rounded-lg border border-slate-200 px-3 py-2 text-[13px] outline-none focus:border-brand-400" />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setSendingBack(true)} disabled={busy}
-                className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">{t("xr_send_back")}</button>
-              <button type="button" onClick={confirm} disabled={!canPress}
-                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40 ${correcting ? "bg-violet-700 hover:bg-violet-800" : "bg-brand-600 hover:bg-brand-700"}`}>
-                {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {correcting ? t("xr_correct_confirm") : t("xr_confirm")}
-              </button>
-            </div>
-          </>
+              onKeyDown={(e) => { if (e.key === "Enter") confirm(); }}
+              autoComplete="current-password" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13px] outline-none focus:border-brand-400 sm:w-48" />
+            <button type="button" onClick={() => setSendingBack(true)} disabled={busy}
+              className="rounded-lg border border-rose-200 bg-white px-4 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50">{t("xr_send_back")}</button>
+            <button type="button" onClick={confirm} disabled={!canPress}
+              className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold text-white disabled:opacity-40 ${correcting ? "bg-violet-700 hover:bg-violet-800" : "bg-brand-600 hover:bg-brand-700"}`}>
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {correcting ? t("xr_correct_confirm") : t("xr_confirm_next")}
+            </button>
+          </div>
         )}
-        {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-rose-700">{error}</p>}
+        {error && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-rose-700">{error}</p>}
       </div>
     </div>
   );
@@ -391,7 +500,10 @@ function StaffPanel({ d, t, canRecord, tonnage, startRequest, onChanged, onOpenD
   }
 
   return (
-    <div className="grid gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <SheetHead d={d} t={t} />
+      <div className="grid gap-3 px-4 py-3">
+      <Warning d={d} tonnage={tonnage} t={t} />
       <Items d={d} t={t} tonnage={tonnage} editable={false} />
       {d.status === "sent_back" && (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12.5px] text-rose-900">
@@ -430,6 +542,7 @@ function StaffPanel({ d, t, canRecord, tonnage, startRequest, onChanged, onOpenD
         <RequestForm d={d} t={t} onCancel={() => setRequesting(false)} onSent={async () => { setRequesting(false); await onChanged(); }} />
       )}
       {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-[12.5px] text-rose-700">{error}</p>}
+      </div>
     </div>
   );
 }
