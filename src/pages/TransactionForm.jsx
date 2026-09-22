@@ -8,7 +8,7 @@ import { api, normalizePaperTicketNo } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { errText } from "../errText.js";
 import { useAuth } from "../AuthContext.jsx";
-import { getAccurateNow } from "../supabaseClient.js";
+import { getAccurateNow, supabase } from "../supabaseClient.js";
 import {
   withTimeout, resolvePartyIdOffline, resolveProductIdOffline, updatePartyOffline,
   createTransactionOffline, createPaymentOffline, logAuditOffline,
@@ -120,8 +120,20 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     const has = v !== "" && v != null;
     setStamp((prev) => (has ? prev || getAccurateNow().toISOString() : null));
   };
-  const onGrossChange = (v) => { setGrossKg(v); stampOnFirstValue(v, setGrossAt); };
-  const onTareChange = (v) => { setTareKg(v); stampOnFirstValue(v, setTareAt); };
+  // [2026-09-22] Where each weight came from — typed by hand, or captured
+  // off a live scale. A ticket copied from the paper book is not the same
+  // thing as one weighed here, and until now nothing said which was which.
+  const [grossSource, setGrossSource] = useState(null);
+  const [tareSource, setTareSource] = useState(null);
+  const onGrossChange = (v, src) => { setGrossKg(v); stampOnFirstValue(v, setGrossAt); setGrossSource(v === "" ? null : (src || "typed")); };
+  const onTareChange = (v, src) => { setTareKg(v); stampOnFirstValue(v, setTareAt); setTareSource(v === "" ? null : (src || "typed")); };
+  const typedIn = grossSource === "typed" || tareSource === "typed";
+  // [2026-09-22] SISEN: "we will need a proper password for each ticket
+  // also". Saving asks the person for their OWN password — the same second
+  // step the manager uses to confirm expenses. It proves the ticket was
+  // saved by the person whose name goes on it, not by whoever found the PC
+  // unlocked, and the name and the moment are recorded with it.
+  const [signPassword, setSignPassword] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
   const [priceOverridden, setPriceOverridden] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(isBuy ? "pending" : "paid");
@@ -361,6 +373,22 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     if (weightsReversed) { setError(reversedMessage + " Check the two weights."); return; }
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || (isBuy && !pricePerKg)) { setError(t("required_fields")); return; }
     if (!txDate) { setError(t("err_need_tx_date")); return; }
+    // [2026-09-22] The signature. SISEN: "we will need a proper password for
+    // each ticket also" — a ticket carries somebody's name, so that person
+    // has to be at the keyboard. Checked against this account's own login,
+    // exactly as the manager's expense confirmation does; a wrong password
+    // saves nothing at all.
+    if (!signPassword) { setError(t("xr_password")); return; }
+    setSaving(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: session?.user?.email, password: signPassword,
+      });
+      if (authError) { setError(t("xr_bad_password")); setSaving(false); return; }
+    } catch {
+      setError(t("xr_bad_password")); setSaving(false); return;
+    }
+    setSaving(false);
     // [2026-09-12] The paper booklet number, now required here exactly as
     // it is on the weighbridge board. Without it a back-entered load is
     // unmatchable against the book, which is the only independent check
@@ -533,6 +561,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         // actually crossed the scale.
         grossAt: stampIfOnTxDate(grossAt),
         tareAt: stampIfOnTxDate(tareAt),
+        grossSource, tareSource,
         receiptPhotoUrl, paymentProofUrl,
         // Display-only fields — see the comment on createTransactionOffline
         // in offlineQueue.js for why these matter even offline: without
@@ -557,6 +586,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
           code: tx.code, type, partyName, quantityKg: netKg, pricePerKg: finalPricePerKg,
           amount: tx.amount, stationName: myStation?.name, txDate: tx.tx_date, paymentStatus: finalPaymentStatus,
           paperTicketNo: paperTicketNo.trim() || null,
+          // [2026-09-22] What the Activity Log and the ticket's own History
+          // need to answer "who typed this in, when, and was it weighed?"
+          grossSource, tareSource, typedIn, signed: true,
+          enteredAt: getAccurateNow().toISOString(),
         },
         userId: session.user.id,
       });
@@ -703,10 +736,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   entries will be marked so they can be looked at later.
                 </p>
               ) : (
-                <p className="mt-2 text-[11px] text-slate-400">
-                  The number on the paper booklet ticket — this is what ties this entry back to the book.
-                  Suggested from the last one used at this station; type over it if it's wrong.
-                </p>
+                <p className="mt-2 text-[11px] text-slate-400">From the booklet. Suggested from the last one used here.</p>
               )}
             </Step>
 
@@ -726,7 +756,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       ))}
                     </div>
                   )}
-                  <p className="mt-1 text-[11px] text-slate-400">Lots of people share a name — phone finds the right person.</p>
+                  <p className="mt-1 text-[11px] text-slate-400">Finds the right person by phone.</p>
                 </div>
                 <div>
                   <label className={labelCls}>{isBuy ? t("section1_seller") : t("section1_buyer")} Name</label>
@@ -747,17 +777,19 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   locationId={effectiveLocationId}
                   label={isBuy ? "1. Weigh In — loaded truck" : "1. Weigh In — empty truck"}
                   labelKm="ថ្លឹងទម្ងន់ចូល"
-                  hint={isBuy ? "The truck as it arrived, with the paddy on it" : "The truck as it arrived, still empty"}
+                  hint={isBuy ? "Loaded, on arrival" : "Empty, on arrival"}
                   value={grossKg}
                   onChange={onGrossChange}
+                  source={grossSource}
                 />
                 <TypedWeight
                   locationId={effectiveLocationId}
                   label={isBuy ? "2. Weigh Out — empty truck" : "2. Weigh Out — loaded truck"}
                   labelKm="ថ្លឹងទម្ងន់ចេញ"
-                  hint={isBuy ? "The same truck after unloading" : "The same truck once it is loaded"}
+                  hint={isBuy ? "Empty, after unloading" : "Loaded, before it leaves"}
                   value={tareKg}
                   onChange={onTareChange}
+                  source={tareSource}
                 />
               </div>
               <div className={`mt-4 flex items-baseline justify-between rounded-xl border px-4 py-3 ${weightsReversed ? "border-rose-200 bg-rose-50" : "border-brand-100 bg-brand-50"}`}>
@@ -768,6 +800,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   {fmt2(netKg)} <span className={`text-base font-medium ${weightsReversed ? "text-rose-600" : "text-brand-600"}`}>KG</span>
                 </p>
               </div>
+              {typedIn && !weightsReversed && (
+                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
+                  Typed-in copy — not weighed here.
+                </p>
+              )}
               {weightsReversed && (
                 <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[11.5px] leading-relaxed text-rose-700">
                   <b>The two weights are the wrong way round.</b> {reversedMessage} Swap them — this cannot be saved as it stands.
@@ -925,7 +962,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <div className="flex justify-between py-1 text-slate-400"><span>{t("station")}</span><span className="truncate pl-2">{myStation?.name || "—"}</span></div>
               </div>
               <div className="px-5 pb-5">
-                <button type="submit" disabled={saving} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+                <div className="mb-3 rounded-xl border border-gold-300 bg-gold-50 px-3.5 py-3">
+                  <p className="text-[12.5px] font-bold text-gold-700">Sign as {profile?.full_name || session?.user?.email || "—"}</p>
+                  <input type="password" value={signPassword} onChange={(e) => setSignPassword(e.target.value)}
+                    placeholder={t("xr_password")} autoComplete="current-password"
+                    className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-100" />
+                </div>
+                <button type="submit" disabled={saving || !signPassword} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
                   <Save size={16} /> {saving ? "..." : t("save_transaction")}
                 </button>
                 <button type="button" onClick={() => setPage("transactions")} className="mt-2 w-full rounded-lg py-2 text-xs text-slate-400 hover:text-slate-600">← {t("back")}</button>

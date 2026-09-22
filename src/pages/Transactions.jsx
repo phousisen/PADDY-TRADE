@@ -1497,85 +1497,11 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
   );
 }
 
-// Sell only — records the buyer's own weight/price once the truck has been
-// driven off-station and weighed/settled at the buyer's place. Deliberately
-// no password step here (unlike ConfirmCancelModal above): this doesn't
-// destroy or exclude anything, it's just entering a number that was agreed
-// somewhere else, so the friction of a password wasn't worth adding. Starts
-// pre-filled with the station's own numbers — if nothing changed, Admin can
-// just confirm as-is.
-function ConfirmBuyerSaleModal({ tx, t, onClose, onSubmit }) {
-  const [weight, setWeight] = useState(String(tx.station_quantity_kg ?? tx.quantity_kg ?? ""));
-  const [price, setPrice] = useState(String(tx.station_price_per_kg ?? tx.price_per_kg ?? ""));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const stationKg = Number(tx.station_quantity_kg ?? tx.quantity_kg ?? 0);
-  const stationPrice = Number(tx.station_price_per_kg ?? tx.price_per_kg ?? 0);
-  const buyerKg = parseFloat(weight) || 0;
-  const buyerPrice = parseFloat(price) || 0;
-  const deductionKg = tx.deduction_kg || 0;
-  const lossKg = stationKg - buyerKg;
-  const lossPct = stationKg > 0 ? (lossKg / stationKg) * 100 : 0;
-  const newTotal = Math.max(0, (buyerKg - deductionKg)) * buyerPrice;
-
-  async function submit() {
-    setError("");
-    setSaving(true);
-    try {
-      await onSubmit(buyerKg, buyerPrice);
-    } catch (err) {
-      setError(err.message || "Couldn't save this confirmation — check your connection and try again.");
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-xl bg-white shadow-xl overflow-hidden">
-        <div className="bg-gradient-to-br from-rose-600 to-rose-700 px-5 py-4 text-white">
-          <h3 className="font-semibold">{t("tx_confirm_buyer")}</h3>
-          <p className="text-xs text-rose-100">{tx.code} · {tx.partyName}</p>
-        </div>
-        <div className="p-5">
-          <div className="mb-4 space-y-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-            <div className="flex justify-between text-slate-400"><span>{t("tx_recorded_station")}</span><span></span></div>
-            <div className="flex justify-between"><span className="text-slate-500">{t("tx_weight")}</span><span className="font-medium text-slate-700">{fmt2(stationKg)} kg</span></div>
-            <div className="flex justify-between"><span className="text-slate-500">{t("tx_price_per_kg")}</span><span className="font-medium text-slate-700">{fmtRiel(stationPrice)}</span></div>
-          </div>
-
-          <label className="mb-1 block text-xs text-slate-500">{t("tx_buyer_weight")}</label>
-          <input type="number" min="0" step="0.01" value={weight} onChange={(e) => setWeight(e.target.value)} autoFocus
-            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
-
-          <label className="mb-1 block text-xs text-slate-500">{t("tx_buyer_price")}</label>
-          <input type="number" min="0" step="1" value={price} onChange={(e) => setPrice(e.target.value)}
-            className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold outline-none focus:border-rose-400 focus:ring-2 focus:ring-rose-100" />
-
-          <div className={`space-y-1 rounded-lg border px-3 py-2.5 text-sm ${lossKg > 0 ? "border-rose-200 bg-rose-50 text-rose-700" : "border-brand-100 bg-brand-50 text-brand-700"}`}>
-            <div className="flex justify-between">
-              <span>{lossKg >= 0 ? "Weight lost in transit" : "Weight gained"}</span>
-              <span className="font-bold">{fmt2(Math.abs(lossKg))} kg{stationKg > 0 ? ` (${Math.abs(lossPct).toFixed(1)}%)` : ""}</span>
-            </div>
-            <div className="flex justify-between"><span>{t("tx_new_total_2")}</span><span className="font-bold">{fmtRiel(newTotal)}</span></div>
-          </div>
-
-          {error && <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">{error}</p>}
-        </div>
-        <div className="flex justify-end gap-2 px-5 pb-5">
-          <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
-          <button
-            disabled={saving || !weight || !price || buyerKg <= 0 || buyerPrice <= 0}
-            onClick={submit}
-            className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-40"
-          >
-            {saving ? "Saving..." : "Confirm & Update Sale"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// [2026-09-22] ConfirmBuyerSaleModal and submitConfirmBuyerSale removed with
+// buyer confirmation itself — SISEN: "lets remove buyer's confirmation first,
+// we never need that". A sale is the station's own weight and price. Rows
+// that already carry buyer figures keep them in the database; nothing reads
+// them any more.
 
 const HQ_STATUS_STYLES = {
   processing: "bg-amber-50 text-amber-600 border-amber-200",
@@ -1674,10 +1600,6 @@ export default function Transactions({ setPage }) {
   const [payTx, setPayTx] = useState(null);
   const [editTx, setEditTx] = useState(null);
   const [cancelConfirmTx, setCancelConfirmTx] = useState(null);
-  // Sell only — the transaction currently open in the "Confirm Buyer's
-  // Final Numbers" screen (null when closed). See ConfirmBuyerSaleModal
-  // above and submitConfirmBuyerSale below.
-  const [confirmSaleTx, setConfirmSaleTx] = useState(null);
   const [viewPaymentsTx, setViewPaymentsTx] = useState(null);
   const [photosTx, setPhotosTx] = useState(null);
   // Reprinting a receipt for a transaction that's already been saved —
@@ -2077,25 +1999,6 @@ export default function Transactions({ setPage }) {
     }
   }
 
-  async function submitConfirmBuyerSale(buyerKg, buyerPrice) {
-    const tx = confirmSaleTx;
-    const updated = await api.confirmBuyerSale(tx.id, {
-      quantityKg: buyerKg,
-      pricePerKg: buyerPrice,
-      deductionKg: tx.deduction_kg || 0,
-      userId: session.user.id,
-    });
-    await api.logAudit({
-      action: "confirm_buyer_sale",
-      tableName: "transactions",
-      recordId: tx.id,
-      oldData: { quantity_kg: tx.quantity_kg, price_per_kg: tx.price_per_kg, amount: tx.amount, code: tx.code, partyName: tx.partyName },
-      newData: { quantity_kg: updated.quantity_kg, price_per_kg: updated.price_per_kg, amount: updated.amount, station_quantity_kg: tx.station_quantity_kg, station_price_per_kg: tx.station_price_per_kg },
-      userId: session.user.id,
-    });
-    setConfirmSaleTx(null);
-    load();
-  }
 
   async function submitEdit(fields) {
     const { oldData, ...updateFields } = fields;
@@ -2432,9 +2335,13 @@ export default function Transactions({ setPage }) {
                 // each weighing accordingly rather than always saying
                 // "in"/"out" with no context.
                 const payableKg = Math.max(0, (tx.quantity_kg || 0) - (tx.deduction_kg || 0));
+                // [2026-09-22] Typed in from the paper book, not weighed here.
+                const typedIn = tx.gross_source === "typed" || tx.tare_source === "typed";
                 return (
                   <Fragment key={tx.id}>
-                  <tr className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""}`}>
+                  <tr title={typedIn ? t("tx_t_typed_in") : undefined}
+                    className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""} ${
+                      typedIn ? "outline outline-2 -outline-offset-2 outline-amber-300 bg-amber-50/40" : ""}`}>
                     <td className="px-2 py-3.5">
                       <button onClick={() => toggleExpand(tx.id)} title={isExpanded ? "Hide details" : "Show weigh-in, weigh-out & price details"}
                         className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-600">
@@ -2479,17 +2386,19 @@ export default function Transactions({ setPage }) {
                           <RefreshCw size={9} /> {t("tx_not_synced")}
                         </span>
                       )}
-                      {tx.station_quantity_kg != null && (
-                        tx.buyer_confirmed_at ? (
-                          <span title={t("tx_t_buyer_confirmed")} className="ml-1 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">
-                            ✓ Confirmed
-                          </span>
-                        ) : (
-                          <span title={t("tx_t_station_only")} className="ml-1 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                            ⏳ Pending buyer confirmation
-                          </span>
-                        )
-                      )}
+                      {/* [2026-09-22] SISEN: "mark it in the transaction ... to
+                          know if its typed but if it never say anything then
+                          its original". One chip, and ONLY when a weight was
+                          typed in from the paper book — a load weighed on the
+                          weighbridge carries no mark at all. Rows saved before
+                          weight_source.sql carry none either. */}
+                      {/* [2026-09-22] Buyer confirmation removed — SISEN:
+                          "lets remove buyer's confirmation first, we never
+                          need that". The station's own numbers are the sale.
+                          Nothing saved is deleted: station_quantity_kg and
+                          buyer_confirmed_at stay in the database on the rows
+                          that already have them, they are simply not shown,
+                          compared, or asked for any more. */}
                     </td>
                     <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
@@ -2554,11 +2463,6 @@ export default function Transactions({ setPage }) {
                         ) : (
                           <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
                             <Flag size={12} /> {t("request_change")}
-                          </button>
-                        )}
-                        {canAct && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
-                          <button onClick={() => setConfirmSaleTx(tx)} title={t("tx_t_record_buyer")} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-100">
-                            <CheckCircle2 size={12} /> {t("tx_confirm_sale")}
                           </button>
                         )}
                         {canAct && (
@@ -2638,48 +2542,6 @@ export default function Transactions({ setPage }) {
                             <p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p>
                           </div>
                         </div>
-                        {tx.station_quantity_kg != null && (() => {
-                          const stationKg = Number(tx.station_quantity_kg);
-                          const buyerKg = Number(tx.quantity_kg);
-                          const lossKg = stationKg - buyerKg;
-                          const lossPct = stationKg > 0 ? (lossKg / stationKg) * 100 : 0;
-                          return (
-                            <div className="mt-4 border-t border-slate-200 pt-3">
-                              <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
-                                {tx.buyer_confirmed_at ? "Station vs. Buyer — confirmed" : "Station vs. Buyer — awaiting buyer confirmation"}
-                              </p>
-                              <div className="grid grid-cols-3 gap-4 rounded-lg border border-slate-200 bg-white p-3">
-                                <div>
-                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{t("tx_station_recorded")}</p>
-                                  <p className="text-sm font-bold text-slate-800">{fmt2(stationKg)} kg</p>
-                                  <p className="text-xs text-slate-500">{fmtRiel(tx.station_price_per_kg)}/kg</p>
-                                </div>
-                                <div>
-                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Buyer Confirmed{tx.buyer_confirmed_at ? " (official)" : ""}</p>
-                                  {tx.buyer_confirmed_at ? (
-                                    <>
-                                      <p className="text-sm font-bold text-slate-800">{fmt2(buyerKg)} kg</p>
-                                      <p className="text-xs text-slate-500">{fmtRiel(tx.price_per_kg)}/kg</p>
-                                    </>
-                                  ) : (
-                                    <p className="text-sm font-medium text-slate-400">{t("tx_not_confirmed")}</p>
-                                  )}
-                                </div>
-                                <div>
-                                  <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{lossKg >= 0 ? "Lost in Transit" : "Gained"}</p>
-                                  {tx.buyer_confirmed_at ? (
-                                    <>
-                                      <p className="text-sm font-bold text-rose-600">{fmt2(Math.abs(lossKg))} kg</p>
-                                      <p className="text-xs text-rose-500">{Math.abs(lossPct).toFixed(1)}%</p>
-                                    </>
-                                  ) : (
-                                    <p className="text-sm font-medium text-slate-400">—</p>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
                       </td>
                     </tr>
                   )}
@@ -2707,8 +2569,13 @@ export default function Transactions({ setPage }) {
             const isExpanded = expandedTxIds.has(tx.id);
             const payableKg = Math.max(0, (tx.quantity_kg || 0) - (tx.deduction_kg || 0));
             const photoCount = [tx.receipt_photo_url, tx.payment_proof_url, tx.bank_qr_url].filter(Boolean).length;
+            // Same orange outline as the table row — the weights on this one
+            // were typed from the paper book, not weighed here.
+            const typedInCard = tx.gross_source === "typed" || tx.tare_source === "typed";
             return (
-              <div key={`card-${tx.id}`} className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm ${isCancelled ? "opacity-50" : ""}`}>
+              <div key={`card-${tx.id}`} title={typedInCard ? t("tx_t_typed_in") : undefined}
+                className={`relative overflow-hidden rounded-2xl border bg-white p-4 shadow-sm ${isCancelled ? "opacity-50" : ""} ${
+                  typedInCard ? "border-amber-300 bg-amber-50/40 ring-1 ring-amber-200" : "border-slate-200"}`}>
                 <div className={`absolute inset-y-4 left-0 w-1 rounded-full ${isBuy ? "bg-brand-500" : "bg-rose-400"}`} />
                 <div className="pl-3">
                   <button onClick={() => toggleExpand(tx.id)} className="flex w-full items-start justify-between gap-2 text-left">
@@ -2759,13 +2626,6 @@ export default function Transactions({ setPage }) {
                     )}
                   </div>
 
-                  {tx.station_quantity_kg != null && (
-                    tx.buyer_confirmed_at ? (
-                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-brand-100 bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">✓ {t("tx_confirmed")}</span>
-                    ) : (
-                      <span className="mt-2 flex w-fit items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">⏳ {t("tx_pending_confirm")}</span>
-                    )
-                  )}
 
                   <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
                     <div>
@@ -2825,9 +2685,6 @@ export default function Transactions({ setPage }) {
                       <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Pencil size={12} /> {t("btn_edit")}</button>
                     ) : (
                       <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Flag size={12} /> {t("request_change")}</button>
-                    )}
-                    {canAct && !isCancelled && tx.station_quantity_kg != null && !tx.buyer_confirmed_at && (
-                      <button onClick={() => setConfirmSaleTx(tx)} className="flex items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700"><CheckCircle2 size={12} /> {t("btn_confirm_sale")}</button>
                     )}
                     {canAct && (
                       isCancelled ? (
@@ -2954,14 +2811,6 @@ export default function Transactions({ setPage }) {
           t={t}
           onClose={() => setCancelConfirmTx(null)}
           onConfirm={confirmCancel}
-        />
-      )}
-      {confirmSaleTx && (
-        <ConfirmBuyerSaleModal
-          tx={confirmSaleTx}
-          t={t}
-          onClose={() => setConfirmSaleTx(null)}
-          onSubmit={submitConfirmBuyerSale}
         />
       )}
     </div>
