@@ -34,56 +34,35 @@ const hold = (w, secs) => Array(Math.round(secs * 5)).fill(w);
 const status = (st, w, by) => captureStatus(st.guard, st.samples, w, st.now, { by });
 const start = () => ({ guard: freshGuard(), samples: [], now: 1_000_000 });
 
-// 1. A normal truck: empty platform, truck drives on, holds.
+// [2026-09-22] Only "below zero right now" blocks a capture. The
+// between-trucks, not-reset and steady-weight rules blocked real weigh-ins
+// ("why does it always disconnect after 1 weigh in") and were switched off.
 let s = feed(start(), [...hold(0, 2), 4000, 9000, 14000, 15600, 15690, ...hold(15700, 4)]);
-ok("normal truck on a scale that read 0: capture allowed", status(s, 15700, "a") === "ok");
-
-// 2. Still rolling on.
+ok("normal truck: capture allowed", status(s, 15700, "a") === "ok");
 let r = feed(start(), [...hold(0, 2), 4000, 9000, 14000]);
-ok("weight still climbing: 'moving', not capturable", status(r, 14000, "a") === "moving");
-r = feed(start(), [...hold(0, 2), ...hold(15700, 1.5)]);
-ok("steady for only 1.5 s: still 'moving'", status(r, 15700, "a") === "moving");
-r = feed(start(), [...hold(0, 2), ...Array(20).fill(0).map((_, i) => 15700 + (i % 2 ? 60 : -60))]);
-ok("steady-looking but swinging ±60 kg: 'moving'", status(r, 15700, "a") === "moving");
+ok("weight still moving: NOT blocked any more", status(r, 14000, "a") === "ok");
 
-// 3. The REANG KESEY case.
-let rk = feed(start(), [...hold(0, 2), ...hold(6675, 4)]);          // empty truck on the scale
-rk = feed({ ...rk, guard: rk.guard }, hold(0, 1));                  // someone presses ZERO with it on board
-rk = feed(rk, [3000, 0, -3000, ...hold(-6675, 4)]);                 // truck drives off
-ok("RK: scale reads −6,675 → 'below'", status(rk, -6675, "a") === "below");
+let rk = feed(start(), [...hold(0, 2), ...hold(6675, 4)]);
+rk = feed(rk, hold(0, 1));
+rk = feed(rk, [3000, 0, -3000, ...hold(-6675, 4)]);
+ok("RK: scale reads −6,675 → 'below' (blocked)", status(rk, -6675, "a") === "below");
 ok("RK: going below zero is an event (logged once)", rk.events.filter((e) => e === "below").length === 1);
-let rk2 = feed(rk, [-3000, 2000, 8000, ...hold(13325, 4)]);         // next truck, 20,000 kg real, reads 13,325
-ok("RK: the next truck reads a normal-looking 13,325 kg → still blocked ('notZeroed')", status(rk2, 13325, "a") === "notZeroed");
+let rk2 = feed(rk, [-3000, 2000, 8000, ...hold(13325, 4)]);
+ok("RK: next truck after below-zero is NOT blocked (the HQ alert and log still show it)", status(rk2, 13325, "a") === "ok");
 ok("RK: 'below' can never be overridden", !OVERRIDABLE.has("below"));
-ok("RK: 'notZeroed' can be overridden by the Owner", OVERRIDABLE.has("notZeroed"));
-let fixed = feed(rk, [...hold(0, 2)]);                               // ZERO pressed with the platform empty
-ok("RK: after ZERO on an empty platform it clears, and 'back' is logged", fixed.events.includes("back") && !fixed.guard.belowSince);
-fixed = feed(fixed, [...hold(20000, 4)]);
-ok("RK: after the fix the next truck captures normally", status(fixed, 20000, "a") === "ok");
+let fixed = feed(rk, [...hold(0, 2)]);
+ok("RK: after ZERO on an empty platform, 'back' is logged", fixed.events.includes("back") && !fixed.guard.belowSince);
 
-// 4. Back-to-back: same truck captured again on another ticket without leaving.
 let bb = feed(start(), [...hold(0, 2), ...hold(15700, 4)]);
 bb = { ...bb, guard: markCapture(bb.guard, { now: bb.now, by: "ticketA", weightKg: 15700 }) };
 bb = feed(bb, hold(15700, 4));
-ok("same weight box can capture again (pressing Capture twice)", status(bb, 15700, "ticketA") === "ok");
-ok("a different ticket cannot capture the same truck without 0 in between", status(bb, 15700, "ticketB") === "notCleared");
-let bb2 = feed(bb, [...hold(0, 1), ...hold(12000, 4)]);
-ok("after the platform shows 0, the next truck captures", status(bb2, 12000, "ticketB") === "ok");
-
-// 5. A gap (PC off overnight) must not block the morning's first truck.
-let night = feed(start(), [...hold(0, 1), ...hold(15700, 4)]);
-night = { ...night, guard: markCapture(night.guard, { now: night.now, by: "x", weightKg: 15700 }) };
-night = { ...night, now: night.now + GAP_MS * 60, samples: [] };     // hours later, nothing seen
-night = feed(night, hold(9000, 4));                                 // truck already on the scale at start-up
-ok("after the app was closed, a truck already on the scale is not blocked", status(night, 9000, "y") === "ok");
-
-// 6. Empty / noise.
-ok("nothing on the scale: 'empty'", status(feed(start(), hold(0, 4)), 0, "a") === "empty");
-ok("±15 kg of dirt/wind counts as empty, not below zero", status(feed(start(), hold(-15, 4)), -15, "a") === "empty");
+ok("a second ticket right after the first is NOT blocked (no 'disconnect' after one weigh-in)", status(bb, 15700, "ticketB") === "ok");
+ok("a platform that rests at 60 kg does not block anything", status(feed(start(), [...hold(60, 3), ...hold(12000, 4)]), 12000, "x") === "ok");
+ok("−15 kg of dirt/wind is not 'below zero'", status(feed(start(), hold(-15, 4)), -15, "a") === "ok");
 
 // 7. Memory survives a reload; a corrupt store starts fresh.
-const kept = deserialize(serialize(rk2.guard));
-ok("a reload keeps 'went below zero'", kept.belowSince === rk2.guard.belowSince);
+const kept = deserialize(serialize(rk.guard));
+ok("a reload keeps 'went below zero'", kept.belowSince === rk.guard.belowSince);
 ok("a corrupt store starts fresh", deserialize("{not json").belowSince === null);
 ok("isStable needs readings across the whole window", !isStable([{ at: 0, w: 1 }], 3000));
 
@@ -116,5 +95,5 @@ ok("Station Health has a scale column", /<ScaleCell reading=\{scales\.get\(s\.id
 const al = src("src/pages/ReportAuditLog.jsx");
 ok("Activity Log names the three scale actions", ["scale_below_zero", "scale_back_to_zero", "scale_capture_override"].every((a) => al.includes(`${a}: "transaction"`)));
 
-console.log(failed ? `\n${failed} FAILED` : "\nA scale below zero, or left below zero, cannot weigh a truck.");
+console.log(failed ? `\n${failed} FAILED` : "\nA scale reading below zero cannot weigh a truck; nothing else blocks a capture.");
 process.exit(failed ? 1 : 0);
