@@ -29,7 +29,11 @@ ok("live weight: the cloud reading is fetched once a second while a weight box i
    /const CLOUD_FAST_MS = 1000;/.test(lw) && /const CLOUD_SLOW_MS = 5000;/.test(lw) && /next = fg \? CLOUD_FAST_MS : CLOUD_SLOW_MS;/.test(lw));
 ok("live weight: the form is only re-drawn when the weight changes (or once a second)",
    /if \(reading\?\.weight_kg !== prevW \|\| reading\?\.source !== prevSrc \|\| live !== prevLive \|\| now - \(store\.drawnAt \|\| 0\) >= 1000\)/.test(lw));
-ok("live weight: printing does not start a second loop", /if \(!printing\)/.test(lw) && !/afterprint", \(\) => \{[^}]*tick\(/.test(lw));
+ok("live weight: printing does not start a second loop", /if \(!isPrinting\(\)\)/.test(lw) && !/afterprint", \(\) => \{[^}]*tick\(/.test(lw));
+// [2026-09-22] Pong Ro: the pause stuck on after the first weigh-in slip
+// printed, and every weight box after it said "Scale not connected".
+ok("live weight: the print pause can never outlive the print (20 s cap)", /const PRINT_PAUSE_MAX_MS = 20000;/.test(lw) && /Date\.now\(\) - printingSince > PRINT_PAUSE_MAX_MS/.test(lw));
+ok("live weight: opening a weight box ends any print pause", /if \(foreground\) printingSince = 0;/.test(lw));
 ok("live weight: a stopped and restarted watcher does not leave two loops", /store\.running && store\.gen === gen/.test(lw));
 ok("live weight: two weight boxes on one station share one poll", /const stores = new Map\(\);/.test(lw) && /subscribeScale\(locationId, redraw/.test(box));
 
