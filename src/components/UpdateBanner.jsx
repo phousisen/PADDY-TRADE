@@ -10,7 +10,7 @@ import { supabase } from "../supabaseClient.js";
 import { onSyncStatusChange } from "../offlineQueue.js";
 import {
   watchForUpdates, trackActivity, looksBusy, reloadWhenFree,
-  mayAutoReload, rememberReloadFor, readReloadedFor,
+  mayAutoReload, rememberReloadFor, readReloadedFor, hardReload,
   FORCED_RELOAD_AFTER_MS,
 } from "../appUpdate.js";
 
@@ -211,9 +211,15 @@ export default function UpdateBanner() {
             {stuck ? t("upd_stuck_why") : t("upd_waiting")}
           </p>
         </div>
+        {/* [2026-09-22] Not window.location.reload(): see hardReload in
+            appUpdate.js. A plain reload is answered out of the copy already
+            on this PC, which is the very copy that is out of date — which is
+            why pressing this used to change nothing, however many times it
+            was pressed. */}
         <button
           type="button"
-          onClick={() => window.location.reload()}
+          disabled={reloading}
+          onClick={() => { setReloading(true); hardReload({ registration: window.__paddytradeSW || null }); }}
           className="shrink-0 rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold hover:bg-white/25"
         >
           {t("upd_now")}
