@@ -92,7 +92,19 @@ const sw = src("src/scaleWatch.js");
 ok("below-zero is logged only from the station's own scale program", /if \(event && reading\.source === "local"\) logEvent/.test(sw));
 ok("HQ Dashboard shows the alert", /<ScaleAlertBanner /.test(src("src/pages/Dashboard.jsx")));
 ok("Station Health has a scale column", /<ScaleCell reading=\{scales\.get\(s\.id\)\}/.test(src("src/components/StationVersions.jsx")));
-const al = src("src/pages/ReportAuditLog.jsx");
+// [2026-09-23] The labels moved to src/auditText.js (shared with the ticket
+// History panel). Same list, new home.
+const al = src("src/auditText.js");
+// [2026-09-23] The quiet-scale alarm — SISEN found the Ping Pong outage
+// because staff were stuck mid-ticket, not because the app said anything.
+const sa = src("src/scaleAlert.js");
+ok("a scale that stopped today is raised at HQ", /export function stationsWithQuietScale/.test(sa));
+ok("a station that never had the agent is NOT raised", /r\.updated_at == null\) return false/.test(sa));
+ok("a station closed for the night is NOT raised", /GONE_HOME_MS/.test(sa) && /age < GONE_HOME_MS/.test(sa));
+const sab = src("src/components/ScaleAlertBanner.jsx");
+ok("the HQ banner shows it", /stationsWithQuietScale/.test(sab));
+// The station agent's own recovery: restarting the USB adapter instead of
+// needing the PC rebooted, and never mid-weighing.
 ok("Activity Log names the three scale actions", ["scale_below_zero", "scale_back_to_zero", "scale_capture_override"].every((a) => al.includes(`${a}: "transaction"`)));
 
 console.log(failed ? `\n${failed} FAILED` : "\nA scale reading below zero cannot weigh a truck; nothing else blocks a capture.");

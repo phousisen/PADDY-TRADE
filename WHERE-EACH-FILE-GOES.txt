@@ -1,0 +1,25 @@
+PADDYTRADE - 23/09/2026 (evening)
+The scale alarm. So HQ finds out a station's scale stopped, instead of
+finding out from a truck stuck half way through a ticket.
+
+NO SQL. Nothing to run in Supabase.
+
+Upload each file to the SAME path it has in this folder.
+
+  src/scaleAlert.js                        (changed - the new rule)
+  src/i18n.jsx                             (changed - 2 new lines, en + km)
+  src/components/ScaleAlertBanner.jsx      (changed - shows it on the Dashboard)
+  scripts-check-scale-guard.mjs            (changed - checker, root folder)
+
+WHAT IT DOES
+
+  An amber box at the top of the HQ Dashboard:
+    "Ping Pong's scale has sent nothing for 47 minutes"
+
+  It only appears when the scale WAS working today and has stopped:
+    - under 15 minutes quiet  -> nothing (that is a reboot or a slow minute)
+    - over 6 hours quiet      -> nothing (the station closed for the night)
+    - never sent anything ever -> nothing (no agent installed there)
+
+  An alarm that goes off on a normal evening is an alarm everyone learns to
+  ignore, so it deliberately stays silent in all three of those cases.
