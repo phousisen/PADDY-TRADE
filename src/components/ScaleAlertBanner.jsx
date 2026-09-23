@@ -15,11 +15,19 @@ function fmtKg(n) {
 // as long as it lasts, and the station's own weight box refuses to capture.
 export default function ScaleAlertBanner({ locations, t, onOpen }) {
   const [readings, setReadings] = useState([]);
+  // [2026-09-23] Which station machines are online. Without this the quiet-
+  // scale box cannot tell a station that broke from one that closed, and
+  // would light up every station every evening — see scaleAlert.js.
+  // .catch(() => []) is deliberate: a device list that fails to load means
+  // the quiet box simply does not appear. It must never cost the below-zero
+  // banner, which is the one that says trucks are being weighed WRONG.
+  const [devices, setDevices] = useState([]);
   useEffect(() => {
     let cancelled = false;
     const load = () => {
       if (document.visibilityState === "hidden") return;
       api.getScaleReadings().then((r) => { if (!cancelled) setReadings(r); }).catch(() => {});
+      api.getDeviceSessions().then((d) => { if (!cancelled) setDevices(d || []); }).catch(() => { if (!cancelled) setDevices([]); });
     };
     load();
     const id = setInterval(load, 60000);
@@ -32,7 +40,7 @@ export default function ScaleAlertBanner({ locations, t, onOpen }) {
   // [2026-09-23] A scale that was working today and has stopped. Separate
   // box, amber not red: a scale below zero is weighing trucks WRONG right
   // now; a quiet one is only not weighing at all. See scaleAlert.js.
-  const quiet = stationsWithQuietScale(readings, locations, nowMs);
+  const quiet = stationsWithQuietScale(readings, locations, nowMs, devices);
   if (below.length === 0 && quiet.length === 0) return null;
   return (
     <>
