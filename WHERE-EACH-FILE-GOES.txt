@@ -1,25 +1,48 @@
-PADDYTRADE - 23/09/2026 (evening)
-The scale alarm. So HQ finds out a station's scale stopped, instead of
-finding out from a truck stuck half way through a ticket.
+PADDYTRADE - 23 September 2026 - EVERYTHING FROM TODAY, IN ONE GO
+=================================================================
+
+This REPLACES both earlier zips from today. Upload only this one.
 
 NO SQL. Nothing to run in Supabase.
 
 Upload each file to the SAME path it has in this folder.
 
-  src/scaleAlert.js                        (changed - the new rule)
-  src/i18n.jsx                             (changed - 2 new lines, en + km)
-  src/components/ScaleAlertBanner.jsx      (changed - shows it on the Dashboard)
-  scripts-check-scale-guard.mjs            (changed - checker, root folder)
+  src/api.js                                (changed)
+  src/auditText.js                          (NEW FILE)
+  src/expenseCategories.js                  (changed)
+  src/scaleAlert.js                         (changed)
+  src/i18n.jsx                              (changed)
+  src/App.jsx                               (changed)
 
-WHAT IT DOES
+  src/pages/ActivityLog.jsx                 (NEW FILE)
+  src/pages/ReportAuditLog.jsx              (changed)
+  src/pages/Reports.jsx                     (changed)
+  src/pages/FinanceStart.jsx                (changed)
+  src/pages/Transactions.jsx                (changed)
+  src/pages/Expenses.jsx                    (changed)
+  src/pages/DailyBook.jsx                   (changed)
+  src/pages/Dashboard.jsx                   (changed)
 
-  An amber box at the top of the HQ Dashboard:
-    "Ping Pong's scale has sent nothing for 47 minutes"
+  src/components/TicketHistory.jsx          (NEW FILE)
+  src/components/Sidebar.jsx                (changed)
+  src/components/MobileNav.jsx              (changed)
+  src/components/SettleDifferenceModal.jsx  (changed)
+  src/components/ScaleAlertBanner.jsx       (changed)
 
-  It only appears when the scale WAS working today and has stopped:
-    - under 15 minutes quiet  -> nothing (that is a reboot or a slow minute)
-    - over 6 hours quiet      -> nothing (the station closed for the night)
-    - never sent anything ever -> nothing (no agent installed there)
+  scripts-check-screens.mjs                 (changed - checker, root folder)
+  scripts-check-scale-guard.mjs             (changed - checker, root folder)
 
-  An alarm that goes off on a normal evening is an alarm everyone learns to
-  ignore, so it deliberately stays silent in all three of those cases.
+Delete nothing.
+
+WHAT IS IN IT
+
+  1. Fix to 0          - a negative shed can be reset. Reason + password,
+                         and it lands in the Activity Log.
+  2. Cash removed      - the Daily Book shows Profit only.
+  3. Ticket History    - open a transaction, see who did what and when.
+     Activity Log      - moved out of Finance into SYSTEM, with who /
+                         which station / which days filters.
+  4. Categories        - rename, merge, remove, add. Plain list until you
+                         press Edit.
+  5. Scale alarm       - an amber box on the HQ Dashboard when a station's
+                         scale was working today and has stopped.

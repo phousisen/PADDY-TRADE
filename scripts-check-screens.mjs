@@ -89,7 +89,14 @@ const lf = src("components/LocationFilter.jsx");
 ok("F1  the station button shows several stations as several", /many \? t\("st_stations_n"/.test(lf));
 const al = src("pages/ReportAuditLog.jsx");
 ok("F29 the activity log follows the station filter", /wanted\.has\(l\.userLocationId\)/.test(al));
-ok("F29 every action the app logs has a label", ["void_payment", "set_password", "adjust_stock", "approve_stock_reset", "update_party_bank", "reopen_ticket"].every((a) => al.includes(a)));
+// [2026-09-23] The labels moved out of the page into src/auditText.js so the
+// ticket History panel says the same words — the list still has to be complete.
+const at = src("auditText.js");
+ok("F29 every action the app logs has a label",
+   ["void_payment", "set_password", "adjust_stock", "approve_stock_reset", "update_party_bank", "reopen_ticket",
+    "force_stock_zero", "rename_expense_category"].every((a) => at.includes(a)));
+ok("F29 the ticket History uses the same words as the log",
+   /from "\.\.\/auditText\.js"/.test(src("components/TicketHistory.jsx")) && /from "\.\.\/auditText\.js"/.test(al));
 const drf = src("components/DateRangeFilter.jsx");
 ok("F13 a one-sided date range reads 'From …' / 'Until …'", /t\("drf_from"/.test(drf) && /t\("drf_until"/.test(drf));
 
