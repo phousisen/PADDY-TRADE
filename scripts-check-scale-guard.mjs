@@ -101,8 +101,17 @@ const sa = src("src/scaleAlert.js");
 ok("a scale that stopped today is raised at HQ", /export function stationsWithQuietScale/.test(sa));
 ok("a station that never had the agent is NOT raised", /r\.updated_at == null\) return false/.test(sa));
 ok("a station closed for the night is NOT raised", /GONE_HOME_MS/.test(sa) && /age < GONE_HOME_MS/.test(sa));
+// [2026-09-23] SISEN: "make sure this wont affest other location." Four
+// innocent stations must never light up because one broke, or because the
+// day ended. All three of these together are what keeps the box honest.
+ok("only a station whose PC is ONLINE can be raised", /online\.has\(r\.location_id\)/.test(sa));
+ok("no device list means nothing is raised at all", /if \(online\.size === 0\) return \[\]/.test(sa));
+ok("outside Cambodian working hours nothing is raised", /if \(!isWorkingHours\(nowMs\)\) return \[\]/.test(sa));
+ok("working hours are Cambodia's, not the viewer's", /timeZone: "Asia\/Phnom_Penh"/.test(sa));
 const sab = src("src/components/ScaleAlertBanner.jsx");
 ok("the HQ banner shows it", /stationsWithQuietScale/.test(sab));
+ok("the banner feeds it the station check-ins", /getDeviceSessions/.test(sab) && /stationsWithQuietScale\(readings, locations, nowMs, devices\)/.test(sab));
+ok("a failed device load never costs the below-zero banner", /setDevices\(\[\]\)/.test(sab));
 // The station agent's own recovery: restarting the USB adapter instead of
 // needing the PC rebooted, and never mid-weighing.
 ok("Activity Log names the three scale actions", ["scale_below_zero", "scale_back_to_zero", "scale_capture_override"].every((a) => al.includes(`${a}: "transaction"`)));
