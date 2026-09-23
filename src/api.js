@@ -2,7 +2,7 @@ import { supabase, getAccurateNow } from "./supabaseClient.js";
 import { isViewOnlyMode, ViewOnlyError } from "./viewOnlyGuard.js";
 // [2026-09-10] One definition of "the same paddy type", shared with the
 // database's product_key(). See src/productName.js.
-import { cleanProductName, findProductByName } from "./productName.js";
+import { cleanProductName, productKey, findProductByName } from "./productName.js";
 
 // [2026-09-04] THAPEDEY had two different transactions both showing paper
 // ticket number "TD 000678" — even though add_paper_ticket_no_unique_
@@ -2874,6 +2874,68 @@ const rawApi = {
     };
     const data = await fetchAll(makeQuery, { sort: desc("created_at") });
     return data.map((l) => ({ ...l, userName: l.profiles?.full_name || "—", userLocationId: l.profiles?.location_id || null }));
+  },
+
+  // [2026-09-23] THE HISTORY OF ONE TICKET.
+  //
+  // SISEN: "we will need to know that the transaction that is being made was
+  // from whome and what time was it… where will we see the action they make".
+  // The Activity Log answers that for the whole business; this answers it for
+  // the ticket in front of you, which is the question people actually ask.
+  //
+  // Everything here is already recorded — this only reads the audit entries
+  // that carry THIS transaction's id, newest last so it reads as a story.
+  // Never fatal: a ticket whose history cannot be read still shows its ticket.
+  async getTransactionHistory(transactionId) {
+    if (!transactionId) return [];
+    const { data, error } = await supabase
+      .from("audit_logs")
+      .select("id, action, old_data, new_data, created_at, profiles(full_name)")
+      .eq("record_id", transactionId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (error) throw error;
+    return (data || []).map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
+  },
+
+  // [2026-09-23] RENAME AN EXPENSE CATEGORY, everywhere at once.
+  //
+  // SISEN: "we need to be able to edit the category." The category list is
+  // not a table — it is built from the expense rows themselves (see
+  // expenseCategories.js), so "editing" one means changing the word on every
+  // row that carries it. Anything less leaves the old spelling on the old
+  // months and two lines on every report from then on, which is the exact
+  // problem the list was built to avoid.
+  //
+  // Matching is by categoryKey, not by string equality, so rows saved with a
+  // stray space or an invisible Khmer character are renamed too.
+  async renameExpenseCategory({ from, to, userId } = {}) {
+    const clean = cleanProductName(to || "");
+    if (!clean) throw new Error("A category needs a name.");
+    const fromKey = productKey(from || "");
+    if (!fromKey) throw new Error("No category chosen.");
+
+    const { data, error } = await supabase
+      .from("payments").select("id, category").eq("type", "expense");
+    if (error) throw error;
+    const ids = (data || []).filter((r) => productKey(r.category) === fromKey).map((r) => r.id);
+    if (!ids.length) return { renamed: 0 };
+
+    for (let i = 0; i < ids.length; i += 100) {
+      const slice = ids.slice(i, i + 100);
+      const { error: upErr } = await supabase
+        .from("payments").update({ category: clean }).in("id", slice);
+      if (upErr) throw friendlyWriteError(upErr);
+    }
+    api.logAudit({
+      action: "rename_expense_category",
+      tableName: "payments",
+      recordId: null,
+      oldData: { category: cleanProductName(from) },
+      newData: { category: clean, rows: ids.length },
+      userId,
+    });
+    return { renamed: ids.length };
   },
 
   // [2026-09-16] Who last changed each of these expense rows, and when.

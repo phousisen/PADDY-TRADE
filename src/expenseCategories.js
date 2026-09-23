@@ -58,6 +58,49 @@ export function isCommission(category) {
   return categoryKey(category) === categoryKey(COMMISSION_CATEGORY);
 }
 
+// [2026-09-23] THE TWO THINGS THE LIST REMEMBERS.
+//
+// SISEN: "we need to be able to edit the category."
+//
+// The list has always been derived — the seeds above, plus every category any
+// expense actually used. That is still true, and it is still what makes the
+// list impossible to get out of step between stations. These two settings only
+// add to it and take away from it at the edges:
+//
+//   EXTRA   a category somebody added that nothing has been spent on yet.
+//           Before this, adding one lasted until the day sheet was closed.
+//   HIDDEN  a category nobody uses and nobody wants offered. NEVER applied to
+//           a category that has rows — hiding one of those would take its
+//           figures off the day sheet, which is not what hiding means.
+//
+// Both live in system_settings, so they are the same at every station the
+// moment they change. Neither can delete anything: an expense already
+// recorded keeps its category whatever is on this list.
+export const EXTRA_SETTING = "expense_categories_extra";
+export const HIDDEN_SETTING = "expense_categories_hidden";
+
+/** A settings value (a JSON array, possibly missing or damaged) → clean names. */
+export function parseCategorySetting(value) {
+  if (!value) return [];
+  let parsed = null;
+  try { parsed = JSON.parse(value); } catch { return []; }
+  if (!Array.isArray(parsed)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const n of parsed) {
+    const clean = cleanCategory(n);
+    const key = categoryKey(clean);
+    if (!clean || seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+  }
+  return out;
+}
+
+export function serializeCategorySetting(names) {
+  return JSON.stringify(parseCategorySetting(JSON.stringify(names || [])));
+}
+
 /**
  * The category list: the seeds, plus every category actually used, with
  * anything that is the same category under a different spelling folded
@@ -65,18 +108,47 @@ export function isCommission(category) {
  * then anything added since.
  *
  * @param {Array<{category?: string}>} rows  expense rows
+ * @param {{extra?: string[], hidden?: string[]}} [opts]
+ *        extra  — categories added but not yet spent on (EXTRA_SETTING)
+ *        hidden — categories to stop offering (HIDDEN_SETTING). Ignored for
+ *                 any category that has rows, so no figure can ever vanish.
  */
-export function categoryList(rows) {
+export function categoryList(rows, { extra = [], hidden = [] } = {}) {
   const seen = new Map(); // key -> the spelling to show
+  const used = new Set(); // keys that real expense rows carry
   const push = (name) => {
     const clean = cleanCategory(name);
-    if (!clean) return;
+    if (!clean) return null;
     const key = categoryKey(clean);
     if (!seen.has(key)) seen.set(key, clean);
+    return key;
   };
   SEED_CATEGORIES.forEach(push);
-  (rows || []).forEach((r) => push(r?.category));
-  return Array.from(seen.values());
+  extra.forEach(push);
+  (rows || []).forEach((r) => { const k = push(r?.category); if (k) used.add(k); });
+
+  const hide = new Set(hidden.map((n) => categoryKey(n)).filter(Boolean));
+  return Array.from(seen.entries())
+    .filter(([key]) => !hide.has(key) || used.has(key))
+    .map(([, name]) => name);
+}
+
+/**
+ * What the Categories screen shows for each category: how many expenses carry
+ * it and what they add up to. Counted from the rows themselves, folded by key
+ * so two spellings of one category are one line with one total.
+ */
+export function categoryUsage(rows) {
+  const out = new Map(); // key -> { count, amount }
+  for (const r of rows || []) {
+    const key = categoryKey(r?.category);
+    if (!key) continue;
+    const at = out.get(key) || { count: 0, amount: 0 };
+    at.count += 1;
+    at.amount += Number(r?.amount) || 0;
+    out.set(key, at);
+  }
+  return out;
 }
 
 // How different two words have to be before they are treated as different

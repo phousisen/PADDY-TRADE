@@ -44,6 +44,7 @@ const Expenses = lazyPage(() => import("./pages/Expenses.jsx"));
 const SimpleListPage = lazyPage(() => import("./pages/SimpleListPage.jsx"));
 const LocationsPage = lazyPage(() => import("./pages/LocationsPage.jsx"));
 const StationHealth = lazyPage(() => import("./pages/StationHealth.jsx"));
+const ActivityLog = lazyPage(() => import("./pages/ActivityLog.jsx"));
 const DataCheck = lazyPage(() => import("./pages/DataCheck.jsx"));
 const LocationDetail = lazyPage(() => import("./pages/LocationDetail.jsx"));
 const PartyDetail = lazyPage(() => import("./pages/PartyDetail.jsx"));
@@ -245,7 +246,7 @@ export default function App() {
     // every-permission-checked setup, not by pretending to be an HQ
     // Admin), so without this it would get denied here before ever
     // reaching the isAdmin-or-isViewOnly checks below.
-    if (isStaff && !isViewOnly && (page === "stations" || page === "station-detail" || page === "station-health" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
+    if (isStaff && !isViewOnly && (page === "stations" || page === "station-detail" || page === "station-health" || page === "activity-log" || page === "users" || page === "roles" || page === "settings" || page === "receipt-template")) {
       return <PermissionDenied />;
     }
     if (isStaff && (page === "reports" || page === "payments" || page === "expenses" || page === "data-check") && !canViewReports) {
@@ -276,6 +277,10 @@ export default function App() {
     if (page === "stations") return (canManageLocations || isViewOnly) ? <LocationsPage setPage={setPage} setSelectedLocationId={setSelectedLocationId} /> : <PermissionDenied />;
     if (page === "station-detail") return (canManageLocations || isViewOnly) ? <LocationDetail locationId={selectedLocationId} setPage={setPage} /> : <PermissionDenied />;
     if (page === "station-health") return (isAdmin || isViewOnly) ? <StationHealth /> : <PermissionDenied />;
+    // [2026-09-23] Moved out of Finance → Setup into SYSTEM, where it belongs:
+    // nothing in it is money. Same audience as before — HQ admins and the
+    // view-only account, who could already reach it through Finance.
+    if (page === "activity-log") return (isAdmin || isViewOnly) ? <ActivityLog /> : <PermissionDenied />;
     // [2026-09-09] Data Check — same permission as Financial Reports, since
     // it is the screen finance uses to trust the stock and weight figures
     // before anything else is believed. See DataCheck.jsx for the CN 000261
