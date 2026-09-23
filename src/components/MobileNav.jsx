@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   LayoutGrid, Scale, Receipt, Users, Menu, X, Warehouse, ShoppingCart,
   MapPin, BarChart3, Settings, Languages, ClipboardList, LogOut, UserCog,
-  ShieldCheck, Wallet, Activity, BookOpen,
+  ShieldCheck, Wallet, Activity, BookOpen, History,
 } from "lucide-react";
 // [2026-09-16] BookOpen, on the end of that list, was USED below — the
 // Daily Book tab in the view-only tab list — and never imported. Nothing
@@ -104,6 +104,8 @@ export default function MobileNav({ page, setPage, pendingRequests, expenseBadge
     ? [
         ...(canManageLocations ? [{ id: "stations", label: t("nav_stations"), icon: MapPin }] : []),
         ...(canSeeAdminNav ? [{ id: "station-health", label: t("nav_station_health"), icon: Activity }] : []),
+        // [2026-09-23] Moved out of Finance → Setup into SYSTEM (ActivityLog.jsx).
+        ...(canSeeAdminNav ? [{ id: "activity-log", label: t("nav_activity_log"), icon: History }] : []),
         ...(canManageUsers ? [{ id: "users", label: t("nav_users"), icon: UserCog }] : []),
         ...(canManageRoles ? [{ id: "roles", label: t("nav_roles"), icon: ShieldCheck }] : []),
         ...(canManageSettings ? [{ id: "settings", label: t("nav_settings"), icon: Settings }] : []),

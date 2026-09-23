@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Scale, AlertTriangle, BookOpen } from "lucide-react";
+import { supabase } from "../supabaseClient.js";
+import { useAuth } from "../AuthContext.jsx";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -57,7 +59,27 @@ function khDate(d = new Date()) {
 }
 function khDaysAgo(n) { return khDate(new Date(Date.now() - n * 86400000)); }
 
+// [2026-09-23] THE WAY OUT OF A REFUSAL. SISEN: "we dont need the too big to
+// settle anymore, if not we cannot reset the weight."
+//
+// The limit above still decides what is ROUTINE — a gap smaller than one
+// ticket is rain and scale drift, and goes through in two clicks. What
+// changed is what happens on the other side of it: the screen used to end
+// there, so Pong Ro's −430 kg simply could not be corrected and sat on the
+// Dashboard in red. Now the Owner (or an HQ admin) can still set it to zero,
+// but has to say why in their own words and type their password, and the
+// whole thing lands in the Activity Log with the kilos and the reason.
+//
+// The rule is unchanged, in other words; only the dead end is gone.
+const OVERRIDE_MIN_REASON = 15;
+
 export default function SettleDifferenceModal({ station, onHandKg, floor, priceSuggestion, t, onClose, onSubmit }) {
+  const { session, profile, isViewOnly } = useAuth();
+  const mayOverride = !isViewOnly && (!!profile?.isOwner || profile?.role === "admin");
+  const [ovReason, setOvReason] = useState("");
+  const [ovPassword, setOvPassword] = useState("");
+  const [ovBusy, setOvBusy] = useState(false);
+  const shortBy = Math.max(0, OVERRIDE_MIN_REASON - ovReason.trim().length);
   const today = khDate();
   const yesterday = khDaysAgo(1);
   const oldestAllowed = khDaysAgo(7);
@@ -113,6 +135,29 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
     } catch (err) {
       setError(err.message || t("adj_save_error_default"));
       setSaving(false);
+    }
+  }
+
+  async function submitOverride() {
+    if (shortBy > 0 || !ovPassword || ovBusy) return;
+    setError("");
+    setOvBusy(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: session?.user?.email, password: ovPassword,
+      });
+      if (authError) { setError(t("settle_ov_bad_password")); setOvBusy(false); return; }
+      await onSubmit({
+        newStockKg: 0,
+        reason: "other",
+        note: ovReason.trim(),
+        pricePerKg: price != null && Number.isFinite(price) ? price : null,
+        effectiveDate: effectiveDate !== today ? effectiveDate : null,
+        override: true,
+      });
+    } catch (err) {
+      setError(err.message || t("adj_save_error_default"));
+      setOvBusy(false);
     }
   }
 
@@ -208,6 +253,23 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
             <p className="mt-2 flex items-center gap-1.5 text-[12.5px] font-semibold text-rose-700">
               <BookOpen size={13} className="shrink-0" /> {t("settle_refused_next_step")}
             </p>
+          </div>
+        )}
+
+        {!allowed && mayOverride && (
+          <div className="mb-3 rounded-lg border border-gold-300 bg-gold-50 px-3 py-3">
+            <p className="text-[12.5px] font-bold text-gold-700">{t("settle_ov_title")}</p>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-600">{t("settle_ov_body", { kg: fmt(gapKg) })}</p>
+            <input value={ovReason} onChange={(e) => setOvReason(e.target.value)} placeholder={t("settle_ov_reason_ph")}
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-gold-500" />
+            {shortBy > 0 && ovReason.length > 0 && <p className="mt-1 text-[11.5px] text-slate-400">{t("xr_more_chars", { n: shortBy })}</p>}
+            <input type="password" value={ovPassword} onChange={(e) => setOvPassword(e.target.value)} placeholder={t("xr_password")}
+              autoComplete="current-password"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-gold-500" />
+            <button type="button" onClick={submitOverride} disabled={shortBy > 0 || !ovPassword || ovBusy}
+              className="mt-2.5 w-full rounded-lg bg-gold-700 px-4 py-2 text-sm font-semibold text-white hover:bg-gold-500 disabled:opacity-40">
+              {ovBusy ? t("saving_label") : t("settle_ov_btn", { kg: fmt(gapKg) })}
+            </button>
           </div>
         )}
 

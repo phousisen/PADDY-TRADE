@@ -1,6 +1,6 @@
 import {
   LayoutGrid, Warehouse, Receipt, Users, MapPin, BarChart3,
-  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Wallet, Activity, BookOpen,
+  Settings, Languages, ClipboardList, LogOut, UserCog, ShieldCheck, Scale, Wallet, Activity, BookOpen, History,
 } from "lucide-react";
 // ShieldCheck is used twice: the Roles nav entry (System) and Data Check
 // (Inventory & Reports). Same icon, different rows — deliberate: both mean
@@ -129,6 +129,11 @@ export default function Sidebar({ page, setPage, pendingRequests, expenseBadge =
                 // see StationHealth.jsx for exactly what it does and doesn't
                 // measure (recent transactions, not a live scale connection).
                 ...(canSeeAdminNav ? [{ id: "station-health", label: t("nav_station_health"), icon: Activity }] : []),
+                // [2026-09-23] Moved here out of Finance → Setup. SISEN: "is it
+                // a good choice o put acitvities log in finance". It is not —
+                // nothing in it is money. It answers "who did this, and when",
+                // the same kind of question as Station Health and Users.
+                ...(canSeeAdminNav ? [{ id: "activity-log", label: t("nav_activity_log"), icon: History }] : []),
                 ...(canManageUsers ? [{ id: "users", label: t("nav_users"), icon: UserCog }] : []),
                 ...(canManageRoles ? [{ id: "roles", label: t("nav_roles"), icon: ShieldCheck }] : []),
                 ...(canManageSettings ? [{ id: "settings", label: t("nav_settings"), icon: Settings }] : []),
