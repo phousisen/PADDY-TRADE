@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, WifiOff } from "lucide-react";
 import { api } from "../api.js";
 import { getAccurateNow } from "../supabaseClient.js";
-import { stationsBelowZero } from "../scaleAlert.js";
+import { stationsBelowZero, stationsWithQuietScale } from "../scaleAlert.js";
 
 function fmtKg(n) {
   return `${n < 0 ? "−" : ""}${new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.abs(n))}`;
@@ -27,22 +27,43 @@ export default function ScaleAlertBanner({ locations, t, onOpen }) {
     return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", load); };
   }, []);
 
-  const below = stationsBelowZero(readings, locations, getAccurateNow().getTime());
-  if (below.length === 0) return null;
+  const nowMs = getAccurateNow().getTime();
+  const below = stationsBelowZero(readings, locations, nowMs);
+  // [2026-09-23] A scale that was working today and has stopped. Separate
+  // box, amber not red: a scale below zero is weighing trucks WRONG right
+  // now; a quiet one is only not weighing at all. See scaleAlert.js.
+  const quiet = stationsWithQuietScale(readings, locations, nowMs);
+  if (below.length === 0 && quiet.length === 0) return null;
   return (
-    <div className="mb-5 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
-      <AlertTriangle size={18} className="mt-0.5 shrink-0 text-rose-600" />
-      <div className="min-w-0 flex-1 text-[13px] leading-relaxed text-rose-900">
-        {below.map((s) => (
-          <p key={s.id} className="font-semibold">{t("sa_title", { station: s.name, kg: fmtKg(s.weightKg) })}</p>
-        ))}
-        <p className="text-rose-800">{t("sa_body")}</p>
-      </div>
-      {onOpen && (
-        <button type="button" onClick={onOpen} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">
-          {t("sa_open")}
-        </button>
+    <>
+      {below.length > 0 && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-rose-600" />
+          <div className="min-w-0 flex-1 text-[13px] leading-relaxed text-rose-900">
+            {below.map((s) => (
+              <p key={s.id} className="font-semibold">{t("sa_title", { station: s.name, kg: fmtKg(s.weightKg) })}</p>
+            ))}
+            <p className="text-rose-800">{t("sa_body")}</p>
+          </div>
+          {onOpen && (
+            <button type="button" onClick={onOpen} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">
+              {t("sa_open")}
+            </button>
+          )}
+        </div>
       )}
-    </div>
+
+      {quiet.length > 0 && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <WifiOff size={18} className="mt-0.5 shrink-0 text-amber-600" />
+          <div className="min-w-0 flex-1 text-[13px] leading-relaxed text-amber-900">
+            {quiet.map((s) => (
+              <p key={s.id} className="font-semibold">{t("sa_quiet_title", { station: s.name, minutes: s.minutes })}</p>
+            ))}
+            <p className="text-amber-800">{t("sa_quiet_body")}</p>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
