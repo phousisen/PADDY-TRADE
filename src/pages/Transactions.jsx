@@ -7,6 +7,7 @@ import DateRangeFilter from "../components/DateRangeFilter.jsx";
 // [2026-09-09] Marks a figure that was corrected after the ticket was
 // finished, so it no longer looks identical to one straight off the scale.
 import EditedBadge from "../components/EditedBadge.jsx";
+import TicketHistory from "../components/TicketHistory.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -2542,6 +2543,9 @@ export default function Transactions({ setPage }) {
                             <p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p>
                           </div>
                         </div>
+                        {/* [2026-09-23] Who did what to this ticket, and when —
+                            read from the entries already recorded. */}
+                        <TicketHistory transactionId={tx.id} />
                       </td>
                     </tr>
                   )}
@@ -2674,6 +2678,7 @@ export default function Transactions({ setPage }) {
                         </>
                       )}
                       <div><p className="text-[10px] uppercase tracking-wide text-slate-400">{t("recorded_by_label")}</p><p className="text-sm font-semibold text-slate-800">{tx.recorded_by_name || "—"}</p></div>
+                      <div className="col-span-2"><TicketHistory transactionId={tx.id} /></div>
                     </div>
                   )}
 

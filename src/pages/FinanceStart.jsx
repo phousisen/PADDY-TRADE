@@ -41,7 +41,9 @@ export const FINANCE_SCREENS = [
   { id: "capital", group: "Setup", labelKey: "fin_capital" },
   { id: "financesetup", group: "Setup", labelKey: "fin_setup", admin: true },
   { id: "tax", group: "Setup", labelKey: "fin_tax" },
-  { id: "auditlog", group: "Setup", labelKey: "fin_auditlog", admin: true },
+  // [2026-09-23] Activity Log removed from Finance — it is not money, and it
+  // is now its own page under SYSTEM (pages/ActivityLog.jsx). SISEN: "is it a
+  // good choice o put acitvities log in finance".
 ];
 
 export const FINANCE_GROUPS = [

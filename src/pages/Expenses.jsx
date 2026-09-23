@@ -49,6 +49,8 @@ import { supabase, getAccurateNow } from "../supabaseClient.js";
 import { errText } from "../errText.js";
 import {
   categoryList, categoryKey, cleanCategory, isCommission, nearlyTheSame,
+  categoryUsage, parseCategorySetting, serializeCategorySetting,
+  EXTRA_SETTING, HIDDEN_SETTING,
 } from "../expenseCategories.js";
 import {
   windowFor, shiftAnchor, filterRows, totals, byPeriod, byCategory, byStation,
@@ -357,7 +359,7 @@ function AddCategory({ existing, onAdd, onCancel }) {
 
 function DaySheet({
   day, setDay, locationId, setLocationId, locations, categories, existingRows,
-  dayStates, onSave, saving, error, canEdit, needsPassword, onClose,
+  dayStates, onSave, saving, error, canEdit, needsPassword, onClose, onNewCategory,
   edits, justSaved, unlocked, onUnlock, lock = null, onRequestChange,
 }) {
   const { t } = useLanguage();
@@ -543,7 +545,9 @@ function DaySheet({
           <div className="mt-3">
             {adding ? (
               <AddCategory existing={shown}
-                onAdd={(n) => { setExtra((x) => [...x, n]); setAdding(false); }}
+                // Shown at once, and remembered for everyone — see addCategory
+                // in the page below. Before this it lasted until the sheet closed.
+                onAdd={(n) => { setExtra((x) => [...x, n]); setAdding(false); onNewCategory?.(n); }}
                 onCancel={() => setAdding(false)} />
             ) : canEdit && (
               <button type="button" onClick={() => setAdding(true)}
@@ -679,6 +683,12 @@ export default function Expenses() {
   const [justSaved, setJustSaved] = useState(false);
   const [edits, setEdits] = useState({});
   const [unlocked, setUnlocked] = useState(false);
+  // [2026-09-23] The category list's two remembered edges — see
+  // expenseCategories.js. Kept in system_settings so every station sees the
+  // same list the moment it changes.
+  const [catExtra, setCatExtra] = useState([]);
+  const [catHidden, setCatHidden] = useState([]);
+  const [catManager, setCatManager] = useState(false);
   const refetch = useRefetchSignal();
   // [2026-09-21] Expense confirmation. `reviews` stays null on a database
   // without expense_confirmation.sql — the page then works exactly as before.
@@ -710,13 +720,16 @@ export default function Expenses() {
       //
       // .catch(() => []) on purpose: this screen's job is expenses, and a
       // transactions call that fails must cost the check, not the page.
-      const [locs, exp, dm, txs, rv, xr] = await Promise.all([
+      const [locs, exp, dm, txs, rv, xr, settings] = await Promise.all([
         api.getLocations(),
         api.getPayments({ type: "expense" }),
         api.getExpenseDayMarks().catch(() => []),
         api.getTransactions({ lean: true }).catch(() => []), // [2026-09-19] SPEED: tonnage columns only
         api.getExpenseReviews().catch(() => null),
         api.getExpenseChangeRequests().catch(() => []),
+        // Never fatal: a settings read that fails leaves the list exactly as
+        // it was derived from the expenses themselves.
+        api.getSettings().catch(() => ({})),
       ]);
       setLocations(locs || []);
       setAllExpenses(exp || []);
@@ -724,6 +737,8 @@ export default function Expenses() {
       setAllTx(txs || []);
       setReviews(rv);
       setXreqs(xr || []);
+      setCatExtra(parseCategorySetting(settings?.[EXTRA_SETTING]));
+      setCatHidden(parseCategorySetting(settings?.[HIDDEN_SETTING]));
     } catch (err) {
       setLoadError(errText(null, err, "") || err.message || "Couldn't load expenses.");
     } finally { setLoading(false); }
@@ -835,7 +850,97 @@ export default function Expenses() {
     return m;
   }, [prevRows, locations]);
 
-  const catList = useMemo(() => categoryList(allExpenses), [allExpenses]);
+  const catList = useMemo(
+    () => categoryList(allExpenses, { extra: catExtra, hidden: catHidden }),
+    [allExpenses, catExtra, catHidden],
+  );
+  const catUsage = useMemo(() => categoryUsage(allExpenses), [allExpenses]);
+
+  // ── editing the list ────────────────────────────────────────────────────
+  //
+  // [2026-09-23] SISEN: "we need to be able to edit the category."
+  //
+  // Three things can happen to a category, and only three. Adding and hiding
+  // touch a setting; renaming touches the expense rows themselves, because a
+  // category IS the word on the rows (expenseCategories.js). None of them can
+  // delete an expense.
+  //
+  // Each one saves the setting first and only then moves what is on screen,
+  // so a failed save never leaves the list showing something the database
+  // does not have.
+  const [catBusy, setCatBusy] = useState("");
+  const [catError, setCatError] = useState("");
+
+  async function saveCategorySetting(key, names, apply) {
+    setCatError("");
+    try {
+      await api.updateSetting(key, serializeCategorySetting(names));
+      apply();
+    } catch (err) {
+      setCatError(errText(null, err, "") || err.message || "Could not save.");
+      throw err;
+    }
+  }
+
+  async function addCategory(name) {
+    const clean = cleanCategory(name);
+    if (!clean) return;
+    const key = categoryKey(clean);
+    // Adding one back is how a hidden category returns — the same button,
+    // rather than a second control that does the opposite of this one.
+    const nextHidden = catHidden.filter((n) => categoryKey(n) !== key);
+    const nextExtra = catExtra.some((n) => categoryKey(n) === key) ? catExtra : [...catExtra, clean];
+    setCatBusy(key);
+    try {
+      if (nextHidden.length !== catHidden.length) {
+        await saveCategorySetting(HIDDEN_SETTING, nextHidden, () => setCatHidden(nextHidden));
+      }
+      await saveCategorySetting(EXTRA_SETTING, nextExtra, () => setCatExtra(nextExtra));
+    } catch { /* message already shown */ } finally { setCatBusy(""); }
+  }
+
+  // [2026-09-23] SISEN: "we need an option to also be able to remove it."
+  //
+  // Removing takes a category OFF THE LIST. It never touches an expense: a
+  // category still carried by rows cannot be removed here at all — the screen
+  // moves those expenses to another category first, and the old name then
+  // stops existing by itself, because the list is built from the rows.
+  async function removeCategory(name) {
+    const key = categoryKey(name);
+    if ((catUsage.get(key)?.count || 0) > 0) return;
+    const nextHidden = [...catHidden.filter((n) => categoryKey(n) !== key), cleanCategory(name)];
+    const nextExtra = catExtra.filter((n) => categoryKey(n) !== key);
+    setCatBusy(key);
+    try {
+      await saveCategorySetting(HIDDEN_SETTING, nextHidden, () => setCatHidden(nextHidden));
+      if (nextExtra.length !== catExtra.length) {
+        await saveCategorySetting(EXTRA_SETTING, nextExtra, () => setCatExtra(nextExtra));
+      }
+    } catch { /* message already shown */ } finally { setCatBusy(""); }
+  }
+
+  // Renaming rewrites every expense row that carries the old word, so it asks
+  // for a password first — the same password the page already asks for before
+  // reaching back into a figure that is already recorded.
+  async function reallyRename({ from, to }) {
+    const fromKey = categoryKey(from);
+    setCatBusy(fromKey); setCatError("");
+    try {
+      await api.renameExpenseCategory({ from, to, userId: session?.user?.id });
+      // The word it was known by is no longer offered; the new one is.
+      const nextExtra = [...catExtra.filter((n) => categoryKey(n) !== fromKey), cleanCategory(to)];
+      const nextHidden = catHidden.filter((n) => categoryKey(n) !== fromKey);
+      await api.updateSettings({
+        [EXTRA_SETTING]: serializeCategorySetting(nextExtra),
+        [HIDDEN_SETTING]: serializeCategorySetting(nextHidden),
+      }).catch(() => {});
+      setCatExtra(nextExtra); setCatHidden(nextHidden);
+      await load();
+    } catch (err) {
+      setCatError(errText(null, err, "") || err.message || "Could not rename.");
+    } finally { setCatBusy(""); }
+  }
+
 
   // What is missing, and what looks duplicated. Shown as a strip, and only
   // when there is something — never as an empty box.
@@ -1062,6 +1167,14 @@ export default function Expenses() {
                   className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700">
                   {t("ex_print")}
                 </button>
+                {/* [2026-09-23] The list of categories, and the three things
+                    that can happen to it. See CategoryManager below. */}
+                {canRecord && (
+                  <button type="button" onClick={() => { setCatError(""); setCatManager(true); }}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700">
+                    {t("ex_categories")}
+                  </button>
+                )}
                 {canRecord && (
                   <button type="button" onClick={() => setSheet({ day: today, locationId: locations[0]?.id })}
                     className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">
@@ -1299,6 +1412,7 @@ export default function Expenses() {
           locations={locations} categories={catList} existingRows={sheetRows} dayStates={dayStates}
           onSave={handleSave} saving={saving} error={saveError}
           canEdit={canRecord && !sheetLocked} needsPassword={needsPassword}
+          onNewCategory={addCategory}
           lock={sheetLocked ? { by: sheetReview?.review?.decided_by_name, at: sheetReview?.review?.decided_at } : null}
           onRequestChange={sheetLocked && canRecord ? () => {
             const key = dayKey(sheet.locationId, sheet.day);
@@ -1307,6 +1421,20 @@ export default function Expenses() {
           edits={edits} justSaved={justSaved} unlocked={unlocked}
           onUnlock={() => setPwPrompt({ unlockOnly: true })}
           onClose={() => { setSheet(null); setSaveError(""); }}
+        />
+      )}
+
+      {catManager && (
+        <CategoryManager
+          categories={catList}
+          usage={catUsage}
+          hidden={catHidden}
+          busyKey={catBusy}
+          error={catError}
+          onAdd={addCategory}
+          onRemove={removeCategory}
+          onRename={(from, to) => setPwPrompt({ rename: { from, to } })}
+          onClose={() => { setCatManager(false); setCatError(""); }}
         />
       )}
 
@@ -1320,6 +1448,7 @@ export default function Expenses() {
             // Unlocking only opens the boxes; the change is saved — and
             // recorded — when they press Save.
             if (p.unlockOnly) setUnlocked(true);
+            else if (p.rename) reallyRename(p.rename);
             else reallySave(p);
           }} />
       )}
@@ -1330,6 +1459,234 @@ export default function Expenses() {
 // A named wrapper rather than <>…</> so the guard can see the grouping, and
 // so a key can sit on it.
 function Fragmented({ children }) { return <>{children}</>; }
+
+// ─────────────────────────────────────────────────────── the category list ──
+
+// [2026-09-23] EDITING THE LIST OF CATEGORIES.
+//
+// SISEN: "we need to be able to edit the category."
+//
+// Three things, and it says plainly what each one does to the figures:
+//
+//   Rename  changes the word on EVERY expense that carries it, past months
+//           included. That is the whole point — a typo fixed only from today
+//           leaves two lines on every report forever. It asks for a password.
+//   Hide    stops offering a category nobody uses. Only ever available for a
+//           category with no expenses on it, so nothing can disappear.
+//   Add     puts one on the list before anything is spent on it, and is also
+//           how a hidden one comes back.
+//
+// Nothing here deletes an expense, and the screen says so at the bottom.
+function CategoryManager({ categories, usage, hidden, busyKey, error, onAdd, onRemove, onRename, onClose }) {
+  const { t } = useLanguage();
+  // [2026-09-23] SISEN: "it should be editable only if we pressed on the edit
+  // category, not that many like that."
+  //
+  // The screen opened with two buttons on every row, which made a list of
+  // eight categories look like a control panel. It is a LIST first: what the
+  // categories are and what has been spent on each. Nothing can be changed
+  // until Edit is pressed, and pressing Done puts it back to a list.
+  const [editing, setEditing] = useState(false);
+  const [renaming, setRenaming] = useState("");   // the category being renamed
+  const [removing, setRemoving] = useState("");   // the category being removed
+  const [draft, setDraft] = useState("");
+  const [moveTo, setMoveTo] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  function closeAll() { setRenaming(""); setRemoving(""); setAdding(false); }
+
+  const cleanDraft = cleanCategory(draft);
+  // The name being changed is not "already taken" by itself.
+  const others = categories.filter((c) => categoryKey(c) !== categoryKey(renaming));
+  const clash = renaming ? nearlyTheSame(draft, others) : null;
+  // [2026-09-23] Renaming ONTO a category that already exists is allowed, and
+  // it is the commonest reason to rename at all: "Fule" was a typo for "Fuel",
+  // and folding it in is the fix. The day sheet's Add box refuses this,
+  // rightly — there it would make a second category. Here it makes one.
+  const merging = !!(clash && clash.exact);
+  const canSave = !!cleanDraft && categoryKey(cleanDraft) !== categoryKey(renaming);
+
+  const removedShown = (hidden || []).filter((h) => !categories.some((c) => categoryKey(c) === categoryKey(h)));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="mt-8 w-full max-w-lg rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-5 py-3.5">
+          <h3 className="font-semibold text-slate-700">{t("ex_categories")}</h3>
+          <div className="flex items-center gap-2">
+            <button type="button"
+              onClick={() => { closeAll(); setEditing((v) => !v); }}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                editing ? "border-brand-600 bg-brand-600 text-white hover:bg-brand-700"
+                        : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+              {editing ? t("ex_cat_done") : t("ex_cat_edit")}
+            </button>
+            <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-50">✕</button>
+          </div>
+        </div>
+
+        {error && <p className="border-b border-rose-100 bg-rose-50 px-5 py-2.5 text-sm text-rose-600">{error}</p>}
+
+        <div className="max-h-[52vh] overflow-y-auto">
+          {categories.map((name, i) => {
+            const key = categoryKey(name);
+            const used = usage.get(key) || { count: 0, amount: 0 };
+            const busy = busyKey === key;
+            const isRenaming = !!renaming && categoryKey(renaming) === key;
+            const isRemoving = !!removing && categoryKey(removing) === key;
+            return (
+              <div key={key} className={`px-5 py-3 ${i ? "border-t border-slate-100" : ""} ${isCommission(name) ? "bg-amber-50/60" : ""}`}>
+                {isRenaming ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">{t("ex_cat_rename_to", { name })}</label>
+                    <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} className={inputCls} />
+                    {clash && (
+                      <p className="mt-1.5 text-xs font-medium text-amber-700">
+                        {merging ? t(used.count === 1 ? "ex_cat_merge_one" : "ex_cat_merge", { name: clash.name, n: used.count }) : t("ex_cat_near", { name: clash.name })}
+                      </p>
+                    )}
+                    {used.count > 0 && !merging && (
+                      <p className="mt-1.5 text-xs text-slate-400">{t("ex_cat_rename_note", { n: used.count })}</p>
+                    )}
+                    <div className="mt-2 flex gap-2">
+                      <button type="button" disabled={!canSave || busy}
+                        onClick={() => { onRename(name, cleanDraft); setRenaming(""); }}
+                        className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
+                        {merging ? t("ex_cat_merge_btn", { name: clash.name }) : t("ex_cat_save_name")}
+                      </button>
+                      <button type="button" onClick={() => setRenaming("")}
+                        className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">{t("ex_cancel")}</button>
+                    </div>
+                  </div>
+                ) : isRemoving ? (
+                  // [2026-09-23] REMOVING ONE.
+                  //
+                  // A category nobody has spent on just goes. A category that
+                  // HAS expenses cannot simply go — the money is real and has
+                  // to keep a name, so those expenses move to another category
+                  // first and the old name then stops existing by itself (the
+                  // list is built from the rows; see expenseCategories.js).
+                  // Nothing is ever deleted either way.
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">{t("ex_cat_remove_q", { name })}</p>
+                    {used.count > 0 ? (
+                      <>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {t(used.count === 1 ? "ex_cat_move_one" : "ex_cat_move", { n: used.count })}
+                        </p>
+                        <select value={moveTo} onChange={(e) => setMoveTo(e.target.value)}
+                          className={`${inputCls} mt-2`}>
+                          <option value="">{t("ex_cat_move_pick")}</option>
+                          {others.filter((c) => categoryKey(c) !== key).map((c) => (
+                            <option key={categoryKey(c)} value={c}>{c}</option>
+                          ))}
+                        </select>
+                        <div className="mt-2 flex gap-2">
+                          <button type="button" disabled={!moveTo || busy}
+                            onClick={() => { onRename(name, moveTo); setRemoving(""); setMoveTo(""); }}
+                            className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">
+                            {t("ex_cat_move_btn", { n: used.count })}
+                          </button>
+                          <button type="button" onClick={() => { setRemoving(""); setMoveTo(""); }}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">{t("ex_cancel")}</button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-xs text-slate-500">{t("ex_cat_remove_why")}</p>
+                        <div className="mt-2 flex gap-2">
+                          <button type="button" disabled={busy}
+                            onClick={() => { onRemove(name); setRemoving(""); }}
+                            className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40">
+                            {busy ? t("ex_checking") : t("ex_cat_remove")}
+                          </button>
+                          <button type="button" onClick={() => setRemoving("")}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50">{t("ex_cancel")}</button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-slate-700">
+                        {name}
+                        {isCommission(name) && (
+                          <span className="ml-2 rounded border border-amber-300 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">{t("ex_commission")}</span>
+                        )}
+                      </p>
+                      <p className="text-[11.5px] tabular-nums text-slate-400">
+                        {used.count > 0 ? t(used.count === 1 ? "ex_cat_used_one" : "ex_cat_used", { n: used.count, amount: fmt(used.amount) }) : t("ex_cat_unused")}
+                      </p>
+                    </div>
+                    {/* Only while editing — a plain list has no buttons on it. */}
+                    {/* [2026-09-23] ថ្លៃកូនដៃ is the one category the rest of the
+                        app knows by name: isCommission() matches it literally,
+                        and the Daily Book has a column of its own for it.
+                        Renaming or removing it would empty that column without
+                        a word, so this one row cannot be edited. Folding
+                        ANOTHER category into it is still allowed. */}
+                    {editing && isCommission(name) && (
+                      <span className="shrink-0 text-[11px] text-slate-400">{t("ex_cat_fixed")}</span>
+                    )}
+                    {editing && !isCommission(name) && (
+                      <>
+                        <button type="button" disabled={busy}
+                          onClick={() => { closeAll(); setRenaming(name); setDraft(name); }}
+                          className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+                          {t("ex_cat_rename")}
+                        </button>
+                        <button type="button" disabled={busy}
+                          onClick={() => { closeAll(); setRemoving(name); setMoveTo(""); }}
+                          className="shrink-0 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40">
+                          {t("ex_cat_remove")}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {editing && (
+          <div className="border-t border-slate-100 px-5 py-3">
+            {adding ? (
+              <AddCategory existing={categories}
+                onAdd={(n) => { onAdd(n); setAdding(false); }}
+                onCancel={() => setAdding(false)} />
+            ) : (
+              <button type="button" onClick={() => { closeAll(); setAdding(true); }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm font-medium text-brand-600 hover:bg-slate-50">
+                <Plus size={14} /> {t("ex_add_category")}
+              </button>
+            )}
+          </div>
+        )}
+
+        {editing && removedShown.length > 0 && (
+          <div className="border-t border-slate-100 px-5 py-3">
+            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">{t("ex_cat_removed")}</p>
+            <div className="flex flex-wrap gap-2">
+              {removedShown.map((name) => (
+                <button key={categoryKey(name)} type="button" onClick={() => onAdd(name)}
+                  disabled={busyKey === categoryKey(name)}
+                  className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs text-slate-500 hover:bg-slate-50 disabled:opacity-40">
+                  {name} · {t("ex_cat_bring_back")}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <p className="border-t border-slate-100 px-5 py-3 text-[11.5px] text-slate-400">
+          {editing ? t("ex_cat_footer") : t("ex_cat_footer_read")}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 // ──────────────────────────────────────────────── password, only to reach back ──
 

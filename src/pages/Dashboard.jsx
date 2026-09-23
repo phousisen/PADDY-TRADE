@@ -644,23 +644,25 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                         into the station page. */}
                     {canSettleHere && (
                       <td className="px-3 py-3.5 text-right">
+                        {/* [2026-09-23] A gap too big for the routine settle is
+                            no longer a dead end — SISEN: "we dont need the too
+                            big to settle anymore, if not we cannot reset the
+                            weight". The button still opens the same screen;
+                            what is inside it changes (reason + password for a
+                            big one). See SettleDifferenceModal. */}
                         {onHandKg < -0.005 && (
-                          canSettle(onHandKg, ticketFloor.get(loc.id)) ? (
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
-                              className="whitespace-nowrap rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-[11.5px] font-bold text-brand-700 hover:bg-brand-100"
-                            >
-                              {t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })}
-                            </button>
-                          ) : (
-                            <span
-                              title={t("settle_refused_next_step")}
-                              className="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-slate-400"
-                            >
-                              {t("perf_settle_blocked")}
-                            </span>
-                          )
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
+                            className={`whitespace-nowrap rounded-lg border px-2.5 py-1 text-[11.5px] font-bold ${
+                              canSettle(onHandKg, ticketFloor.get(loc.id))
+                                ? "border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100"
+                                : "border-gold-300 bg-gold-50 text-gold-700 hover:bg-gold-100"}`}
+                          >
+                            {canSettle(onHandKg, ticketFloor.get(loc.id))
+                              ? t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })
+                              : t("perf_fix_btn", { kg: fmt(Math.abs(onHandKg)) })}
+                          </button>
                         )}
                       </td>
                     )}
@@ -734,20 +736,24 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                   {/* Full width here rather than squeezed into a column — on a
                       phone this is a thumb target, and it only ever appears
                       against a negative shed, which cannot be real. */}
+                  {/* [2026-09-23] The phone card used to end here with a grey
+                      "Too big to settle" line and nothing to press. Same
+                      button as the table now: gold when it is over the limit,
+                      and the screen it opens asks for a reason and a password.
+                      SISEN: "if not we cannot reset the weight". */}
                   {canSettleHere && onHandKg < -0.005 && (
-                    canSettle(onHandKg, ticketFloor.get(loc.id)) ? (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
-                        className="mt-2.5 w-full rounded-lg border border-brand-200 bg-brand-50 py-2 text-[12.5px] font-bold text-brand-700 active:bg-brand-100"
-                      >
-                        {t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })}
-                      </button>
-                    ) : (
-                      <p className="mt-2.5 rounded-lg border border-slate-200 bg-white py-2 text-center text-[12.5px] font-semibold text-slate-400">
-                        {t("perf_settle_blocked")}
-                      </p>
-                    )
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
+                      className={`mt-2.5 w-full rounded-lg border py-2 text-[12.5px] font-bold ${
+                        canSettle(onHandKg, ticketFloor.get(loc.id))
+                          ? "border-brand-200 bg-brand-50 text-brand-700 active:bg-brand-100"
+                          : "border-gold-300 bg-gold-50 text-gold-700 active:bg-gold-100"}`}
+                    >
+                      {canSettle(onHandKg, ticketFloor.get(loc.id))
+                        ? t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })
+                        : t("perf_fix_btn", { kg: fmt(Math.abs(onHandKg)) })}
+                    </button>
                   )}
                 </div>
               ))}
@@ -818,7 +824,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
           }
           t={t}
           onClose={() => setSettleLoc(null)}
-          onSubmit={async ({ newStockKg, reason, note, pricePerKg, effectiveDate }) => {
+          onSubmit={async ({ newStockKg, reason, note, pricePerKg, effectiveDate, override }) => {
             await api.recordStockAdjustment({
               locationId: settleLoc.loc.id,
               previousStockKg: Number(settleLoc.loc.current_stock_kg) || 0,
@@ -832,6 +838,19 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
               // Which day it counts against — see SettleDifferenceModal.
               effectiveDate,
             });
+            // [2026-09-23] A forced zero is a decision, not a correction —
+            // it goes in the Activity Log by name, with the kilos and the
+            // reason, whatever the stock ledger also records.
+            if (override) {
+              api.logAudit({
+                action: "force_stock_zero",
+                tableName: "locations",
+                recordId: settleLoc.loc.id,
+                oldData: { onHandKg: settleLoc.onHandKg },
+                newData: { stationName: settleLoc.loc.name, kg: settleLoc.onHandKg, reason: note, effectiveDate },
+                userId: session?.user?.id,
+              });
+            }
             setSettleLoc(null);
             // Full reload rather than patching the row by hand: the
             // adjustment changes On hand, the Adjusted column and the

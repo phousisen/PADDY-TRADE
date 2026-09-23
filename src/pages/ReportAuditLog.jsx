@@ -2,175 +2,18 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { api } from "../api.js";
 import { rangeKey } from "../reportQuery.js";
 import { TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
-import { dmyTime } from "../dateFormat.js";
 import { useLanguage } from "../i18n.jsx";
+// [2026-09-23] The labels and the sentences moved to src/auditText.js so the
+// ticket History panel (TicketHistory.jsx) says exactly the same words about
+// exactly the same recorded action.
+import { CATEGORIES, actionMeta, describeChange, fmtCambodiaDateTime } from "../auditText.js";
 
-function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
-// Every timestamp elsewhere in PaddyTrade is shown in Cambodia's own
-// wall-clock time regardless of the viewing device's timezone (see e.g.
-// cambodiaDateStr/cambodiaNow in the other pages) — this table was the one
-// place still using the browser's default toLocaleString(), which shows a
-// different time to anyone viewing from outside Cambodia's timezone.
-function fmtCambodiaDateTime(iso) {
-  if (!iso) return "—";
-  return dmyTime(iso);
-}
-
-// [2026-09-19] Every action the app writes has a label and a filter group
-// (twelve of them used to show as raw names like "void_payment" and could
-// only be found under "All activity"), and every label is in both languages
-// (audit F29).
-const ACTION_META = {
-  create_transaction: "transaction", edit_transaction: "transaction", cancel_transaction: "transaction",
-  restore_transaction: "transaction", reopen_ticket: "transaction", restore_declined_ticket: "transaction",
-  confirm_buyer_sale: "transaction",
-  submit_change_request: "request", approve_change_request: "request", reject_change_request: "request",
-  record_payment: "payment", edit_payment: "payment", void_payment: "payment", edit_expense: "payment",
-  update_party_bank: "payment",
-  change_role: "user", set_password: "user", list_emails: "user",
-  add_partner: "capital", add_capital_entry: "capital", add_loan_entry: "capital",
-  adjust_stock: "stock", request_stock_reset: "stock", approve_stock_reset: "stock", reverse_stock_adjustment: "stock",
-  // [2026-09-21] The scale guard (scaleGuard.js): a station's scale going
-  // below zero and back, and an Owner allowing one capture past the guard.
-  scale_below_zero: "transaction", scale_back_to_zero: "transaction", scale_capture_override: "transaction",
-  // [2026-09-21] Expense confirmation (expense_confirmation.sql).
-  confirm_expense_day: "payment", send_back_expense_day: "payment",
-  approve_expense_change: "payment", reject_expense_change: "payment",
-};
-
-const CATEGORIES = ["all", "payment", "transaction", "request", "stock", "user", "capital", "other"];
-
-function actionMeta(action, t) {
-  const category = ACTION_META[action] || "other";
-  const key = `al_act_${action}`;
-  const label = ACTION_META[action] ? t(key) : action;
-  return { label, category };
-}
-
-function refLabel(log) {
-  const before = log.old_data || {};
-  const after = log.new_data || {};
-  const code = after.code || before.code;
-  const partyName = after.partyName || before.partyName;
-  if (code && partyName) return `${code} · ${partyName}`;
-  return code || partyName || "";
-}
-
-function describeChange(log, t) {
-  const before = log.old_data || {};
-  const after = log.new_data || {};
-  const action = log.action;
-  const ref = refLabel(log);
-  const parts = [];
-
-  switch (action) {
-    case "create_transaction":
-      if (ref) parts.push(ref);
-      if (after.amount !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.amount) }));
-      if (after.stationName) parts.push(t("al_location", { v: after.stationName }));
-      if (after.paymentStatus) parts.push(t("al_status", { v: after.paymentStatus }));
-      break;
-
-    case "record_payment":
-      if (ref) parts.push(ref);
-      if (after.amount !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.amount) }));
-      if (after.method) parts.push(t("al_method", { v: after.method }));
-      if (after.memo) parts.push(after.memo);
-      break;
-
-    case "edit_payment":
-      if (ref) parts.push(ref);
-      if (before.amount !== undefined && after.amount !== undefined) {
-        parts.push(t("al_amount", { v: `${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}` }));
-      }
-      break;
-
-    case "submit_change_request":
-      if (ref) parts.push(ref);
-      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
-      break;
-
-    case "approve_change_request":
-    case "reject_change_request":
-      if (ref) parts.push(ref);
-      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
-      if (action === "approve_change_request") {
-        if (before.amount !== undefined && after.amount !== undefined && before.amount !== after.amount) {
-          parts.push(t("al_amount", { v: `${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}` }));
-        }
-        if (before.price_per_kg !== undefined && after.price_per_kg !== undefined && before.price_per_kg !== after.price_per_kg) {
-          parts.push(t("al_price", { v: `${fmtRiel(before.price_per_kg)} → ${fmtRiel(after.price_per_kg)}` }));
-        }
-      }
-      break;
-
-    case "scale_below_zero":
-    case "scale_back_to_zero":
-    case "scale_capture_override":
-      if (after.weightKg !== undefined) parts.push(t("al_scale_weight", { v: new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(after.weightKg) }));
-      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
-      break;
-
-    case "confirm_expense_day":
-    case "send_back_expense_day":
-      if (after.stationName) parts.push(after.stationName);
-      if (after.day) parts.push(after.day);
-      if (after.total !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.total) }));
-      if (after.corrected) parts.push(t("xr_corrected"));
-      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
-      break;
-
-    case "approve_expense_change":
-    case "reject_expense_change":
-      if (after.day) parts.push(after.day);
-      if (after.category) parts.push(`${after.category}: ${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}`);
-      if (after.reason) parts.push(t("al_reason", { v: after.reason }));
-      break;
-
-    case "cancel_transaction":
-      if (ref) parts.push(ref);
-      if (after.amount !== undefined) parts.push(t("al_amount", { v: fmtRiel(after.amount) }));
-      break;
-
-    case "change_role":
-      if (after.fullName) parts.push(after.fullName);
-      if (after.role) parts.push(t("al_new_role", { v: after.role }));
-      break;
-
-    case "add_partner":
-      if (after.name) parts.push(t("al_partner", { v: after.name }));
-      break;
-
-    case "add_capital_entry":
-      if (after.partnerName) parts.push(after.partnerName);
-      if (after.amount !== undefined) parts.push(fmtRiel(after.amount));
-      if (after.type) parts.push(after.type === "contribution" ? t("al_contribution") : t("al_withdrawal"));
-      break;
-
-    case "add_loan_entry":
-      if (after.lenderName) parts.push(after.lenderName);
-      if (after.amount !== undefined) parts.push(fmtRiel(after.amount));
-      if (after.type) parts.push(after.type === "borrow" ? t("al_loan_drawn") : t("al_loan_repaid"));
-      break;
-
-    default:
-      // Fallback for older or unrecognized log entries
-      if (ref) parts.push(ref);
-      if (before.amount !== undefined && after.amount !== undefined && before.amount !== after.amount) {
-        parts.push(t("al_amount", { v: `${fmtRiel(before.amount)} → ${fmtRiel(after.amount)}` }));
-      }
-      if (before.price_per_kg !== undefined && after.price_per_kg !== undefined && before.price_per_kg !== after.price_per_kg) {
-        parts.push(t("al_price", { v: `${fmtRiel(before.price_per_kg)} → ${fmtRiel(after.price_per_kg)}` }));
-      }
-      if (before.payment_status !== undefined && after.payment_status !== undefined && before.payment_status !== after.payment_status) {
-        parts.push(t("al_status", { v: `${before.payment_status} → ${after.payment_status}` }));
-      }
-  }
-
-  return parts.length ? parts.join(" · ") : "—";
-}
-
-export default function ReportAuditLog({ selectedLocationIds = [], startDate = null, endDate = null }) {
+// [2026-09-23] `personId` and `onPeople` are how the Activity Log page
+// (pages/ActivityLog.jsx) adds a "who" filter without this component having
+// to fetch the staff list: it already holds every entry for the period, so
+// the people who actually DID something in that period are right here. Both
+// are optional — Finance → Reports rendered this with neither for months.
+export default function ReportAuditLog({ selectedLocationIds = [], startDate = null, endDate = null, personId = "", onPeople = null }) {
   const { t } = useLanguage();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -211,8 +54,19 @@ export default function ReportAuditLog({ selectedLocationIds = [], startDate = n
     const wanted = selectedLocationIds.length ? new Set(selectedLocationIds) : null;
     return logs.filter((l) =>
       (!wanted || wanted.has(l.userLocationId)) &&
+      (!personId || l.user_id === personId) &&
       (category === "all" || actionMeta(l.action, t).category === category));
-  }, [logs, category, locKey, t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [logs, category, locKey, personId, t]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Everyone who did something in this period, by name, for the "who" filter
+  // above. Reported upward rather than held here, so the filter can sit in
+  // the page's own toolbar beside the station and the dates.
+  useEffect(() => {
+    if (!onPeople) return;
+    const seen = new Map();
+    for (const l of logs) if (l.user_id && !seen.has(l.user_id)) seen.set(l.user_id, l.userName || "—");
+    onPeople(Array.from(seen, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)));
+  }, [logs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div>

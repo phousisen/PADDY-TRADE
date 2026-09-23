@@ -162,8 +162,12 @@ function LedgerRow({ label, sub, sums, variant, onClick, onLoads, open, t, mark,
       <td className={cls(STK)}>{sums.costPerKg ? sums.costPerKg.toFixed(2) : <span className={D ? "text-brand-300" : "text-slate-200"}>—</span>}</td>
       <td className={cls(STK)}><Riel v={sums.closingValue} dark={D} /></td>
 
+      {/* [2026-09-23] Cash removed. SISEN: "because i think we need only
+          profit." It also never was cash: it summed every ticket's value on
+          its own date whether or not anyone had paid, so a day bought on
+          credit read as money gone. Profit is the honest figure, and the
+          one thing this page is opened for. */}
       <td className={`${cls()} border-l border-slate-200`}><Signed v={sums.profit} dark={D} /></td>
-      <td className={cls()}><Signed v={sums.cash} dark={D} /></td>
     </tr>
   );
 }
@@ -289,13 +293,12 @@ function LedgerCard({ label, sub, sums, variant, onClick, open, t, mark, detaile
           <>
             <Cell label={t("db_buy")} value={`${kg(sums.boughtKg)} ${t("db_weight_kg")}`} />
             <Cell label={t("db_sell")} value={`${kg(sums.soldKg)} ${t("db_weight_kg")}`} />
-            <Cell label={t("db_cash")} value={signed(sums.cash)} />
+            <Cell label={t("db_expenses")} value={money(sums.expenses)} />
           </>
         ) : (
           <>
             <Cell label={t("db_expenses")} value={money(sums.expenses)} extra={<ExpMark mark={mark} day t={t} detailed={detailed} />} />
             <Cell label={t("db_closing_kg")} value={`${kg(sums.closingKg)} ${t("db_weight_kg")}`} tone="stk" />
-            <Cell label={t("db_cash")} value={signed(sums.cash)} />
           </>
         )}
       </div>
@@ -381,7 +384,6 @@ function SimpleDay({ day, t }) {
         <Line label={t("db_other_expenses")} value={day.otherExp ? `−${money(day.otherExp)}` : "—"} tone={day.otherExp ? "r" : "n"} />
         <Line label={t("db_stock_lost")} value={day.lostValue < 0 ? `−${money(-day.lostValue)}` : "—"} tone={day.lostValue < 0 ? "r" : "n"} />
         <Line label={t("db_profit")} value={`${day.profit >= 0 ? "+" : "−"}${money(day.profit)} ៛`} strong="win" />
-        <Line label={t("db_cash_short")} value={`${day.cash >= 0 ? "+" : "−"}${money(day.cash)} ៛`} />
       </Block>
     </div>
   );
@@ -507,8 +509,6 @@ function DayDrawer({ day, txs, payments }) {
             <span className="flex-1 font-semibold">{t("db_profit")}</span>
             <span className="tabular-nums font-semibold">{day.profit >= 0 ? "+" : "−"} {Math.abs(Math.round(day.profit)).toLocaleString("en-US")} ៛</span>
           </div>
-          <Line label={t("db_cash_line")} a={<>{day.cash >= 0 ? "+" : "−"} <Riel v={Math.abs(day.cash)} /> ៛</>} />
-          <Line label={t("db_cash_diff")} a={<>{day.profit - day.cash >= 0 ? "+" : "−"} <Riel v={Math.abs(day.profit - day.cash)} /> ៛</>} />
         </Mini>
       </div>
 
@@ -803,7 +803,7 @@ export default function DailyBook({ setPage } = {}) {
                     <th className={`${GH} ${SELL} border-l border-slate-200 text-orange-700`} colSpan={3}>{t("db_sell")}</th>
                     <th className={`${GH} border-l border-slate-200`} colSpan={3}>{t("db_expenses")}</th>
                     <th className={`${GH} ${STK} border-l border-slate-200 text-sky-800`} colSpan={5}>{t("db_stock")}</th>
-                    <th className={`${GH} border-l border-slate-200`} colSpan={2}>{t("db_result")}</th>
+                    <th className={`${GH} border-l border-slate-200`}>{t("db_result")}</th>
                   </tr>
                   <tr>
                     <th className="sticky left-0 z-[3] border-b border-r border-slate-200 bg-white px-3.5 pb-2.5 text-left text-[10px] font-semibold text-slate-400">{t("db_period")}</th>
@@ -823,7 +823,6 @@ export default function DailyBook({ setPage } = {}) {
                     <th className={`${TH} ${STK} border-b border-slate-200`}>{t("db_cost_per_kg")}</th>
                     <th className={`${TH} ${STK} border-b border-slate-200`}>{t("db_value_r")}</th>
                     <th className={`${TH} border-b border-l border-slate-200`}>{t("db_profit_r")}</th>
-                    <th className={`${TH} border-b border-slate-200`}>{t("db_cash_r")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -851,7 +850,7 @@ export default function DailyBook({ setPage } = {}) {
                         />
                         {isOpen && (
                           <tr>
-                            <td colSpan={18} className="border-b border-slate-200 p-0">
+                            <td colSpan={17} className="border-b border-slate-200 p-0">
                               {/* [2026-09-16] A view-only account gets the short
                                   drawer on a computer as well. Transactions was
                                   taken off its menu in September because every
@@ -895,7 +894,7 @@ export default function DailyBook({ setPage } = {}) {
             <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 bg-slate-50/50 px-5 py-3 text-[11.5px] text-slate-400">
               <span><b className="font-semibold text-slate-600">{t("db_loads")}</b>{t("db_hint_loads")}</span>
               <span><b className="font-semibold text-slate-600">{t("db_price")}</b>{t("db_hint_spent")}<b className="font-semibold text-slate-600">{t("db_cost_per_kg")}</b>{t("db_hint_cost")}</span>
-              <span><b className="font-semibold text-slate-600">{t("db_profit")}</b> = sales − cost of the paddy sold − expenses · <b className="font-semibold text-slate-600">{t("db_cash")}</b> = received − paid − expenses</span>
+              <span><b className="font-semibold text-slate-600">{t("db_profit")}</b> = sales − cost of the paddy sold − expenses − paddy lost</span>
               <span><b className="font-semibold text-slate-600">{t("db_closing_kg")}</b>{t("db_hint_closing")}</span>
             </div>
           </div>

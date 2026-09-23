@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, History, ReceiptText, Download, Loader2, Scale, PiggyBank, TrendingDown, FileText, Package, Users, SlidersHorizontal, BarChart3 } from "lucide-react";
+import { LayoutGrid, ShoppingBag, TrendingUp, Wallet, HandCoins, Boxes, Landmark, ReceiptText, Download, Loader2, Scale, PiggyBank, TrendingDown, FileText, Package, Users, SlidersHorizontal, BarChart3 } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import LocationFilter from "../components/LocationFilter.jsx";
 import DateRangeFilter from "../components/DateRangeFilter.jsx";
@@ -19,7 +19,6 @@ import ReportShrinkage from "./ReportShrinkage.jsx";
 import ReportCashFlow from "./ReportCashFlow.jsx";
 import ReportCapital from "./ReportCapital.jsx";
 import ReportTax from "./ReportTax.jsx";
-import ReportAuditLog from "./ReportAuditLog.jsx";
 // [2026-09-14] The accountant's statements — built on statements.js, which
 // every one of them shares, so they cannot disagree about the same month.
 import ReportIncomeStatement from "./ReportIncomeStatement.jsx";
@@ -127,7 +126,7 @@ export default function Reports({ initialTab = "overview" }) {
     cashflow: Landmark, inventory: Package, shareholders: Users,
     purchases: ShoppingBag, sales: TrendingUp, payables: HandCoins,
     receivables: Wallet, stock: Boxes, shrinkage: TrendingDown,
-    capital: PiggyBank, financesetup: SlidersHorizontal, tax: ReceiptText, auditlog: History,
+    capital: PiggyBank, financesetup: SlidersHorizontal, tax: ReceiptText,
   };
   // [2026-09-15] Two changes here, both about saying things once.
   //
@@ -244,7 +243,6 @@ export default function Reports({ initialTab = "overview" }) {
         {tab === "cashflow" && <ReportCashFlow selectedLocationIds={selectedLocationIds} setSelectedLocationIds={setSelectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "capital" && <ReportCapital selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
         {tab === "tax" && <ReportTax selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
-        {tab === "auditlog" && isAdmin && <ReportAuditLog selectedLocationIds={selectedLocationIds} startDate={startDate} endDate={endDate} />}
       </main>
         </div>
       </div>
