@@ -250,13 +250,15 @@ export default function LocationDetail({ locationId, setPage }) {
     return null;
   }, [todayAvgBuyPrice, recentAvgBuyPrice]);
 
-  async function submitAdjustment({ newStockKg, reason, note, pricePerKg }) {
+  async function submitAdjustment({ newStockKg, reason, note, pricePerKg, effectiveDate }) {
     const previousStockKg = Number(location.current_stock_kg) || 0;
     // [2026-09-19] The database reads the stock at the moment it saves and
     // returns it; that is the "before" the Activity Log now shows. The figure
     // on screen could be minutes old, with trucks weighed since (audit F14).
     const saved = await api.recordStockAdjustment({
       locationId: location.id, previousStockKg, newStockKg, reason, note, pricePerKg, userId: session.user.id,
+      // [2026-09-24] null unless the modal chose an earlier day.
+      effectiveDate,
     });
     // Same audit-log pattern as every other significant change in the app —
     // edits, cancellations, payments — so it shows up in the Activity Log
@@ -266,7 +268,7 @@ export default function LocationDetail({ locationId, setPage }) {
       tableName: "locations",
       recordId: location.id,
       oldData: { current_stock_kg: saved?.previous_stock_kg ?? previousStockKg },
-      newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: location.name },
+      newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: location.name, effectiveDate },
       userId: session.user.id,
     }).catch(() => {});
     setAdjustOpen(false);

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity, ChevronRight } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import SettleDifferenceModal, { canSettle } from "../components/SettleDifferenceModal.jsx";
+import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
 import StationStockCard from "../components/StationStockCard.jsx";
 import { canRequestReset } from "../stockReset.js";
 import { api } from "../api.js";
@@ -131,6 +132,10 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // it was before this feature existed.
   const [ticketFloor, setTicketFloor] = useState(new Map());
   const [settleLoc, setSettleLoc] = useState(null);
+  // [2026-09-24] Setting a station's stock to an exact number — leftover
+  // paddy in the shed overnight, a recount — from the Dashboard row, for a
+  // day of your choosing. The same screen Stock Inventory has always used.
+  const [adjustLoc, setAdjustLoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const refetch = useRefetchSignal();
@@ -261,7 +266,13 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   // than explain that, the column simply is not there unless the period
   // ends today.
   const periodEndsToday = rangeEnd === cambodiaDateStr();
-  const canSettleHere = canSettleRole && periodEndsToday;
+  // [2026-09-24] Was `&& periodEndsToday`, which hid every control the moment
+  // you looked at Yesterday — so a day that needed correcting could not be
+  // corrected from the day you were looking at. The screen it opens now picks
+  // the day itself (today, yesterday, or up to a week back), so the period on
+  // screen no longer has to decide.
+  const canSettleHere = canSettleRole;
+  void periodEndsToday;
   // Six fixed columns, plus the settle column and the chevron when shown —
   // kept as one number so the "loading" and "no locations" rows below span
   // the table properly instead of a hard-coded 7 that silently goes wrong
@@ -650,7 +661,17 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                             weight". The button still opens the same screen;
                             what is inside it changes (reason + password for a
                             big one). See SettleDifferenceModal. */}
-                        {onHandKg < -0.005 && (
+                        {/* [2026-09-24] SISEN: "not everything sotck should be
+                            reset to 0, it should be able to adjust as well for
+                            stock left overnight."
+                            A NEGATIVE keeps its one-tap green/gold button —
+                            that gap is never real paddy and zero is the only
+                            sane answer. Every other station gets a quiet grey
+                            "Set stock", which opens the screen that sets an
+                            exact number for a chosen day. Leftover stock is a
+                            positive figure, so a control that only appeared on
+                            negatives could never record it. */}
+                        {onHandKg < -0.005 ? (
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
@@ -662,6 +683,14 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                             {canSettle(onHandKg, ticketFloor.get(loc.id))
                               ? t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })
                               : t("perf_fix_btn", { kg: fmt(Math.abs(onHandKg)) })}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setAdjustLoc({ loc, onHandKg }); }}
+                            className="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11.5px] font-semibold text-slate-500 hover:border-brand-300 hover:text-brand-700"
+                          >
+                            {t("perf_set_stock_btn")}
                           </button>
                         )}
                       </td>
@@ -741,7 +770,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                       button as the table now: gold when it is over the limit,
                       and the screen it opens asks for a reason and a password.
                       SISEN: "if not we cannot reset the weight". */}
-                  {canSettleHere && onHandKg < -0.005 && (
+                  {canSettleHere && (onHandKg < -0.005 ? (
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setSettleLoc({ loc, onHandKg }); }}
@@ -754,7 +783,15 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                         ? t("perf_settle_btn", { kg: fmt(Math.abs(onHandKg)) })
                         : t("perf_fix_btn", { kg: fmt(Math.abs(onHandKg)) })}
                     </button>
-                  )}
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setAdjustLoc({ loc, onHandKg }); }}
+                      className="mt-2.5 w-full rounded-lg border border-slate-200 bg-white py-2 text-[12.5px] font-semibold text-slate-500 active:bg-slate-50"
+                    >
+                      {t("perf_set_stock_btn")}
+                    </button>
+                  ))}
                 </div>
               ))}
               {loading && locations.length === 0 && <p className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
@@ -856,6 +893,41 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             // adjustment changes On hand, the Adjusted column and the
             // ledger snapshots at once, and re-deriving all three from one
             // source beats keeping three copies in step.
+            load();
+          }}
+        />
+      )}
+      {/* [2026-09-24] Setting an exact figure, from the Dashboard.
+          Deliberately the SAME component Stock Inventory and Location Detail
+          use, not a second one: three screens that set a station's stock must
+          not be free to disagree about the rules, the password step, or what
+          a loss is worth. */}
+      {adjustLoc && (
+        <AdjustStockModal
+          // The ledger's On hand, not locations.current_stock_kg — the same
+          // number the row that opened this is showing. A modal that quotes a
+          // different figure from the table is how people stop trusting both.
+          station={{ ...adjustLoc.loc, current_stock_kg: adjustLoc.onHandKg }}
+          priceSuggestion={null}
+          t={t}
+          isAdmin={isAdmin}
+          userEmail={session?.user?.email}
+          onClose={() => setAdjustLoc(null)}
+          onSubmit={async ({ newStockKg, reason, note, pricePerKg, effectiveDate }) => {
+            const previousStockKg = adjustLoc.onHandKg;
+            const saved = await api.recordStockAdjustment({
+              locationId: adjustLoc.loc.id, previousStockKg, newStockKg, reason, note,
+              pricePerKg, userId: session?.user?.id, effectiveDate,
+            });
+            await api.logAudit({
+              action: "adjust_stock",
+              tableName: "locations",
+              recordId: adjustLoc.loc.id,
+              oldData: { current_stock_kg: saved?.previous_stock_kg ?? previousStockKg },
+              newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: adjustLoc.loc.name, effectiveDate },
+              userId: session?.user?.id,
+            }).catch(() => {});
+            setAdjustLoc(null);
             load();
           }}
         />

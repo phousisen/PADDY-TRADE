@@ -136,7 +136,7 @@ export default function StockInventory() {
 
   useEffect(() => { load(); }, []);
 
-  async function submitAdjustment({ newStockKg, reason, note, pricePerKg }) {
+  async function submitAdjustment({ newStockKg, reason, note, pricePerKg, effectiveDate }) {
     const station = adjustStation;
     const previousStockKg = Number(station.current_stock_kg) || 0;
     // [2026-09-19] The database reads the stock at the moment it saves and
@@ -144,6 +144,8 @@ export default function StockInventory() {
     // on screen could be minutes old, with trucks weighed since (audit F14).
     const saved = await api.recordStockAdjustment({
       locationId: station.id, previousStockKg, newStockKg, reason, note, pricePerKg, userId: session.user.id,
+      // [2026-09-24] null unless the modal chose an earlier day.
+      effectiveDate,
     });
     // Logged the same way every other significant change in the app is —
     // edits, cancellations, payments — so it shows up in the Activity Log
@@ -153,7 +155,7 @@ export default function StockInventory() {
       tableName: "locations",
       recordId: station.id,
       oldData: { current_stock_kg: saved?.previous_stock_kg ?? previousStockKg },
-      newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: station.name },
+      newData: { current_stock_kg: newStockKg, reason, note, pricePerKg, stationName: station.name, effectiveDate },
       userId: session.user.id,
     }).catch(() => {});
     setAdjustStation(null);
