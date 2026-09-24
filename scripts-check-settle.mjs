@@ -42,3 +42,37 @@ for (const [name, kg, floor, want] of cases) {
 }
 if (failed) { console.error(`\n${failed} of ${cases.length} settle checks FAILED.`); process.exit(1); }
 console.log(`Checked ${cases.length} settle cases — small negatives settle, everything else is refused.`);
+
+// [2026-09-24] SISEN: "not everything sotck should be reset to 0, it should be
+// able to adjust as well for stock left overnight" and "it doesnt have the
+// option to set a date for a reset. like yesterday".
+console.log("");
+console.log("Setting a station's stock by hand");
+const rd = (f) => readFileSync(f, "utf8");
+let f2 = 0;
+const ok = (name, pass) => { if (pass) { console.log(`  ok    ${name}`); } else { console.error(`  FAIL  ${name}`); f2 += 1; } };
+const dash = rd("src/pages/Dashboard.jsx");
+const adj = rd("src/components/AdjustStockModal.jsx");
+ok("a NEGATIVE station still gets the one-tap settle/fix button",
+   /onHandKg < -0\.005 \? \(/.test(dash) && /perf_fix_btn/.test(dash));
+ok("every OTHER station gets a control too (leftover stock is positive)",
+   /perf_set_stock_btn/.test(dash) && /setAdjustLoc\(\{ loc, onHandKg \}\)/.test(dash));
+ok("looking at a past period no longer hides every control",
+   !/canSettleRole && periodEndsToday/.test(dash));
+ok("the Dashboard reuses the SAME adjust screen, not a second one",
+   /import \{ AdjustStockModal \}/.test(dash));
+ok("the modal it opens is given the ledger figure the row shows",
+   /current_stock_kg: adjustLoc\.onHandKg/.test(dash));
+ok("the adjust screen can date the change (today / yesterday / a date)",
+   /settle_date_today/.test(adj) && /settle_date_yesterday/.test(adj) && /khOldestAllowed/.test(adj));
+ok("...and no further back than 7 days", /khDaysAgo\(7\)/.test(adj));
+ok("...in Cambodia's calendar, not the viewer's", /timeZone: "Asia\/Phnom_Penh"/.test(adj));
+ok("a change dated today still saves exactly as before (null)",
+   /effectiveDate !== khToday \? effectiveDate : null/.test(adj));
+ok("'Reset to 0' is still one tap when the shed really is empty", /adj_reset_to_zero/.test(adj));
+for (const f of ["src/pages/StockInventory.jsx", "src/pages/LocationDetail.jsx", "src/pages/Dashboard.jsx"]) {
+  ok(`${f.split("/").pop()} passes the date through to the database`,
+     /effectiveDate/.test(rd(f)));
+}
+if (f2) { console.error(`\n${f2} FAILED.`); process.exit(1); }
+console.log("\nA station's stock can be set to any figure, for any of the last 7 days.");

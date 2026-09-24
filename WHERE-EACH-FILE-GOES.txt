@@ -1,48 +1,72 @@
-PADDYTRADE - 23 September 2026 - EVERYTHING FROM TODAY, IN ONE GO
-=================================================================
-
-This REPLACES both earlier zips from today. Upload only this one.
+PADDYTRADE - 24 September 2026
+==============================
+Setting a station's stock by hand, on any day. Plus the scale screen fixes
+from last night (they were never uploaded, so they are in here too).
 
 NO SQL. Nothing to run in Supabase.
 
 Upload each file to the SAME path it has in this folder.
 
-  src/api.js                                (changed)
-  src/auditText.js                          (NEW FILE)
-  src/expenseCategories.js                  (changed)
-  src/scaleAlert.js                         (changed)
-  src/i18n.jsx                              (changed)
-  src/App.jsx                               (changed)
+  src/i18n.jsx                             (changed)
+  src/scaleWatch.js                        (changed)
 
-  src/pages/ActivityLog.jsx                 (NEW FILE)
-  src/pages/ReportAuditLog.jsx              (changed)
-  src/pages/Reports.jsx                     (changed)
-  src/pages/FinanceStart.jsx                (changed)
-  src/pages/Transactions.jsx                (changed)
-  src/pages/Expenses.jsx                    (changed)
-  src/pages/DailyBook.jsx                   (changed)
-  src/pages/Dashboard.jsx                   (changed)
+  src/pages/Dashboard.jsx                  (changed)
+  src/pages/StockInventory.jsx             (changed)
+  src/pages/LocationDetail.jsx             (changed)
 
-  src/components/TicketHistory.jsx          (NEW FILE)
-  src/components/Sidebar.jsx                (changed)
-  src/components/MobileNav.jsx              (changed)
-  src/components/SettleDifferenceModal.jsx  (changed)
-  src/components/ScaleAlertBanner.jsx       (changed)
+  src/components/AdjustStockModal.jsx      (changed)
+  src/components/WeightField.jsx           (changed)
 
-  scripts-check-screens.mjs                 (changed - checker, root folder)
-  scripts-check-scale-guard.mjs             (changed - checker, root folder)
+  scripts-check-settle.mjs                 (changed - checker, root folder)
+  scripts-check-scale-guard.mjs            (changed - checker, root folder)
+  scripts-check-speed.mjs                  (changed - checker, root folder)
 
 Delete nothing.
 
-WHAT IS IN IT
 
-  1. Fix to 0          - a negative shed can be reset. Reason + password,
-                         and it lands in the Activity Log.
-  2. Cash removed      - the Daily Book shows Profit only.
-  3. Ticket History    - open a transaction, see who did what and when.
-     Activity Log      - moved out of Finance into SYSTEM, with who /
-                         which station / which days filters.
-  4. Categories        - rename, merge, remove, add. Plain list until you
-                         press Edit.
-  5. Scale alarm       - an amber box on the HQ Dashboard when a station's
-                         scale was working today and has stopped.
+1. SETTING A STATION'S STOCK - ANY FIGURE, ANY OF THE LAST 7 DAYS
+-----------------------------------------------------------------
+  "not everything sotck should be reset to 0, it should be able to adjust
+   as well for stock left overnight"
+  "i notice it doesnt have the option to set a date for a reset. like
+   yesterday"
+
+  Every station on the HQ Dashboard now has a control:
+
+    a NEGATIVE station  ->  green "Settle N kg"  (one tap, it is drift)
+                            or gold "Fix N kg to 0" (reason + password)
+    every other station ->  grey "Set stock"
+
+  "Set stock" opens the SAME Adjust Stock screen that Stock Inventory has
+  always used - not a second one, so three screens cannot disagree about
+  the rules or the password step. There you can:
+
+    - type the real amount (3,000 kg left in the shed) or take it off the scale
+    - or press "Reset to 0" if the shed really is empty
+    - choose WHICH DAY it counts against: Today / Yesterday / pick a date,
+      up to 7 days back, in Cambodia's calendar
+    - give a reason, and if it is a loss it asks the price and shows the value
+
+  The date was already supported by the database all along - nothing was
+  passing one. Now all three screens that adjust stock do.
+
+  Also: looking at "Yesterday" on the Dashboard used to hide every button on
+  every row, so a day that needed correcting could not be corrected. That
+  condition is gone; the screen picks its own day now.
+
+
+2. THE SCALE SCREEN (from last night)
+-------------------------------------
+  The weight box no longer just says "Scale not connected". It says which of
+  three things is wrong, in both languages:
+
+    "The scale program is not running on this PC."
+    "The scale program is running and listening - the indicator is sending
+     nothing. Check it is switched on and the cable is pushed in at the
+     indicator end."
+    "The indicator is sending, but not in a way this PC can read yet."
+
+  And "disconnects after every 1 weighting" cannot come back: the pause
+  while a slip prints now ends three separate ways - after 8 seconds, after
+  a few skipped rounds even if the clock is wrong, and the instant any
+  weight box opens.

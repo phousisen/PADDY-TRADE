@@ -32,8 +32,12 @@ ok("live weight: the form is only re-drawn when the weight changes (or once a se
 ok("live weight: printing does not start a second loop", /if \(!isPrinting\(\)\)/.test(lw) && !/afterprint", \(\) => \{[^}]*tick\(/.test(lw));
 // [2026-09-22] Pong Ro: the pause stuck on after the first weigh-in slip
 // printed, and every weight box after it said "Scale not connected".
-ok("live weight: the print pause can never outlive the print (20 s cap)", /const PRINT_PAUSE_MAX_MS = 20000;/.test(lw) && /Date\.now\(\) - printingSince > PRINT_PAUSE_MAX_MS/.test(lw));
-ok("live weight: opening a weight box ends any print pause", /if \(foreground\) printingSince = 0;/.test(lw));
+// [2026-09-23] Tightened from 20 s to 8 s, and given a second way out that
+// does not depend on the clock at all — SISEN saw the same "disconnected
+// after every 1 weighting" at Ping Pong. A weigh-in slip is one page.
+ok("live weight: the print pause can never outlive the print (8 s cap)", /const PRINT_PAUSE_MAX_MS = 8000;/.test(lw) && /Date\.now\(\) - printingSince > PRINT_PAUSE_MAX_MS/.test(lw));
+ok("live weight: ...and a few skipped rounds end it even if the clock does not", /skippedRounds > MAX_SKIPPED_ROUNDS/.test(lw));
+ok("live weight: opening a weight box ends any print pause", /if \(foreground\) \{ printingSince = 0; skippedRounds = 0; \}/.test(lw));
 ok("live weight: a stopped and restarted watcher does not leave two loops", /store\.running && store\.gen === gen/.test(lw));
 ok("live weight: two weight boxes on one station share one poll", /const stores = new Map\(\);/.test(lw) && /subscribeScale\(locationId, redraw/.test(box));
 

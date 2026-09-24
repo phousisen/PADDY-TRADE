@@ -97,6 +97,17 @@ ok("Station Health has a scale column", /<ScaleCell reading=\{scales\.get\(s\.id
 const al = src("src/auditText.js");
 // [2026-09-23] The quiet-scale alarm — SISEN found the Ping Pong outage
 // because staff were stuck mid-ticket, not because the app said anything.
+// [2026-09-23] "disconnected after every 1 weighting" — the print pause that
+// broke Pong Ro on 22 September. It must be impossible for it to stick.
+const watch = src("src/scaleWatch.js");
+ok("the print pause is capped by the clock", /PRINT_PAUSE_MAX_MS = 8000/.test(watch) && /now\(\) - printingSince > PRINT_PAUSE_MAX_MS|Date\.now\(\) - printingSince > PRINT_PAUSE_MAX_MS/.test(watch));
+ok("...and by a count of skipped rounds, if the clock fails", /MAX_SKIPPED_ROUNDS/.test(watch) && /skippedRounds > MAX_SKIPPED_ROUNDS/.test(watch));
+ok("...and opening a weight box always ends it", /if \(foreground\) \{ printingSince = 0; skippedRounds = 0; \}/.test(watch));
+// The station screen must say WHY, not just that it is not connected.
+ok("the weight box carries the scale program's own diagnosis", /export function localScaleReason/.test(watch) && /reason: connected \? null : localScaleReason/.test(watch));
+ok("a running program with no weight is not called 'not running'", /lastLocalMiss = data\.diagnosis/.test(watch));
+ok("and the station screen shows it", /t\(`sc_why_\$\{reason\}`\)/.test(src("src/components/WeightField.jsx")));
+
 const sa = src("src/scaleAlert.js");
 ok("a scale that stopped today is raised at HQ", /export function stationsWithQuietScale/.test(sa));
 ok("a station that never had the agent is NOT raised", /r\.updated_at == null\) return false/.test(sa));
