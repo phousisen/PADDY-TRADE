@@ -41,7 +41,7 @@ export default function WeightField({ locationId, label, labelKm, scaleLabel, sc
   const { t } = useLanguage();
   const { session, profile, isViewOnly } = useAuth();
   const byRef = useRef(`wf_${Math.random().toString(36).slice(2)}`);
-  const { connected, weightKg, status, stable } = useLiveWeight(locationId, { by: byRef.current });
+  const { connected, weightKg, status, stable, reason } = useLiveWeight(locationId, { by: byRef.current });
   const [manualMode, setManualMode] = useState(false);
   const [override, setOverride] = useState(null); // { reason } once the Owner allowed one capture
   const [askOverride, setAskOverride] = useState(false);
@@ -108,10 +108,18 @@ export default function WeightField({ locationId, label, labelKm, scaleLabel, sc
           <span className={`${large ? "h-2.5 w-2.5" : "h-2 w-2"} shrink-0 rounded-full ${dotCls}`} />
           <div>
             <p className={`${large ? "text-sm" : "text-xs"} font-medium ${textCls}`}>
-              {heading ? t(heading) : connected ? (scaleLabel || "Live Scale Weight") : "Scale not connected"}
+              {heading ? t(heading) : connected ? (scaleLabel || "Live Scale Weight") : t("sc_not_connected")}
               {!heading && <span className="font-khmer block font-normal">{connected ? (scaleLabelKm || "ទម្ងន់ជញ្ជីងផ្ទាល់") : "ជញ្ជីងមិនទាន់ភ្ជាប់"}</span>}
             </p>
             <p className={`${large ? "text-2xl" : "text-lg"} font-bold tabular-nums ${numCls}`}>{connected ? `${Number(weightKg) < 0 ? "−" : ""}${fmt2(Math.abs(Number(weightKg)))} kg` : "— kg"}</p>
+            {/* [2026-09-23] WHY it is not connected. The scale program on this
+                PC already knows; until today nobody could see it without a
+                command prompt, and an afternoon went on guessing. */}
+            {!connected && reason && (
+              <p className={`${large ? "text-[12.5px]" : "text-[11.5px]"} mt-0.5 leading-snug text-slate-500`}>
+                {t(`sc_why_${reason}`)}
+              </p>
+            )}
           </div>
         </div>
         {connected && canCapture && (

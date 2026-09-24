@@ -7,6 +7,19 @@ function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${fmt(n)} ៛`; }
 
+// Cambodia's own calendar day, whatever the viewing device is set to — the
+// same rule the settle screen and every station date in the app uses.
+function khDate(d = new Date()) {
+  const p = {};
+  new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Phnom_Penh", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(d).forEach((x) => { p[x.type] = x.value; });
+  return `${p.year}-${p.month}-${p.day}`;
+}
+function khDaysAgo(n) { return khDate(new Date(Date.now() - n * 86400000)); }
+const khToday = khDate();
+const khYesterday = khDaysAgo(1);
+const khOldestAllowed = khDaysAgo(7);
+
 // [2026-08-31] Pulled out of StockInventory.jsx (unchanged behavior) so
 // LocationDetail.jsx can reuse the exact same modal instead of duplicating
 // ~110 lines of it — same component, two callers now.
@@ -61,6 +74,24 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
   // "Reset to 0" below still sets it directly, since there's nothing to
   // weigh in that case.
   const [newStockKg, setNewStockKg] = useState("");
+  // [2026-09-24] WHICH DAY THIS COUNTS AGAINST.
+  //
+  // SISEN: "i notice it doesnt have the option to set a date for a reset. like
+  // yesterday" and "not everything sotck should be reset to 0, it should be
+  // able to adjust as well for stock left overnight."
+  //
+  // Both halves were already half-built and in the wrong places. THIS screen
+  // has always set an exact number — leftover stock, a recount, a loss — but
+  // could only ever date it today. The settle screen could date a correction
+  // back a week but could only ever set ZERO. So neither could record "we
+  // closed yesterday with 3,000 kg still in the shed", which is the ordinary
+  // case.
+  //
+  // api.recordStockAdjustment has taken an effectiveDate all along; nothing
+  // was passing one. Seven days back is the same limit the settle screen
+  // uses — far enough for "we did it the next morning", short enough that
+  // nobody quietly re-writes last month.
+  const [effectiveDate, setEffectiveDate] = useState(khToday);
   // Defaults to "moisture" — this is the overnight-drying case (paddy left
   // in stock overnight loses weight before it's re-weighed the next
   // morning), still fully editable to "reset" (nothing physically left —
@@ -106,7 +137,12 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
     setError("");
     setSaving(true);
     try {
-      await onSubmit({ newStockKg: next, reason, note: note.trim() || null, pricePerKg: isLoss && hasPrice ? price : null });
+      await onSubmit({
+        newStockKg: next, reason, note: note.trim() || null,
+        pricePerKg: isLoss && hasPrice ? price : null,
+        // null for today, so a normal adjustment behaves exactly as before.
+        effectiveDate: effectiveDate !== khToday ? effectiveDate : null,
+      });
     } catch (err) {
       // Same reasoning as every other save-with-a-modal in this app: if it
       // fails (dropped connection, permissions gap), say so instead of
@@ -208,6 +244,27 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
             isAdmin={isAdmin}
           />
         </div>
+
+        {/* [2026-09-24] Which day it counts against. Two buttons for the case
+            that actually happens — "we closed it the next morning" — and a
+            date box for anything else, seven days back at most. */}
+        <label className="mb-1 block text-xs text-slate-500">{t("settle_date_label")}</label>
+        <div className="mb-1 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setEffectiveDate(khToday)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${effectiveDate === khToday ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+            {t("settle_date_today")}
+          </button>
+          <button type="button" onClick={() => setEffectiveDate(khYesterday)}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${effectiveDate === khYesterday ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+            {t("settle_date_yesterday")}
+          </button>
+          <input type="date" value={effectiveDate} min={khOldestAllowed} max={khToday}
+            onChange={(e) => { if (e.target.value >= khOldestAllowed && e.target.value <= khToday) setEffectiveDate(e.target.value); }}
+            className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
+        </div>
+        <p className="mb-3 text-[11.5px] leading-relaxed text-slate-400">
+          {effectiveDate === khToday ? t("settle_date_help_today") : t("settle_date_help_past", { date: effectiveDate })}
+        </p>
 
         {hasValidNext && (
           <div className={`mb-3 rounded-lg px-3 py-2.5 text-sm ${delta < -0.005 ? "bg-rose-50 text-rose-700" : delta > 0.005 ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
