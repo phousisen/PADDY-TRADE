@@ -54,17 +54,64 @@ export function setScaleWatchUser(id) { auditUserId = id || null; }
 //
 // Now the pause can never outlive the print: it ends on `afterprint`, or 20
 // seconds after it began, or the moment a weight box is opened.
-const PRINT_PAUSE_MAX_MS = 20000;
+// [2026-09-23] SISEN, after a second station showed it: "i thing the issue
+// started when u set the 0 thingy, cuz it disconnected after every 1
+// weighting." The guard's RULES cannot do that — they run in the browser and
+// cannot stop bytes reaching a PC. But the poll loop that shipped WITH the
+// guard can, and did at Pong Ro. So the pause is now built so that it cannot
+// outlive a print however the print ends:
+//
+//   · 8 seconds, not 20. A weigh-in slip is one page; if `afterprint` has
+//     not arrived by then it is not coming.
+//   · cleared on `afterprint`, as before.
+//   · cleared the moment any weight box opens, as before.
+//   · and cleared by the loop itself the moment it notices it has skipped
+//     more than a couple of rounds. Nothing can leave it stuck on, which is
+//     what "disconnected after every 1 weighting" actually was.
+const PRINT_PAUSE_MAX_MS = 8000;
+const MAX_SKIPPED_ROUNDS = 3;
 let printingSince = 0;
+let skippedRounds = 0;
 function isPrinting() {
   if (!printingSince) return false;
-  if (Date.now() - printingSince > PRINT_PAUSE_MAX_MS) { printingSince = 0; return false; }
+  if (Date.now() - printingSince > PRINT_PAUSE_MAX_MS) { printingSince = 0; skippedRounds = 0; return false; }
+  // A belt to go with the braces: even if the clock above were somehow not
+  // moving, a handful of skipped rounds ends the pause by itself.
+  skippedRounds += 1;
+  if (skippedRounds > MAX_SKIPPED_ROUNDS) {
+    console.warn("[scaleWatch] the print pause outlived its print — asking the scale again");
+    printingSince = 0;
+    skippedRounds = 0;
+    return false;
+  }
   return true;
 }
+export function __printPauseState() { return { printingSince, skippedRounds }; }
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeprint", () => { printingSince = Date.now(); });
-  window.addEventListener("afterprint", () => { printingSince = 0; });
+  window.addEventListener("beforeprint", () => { printingSince = Date.now(); skippedRounds = 0; });
+  window.addEventListener("afterprint", () => { printingSince = 0; skippedRounds = 0; });
 }
+
+// [2026-09-23] WHY IT IS NOT CONNECTED, NOT JUST THAT IT IS NOT.
+//
+// SISEN spent an afternoon on the Ping Pong outage, and most of it went on
+// working out something this PC already knew. The screen said "Scale not
+// connected". The scale program on the same machine was reporting
+// `diagnosis: "no_bytes_from_scale"` the whole time — the port is open, the
+// PC is fine, the indicator is sending nothing — and nobody could see it
+// without opening a command prompt and reading a log.
+//
+// Three completely different repairs used to look identical on screen:
+//
+//   · the scale program is not running          -> start it
+//   · it is running and the scale is silent     -> the indicator or the cable
+//   · it is running and the bytes are unreadable-> the indicator's settings
+//
+// So the reading now carries the program's own diagnosis up to the weight
+// box, and a weight of null no longer counts as "the program is not there".
+// That distinction is the whole point: a program that is running and knows
+// why it has no weight is the most useful thing on the screen.
+let lastLocalMiss = "none";   // why the local program gave us nothing, last time
 
 async function pollLocalBridge() {
   try {
@@ -72,13 +119,42 @@ async function pollLocalBridge() {
     const timeout = setTimeout(() => ctrl.abort(), 800);
     const res = await fetch(LOCAL_BRIDGE_URL, { signal: ctrl.signal });
     clearTimeout(timeout);
-    if (!res.ok) return null;
+    if (!res.ok) { lastLocalMiss = "none"; return null; }
     const data = await res.json();
-    if (!data || data.weight_kg === null || data.weight_kg === undefined) return null;
-    return { weight_kg: data.weight_kg, updated_at: data.updated_at, location_id: data.location_id || null, source: "local" };
+    if (!data) { lastLocalMiss = "none"; return null; }
+    // The program answered. Remember what it says about itself even when it
+    // has no weight to give — that is exactly the case worth explaining.
+    lastLocalMiss = data.diagnosis || "none";
+    if (data.weight_kg === null || data.weight_kg === undefined) return null;
+    return {
+      weight_kg: data.weight_kg,
+      updated_at: data.updated_at,
+      location_id: data.location_id || null,
+      source: "local",
+      diagnosis: data.diagnosis || null,
+    };
   } catch {
+    // Nothing answered on 127.0.0.1:8787 — the program is not running here,
+    // or this is not a station PC at all.
+    lastLocalMiss = "none";
     return null;
   }
+}
+
+/**
+ * One short reason a weight box can show. Deliberately only four values, so
+ * every screen says the same four things:
+ *
+ *   agent_down          nothing is answering on this PC
+ *   no_bytes_from_scale the program runs; the indicator is sending nothing
+ *   bytes_but_unreadable the program runs; the bytes make no sense yet
+ *   stale               a reading arrived but it is older than LIVE_MS
+ */
+export function localScaleReason(reading) {
+  if (lastLocalMiss === "no_bytes_from_scale" || lastLocalMiss === "port_not_open") return "no_bytes_from_scale";
+  if (lastLocalMiss === "bytes_but_unreadable") return "bytes_but_unreadable";
+  if (reading && reading.source === "local") return "stale";
+  return "agent_down";
 }
 
 function readStored(loc) {
@@ -216,7 +292,7 @@ export function subscribeScale(loc, listener, { foreground = true } = {}) {
   // instead of waiting out a background retry.
   if (foreground) store.localMissAt = 0;
   // …and a weight box on screen means nobody is printing any more.
-  if (foreground) printingSince = 0;
+  if (foreground) { printingSince = 0; skippedRounds = 0; }
   start(store);
   return () => {
     store.listeners.delete(listener);
@@ -227,12 +303,17 @@ export function subscribeScale(loc, listener, { foreground = true } = {}) {
 
 export function scaleSnapshot(loc, { by = null } = {}) {
   const store = stores.get(loc);
-  if (!store) return { connected: false, weightKg: undefined, source: undefined, status: "offline", stable: false, guard: freshGuard() };
+  if (!store) return { connected: false, weightKg: undefined, source: undefined, status: "offline", stable: false, guard: freshGuard(), reason: "agent_down" };
   const connected = isLive(store.reading);
   const weightKg = store.reading?.weight_kg;
   const status = connected ? captureStatus(store.guard, store.samples, weightKg, Date.now(), { by }) : "offline";
   const stable = connected && isStable(store.samples, Date.now());
-  return { connected, weightKg, source: store.reading?.source, status, stable, guard: store.guard, version: store.version };
+  return {
+    connected, weightKg, source: store.reading?.source, status, stable,
+    guard: store.guard, version: store.version,
+    // Only meaningful when not connected — see localScaleReason.
+    reason: connected ? null : localScaleReason(store.reading),
+  };
 }
 
 // A weight box captured a number: remember it, so the same truck cannot be
