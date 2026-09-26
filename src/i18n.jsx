@@ -355,7 +355,7 @@ export const translations = {
     no_stock_loss: "No stock loss recorded yet.",
     ledger_title: "Daily Stock Ledger", ledger_subtitle: "What each station spent, earned, lost, and closed with — day by day.",
     period_7d: "7 Days", period_30d: "30 Days", period_all_time: "All Time",
-    col_opening: "Opening", col_bought_in: "Bought In", col_spent: "Spent", col_sold_out: "Sold Out",
+    col_tickets: "Tickets", col_opening: "Opening", col_bought_in: "Bought In", col_spent: "Spent", col_sold_out: "Sold Out",
     col_earned: "Earned", col_lost: "Lost", col_closing: "Closing",
     // [2026-09-03] Added for LocationDetail.jsx's phone-only Daily Stock
     // Ledger day-cards — every other label on that card already had a key
@@ -1764,7 +1764,7 @@ export const translations = {
     no_stock_loss: "មិនទាន់មានការបាត់បង់ស្តុកកត់ត្រាទេ។",
     ledger_title: "បញ្ជីកត់ត្រាស្តុកប្រចាំថ្ងៃ", ledger_subtitle: "អ្វីដែលទីតាំងនីមួយៗបានចំណាយ ទទួលបាន បាត់បង់ និងបានបិទបញ្ជី — ថ្ងៃម្តងៗ។",
     period_7d: "៧ ថ្ងៃ", period_30d: "៣០ ថ្ងៃ", period_all_time: "គ្រប់ពេល",
-    col_opening: "ស្តុកដើម", col_bought_in: "ទិញចូល", col_spent: "ចំណាយ", col_sold_out: "លក់ចេញ",
+    col_tickets: "សំបុត្រ", col_opening: "ស្តុកដើម", col_bought_in: "ទិញចូល", col_spent: "ចំណាយ", col_sold_out: "លក់ចេញ",
     col_earned: "ចំណូល", col_lost: "បាត់បង់", col_closing: "ស្តុកចុង",
     col_net_change: "ការផ្លាស់ប្តូរសុទ្ធ",
     no_paddy_activity_day: "គ្មានសកម្មភាពប្រភេទស្រូវនៅថ្ងៃនេះទេ។",
