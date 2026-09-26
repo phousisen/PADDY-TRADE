@@ -112,9 +112,29 @@ export function dayMark(days, day, locationIds = []) {
 
 // Can this person confirm this day? The database says the same; this only
 // decides whether to offer the button.
+// [2026-09-25] A MANAGER'S OWN ENTRY NO LONGER NEEDS A SECOND PERSON.
+//
+// SISEN: "theres issue to why HQ typed down an expenses for something and it
+// requires me to confirm it. the financehq manager should not need a
+// confirmation from me."
+//
+// The two-person rule (21 September: "2 people has agreed so they can be
+// responsible") was written for the case it was built for — a STATION records
+// its own spending and a manager checks it. Station staff do not hold
+// confirm_expenses, so that case is untouched.
+//
+// It was wrong for the case nobody thought about: the HQ finance manager
+// typing an expense in themselves. They ARE the second pair of eyes. Refusing
+// their own day left exactly one person in the company able to sign it off —
+// the Owner — for every receipt HQ enters. That is a queue, not a control.
+//
+// So `onlyMine` no longer blocks the button. Holding confirm_expenses is the
+// whole test, and decided_by still records who confirmed it, so a day
+// confirmed by the person who entered it reads as exactly that.
+// The database was refusing it too — FOR-SUPABASE-expense-selfconfirm.sql.
 export function canConfirmDay(d, { canConfirm, userId }) {
+  void userId;
   if (!canConfirm || !d) return false;
-  if (d.onlyMine || (userId && [...(d.enteredIds || [])].every((id) => id === userId) && d.enteredIds.size > 0)) return false;
   // A day sent back can still be confirmed if the manager changes their mind.
   return d.status === "waiting" || d.status === "sent_back";
 }
