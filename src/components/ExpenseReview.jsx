@@ -447,8 +447,11 @@ function ManagerPanel({ d, t, userId, userEmail, tonnage, onChanged, onDone }) {
       </div>
 
       <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 text-[12.5px]">
+        {/* [2026-09-25] The only reason `allowed` can be false now is "already
+            confirmed" — a day you entered yourself is no longer refused.
+            See expenseReview.js and FOR-SUPABASE-expense-selfconfirm.sql. */}
         {!allowed ? (
-          <p className="text-slate-600">{d.status === "confirmed" ? t("xr_already_confirmed") : t("xr_you_entered_it")}</p>
+          <p className="text-slate-600">{t("xr_already_confirmed")}</p>
         ) : sendingBack ? (
           <div className="grid gap-2">
             <label className="font-semibold text-slate-700">{t("xr_what_to_fix")}</label>
