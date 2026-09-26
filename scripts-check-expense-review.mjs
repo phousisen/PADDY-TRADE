@@ -43,7 +43,13 @@ ok("sent back, unchanged → sent back", get(L2, "2026-09-20").status === "sent_
 ok("sent back, then fixed → waiting (fixed)", statusOf({ status: "sent_back", is_current: false }).why === "fixed");
 ok("staff answered 'it is right' → waiting (replied)", statusOf({ status: "resubmitted", is_current: true }).why === "replied");
 
-ok("manager cannot confirm a day they entered alone", !canConfirmDay(get(L2, "2026-09-19"), { canConfirm: true, userId: MGR }));
+// [2026-09-25] REVERSED ON PURPOSE. SISEN: "the financehq manager should not
+// need a confirmation from me." Holding confirm_expenses is now the whole
+// test — station staff never hold it, so the two-person rule still stands
+// everywhere it was meant to. See expenseReview.js and
+// FOR-SUPABASE-expense-selfconfirm.sql.
+ok("a manager CAN confirm a day they entered themselves", canConfirmDay(get(L2, "2026-09-19"), { canConfirm: true, userId: MGR }));
+ok("...and still nobody without the permission can, own day or not", !canConfirmDay(get(L2, "2026-09-19"), { canConfirm: false, userId: MGR }));
 ok("manager can confirm a day staff entered", canConfirmDay(get(L1, "2026-09-20"), { canConfirm: true, userId: MGR }));
 ok("nobody without the permission can confirm", !canConfirmDay(get(L1, "2026-09-20"), { canConfirm: false, userId: STAFF }));
 ok("a confirmed day is not offered again", !canConfirmDay(get(L1, "2026-09-19"), { canConfirm: true, userId: MGR }));
@@ -65,8 +71,25 @@ ok("report day mark: all confirmed", dayMark(days, "2026-09-19", [L1]).kind === 
 const sqlPath = "expense_confirmation.sql";
 if (existsSync(sqlPath)) {
   const sql = readFileSync(sqlPath, "utf8");
+  // confirm_expense_day is replaced by a later file. The install script above
+  // still carries the ORIGINAL body, so anything about that one function has
+  // to be read from the last file that rewrote it — otherwise this guard is
+  // checking a version of the database nobody is running any more.
+  const laterPath = "FOR-SUPABASE-expense-selfconfirm.sql";
+  // Comments stripped: that file QUOTES the old rule while explaining why it
+  // is gone, and a guard that reads the explanation as the code would fail on
+  // a correct file.
+  const liveSql = (existsSync(laterPath) ? readFileSync(laterPath, "utf8") : sql)
+    .split("\n").map((line) => line.replace(/--.*$/, "")).join("\n");
   ok("SQL: only confirm_expenses / Owner may confirm", /expense_can\('confirm_expenses'\)/.test(sql) && /Only the manager or the Owner can confirm expenses/.test(sql));
-  ok("SQL: nobody confirms a day they entered alone", /if v_mine = v_rows then/.test(sql));
+  // [2026-09-25] This used to assert the opposite — that the database refuses
+  // a day you entered yourself (`if v_mine = v_rows then`). That rule is being
+  // removed by FOR-SUPABASE-expense-selfconfirm.sql, so a guard still checking
+  // for it would pass while describing a database that no longer exists. The
+  // permission check above is now the whole test, here and in the database.
+  ok("SQL: the self-confirm refusal is gone from the live function",
+     !/if v_mine = v_rows then/.test(liveSql),
+     "run FOR-SUPABASE-expense-selfconfirm.sql — until then HQ's own day still lands on the Owner");
   ok("SQL: a confirmed day is locked for staff by a trigger", /create trigger trg_guard_confirmed_expense_day/.test(sql) && /EXPENSE_DAY_CONFIRMED/.test(sql));
   ok("SQL: the lock only looks at expense rows", /Only expense rows are this trigger's business/.test(sql));
   ok("SQL: a change after confirming un-confirms it (fingerprint)", /expense_day_fingerprint/.test(sql) && /is_current/.test(sql));
@@ -88,5 +111,5 @@ ok("confirming needs the tick and a password", /const canPress = allowed && chec
 ok("a correction needs a reason", /const reasonOk = !correcting \|\| reason\.trim\(\)\.length >= 10;/.test(rev));
 ok("staff on a confirmed day can only request", /api\.requestExpenseChange\(/.test(rev) && !/api\.updateExpense\([^)]*\)[^;]*;\s*\/\/ staff/.test(rev));
 
-console.log(failed ? `\n${failed} FAILED` : "\nEvery expense has two people behind it.");
+console.log(failed ? `\n${failed} FAILED` : "\nA station's expenses need two people; a manager signs their own.");
 process.exit(failed ? 1 : 0);

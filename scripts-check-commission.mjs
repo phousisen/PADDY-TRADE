@@ -112,7 +112,16 @@ console.log("\n6. The screen uses it");
 import { readFileSync } from "node:fs";
 const exp = readFileSync("src/pages/Expenses.jsx", "utf8");
 ok("Expenses imports the rule", /from "\.\.\/commissionRule\.js"/.test(exp));
-ok("and shows tonnes bought and sold", /tonnesBought/.test(exp) && /tonnesSold/.test(exp));
+// [2026-09-24] Was "shows tonnes bought AND sold" as a strip above every
+// station every day. SISEN: "the expenses really look complicated". The
+// tonnes bought now sit on the ថ្លៃកូនដៃ line as the working behind the
+// rate — which is the only place anyone was reading them — and tonnes sold
+// live in the Daily Book, where tonnage is the subject.
+ok("and shows the tonnes the rate was worked out from", /tonnesBought/.test(exp));
+ok("and the rate sits on the line it judges", /ex_rate_line/.test(exp) && /l\.kh && check\.perTonne !== null/.test(exp));
+ok("and says nothing when the commission is within the limit",
+   /check\.state === "ok" \|\| check\.state === "none" \|\| check\.state === "unknown"\) return null/.test(exp),
+   "a green tick on every station every day is a line everyone learns to skip");
 ok("and never prints a rate it could not work out",
    /perTonne !== null/.test(exp) || /perTonne != null/.test(exp),
    "an 'unknown' day must show no rate, not Infinity or NaN");
