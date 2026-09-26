@@ -157,39 +157,19 @@ function DayStation({ station, tonnage, only, canRecord, onOpen, t }) {
   });
   const ton = (v) => (Number(v) || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  // Tonnes in, tonnes out. Shown whenever the day has either, even if no
-  // commission was paid — a station that bought 40 tonnes and recorded no
-  // ថ្លៃកូនដៃ is worth noticing too.
-  const Tons = () => (
-    (tonnage?.boughtKg || tonnage?.soldKg) ? (
-      <div className="flex gap-px border-y border-slate-100 bg-slate-100">
-        <div className="min-w-0 flex-1 bg-slate-50/80 px-2.5 py-1">
-          <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-400">{t("db_buy")}</p>
-          <p className="whitespace-nowrap text-[12.5px] font-bold tabular-nums text-brand-700">
-            {ton(check.tonnesBought)}<span className="ml-0.5 text-[9.5px] font-semibold text-slate-400">{t("ex_tonne")}</span>
-          </p>
-        </div>
-        <div className="min-w-0 flex-1 bg-slate-50/80 px-2.5 py-1">
-          <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-400">{t("db_sell")}</p>
-          <p className="whitespace-nowrap text-[12.5px] font-bold tabular-nums text-orange-700">
-            {ton(check.tonnesSold)}<span className="ml-0.5 text-[9.5px] font-semibold text-slate-400">{t("ex_tonne")}</span>
-          </p>
-        </div>
-        {/* The rate as its own figure, from sm: up. On a phone it is in the
-            sentence below instead — three columns of numbers on a 320pt
-            screen is how a figure ends up truncated. */}
-        {check.perTonne !== null && station.commission > 0 && (
-          <div className="hidden min-w-0 flex-1 bg-slate-50/80 px-2.5 py-1 sm:block">
-            <p className="truncate text-[9px] font-semibold uppercase tracking-wide text-slate-400">{t("ex_per_tonne")}</p>
-            <p className={`whitespace-nowrap text-[12.5px] font-bold tabular-nums ${
-              check.state === "over" ? "text-rose-700" : check.state === "at" ? "text-amber-700" : "text-brand-700"}`}>
-              {fmt(check.perTonne)}
-            </p>
-          </div>
-        )}
-      </div>
-    ) : null
-  );
+  // [2026-09-24] THE TONNES STRIP IS GONE.
+  //
+  // SISEN: "the expenses really look complicated".
+  //
+  // It was three boxes — bought, sold, riel per tonne — on every station on
+  // every day, above money that had nothing to do with them. Five stations
+  // over a month is a hundred and fifty strips of tonnage on a screen whose
+  // job is "what did we spend". The one number that mattered (the rate) now
+  // rides on the ថ្លៃកូនដៃ line itself, where the figure it judges is, and
+  // the tonnes sit beside it as the working rather than as a headline.
+  //
+  // Nothing is lost: the same tonnes, the same division, the same ceiling.
+  // The Daily Book is still where tonnes are a subject in their own right.
 
   // One line, and it has to be readable by someone who will act on it. An
   // "over" says BY HOW MUCH in riel — a warning triangle on its own tells
@@ -197,6 +177,14 @@ function DayStation({ station, tonnage, only, canRecord, onOpen, t }) {
   // with a staff member.
   const Check = () => {
     if (!filed || station.commission <= 0) return null;
+    // [2026-09-24] SILENT WHEN IT IS FINE.
+    //
+    // A green "Under the limit — most it could be: 599,400" printed under
+    // every station every day is the same mistake as an alarm that goes off
+    // on a normal night: it trains everyone to scroll past the line, so the
+    // one day it turns red nobody sees it. The rate is on the ថ្លៃកូនដៃ line
+    // regardless, for anyone who wants to check the arithmetic.
+    if (check.state === "ok" || check.state === "none" || check.state === "unknown") return null;
     const tone = check.state === "over"
       ? "bg-rose-50 text-rose-700"
       : check.state === "at" ? "bg-amber-50 text-amber-800"
@@ -228,9 +216,18 @@ function DayStation({ station, tonnage, only, canRecord, onOpen, t }) {
     <div className={only ? "" : "px-3 pb-2.5"}>
       {lines.map((l) => (
         <div key={l.key}
-          className="ml-0.5 flex items-baseline justify-between gap-2.5 border-l-2 border-slate-100 py-1 pl-3 text-[12.5px]">
-          <span className={`min-w-0 truncate ${l.kh ? "font-semibold text-amber-700" : "text-slate-500"}`}>{l.name}</span>
-          <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums text-slate-700">{fmt(l.amount)}</span>
+          className="ml-0.5 border-l-2 border-slate-100 py-1 pl-3 text-[12.5px]">
+          <div className="flex items-baseline justify-between gap-2.5">
+            <span className={`min-w-0 truncate ${l.kh ? "font-semibold text-amber-700" : "text-slate-500"}`}>{l.name}</span>
+            <span className="shrink-0 whitespace-nowrap font-semibold tabular-nums text-slate-700">{fmt(l.amount)}</span>
+          </div>
+          {/* [2026-09-24] The working, under the figure it belongs to, only on
+              the one line anyone checks. */}
+          {l.kh && check.perTonne !== null && (
+            <p className={`text-[11px] tabular-nums ${check.state === "over" ? "text-rose-600" : check.state === "at" ? "text-amber-600" : "text-slate-400"}`}>
+              {t("ex_rate_line", { rate: fmt(check.perTonne), tonnes: ton(check.tonnesBought) })}
+            </p>
+          )}
         </div>
       ))}
     </div>
@@ -255,7 +252,6 @@ function DayStation({ station, tonnage, only, canRecord, onOpen, t }) {
     }
     return (
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <Tons />
         <Check />
         <div className="px-3 pb-2.5 pt-2"><Lines /></div>
         <div className="flex items-center gap-2.5 border-t border-slate-100 px-3 py-2">
@@ -299,7 +295,6 @@ function DayStation({ station, tonnage, only, canRecord, onOpen, t }) {
           </button>
         )}
       </div>
-      {filed && <Tons />}
       {filed && <Check />}
       {filed && lines.length > 0 && <Lines />}
     </div>
@@ -830,7 +825,9 @@ export default function Expenses() {
   const reviewBadge = useMemo(() => {
     if (!reviews) return 0;
     if (canConfirm) {
-      return reviewDays.filter((d) => d.status === "waiting" && !d.onlyMine).length
+      // [2026-09-25] `&& !d.onlyMine` removed — a manager can now confirm a day
+      // they entered themselves, so it belongs in their own count.
+      return reviewDays.filter((d) => d.status === "waiting").length
         + xreqs.filter((r) => r.status === "pending" && r.requested_by !== session?.user?.id).length;
     }
     return reviewDays.filter((d) => d.mine && d.status === "sent_back").length;
