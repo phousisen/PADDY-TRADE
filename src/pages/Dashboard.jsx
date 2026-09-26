@@ -371,8 +371,25 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   const locationPerformance = useMemo(() => {
     return locations.map((loc) => {
       const locPeriod = periodTxs.filter((t) => t.location_id === loc.id);
-      const boughtKg = locPeriod.filter((t) => t.type === "BUY").reduce((s, t) => s + Number(t.quantity_kg || 0), 0);
-      const soldKg = locPeriod.filter((t) => t.type === "SELL").reduce((s, t) => s + Number(t.quantity_kg || 0), 0);
+      const buys = locPeriod.filter((t) => t.type === "BUY");
+      const sells = locPeriod.filter((t) => t.type === "SELL");
+      const boughtKg = buys.reduce((s, t) => s + Number(t.quantity_kg || 0), 0);
+      const soldKg = sells.reduce((s, t) => s + Number(t.quantity_kg || 0), 0);
+      // [2026-09-26] HOW MANY TICKETS, not just how many kilos.
+      //
+      // SISEN: "what if between the lacation and opening, we put the amount of
+      // buy and sell each station has."
+      //
+      // Kilos alone hide the shape of a day. 40,000 kg bought is one export
+      // truck or fourteen farmers' tractors, and those are different days at
+      // the weighbridge. It is also the figure that makes a station going
+      // quiet visible: a station that normally does 40 tickets showing 3 is
+      // obvious in a way that a kilo total never is.
+      //
+      // Counted from the same rows the kilos come from, over the same period,
+      // so the two can never disagree.
+      const buyCount = buys.length;
+      const sellCount = sells.length;
       // Adjustments are dated by when they were made, in Cambodia time, so a
       // late-evening write-off lands on the day it happened rather than the
       // next one.
@@ -411,7 +428,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       // the station needs you.
       const status = onHandKg < -0.01 ? "attn" : moved ? "trading" : "quiet";
 
-      return { loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status };
+      return { loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status, buyCount, sellCount };
     });
   }, [locations, periodTxs, adjustments, rangeStart, rangeEnd, closeAtEnd, closeBeforeStart]);
 
@@ -574,7 +591,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="border-b border-slate-200 text-right text-[10px] uppercase tracking-[0.09em] text-slate-400">
-                  <th className="px-5 py-2.5 text-left font-bold">{t("col_location")}</th>
+                  <th className="w-px whitespace-nowrap px-5 py-2.5 text-left font-bold">{t("col_location")}</th>
                   <th className="px-3 py-2.5 font-bold">{t("col_opening")}</th>
                   {/* The three movement columns sit on a faint wash so they
                       read as one group — what happened during the period —
@@ -597,19 +614,56 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                     view-only account, which reaches the same read-only page.
                     Any other role would only hit a permission screen, so it
                     stays unclickable for them (App.jsx gates station-detail). */}
-                {locationPerformance.map(({ loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status }) => (
+                {locationPerformance.map(({ loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status, buyCount, sellCount }) => (
                   <tr
                     key={loc.id}
                     onClick={canOpenLocation ? () => { setSelectedLocationId(loc.id); setPage("station-detail"); } : undefined}
                     className={`border-b border-slate-50 text-right last:border-0 ${canOpenLocation ? "cursor-pointer hover:bg-brand-50/40" : "hover:bg-slate-50/60"}`}
                   >
-                    <td className="px-5 py-3.5 text-left">
+                    <td className="whitespace-nowrap px-5 py-3.5 text-left">
                       <div className="flex items-center gap-2.5">
                         <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${
                           status === "attn" ? "bg-amber-500 ring-[3px] ring-amber-100"
                           : status === "trading" ? "bg-brand-600"
                           : "bg-slate-300"}`} />
                         <span className="font-semibold text-slate-700">{loc.name}</span>
+                        {/* [2026-09-26] HOW MANY TICKETS, not just how many
+                            kilos. SISEN: "what if between the lacation and
+                            opening, we put the amount of buy and sell each
+                            station has."
+                            
+                            It rides beside the name rather than taking a
+                            column of its own. That was NOT to save width —
+                            measured, the table needs 703px this way against
+                            684px with a labelled column of its own, and 640px
+                            before any of it. It is here because the counts describe the
+                            station, and the columns to the right are one
+                            unbroken sum: Opening + Bought - Sold + Adjusted
+                            = On hand. A counts column dropped into the
+                            middle of that reads as part of the arithmetic
+                            and is not.
+                            
+                            Green and red are the same two colours as the
+                            Bought and Sold columns, so nothing is labelled
+                            twice. */}
+                        {/* [2026-09-26] ml-auto, not a margin. SISEN: "make
+                            sure it align and in the same row." Station names
+                            are different lengths, so counts that simply
+                            follow the name start at five different places
+                            down the column and read as five accidents.
+                            Pushed to the cell's right edge instead, they
+                            share one edge whatever the name beside them
+                            does — and tabular-nums keeps 41 and 3 the same
+                            width, so the digits line up too. */}
+                        <span className="ml-auto pl-4 text-right text-[11.5px] tabular-nums">
+                          {buyCount > 0 || sellCount > 0 ? (
+                            <>
+                              <span className="font-semibold text-brand-700">{buyCount}</span>
+                              <span className="px-0.5 text-slate-300">/</span>
+                              <span className={sellCount > 0 ? "font-semibold text-rose-600" : "text-slate-300"}>{sellCount}</span>
+                            </>
+                          ) : <span className="text-slate-300">—</span>}
+                        </span>
                       </div>
                     </td>
                     {/* A negative opening is the same warning as a negative
@@ -712,7 +766,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
 
             {/* ---- the same rows, on a phone ---- */}
             <div className="md:hidden">
-              {locationPerformance.map(({ loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status }) => (
+              {locationPerformance.map(({ loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status, buyCount, sellCount }) => (
                 <div
                   key={loc.id}
                   onClick={canOpenLocation ? () => { setSelectedLocationId(loc.id); setPage("station-detail"); } : undefined}
@@ -728,6 +782,19 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
                         : status === "trading" ? "bg-brand-600"
                         : "bg-slate-300"}`} />
                       <span className="truncate font-semibold text-slate-700">{loc.name}</span>
+                      {/* [2026-09-26] Beside the name, as on the computer —
+                          not a fifth cell in the grid below. Five cells
+                          reflow to three across on a phone and leave a dead
+                          square in the second row. shrink-0 so the station
+                          name gives way first: the name can be truncated and
+                          still read, a half-shown count cannot. */}
+                      {(buyCount > 0 || sellCount > 0) && (
+                        <span className="shrink-0 text-[11.5px] tabular-nums">
+                          <span className="font-semibold text-brand-700">{buyCount}</span>
+                          <span className="px-0.5 text-slate-300">/</span>
+                          <span className={sellCount > 0 ? "font-semibold text-rose-600" : "text-slate-300"}>{sellCount}</span>
+                        </span>
+                      )}
                     </div>
                     {/* shrink-0 + nowrap: a weight may lose the station name
                         beside it, never a digit of itself. */}
