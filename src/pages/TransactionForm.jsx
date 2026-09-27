@@ -279,9 +279,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   // through. Now it is said out loud, on screen and at Save.
   const bothWeighed = String(grossKg).trim() !== "" && String(tareKg).trim() !== "";
   const weightsReversed = bothWeighed && rawNetKg <= 0;
-  const reversedMessage = isBuy
-    ? "Weigh In must be MORE than Weigh Out on a purchase — the truck arrives loaded and leaves empty."
-    : "Weigh Out must be MORE than Weigh In on a sale — the truck arrives empty and leaves loaded.";
+  const reversedMessage = t(isBuy ? "tf_reversed_buy" : "tf_reversed_sell");
   // A capture instant is only sent if it lands on the day this transaction
   // is dated — see where it is used in handleSubmit for why.
   const stampIfOnTxDate = (iso) =>
@@ -697,11 +695,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-5 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
 
-            <Step n={1} title="The paper ticket" hint="from the booklet">
+            <Step n={1} title={t("tf_step_ticket_title")} hint={t("tf_step_ticket_hint")}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-[190px_1fr_1fr]">
                 <div>
                   <label className="mb-1 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-gold-700">
-                    <Ticket size={12} /> Paper Ticket No.
+                    <Ticket size={12} /> {t("tf_paper_ticket_no")}
                   </label>
                   <input
                     value={paperTicketNo}
@@ -711,7 +709,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   />
                 </div>
                 <div>
-                  <label className={labelCls}>Transaction Date</label>
+                  <label className={labelCls}>{t("tf_tx_date")}</label>
                   <input type="date" value={txDate} onChange={(e) => setTxDate(e.target.value)} max={cambodiaDateStr()} className={inputCls} />
                 </div>
                 <div>
@@ -729,23 +727,27 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               </div>
               {dupWarn ? (
                 <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800">
-                  Ticket <b>{dupWarn.ticketNo}</b> has already been used at this station
-                  {dupWarn.kind === "ticket" ? " — on a weighbridge ticket" : ""}
+                  {/* [2026-09-27] One sentence with the number inside it, rather
+                      than English either side of a bold <b>. Khmer does not put
+                      the number where English does, so text-number-text cannot
+                      be translated without rewriting the sentence at each
+                      station's screen. */}
+                  <b>{t("tf_dup_ticket", { no: dupWarn.ticketNo })}</b>
+                  {dupWarn.kind === "ticket" ? t("tf_on_a_ticket") : ""}
                   {dupWarn.code ? ` — ${dupWarn.code}` : ""}{dupWarn.partyName ? `, ${dupWarn.partyName}` : ""}.
-                  Check the book. If the number really is right, press Save again and it will go through — both
-                  entries will be marked so they can be looked at later.
+                  {" "}{t("tf_dup_check_book")}
                 </p>
               ) : (
-                <p className="mt-2 text-[11px] text-slate-400">From the booklet. Suggested from the last one used here.</p>
+                <p className="mt-2 text-[11px] text-slate-400">{t("tf_from_booklet")}</p>
               )}
             </Step>
 
-            <Step n={2} title={isBuy ? "Who sold it" : "Who bought it"}>
+            <Step n={2} title={t(isBuy ? "tf_step_who_sold" : "tf_step_who_bought")}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="relative">
-                  <label className={labelCls}>Phone number</label>
+                  <label className={labelCls}>{t("phone")}</label>
                   <Search size={15} className="pointer-events-none absolute left-3 top-[30px] text-slate-400" />
-                  <input value={partyPhone} onChange={(e) => { setPartyPhone(e.target.value); setSelectedParty(null); }} placeholder="Search by phone"
+                  <input value={partyPhone} onChange={(e) => { setPartyPhone(e.target.value); setSelectedParty(null); }} placeholder={t("tf_search_by_phone")}
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   {partyPhone && !selectedParty && parties.length > 0 && (
                     <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
@@ -756,11 +758,11 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       ))}
                     </div>
                   )}
-                  <p className="mt-1 text-[11px] text-slate-400">Finds the right person by phone.</p>
+                  <p className="mt-1 text-[11px] text-slate-400">{t("tf_finds_by_phone")}</p>
                 </div>
                 <div>
-                  <label className={labelCls}>{isBuy ? t("section1_seller") : t("section1_buyer")} Name</label>
-                  <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder="Type name, or pick a match" className={inputCls} />
+                  <label className={labelCls}>{t(isBuy ? "tf_seller_name" : "tf_buyer_name")}</label>
+                  <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder={t("tf_type_name")} className={inputCls} />
                 </div>
               </div>
             </Step>
@@ -771,22 +773,22 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 empty (out − in). Getting that backwards is what recorded
                 real truckloads as 0 kg in August. Guarded by
                 scripts-check-weigh-direction.mjs — do not "simplify" it. */}
-            <Step n={3} title="Weight" hint="first weigh in, then weigh out">
+            <Step n={3} title={t("word_weight")} hint={t("tf_step_weight_hint")}>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <TypedWeight
                   locationId={effectiveLocationId}
-                  label={isBuy ? "1. Weigh In — loaded truck" : "1. Weigh In — empty truck"}
+                  label={t(isBuy ? "tf_in_loaded" : "tf_in_empty")}
                   labelKm="ថ្លឹងទម្ងន់ចូល"
-                  hint={isBuy ? "Loaded, on arrival" : "Empty, on arrival"}
+                  hint={t(isBuy ? "tf_in_hint_loaded" : "tf_in_hint_empty")}
                   value={grossKg}
                   onChange={onGrossChange}
                   source={grossSource}
                 />
                 <TypedWeight
                   locationId={effectiveLocationId}
-                  label={isBuy ? "2. Weigh Out — empty truck" : "2. Weigh Out — loaded truck"}
+                  label={t(isBuy ? "tf_out_empty" : "tf_out_loaded")}
                   labelKm="ថ្លឹងទម្ងន់ចេញ"
-                  hint={isBuy ? "Empty, after unloading" : "Loaded, before it leaves"}
+                  hint={t(isBuy ? "tf_out_hint_empty" : "tf_out_hint_loaded")}
                   value={tareKg}
                   onChange={onTareChange}
                   source={tareSource}
@@ -794,7 +796,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               </div>
               <div className={`mt-4 flex items-baseline justify-between rounded-xl border px-4 py-3 ${weightsReversed ? "border-rose-200 bg-rose-50" : "border-brand-100 bg-brand-50"}`}>
                 <p className={`text-[12.5px] font-semibold ${weightsReversed ? "text-rose-700/80" : "text-brand-700"}`}>
-                  {t("net_weight")} — {isBuy ? "what was bought" : "what was sold"}
+                  {t("net_weight")} — {t(isBuy ? "tf_what_bought" : "tf_what_sold")}
                 </p>
                 <p className={`text-2xl font-bold tabular-nums ${weightsReversed ? "text-rose-700" : "text-brand-800"}`}>
                   {fmt2(netKg)} <span className={`text-base font-medium ${weightsReversed ? "text-rose-600" : "text-brand-600"}`}>KG</span>
@@ -802,17 +804,17 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
               </div>
               {typedIn && !weightsReversed && (
                 <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
-                  Typed-in copy — not weighed here.
+                  {t("tf_typed_copy")}
                 </p>
               )}
               {weightsReversed && (
                 <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[11.5px] leading-relaxed text-rose-700">
-                  <b>The two weights are the wrong way round.</b> {reversedMessage} Swap them — this cannot be saved as it stands.
+                  <b>{t("tf_weights_reversed")}</b> {reversedMessage} {t("tf_swap_them")}
                 </p>
               )}
             </Step>
 
-            <Step n={4} title="Paddy and price">
+            <Step n={4} title={t("tf_step_paddy_title")}>
               <div className={`grid grid-cols-1 gap-3 ${isBuy ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
                 <div>
                   <label className={labelCls}>{t("product")}</label>
@@ -840,7 +842,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       <option value="B">{t("grade_b")}</option>
                       <option value="C">{t("grade_c")}</option>
                     </datalist>
-                    <p className="mt-1 text-[11px] text-slate-400">A/B/C fills the price in.</p>
+                    <p className="mt-1 text-[11px] text-slate-400">{t("tf_grade_fills_price")}</p>
                   </div>
                 )}
                 <div>
@@ -849,13 +851,13 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     onChange={(e) => { setPricePerKg(e.target.value); setPriceOverridden(true); }}
                     placeholder="0.00" className={inputCls} />
                   {isBuy
-                    ? <p className="mt-1 text-[11px] text-slate-400">From the grade — edit to override.</p>
-                    : <p className="mt-1 text-[11px] text-slate-400">Optional — leave blank if no price agreed yet.</p>}
+                    ? <p className="mt-1 text-[11px] text-slate-400">{t("tf_price_from_grade")}</p>
+                    : <p className="mt-1 text-[11px] text-slate-400">{t("tf_price_optional")}</p>}
                 </div>
               </div>
             </Step>
 
-            <Step n={5} title="Vehicle & driver" hint="optional">
+            <Step n={5} title={t("tf_step_vehicle_title")} hint={t("tf_optional")}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className={labelCls}>{t("car_plate_number")}</label>
@@ -863,12 +865,12 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 </div>
                 <div>
                   <label className={labelCls}>{t("driver_name")}</label>
-                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder="e.g. PhaNith" className={inputCls} />
+                  <input value={driverName} onChange={(e) => setDriverName(e.target.value)} placeholder={t("tf_driver_example")} className={inputCls} />
                 </div>
               </div>
             </Step>
 
-            <Step n={6} title="Payment" hint="optional">
+            <Step n={6} title={t("payment_status")} hint={t("tf_optional")}>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className={labelCls}>{t("payment_status")}</label>
@@ -880,17 +882,17 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       </>
                     ) : (<><option value="paid">{t("paid")}</option><option value="credit">{t("credit")}</option><option value="deposit">{t("deposit")}</option></>)}
                   </select>
-                  {isBankTransfer && <p className="mt-1 text-[11px] text-slate-400">{bankName} transfer — stays Pending until HQ sends the money and records it (Transactions → Pay Supplier).</p>}
+                  {isBankTransfer && <p className="mt-1 text-[11px] text-slate-400">{t("tf_bank_transfer_note", { bank: bankName })}</p>}
                 </div>
                 <div>
-                  <label className={labelCls}>Note (optional)</label>
-                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="anything worth remembering" className={inputCls} />
+                  <label className={labelCls}>{t("tf_note_optional")}</label>
+                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("tf_note_placeholder")} className={inputCls} />
                 </div>
               </div>
             </Step>
 
             {isBuy ? (
-              <Step n={7} title="Bank details" hint="how this seller gets paid · optional">
+              <Step n={7} title={t("tf_step_bank_title")} hint={t("tf_step_bank_hint")}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelCls}>{t("bank_name")}</label>
@@ -902,12 +904,12 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                       }}
                       className={inputCls}
                     >
-                      <option value="" disabled>Select payment method / bank</option>
+                      <option value="" disabled>{t("tf_select_bank")}</option>
                       {BANK_OPTIONS.map((b) => <option key={b} value={b}>{b}</option>)}
-                      <option value="__other__">Other...</option>
+                      <option value="__other__">{t("tf_other")}</option>
                     </select>
                     {bankIsOther && (
-                      <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="Type bank name" className={`mt-2 ${inputCls}`} />
+                      <input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder={t("tf_type_bank")} className={`mt-2 ${inputCls}`} />
                     )}
                   </div>
                   <div>
@@ -918,15 +920,15 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 {bankName && bankName !== "Cash" && (
                   <div className="mt-4">
                     <PhotoUpload
-                      label="Bank QR Code" kind="party-bank-qr"
+                      label={t("tf_bank_qr")} kind="party-bank-qr"
                       url={bankQrUrl} onUploaded={setBankQrUrl}
-                      hint={`Photo of this farmer's ${bankName} QR code — saved to their profile, not just this transaction`}
+                      hint={t("tf_qr_hint", { bank: bankName })}
                     />
                   </div>
                 )}
               </Step>
             ) : (
-              <Step n={7} title="Company & destination" hint="where this load is going · optional">
+              <Step n={7} title={t("tf_step_company_title")} hint={t("tf_step_company_hint")}>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelCls}>{t("company_name")}</label>
@@ -952,18 +954,18 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
           <div className="lg:col-span-1">
             <div className="sticky top-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-5 py-4">
-                <p className="text-[12px] text-slate-500">{isBuy ? "Total to pay the farmer" : "Total from the buyer"}</p>
+                <p className="text-[12px] text-slate-500">{t(isBuy ? "tf_total_to_farmer" : "tf_total_from_buyer")}</p>
                 <p className="mt-1 text-[30px] font-bold tabular-nums tracking-tight text-slate-900">{fmtRiel(total)}</p>
               </div>
               <div className="px-5 py-3 text-[13px]">
                 <div className="flex justify-between py-1 text-slate-600"><span>{t("net_weight")}</span><span className="font-semibold tabular-nums text-slate-800">{fmt2(payableKg)} kg</span></div>
                 <div className="flex justify-between py-1 text-slate-600"><span>{t("price_per_kg")}</span><span className="font-semibold tabular-nums text-slate-800">{fmtRiel(parseFloat(pricePerKg) || 0)}</span></div>
-                <div className="flex justify-between py-1 text-slate-400"><span>Paper ticket</span><span className="tabular-nums">{paperTicketNo || "—"}</span></div>
+                <div className="flex justify-between py-1 text-slate-400"><span>{t("tf_paper_ticket")}</span><span className="tabular-nums">{paperTicketNo || "—"}</span></div>
                 <div className="flex justify-between py-1 text-slate-400"><span>{t("station")}</span><span className="truncate pl-2">{myStation?.name || "—"}</span></div>
               </div>
               <div className="px-5 pb-5">
                 <div className="mb-3 rounded-xl border border-gold-300 bg-gold-50 px-3.5 py-3">
-                  <p className="text-[12.5px] font-bold text-gold-700">Sign as {profile?.full_name || session?.user?.email || "—"}</p>
+                  <p className="text-[12.5px] font-bold text-gold-700">{t("tf_sign_as", { name: profile?.full_name || session?.user?.email || "—" })}</p>
                   <input type="password" value={signPassword} onChange={(e) => setSignPassword(e.target.value)}
                     placeholder={t("xr_password")} autoComplete="current-password"
                     className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-100" />
