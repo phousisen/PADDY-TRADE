@@ -27,7 +27,10 @@ export default function TicketHistory({ transactionId }) {
     setRows(null);
     setError("");
     api.getTransactionHistory(transactionId)
-      .then((data) => { if (alive) setRows(data); })
+      // [2026-09-27] Prints are left out here: they have their own list,
+      // opened from the ×N on the Receipt button (PrintLogModal), and a
+      // ticket printed five times would otherwise bury its real history.
+      .then((data) => { if (alive) setRows((data || []).filter((r) => r.action !== "print_receipt")); })
       // Never fatal. A ticket whose history cannot be read still shows its
       // ticket — the panel just says so.
       .catch((e) => { if (alive) { setRows([]); setError(e.message || ""); } });
