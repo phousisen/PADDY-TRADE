@@ -1,0 +1,63 @@
+RECEIPT PRINT TRACKING — 27 September 2026
+==========================================
+
+Upload these files to GitHub, keeping the same folders.
+No SQL. Nothing to run in Supabase.
+
+NEW
+  src/printLog.js
+  src/components/PrintLogModal.jsx
+
+CHANGED
+  src/pages/Receipt.jsx
+  src/pages/Transactions.jsx
+  src/components/TicketHistory.jsx
+  src/auditText.js
+  src/api.js
+  src/i18n.jsx
+  src/index.css
+
+DELETE FROM GITHUB — nothing. (No earlier version of this was uploaded.)
+
+
+WHAT IT DOES
+
+On the paper
+  - The first print looks the same as today.
+  - Every print after that has a sheet number on the end of the receipt
+    number:  No. RCP-482913-A/2,  /3,  /4 ...
+  - One small bold line at the bottom: the date and time of printing, and
+    who printed it.
+
+On the Transactions page
+  - Headings fit on one line, and rows no longer wrap.
+  - The Receipt button shows how many times it has been printed:
+      Receipt ×1   grey
+      Receipt ×3   gold (printed more than once)
+      Receipt      never printed since this went live
+  - Click the ×3 to see each print: sheet, date and time, and who.
+
+On the receipt screen, before pressing Print
+  - A strip on top says "Already printed 3 times" with each time and name.
+    It never prints.
+
+Works offline: a station with no signal still records its prints, and
+they are sent with the next sync, at the real time they were printed.
+
+
+WHAT IT COUNTS
+
+It counts every press of Print. If someone presses Print and then cancels
+in the printer box, that still counts. The browser cannot tell whether
+paper actually came out.
+
+Tickets printed before this goes live show no ×, because nothing was
+recorded back then.
+
+
+CHECK AFTER UPLOADING
+  1. Open any ticket's Receipt and press Print.
+  2. Go back. The Receipt button now shows ×1.
+  3. Press Print again. The paper says .../2 and the button shows ×2
+     in gold.
+  4. Click ×2. Both prints are listed with time and name.
