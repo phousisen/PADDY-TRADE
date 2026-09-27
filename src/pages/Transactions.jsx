@@ -8,6 +8,9 @@ import DateRangeFilter from "../components/DateRangeFilter.jsx";
 // finished, so it no longer looks identical to one straight off the scale.
 import EditedBadge from "../components/EditedBadge.jsx";
 import TicketHistory from "../components/TicketHistory.jsx";
+// [2026-09-27] Every receipt one ticket has produced, opened from the ×N on
+// its Receipt button.
+import PrintLogModal from "../components/PrintLogModal.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
@@ -1608,6 +1611,7 @@ export default function Transactions({ setPage }) {
   // opened from the list instead, for whenever a copy gets lost, smudged,
   // or a farmer/buyer needs another one later.
   const [receiptTx, setReceiptTx] = useState(null);
+  const [printLogTx, setPrintLogTx] = useState(null);
   const [loading, setLoading] = useState(true);
   // Whether the last attempt to reach the server actually failed (as
   // opposed to just still being in progress) — lets the page tell staff
@@ -1853,6 +1857,25 @@ export default function Transactions({ setPage }) {
     () => visibleRows.slice((pageNum - 1) * PAGE_SIZE, pageNum * PAGE_SIZE),
     [visibleRows, pageNum]
   );
+
+  // [2026-09-27] A TICKET PRINTED MORE THAN ONCE, VISIBLE IN THE LIST.
+  //
+  // The full story is under each ticket (TicketHistory). Without a mark up
+  // here nobody opens the one row that matters — the same way Jomnoum's
+  // missing tonnes sat in grey on the Stations page for weeks.
+  //
+  // Only the twenty rows on screen are counted, and only when the page
+  // changes. It never blocks the list: a failed count simply shows no badge.
+  const [printCounts, setPrintCounts] = useState({});
+  useEffect(() => {
+    const ids = pagedRows.map((r) => r.id).filter(Boolean);
+    if (ids.length === 0) return;
+    let alive = true;
+    api.getPrintCounts(ids)
+      .then((c) => { if (alive) setPrintCounts((prev) => ({ ...prev, ...c })); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [pagedRows]);
 
   // Exports the "IMPORT / EXPORT" coupon-ledger workbook (grouped by
   // product, with Sub-Total/TOTAL rows) that replaces the old plain CSV —
@@ -2299,19 +2322,19 @@ export default function Transactions({ setPage }) {
                   column — it's stacked below the HQ Confirmation pill; the
                   Status column (the confirmed/needs-attention icon) is
                   removed entirely (the icon isn't shown anywhere anymore). */}
-              <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
+              <tr className="whitespace-nowrap border-b border-slate-100 bg-slate-50/60 text-left text-[10.5px] uppercase tracking-wide text-slate-400">
                 <th className="w-8 px-2 py-3"></th>
-                <th className="px-5 py-3 font-semibold">#</th>
-                <th className="px-3 py-3 font-semibold">{t("tx_ticket_no")}</th>
+                <th className="px-3 py-3 font-semibold">#</th>
+                <th className="px-3 py-3 font-semibold">{t("txh_ticket")}</th>
                 <th className="px-3 py-3 font-semibold">{t("tx_type")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_date")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_station")}</th>
-                <th className="px-3 py-3 font-semibold">{t("col_party")}</th>
-                <th className="px-3 py-3 font-semibold">{t("col_qty")}</th>
-                <th className="px-3 py-3 font-semibold">{t("col_amount")}</th>
+                <th className="px-3 py-3 font-semibold">{t("txh_party")}</th>
+                <th className="px-3 py-3 font-semibold">{t("txh_kg")}</th>
+                <th className="px-3 py-3 font-semibold">{t("txh_amount")}</th>
                 <th className="px-3 py-3 font-semibold">{t("paid")}</th>
                 <th className="px-3 py-3 font-semibold">{t("tx_remaining")}</th>
-                <th className="px-3 py-3 font-semibold">{t("hq_confirmation")}</th>
+                <th className="px-3 py-3 font-semibold">{t("txh_hq")}</th>
                 <th className="px-3 py-3 font-semibold">{t("col_action")}</th>
               </tr>
             </thead>
@@ -2349,8 +2372,8 @@ export default function Transactions({ setPage }) {
                         <ChevronRight size={15} className={`transition-transform ${isExpanded ? "rotate-90 text-brand-600" : ""}`} />
                       </button>
                     </td>
-                    <td className="px-5 py-3.5 text-slate-400">{(pageNum - 1) * PAGE_SIZE + i + 1}</td>
-                    <td className="px-3 py-3.5">
+                    <td className="px-3 py-3.5 text-slate-400">{(pageNum - 1) * PAGE_SIZE + i + 1}</td>
+                    <td className="whitespace-nowrap px-3 py-3.5">
                       {/* Ticket # — the paper ticket number staff actually
                           write on and search by, now its own column instead
                           of buried under the Type badge. The RCP-xxx receipt
@@ -2401,23 +2424,23 @@ export default function Transactions({ setPage }) {
                           that already have them, they are simply not shown,
                           compared, or asked for any more. */}
                     </td>
-                    <td className="px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
-                    <td className="px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
-                    <td className="px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? "Buyer" : "Seller"}: {tx.recorded_by_name}</p>}</td>
-                    <td className="px-3 py-3 text-slate-700">
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
+                    <td className="min-w-[160px] px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="whitespace-nowrap text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? "Buyer" : "Seller"}: {tx.recorded_by_name}</p>}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-700">
                       {fmt2(tx.quantity_kg)}
                       {edits[tx.id] && <EditedBadge transactionId={tx.id} editCount={edits[tx.id].edit_count} />}
                     </td>
-                    <td className="px-3 py-3 font-medium text-slate-800">
+                    <td className="whitespace-nowrap px-3 py-3 font-medium text-slate-800">
                       {fmtRiel(tx.total_with_tax ?? tx.amount)}
                       {tx.tax_applicable && <p className="text-[10px] font-normal text-slate-400">incl. {tx.tax_rate}% VAT</p>}
                     </td>
-                    <td className="px-3 py-3.5">
+                    <td className="whitespace-nowrap px-3 py-3.5">
                       <button onClick={() => setViewPaymentsTx(tx)} className="font-medium text-brand-600 underline decoration-dotted hover:text-brand-700">
                         {fmtRiel(Math.max(0, (tx.total_with_tax ?? tx.amount) - remaining))}
                       </button>
                     </td>
-                    <td className="px-3 py-3.5">
+                    <td className="whitespace-nowrap px-3 py-3.5">
                       {isCancelled ? (
                         <span className="text-xs text-slate-400">{t("tx_excluded")}</span>
                       ) : isUnpriced ? (
@@ -2454,9 +2477,21 @@ export default function Transactions({ setPage }) {
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1.5">
-                        <button onClick={() => setReceiptTx(tx)} title={t("tx_t_view_receipt")} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
-                          <Printer size={12} /> {t("tx_receipt")}
-                        </button>
+                        {/* [2026-09-27] How many times this receipt has been
+                            printed sits on the button that prints it. ×N opens
+                            the list of each print: when, and who. One print is
+                            grey; two or more is gold. Never printed: no ×. */}
+                        <div className="flex items-stretch overflow-hidden rounded-md border border-slate-200 text-xs">
+                          <button onClick={() => setReceiptTx(tx)} title={t("tx_t_view_receipt")} className="flex items-center gap-1 whitespace-nowrap px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-brand-700">
+                            <Printer size={12} /> {t("tx_receipt")}
+                          </button>
+                          {printCounts[tx.id] > 0 && (
+                            <button onClick={() => setPrintLogTx(tx)} title={t("pl_open")}
+                              className={`border-l border-slate-200 px-1.5 font-bold tabular-nums ${printCounts[tx.id] > 1 ? "bg-gold-50 text-gold-700 hover:bg-gold-100" : "text-slate-400 hover:bg-slate-50"}`}>
+                              ×{printCounts[tx.id]}
+                            </button>
+                          )}
+                        </div>
                         {isViewOnly ? null : isAdmin ? (
                           <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
                             <Pencil size={12} /> {t("tx_edit")}
@@ -2683,7 +2718,15 @@ export default function Transactions({ setPage }) {
                   )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-                    <button onClick={() => setReceiptTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Printer size={12} /> {t("btn_receipt")}</button>
+                    <div className="flex items-stretch overflow-hidden rounded-md border border-slate-200 text-xs">
+                      <button onClick={() => setReceiptTx(tx)} className="flex items-center gap-1 px-2.5 py-1.5 text-slate-500"><Printer size={12} /> {t("btn_receipt")}</button>
+                      {printCounts[tx.id] > 0 && (
+                        <button onClick={() => setPrintLogTx(tx)}
+                          className={`border-l border-slate-200 px-2 font-bold tabular-nums ${printCounts[tx.id] > 1 ? "bg-gold-50 text-gold-700" : "text-slate-400"}`}>
+                          ×{printCounts[tx.id]}
+                        </button>
+                      )}
+                    </div>
                     <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Camera size={12} /> {t("btn_photos")} ({photoCount})</button>
                     <button onClick={() => setViewPaymentsTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Wallet size={12} /> {t("btn_payments")}</button>
                     {isViewOnly ? null : isAdmin ? (
@@ -2800,6 +2843,7 @@ export default function Transactions({ setPage }) {
       )}
       {viewPaymentsTx && <PaymentsModal tx={viewPaymentsTx} userEmail={session.user.email} userId={session.user.id} t={t} onClose={() => setViewPaymentsTx(null)} onChanged={load} />}
       {photosTx && <PhotosModal tx={photosTx} onClose={() => setPhotosTx(null)} />}
+      {printLogTx && <PrintLogModal tx={printLogTx} onClose={() => setPrintLogTx(null)} />}
       {receiptTx && (
         <div className="fixed inset-0 z-50 bg-white">
           <Receipt tx={receiptTx} onDone={() => setReceiptTx(null)} />
