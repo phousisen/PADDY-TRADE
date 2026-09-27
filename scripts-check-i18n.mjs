@@ -30,7 +30,7 @@ import path from "node:path";
 const BASELINE = {
   "src/pages/ReportCapital.jsx": 44,
   "src/pages/WeighingTickets.jsx": 40,
-  "src/pages/TransactionForm.jsx": 38,
+  "src/pages/TransactionForm.jsx": 0,
   "src/pages/ReportFinanceSetup.jsx": 37,
   "src/pages/ReportPurchases.jsx": 31,
   "src/pages/ReportPayables.jsx": 30,
