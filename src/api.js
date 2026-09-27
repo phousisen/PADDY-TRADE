@@ -2898,6 +2898,33 @@ const rawApi = {
     return (data || []).map((l) => ({ ...l, userName: l.profiles?.full_name || "—" }));
   },
 
+  // [2026-09-27] HOW MANY RECEIPTS EACH OF THESE TICKETS HAS PRODUCED.
+  //
+  // The full story of one ticket is already under it (getTransactionHistory
+  // → TicketHistory). This is the list version: one query for the twenty
+  // rows on screen, so a ticket printed twice can be SEEN in the list
+  // instead of only being findable by opening each row in turn.
+  //
+  // Only ids for the page being looked at are ever passed in. Asking for
+  // every transaction would be a second full-table read on a page that
+  // already carries one.
+  async getPrintCounts(transactionIds) {
+    const ids = (transactionIds || []).filter(Boolean);
+    if (ids.length === 0) return {};
+    const { data, error } = await supabase
+      .from("audit_logs")
+      .select("record_id")
+      .eq("action", "print_receipt")
+      .in("record_id", ids)
+      .limit(2000);
+    // Never fatal: the count is an extra mark on a row, and a list that
+    // cannot show it must still show the list.
+    if (error) return {};
+    const out = {};
+    for (const r of data || []) out[r.record_id] = (out[r.record_id] || 0) + 1;
+    return out;
+  },
+
   // [2026-09-23] RENAME AN EXPENSE CATEGORY, everywhere at once.
   //
   // SISEN: "we need to be able to edit the category." The category list is

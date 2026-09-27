@@ -137,6 +137,12 @@ input[type="number"] {
 #receipt-root .sig-box .kh, #ticket-slip-root .sig-box .kh { font-size: 9.5px; font-weight: 700; }
 #receipt-root .sig-box .en, #ticket-slip-root .sig-box .en { font-size: 8px; color: #475569; }
 
+/* [2026-09-27] The printed-at line — when this sheet was printed, and by whom.
+   Quiet on screen; the print rules below make it legible on the dot-matrix. */
+#receipt-root .printed-at { margin-top: 12px; padding-top: 6px; border-top: 1px solid #cbd5e1;
+  font-size: 9px; color: #475569; display: flex; align-items: baseline; gap: 6px; }
+
+
 /* Page size [updated 2026-08-25]: 210mm x 140mm — the actual physical
    continuous-feed form size, not A4. This used to say `size: A4` because
    that was the only option the printer's OS dialog showed at the time —
@@ -431,4 +437,15 @@ input[type="number"] {
   #receipt-root .sig-line { border-top: 1px solid #000; margin-bottom: 0.8mm; }
   #receipt-root .sig-box .kh { font-size: 10px; font-weight: 700; }
   #receipt-root .sig-box .en { font-size: 7.5px; color: #374151; }
+
+  /* [2026-09-27] BIG ENOUGH AND BLACK ENOUGH FOR A DOT-MATRIX.
+     SISEN: "if the letters are not bold and abit big, the printer print wont
+     be clear so cant see." This prints on an EPSON LQ-310 at 360 dpi onto a
+     continuous form — 7px light text is a smudge on that machine, whatever it
+     looks like on a screen. Bold, 10px, solid black, and a solid rule rather
+     than a dashed one: a dash on a dot-matrix comes out as broken specks that
+     read as dirt on the paper. Costs ~1mm of the 136mm budget. */
+  #receipt-root .printed-at { margin-top: 1mm; padding-top: 0.8mm; border-top: 0.25mm solid #000;
+    font-size: 10px; font-weight: 700; color: #000; display: flex; align-items: baseline; gap: 2mm; }
+
 }

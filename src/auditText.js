@@ -45,6 +45,10 @@ export const ACTION_META = {
   // (Dashboard.jsx), and renaming an expense category across every row that
   // carries it (api.renameExpenseCategory).
   force_stock_zero: "stock", rename_expense_category: "payment",
+  // [2026-09-27] Every time Print was pressed on a receipt (printLog.js).
+  // It sits under "transaction" because that is where anyone looking for it
+  // would look: it is a thing that happened to one ticket.
+  print_receipt: "transaction",
 };
 
 export const CATEGORIES = ["all", "payment", "transaction", "request", "stock", "user", "capital", "other"];
@@ -146,6 +150,16 @@ export function describeChange(log, t) {
     case "rename_expense_category":
       if (before.category || after.category) parts.push(`${before.category || "—"} → ${after.category || "—"}`);
       if (after.rows !== undefined) parts.push(t("al_cat_rows", { n: after.rows }));
+      break;
+
+    // [2026-09-27] A receipt was asked for. The sheet number written here is
+    // the one that was on the paper — the running number the ticket's own
+    // history recomputes from the order (printLog.js) is the one to trust,
+    // but this is what the person holding that sheet is looking at.
+    case "print_receipt":
+      if (after.copy > 1) parts.push(t("al_print_copy", { n: after.copy }));
+      else parts.push(t("al_print_first"));
+      if (ref) parts.push(ref);
       break;
 
     case "cancel_transaction":
