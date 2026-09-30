@@ -197,6 +197,89 @@ export function buildDays({ txs = [], payments = [], adjustments = [], locationI
 }
 
 // ---------------------------------------------------------------------------
+// buildDaysByStation — every station on its own shed, then added day by day
+// ---------------------------------------------------------------------------
+//
+// [2026-09-29] Daily check, 29 Sep: the Daily Book fed every selected
+// station into ONE buildDays call, so "All stations" ran one pooled average
+// cost across five different sheds. Reang Kesey's sales were charged partly
+// at Jomnoum's buying price, and the day's profit stopped matching the
+// Income Statement (statements.js and financials.js were fixed on 14 Sep;
+// the Daily Book never was).
+//
+// Here each station walks its own pool with buildDays, and the days are then
+// added up. A station with nothing on a given day still holds its stock that
+// day, so its closing level is carried forward into the total rather than
+// dropping out.
+const stationKey = (v) => (v == null ? "∅" : String(v));
+
+function stationIdsOf({ txs = [], payments = [], adjustments = [], locationIds = [], extra = [] }) {
+  if (locationIds.length) return [...new Set(locationIds.map(stationKey))];
+  const ids = new Set(extra);
+  for (const r of txs) ids.add(stationKey(r.location_id));
+  for (const r of payments) ids.add(stationKey(r.location_id));
+  for (const r of adjustments) ids.add(stationKey(r.location_id));
+  return [...ids];
+}
+
+function daysForStation(id, { txs = [], payments = [], adjustments = [], opening = {} }) {
+  const pick = (r) => stationKey(r.location_id) === id;
+  return buildDays({
+    txs: txs.filter(pick), payments: payments.filter(pick), adjustments: adjustments.filter(pick),
+    locationIds: [], openingKg: num(opening.kg), openingValue: num(opening.value),
+  });
+}
+
+/** Each station's shed at the end of the given rows: { [stationId]: { kg, value } }. */
+export function closingByStation({ txs = [], adjustments = [], locationIds = [] }) {
+  const out = {};
+  for (const id of stationIdsOf({ txs, adjustments, locationIds })) {
+    const days = daysForStation(id, { txs, adjustments });
+    const last = days[days.length - 1];
+    out[id] = { kg: last ? last.closingKg : 0, value: last ? last.closingValue : 0 };
+  }
+  return out;
+}
+
+export function buildDaysByStation({ txs = [], payments = [], adjustments = [], locationIds = [], openingByLoc = {} }) {
+  const ids = stationIdsOf({ txs, payments, adjustments, locationIds, extra: Object.keys(openingByLoc) });
+  const per = ids.map((id) => ({
+    opening: openingByLoc[id] || { kg: 0, value: 0 },
+    days: daysForStation(id, { txs, payments, adjustments, opening: openingByLoc[id] || {} }),
+  }));
+  if (per.length === 1) return per[0].days;
+
+  const dates = [...new Set(per.flatMap((p) => p.days.map((d) => d.date)))].sort();
+  const at = per.map(() => 0);
+  const lastKg = per.map((p) => num(p.opening.kg));
+  const lastVal = per.map((p) => num(p.opening.value));
+  return dates.map((date) => {
+    const row = { date, ...emptyTotals(), openingKg: 0, openingValue: 0, closingKg: 0, closingValue: 0,
+      profit: 0, cash: 0, lossValue: 0, counted: false };
+    per.forEach((p, i) => {
+      const d = p.days[at[i]];
+      if (d && d.date === date) {
+        for (const f of SUM_FIELDS) row[f] += num(d[f]);
+        row.openingKg += num(d.openingKg); row.openingValue += num(d.openingValue);
+        row.closingKg += num(d.closingKg); row.closingValue += num(d.closingValue);
+        row.profit += num(d.profit); row.cash += num(d.cash);
+        row.lossValue += Math.min(0, num(d.lostValue));
+        row.counted = row.counted || !!d.counted;
+        lastKg[i] = num(d.closingKg); lastVal[i] = num(d.closingValue);
+        at[i] += 1;
+      } else {
+        // Nothing happened at this station today; its shed is unchanged.
+        row.openingKg += lastKg[i]; row.openingValue += lastVal[i];
+        row.closingKg += lastKg[i]; row.closingValue += lastVal[i];
+      }
+    });
+    row.costPerKg = row.closingKg > 0 ? row.closingValue / row.closingKg : 0;
+    row.buyPricePerKg = row.boughtKg > 0 ? row.spent / row.boughtKg : 0;
+    return row;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // rollup — totals for a set of day rows
 // ---------------------------------------------------------------------------
 export function rollup(days) {
@@ -209,7 +292,9 @@ export function rollup(days) {
   // [2026-09-19] Losses only, day by day. lostValue nets a surplus on one day
   // against a loss on another; a surplus is not income, so it must never
   // cancel a loss (the Daily Book already takes each day on its own).
-  o.lossValue = days.reduce((a, d) => a + Math.min(0, num(d.lostValue)), 0);
+  // A merged all-stations day (buildDaysByStation) carries its own
+  // lossValue, already taken station by station.
+  o.lossValue = days.reduce((a, d) => a + (d.lossValue != null ? num(d.lossValue) : Math.min(0, num(d.lostValue))), 0);
 
   // Levels, not totals — take them from the last day, never the sum.
   const last = days[days.length - 1];

@@ -226,6 +226,10 @@ export const translations = {
     // they just typed, not a generic complaint.
     err_weight_buy: "The empty truck ({tare} kg) cannot weigh as much as or more than the loaded truck ({gross} kg) — the net weight would be {net} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.",
     err_weight_sell: "The loaded truck ({tare} kg) must weigh more than it did empty ({gross} kg) — the net weight would be {net} kg. Check the scale reading, or if the weigh-in itself is wrong, fix it with Edit Ticket first.",
+    err_weighin_missing: "This ticket has no weigh-in weight. Fix it with Edit Ticket first, then finish.",
+    tf_pw_offline: "No internet, so your password can't be checked. Nothing was saved — try again when the internet is back.",
+    tf_check_weights: "Check the two weights.",
+    tx_was_amount_on: "Was: {amount} on {date}",
 
     // [2026-09-09] The rest of what a station reads when something goes
     // wrong. Everything below was English-only, including the messages that
@@ -473,7 +477,7 @@ export const translations = {
     tx_currently_owed: "Currently owed",
     tx_paying_now: "Paying now",
     tx_new_remaining: "New remaining balance",
-    tx_overpay_note: "This is more than what is owed — the balance will just be marked fully settled.",
+    tx_overpay_note: "This is more than is owed ({owed} ៛). You can't pay more than is owed — lower the amount.",
     tx_method: "Method",
     tx_cash: "Cash",
     tx_check: "Check",
@@ -1727,6 +1731,10 @@ export const translations = {
     err_restore_reason: "សូមកត់ត្រាមូលហេតុនៃការដកការបដិសេធនេះ — វាត្រូវបានរក្សាទុកក្នុងកំណត់ត្រា។",
     err_weight_buy: "ឡានទទេ ({tare} គក) មិនអាចធ្ងន់ស្មើ ឬធ្ងន់ជាងឡានពេលផ្ទុក ({gross} គក) បានទេ — ទម្ងន់សុទ្ធនឹងក្លាយជា {net} គក។ សូមពិនិត្យទម្ងន់ម្តងទៀត ឬបើទម្ងន់ចូលខុស សូមកែក្នុង កែសំបុត្រ ជាមុនសិន។",
     err_weight_sell: "ឡានពេលផ្ទុក ({tare} គក) ត្រូវតែធ្ងន់ជាងពេលទទេ ({gross} គក) — ទម្ងន់សុទ្ធនឹងក្លាយជា {net} គក។ សូមពិនិត្យទម្ងន់ម្តងទៀត ឬបើទម្ងន់ចូលខុស សូមកែក្នុង កែសំបុត្រ ជាមុនសិន។",
+    err_weighin_missing: "សំបុត្រនេះមិនមានទម្ងន់ចូលទេ។ សូមកែក្នុង កែសំបុត្រ ជាមុនសិន រួចបញ្ចប់។",
+    tf_pw_offline: "គ្មានអ៊ីនធឺណិត ដូច្នេះមិនអាចពិនិត្យពាក្យសម្ងាត់បានទេ។ មិនទាន់បានរក្សាទុកអ្វីទេ — សូមព្យាយាមម្តងទៀតពេលមានអ៊ីនធឺណិតវិញ។",
+    tf_check_weights: "សូមពិនិត្យទម្ងន់ទាំងពីរ។",
+    tx_was_amount_on: "មុន៖ {amount} នៅ {date}",
 
     // [2026-09-09]
     err_need_ticket_fields_buy: "សូមបំពេញទីតាំង ឈ្មោះអ្នកលក់ ប្រភេទស្រូវ និងប្រភេទយានយន្ត។",
@@ -1949,7 +1957,7 @@ export const translations = {
     tx_currently_owed: "នៅជំពាក់បច្ចុប្បន្ន",
     tx_paying_now: "ទូទាត់ឥឡូវនេះ",
     tx_new_remaining: "សមតុល្យនៅសល់ថ្មី",
-    tx_overpay_note: "ចំនួននេះច្រើនជាងអ្វីដែលជំពាក់ — សមតុល្យនឹងត្រូវចាត់ទុកថាទូទាត់អស់។",
+    tx_overpay_note: "ចំនួននេះច្រើនជាងអ្វីដែលជំពាក់ ({owed} ៛)។ មិនអាចបង់លើសចំនួនដែលជំពាក់បានទេ — សូមបន្ថយចំនួនទឹកប្រាក់។",
     tx_method: "មធ្យោបាយ",
     tx_cash: "សាច់ប្រាក់",
     tx_check: "មូលប្បទានបត្រ",
