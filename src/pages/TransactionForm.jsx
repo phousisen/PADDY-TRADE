@@ -368,7 +368,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // Checked BEFORE the generic "fill in the required fields" below, so a
     // reversed pair of weights says what is actually wrong instead of
     // pointing at a form that looks completely filled in.
-    if (weightsReversed) { setError(reversedMessage + " Check the two weights."); return; }
+    if (weightsReversed) { setError(`${reversedMessage} ${t("tf_check_weights")}`); return; }
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || (isBuy && !pricePerKg)) { setError(t("required_fields")); return; }
     if (!txDate) { setError(t("err_need_tx_date")); return; }
     // [2026-09-22] The signature. SISEN: "we will need a proper password for
@@ -377,14 +377,30 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // exactly as the manager's expense confirmation does; a wrong password
     // saves nothing at all.
     if (!signPassword) { setError(t("xr_password")); return; }
+    // [2026-09-29] NO INTERNET IS NOT A WRONG PASSWORD.
+    // Daily check, 28 Sep: the password can only be checked with the
+    // server. With no connection the check failed and the form said "Wrong
+    // password" — so a clerk typing the right password was told it was
+    // wrong, tried again, and blamed themselves. The rule stays exactly as
+    // SISEN set it (no signature, no save); only the message now tells the
+    // truth about why.
+    if (!navigator.onLine) { setError(t("tf_pw_offline")); return; }
     setSaving(true);
     try {
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: session?.user?.email, password: signPassword,
       });
-      if (authError) { setError(t("xr_bad_password")); setSaving(false); return; }
+      if (authError) {
+        const noNet = !navigator.onLine || authError.status === 0
+          || /fetch|network|timeout/i.test(`${authError.name || ""} ${authError.message || ""}`);
+        setError(t(noNet ? "tf_pw_offline" : "xr_bad_password"));
+        setSaving(false);
+        return;
+      }
     } catch {
-      setError(t("xr_bad_password")); setSaving(false); return;
+      // A thrown error here is the request failing, never a wrong password —
+      // a wrong password comes back as authError above.
+      setError(t("tf_pw_offline")); setSaving(false); return;
     }
     setSaving(false);
     // [2026-09-12] The paper booklet number, now required here exactly as

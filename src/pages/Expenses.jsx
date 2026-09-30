@@ -1095,6 +1095,41 @@ export default function Expenses() {
     reallySave(payload);
   }
 
+  // [2026-09-29] WHAT THE PRINTED SHEET COVERS (daily check, 29 Sep).
+  //
+  // Days: the Year grain has no window ("all years"), and daysInWindow()
+  // returns nothing without one, so the printed page came out empty. It now
+  // runs from the first expense on screen to today; over a longer stretch
+  // than a year it lists only the days that have something on them, so the
+  // paper is not hundreds of blank rows.
+  const printDays = useMemo(() => {
+    if (win.from && win.to) return daysInWindow(win.from, win.to, today);
+    const withData = new Set(rows.map((r) => String(r.pay_date).slice(0, 10)));
+    if (withData.size === 0) return [];
+    const first = [...withData].sort()[0];
+    const all = daysInWindow(first, today, today);
+    return all.length <= 366 ? all : all.filter((d) => withData.has(d));
+  }, [win.from, win.to, rows, today]);
+
+  // "Nothing spent" marks: only the station being printed counts. A day
+  // Jomnoum never filled used to print as "nothing spent" because Ping Pong
+  // had marked it. For all stations together, a day is "nothing spent" only
+  // when every station marked it.
+  const printMarks = useMemo(() => {
+    if (scope.length) return marks.filter((m) => scope.includes(m.location_id));
+    const stationIds = (locations || []).map((l) => l.id);
+    if (stationIds.length === 0) return [];
+    const byDay = new Map();
+    for (const m of marks) {
+      const d = String(m.day).slice(0, 10);
+      if (!byDay.has(d)) byDay.set(d, new Set());
+      byDay.get(d).add(m.location_id);
+    }
+    return [...byDay.entries()]
+      .filter(([, locs]) => stationIds.every((id) => locs.has(id)))
+      .map(([day]) => ({ day }));
+  }, [marks, scope, locations]);
+
   // [2026-09-17] The picker is single-choice now (LocationFilter.jsx), so
   // this is either everything or one named station — never a count.
   const scopeLabel = scope.length
@@ -1393,8 +1428,8 @@ export default function Expenses() {
       {printing && (
         <ExpenseSheetPrint
           rows={rows}
-          days={daysInWindow(win.from, win.to, today)}
-          marks={marks}
+          days={printDays}
+          marks={printMarks}
           scopeLabel={scopeLabel}
           periodLabel={win.label || t("ex_all_years")}
           byWhom={profile?.full_name || ""}

@@ -219,7 +219,7 @@ function ExactWeightTicket({ tx, isBuy, stationAddress, stationPhone, copyNo = 1
   );
 }
 
-export default function Receipt({ tx, onDone, profileName = "" }) {
+export default function Receipt({ tx, onDone, profileName = "", onPrinted }) {
   const { t } = useLanguage();
   // [2026-09-27] The print record has to carry a name. Without user_id the
   // entry lands with a blank "who", which is the one column anyone looking
@@ -325,14 +325,18 @@ export default function Receipt({ tx, onDone, profileName = "" }) {
     // `afterprint` fires whether they printed or cancelled at the printer —
     // which is right, because this counts presses, not sheets of paper, and
     // that is what the screen and the report both say it counts.
-    const onAfter = () => setPrintsHere((n) => n + 1);
+    // [2026-09-29] Tell the screen that opened this receipt, so its ×N
+    // goes up straight away instead of waiting for a reload (daily check,
+    // 28 Sep). The print record itself is queued above and may reach the
+    // server a moment later; the list must not wait for that.
+    const onAfter = () => { setPrintsHere((n) => n + 1); if (onPrinted) onPrinted(); };
     window.addEventListener("beforeprint", onBefore);
     window.addEventListener("afterprint", onAfter);
     return () => {
       window.removeEventListener("beforeprint", onBefore);
       window.removeEventListener("afterprint", onAfter);
     };
-  }, [tx.id, tx.code, tx.stationName, copyNo, session?.user?.id]);
+  }, [tx.id, tx.code, tx.stationName, copyNo, session?.user?.id, onPrinted]);
 
   return (
     <div id="receipt-page" className="flex h-screen flex-1 flex-col overflow-hidden">

@@ -1522,6 +1522,20 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
     // less is never a real load; refuse it here with a message that says
     // which way round the weights have to be, so it's fixed before a
     // receipt exists rather than found in the books later.
+    // [2026-09-29] A ticket with NO weigh-in can never be finished.
+    // Daily check, 28 Sep: Edit Ticket lets the weigh-in be cleared, and the
+    // net-weight check below then read the missing weight as 0 kg. For a Buy
+    // that is refused anyway (0 minus the weigh-out is negative) — but for a
+    // Sell, weigh-out minus 0 is the WHOLE loaded truck: a 35,000 kg truck
+    // would be saved as 35,000 kg of paddy sold. A missing weight is not a
+    // weight of zero; say so and stop.
+    {
+      const g = parseFloat(ticket.gross_kg);
+      if (ticket.gross_kg == null || ticket.gross_kg === "" || !Number.isFinite(g) || g <= 0) {
+        setError(t("err_weighin_missing"));
+        return;
+      }
+    }
     {
       const grossKgNow = parseFloat(ticket.gross_kg) || 0;
       const netNow = isBuy ? grossKgNow - tareKg : tareKg - grossKgNow;

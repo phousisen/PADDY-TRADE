@@ -16,7 +16,7 @@ import Topbar from "../components/Topbar.jsx";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { dayWithWeekday, range, my } from "../dateFormat.js";
-import { buildDays, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
+import { buildDaysByStation, closingByStation, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
 import { statusOf, dayKey } from "../expenseReview.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
 
@@ -621,15 +621,13 @@ export default function DailyBook({ setPage } = {}) {
       .then(([txs, payments, adjustments, priorTxs, priorAdj]) => {
         if (!alive) return;
         const inYear = (a) => a.created_at && effectiveAdjDateStr(a) >= from;
-        const before = buildDays({
-          txs: priorTxs, payments: [], adjustments: priorAdj.filter((a) => a.created_at && !inYear(a)),
+        // [2026-09-29] Each station's own shed at the start of the year —
+        // see buildDaysByStation in periodBook.js.
+        const openingByLoc = closingByStation({
+          txs: priorTxs, adjustments: priorAdj.filter((a) => a.created_at && !inYear(a)),
           locationIds: selectedLocationIds,
         });
-        const last = before[before.length - 1];
-        setRaw({
-          txs, payments, adjustments: adjustments.filter(inYear),
-          openingKg: last ? last.closingKg : 0, openingValue: last ? last.closingValue : 0,
-        });
+        setRaw({ txs, payments, adjustments: adjustments.filter(inYear), openingByLoc });
       })
       .catch((e) => { if (alive) setError(e.message || "Could not load the Daily Book."); })
       .finally(() => { if (alive) setLoading(false); });
@@ -637,13 +635,16 @@ export default function DailyBook({ setPage } = {}) {
   }, [locKey, from, to, refetch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const days = useMemo(
-    () => buildDays({ ...raw, locationIds: selectedLocationIds }),
+    () => buildDaysByStation({ ...raw, locationIds: selectedLocationIds }),
     [raw, locKey] // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const scoped = useMemo(
-    () => (month ? days.filter((d) => d.date.startsWith(month)) : days),
-    [days, month]
+    // [2026-09-29] "Year total" means the whole year. The month box is
+    // greyed out at that grain but kept its value, so the year row held only
+    // the chosen month (daily check, 29 Sep).
+    () => (month && grain !== "year" ? days.filter((d) => d.date.startsWith(month)) : days),
+    [days, month, grain]
   );
   // [2026-09-17] NEWEST FIRST. SISEN: "make the lastest date up instead" —
   // "for all devices not just pc".

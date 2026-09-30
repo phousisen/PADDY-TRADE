@@ -396,6 +396,10 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
 
   async function submit() {
     setError("");
+    // [2026-09-29] Paying more than is owed is refused — say so here, before
+    // anything is sent, instead of letting the server refuse it with a
+    // message about somebody else paying (daily check, 29 Sep).
+    if (overpaying) { setError(t("tx_overpay_note", { owed: Math.round(remaining).toLocaleString("en-US") })); return; }
     setSaving(true);
     try {
       await onSubmit(parseFloat(amount), method, memo, payDate);
@@ -427,7 +431,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
             <span className={`font-bold ${newRemaining === 0 ? "text-emerald-600" : "text-slate-800"}`}>{fmtRiel(newRemaining)}</span>
           </div>
         </div>
-        {overpaying && <p className="mb-3 text-xs text-amber-600">{t("tx_overpay_note")}</p>}
+        {overpaying && <p className="mb-3 text-xs font-medium text-rose-600">{t("tx_overpay_note", { owed: Math.round(remaining).toLocaleString("en-US") })}</p>}
 
         <label className="mb-1 block text-xs text-slate-500">{t("tx_method")}</label>
         <select value={method} onChange={(e) => setMethod(e.target.value)}
@@ -450,7 +454,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
         <div className="flex justify-end gap-2">
           <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
           <button
-            disabled={saving || !amount || parseFloat(amount) <= 0}
+            disabled={saving || !amount || parseFloat(amount) <= 0 || overpaying}
             onClick={submit}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           >
@@ -1037,7 +1041,7 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                   return (
                     <tr key={p.id} className={`border-b border-slate-50 last:border-0 ${voided ? "bg-slate-50/70" : ""}`}>
                       <td className="px-3 py-2 text-slate-500">
-                        {p.pay_date}
+                        {dmy(p.pay_date)}
                         {p.created_at && (
                           <span className="ml-1 text-slate-400">
                             {hm(p.created_at)}
@@ -1130,7 +1134,7 @@ function VoidPaymentModal({ payment, onClose, onSubmit }) {
           <Ban size={16} className="text-rose-500" /> {t("tx_void_payment")}
         </h3>
         <p className="mb-3 text-xs text-slate-400">
-          {fmtRiel(payment.amount)} · {payment.pay_date}
+          {fmtRiel(payment.amount)} · {dmy(payment.pay_date)}
         </p>
         <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
           It stops counting towards what has been paid, and leaves Cash Flow. It is not deleted —
@@ -1232,7 +1236,7 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Pencil size={16} className="text-brand-600" /> {t("tx_correct_payment")}</h3>
-        <p className="mb-3 text-xs text-slate-400">Was: {fmtRiel(payment.amount)} on {payment.pay_date}</p>
+        <p className="mb-3 text-xs text-slate-400">{t("tx_was_amount_on", { amount: fmtRiel(payment.amount), date: dmy(payment.pay_date) })}</p>
 
         <form onSubmit={submit}>
           <label className="mb-1 block text-xs text-slate-500">{t("tx_correct_amount_r")}</label>
@@ -1872,7 +1876,14 @@ export default function Transactions({ setPage }) {
     if (ids.length === 0) return;
     let alive = true;
     api.getPrintCounts(ids)
-      .then((c) => { if (alive) setPrintCounts((prev) => ({ ...prev, ...c })); })
+      // Never let a count go DOWN: a print made on this screen a moment ago
+      // is counted here straight away (the Receipt's onPrinted below) but may not have
+      // reached the server yet, so the server's number can briefly be lower.
+      .then((c) => { if (alive) setPrintCounts((prev) => {
+        const next = { ...prev };
+        for (const [id, n] of Object.entries(c)) next[id] = Math.max(n, prev[id] || 0);
+        return next;
+      }); })
       .catch(() => {});
     return () => { alive = false; };
   }, [pagedRows]);
@@ -1949,6 +1960,13 @@ export default function Transactions({ setPage }) {
     const paidNow = (fresh || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const owedNow = Math.max(0, bill - paidNow);
     if (amount > owedNow + 0.01) {
+      // Only blame "someone else" when the amount owed really did drop since
+      // the page loaded. Otherwise the person simply typed too much.
+      const owedOnScreen = remainingByTx[payTx.id] || 0;
+      const someoneElsePaid = owedNow < owedOnScreen - 0.01;
+      if (!someoneElsePaid) {
+        throw new Error(t("tx_overpay_note", { owed: Math.round(owedNow).toLocaleString("en-US") }));
+      }
       throw new Error(owedNow <= 0.01
         ? t("tx_pay_already_paid")
         : t("tx_pay_more_than_owed", { owed: Math.round(owedNow).toLocaleString("en-US") }));
@@ -2846,7 +2864,8 @@ export default function Transactions({ setPage }) {
       {printLogTx && <PrintLogModal tx={printLogTx} onClose={() => setPrintLogTx(null)} />}
       {receiptTx && (
         <div className="fixed inset-0 z-50 bg-white">
-          <Receipt tx={receiptTx} onDone={() => setReceiptTx(null)} />
+          <Receipt tx={receiptTx} onDone={() => setReceiptTx(null)}
+            onPrinted={() => setPrintCounts((p) => ({ ...p, [receiptTx.id]: (p[receiptTx.id] || 0) + 1 }))} />
         </div>
       )}
       {stationCheckOpen && (
