@@ -197,12 +197,12 @@ export default function Sidebar({ page, setPage, pendingRequests, expenseBadge =
               {/* [2026-09-01] So nobody on a shared device mistakes this
                   for a normal account that just happens to have nothing to
                   do right now — see viewOnlyGuard.js. */}
-              {isViewOnly && <span className="ml-0.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-200">View Only</span>}
+              {isViewOnly && <span className="ml-0.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-200">{t("role_view_only")}</span>}
             </p>
           </div>
           <button
             onClick={() => setLang(lang === "en" ? "km" : "en")}
-            title={lang === "en" ? "Switch to Khmer" : "Switch to English"}
+            title={lang === "en" ? t("sb_switch_km") : t("sb_switch_en")}
             className="flex shrink-0 items-center gap-1 rounded-md border border-white/10 px-1.5 py-1 text-[10.5px] font-medium text-brand-200 hover:bg-white/10 hover:text-white"
           >
             <Languages size={12} /> {lang === "en" ? "EN" : "ខ្មែរ"}

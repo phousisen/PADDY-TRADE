@@ -203,7 +203,7 @@ export default function MobileNav({ page, setPage, pendingRequests, expenseBadge
                 <p className="flex items-center gap-1 text-xs text-brand-300">
                   {isOwner && <ShieldCheck size={11} className="text-gold-300" />}
                   {profile.roleName || t(`role_${profile.role}`)}
-                  {isViewOnly && <span className="ml-0.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-200">View Only</span>}
+                  {isViewOnly && <span className="ml-0.5 rounded bg-white/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-brand-200">{t("role_view_only")}</span>}
                 </p>
               </div>
             </div>

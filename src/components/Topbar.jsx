@@ -312,14 +312,14 @@ function SyncStatusBanner({ onSignInAgain }) {
   );
 }
 
-function timeAgo(iso) {
+function timeAgo(iso, t) {
   if (!iso) return "";
   const mins = Math.max(0, Math.round((getAccurateNow() - new Date(iso)) / 60000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t("tb_ago_now");
+  if (mins < 60) return t("tb_ago_m", { n: mins });
   const hrs = Math.round(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.round(hrs / 24)}d ago`;
+  if (hrs < 24) return t("tb_ago_h", { n: hrs });
+  return t("tb_ago_d", { n: Math.round(hrs / 24) });
 }
 
 // [2026-09-01] Notification Center — wires up the bell icon that's sat here
@@ -414,11 +414,11 @@ function NotificationBell() {
   // an admin), then plain offline-with-something-waiting. Mirrors that
   // banner's logic exactly rather than reimplementing it differently.
   const syncNotice = syncStatus.sessionExpired
-    ? { kind: "session", text: "Your login has expired — sign in again to keep saving." }
+    ? { kind: "session", text: t("tb_login_expired") }
     : syncStatus.stuck
-    ? { kind: "stuck", text: `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} on this device failed to save repeatedly — this device needs an admin's attention.` }
+    ? { kind: "stuck", text: t(syncStatus.pending === 1 ? "tb_stuck_one" : "tb_stuck_many", { n: syncStatus.pending }) }
     : !syncStatus.online && syncStatus.pending > 0
-    ? { kind: "offline", text: `${syncStatus.pending} change${syncStatus.pending === 1 ? "" : "s"} saved on this device, waiting for the connection to come back.` }
+    ? { kind: "offline", text: t(syncStatus.pending === 1 ? "tb_offline_one" : "tb_offline_many", { n: syncStatus.pending }) }
     : null;
 
   // The dot reads the COUNT (always loaded, costs no rows); the list below
@@ -451,9 +451,9 @@ function NotificationBell() {
       </button>
       {open && (
         <div className="absolute right-0 top-11 z-30 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-          <div className="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-500">Notifications</div>
+          <div className="border-b border-slate-100 px-4 py-2.5 text-xs font-semibold text-slate-500">{t("tb_notifications")}</div>
           {count === 0 ? (
-            <p className="px-4 py-6 text-center text-xs text-slate-400">Nothing needs your attention right now.</p>
+            <p className="px-4 py-6 text-center text-xs text-slate-400">{t("tb_nothing")}</p>
           ) : (
             <div className="max-h-80 overflow-y-auto">
               {stuckNote && (
@@ -480,18 +480,18 @@ function NotificationBell() {
                 <div key={r.id} className="flex gap-2.5 border-b border-slate-100 px-4 py-3 last:border-0">
                   <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
                   <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-slate-700">Change Request pending review</p>
+                    <p className="truncate text-xs font-semibold text-slate-700">{t("tb_cr_pending")}</p>
                     <p className="truncate text-[11px] text-slate-400">
-                      {r.transactions?.paper_ticket_no || r.transactionCode} · {r.requestedByName} · {timeAgo(r.created_at)}
+                      {r.transactions?.paper_ticket_no || r.transactionCode} · {r.requestedByName} · {timeAgo(r.created_at, t)}
                     </p>
                   </div>
                 </div>
               ))}
               {pendingReqs.length > 6 && (
-                <p className="px-4 py-2 text-center text-[11px] text-slate-400">+{pendingReqs.length - 6} more pending — see Change Requests</p>
+                <p className="px-4 py-2 text-center text-[11px] text-slate-400">{t("tb_more_pending", { n: pendingReqs.length - 6 })}</p>
               )}
               {pendingCount > 0 && pendingReqs.length === 0 && (
-                <p className="px-4 py-3 text-center text-[11px] text-slate-400">Loading…</p>
+                <p className="px-4 py-3 text-center text-[11px] text-slate-400">{t("loading_label")}</p>
               )}
             </div>
           )}
@@ -541,7 +541,7 @@ function AccountSecurityModal({ onClose }) {
   async function loadFactors() {
     setLoadErr("");
     const { data, error } = await supabase.auth.mfa.listFactors();
-    if (error) { setLoadErr(error.message || "Couldn't check your 2FA status."); setFactors([]); return; }
+    if (error) { setLoadErr(error.message || tr("tb_2fa_check_err")); setFactors([]); return; }
     setFactors(data?.totp || []);
   }
   useEffect(() => { loadFactors(); }, []);
@@ -552,7 +552,7 @@ function AccountSecurityModal({ onClose }) {
     setMfaErr(""); setBusy(true);
     const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp" });
     setBusy(false);
-    if (error) { setMfaErr(error.message || "Couldn't start 2FA setup."); return; }
+    if (error) { setMfaErr(error.message || tr("tb_2fa_start_err")); return; }
     setEnrolling({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
   }
 
@@ -561,7 +561,7 @@ function AccountSecurityModal({ onClose }) {
     setBusy(true); setMfaErr("");
     const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: enrolling.factorId, code: code.trim() });
     setBusy(false);
-    if (error) { setMfaErr(error.message || "That code didn't match — try again."); return; }
+    if (error) { setMfaErr(error.message || tr("tb_2fa_code_err")); return; }
     setEnrolling(null); setCode("");
     loadFactors();
   }
@@ -579,28 +579,28 @@ function AccountSecurityModal({ onClose }) {
     setBusy(true); setMfaErr("");
     const { error } = await supabase.auth.mfa.unenroll({ factorId: verifiedFactor.id });
     setBusy(false);
-    if (error) { setMfaErr(error.message || "Couldn't turn off 2FA."); return; }
+    if (error) { setMfaErr(error.message || tr("tb_2fa_off_err")); return; }
     loadFactors();
   }
 
   async function changePassword() {
     setPwErr(""); setPwMsg("");
-    if (!pw0) { setPwErr("Enter your current password first."); return; }
-    if (pw1.length < 6) { setPwErr("Password must be at least 6 characters."); return; }
-    if (pw1 !== pw2) { setPwErr("Passwords don't match."); return; }
+    if (!pw0) { setPwErr(tr("tb_pw_current_first")); return; }
+    if (pw1.length < 6) { setPwErr(tr("setpw_min6")); return; }
+    if (pw1 !== pw2) { setPwErr(tr("usr_pw_mismatch")); return; }
     setBusy(true);
     // [2026-09-08] Prove it's really the account holder — on a shared
     // station PC that stays logged in, anyone at the keyboard could
     // otherwise change the station's password (audit #7).
     const { data: sess } = await supabase.auth.getSession();
     const email = sess?.session?.user?.email;
-    if (!email) { setBusy(false); setPwErr("You need to be signed in online to change your password."); return; }
+    if (!email) { setBusy(false); setPwErr(tr("tb_pw_need_online")); return; }
     const { error: verifyErr } = await supabase.auth.signInWithPassword({ email, password: pw0 });
-    if (verifyErr) { setBusy(false); setPwErr("Current password is incorrect."); return; }
+    if (verifyErr) { setBusy(false); setPwErr(tr("tb_pw_current_wrong")); return; }
     const { error } = await supabase.auth.updateUser({ password: pw1 });
     setBusy(false);
-    if (error) { setPwErr(error.message || "Couldn't update your password."); return; }
-    setPwMsg("Password updated.");
+    if (error) { setPwErr(error.message || tr("tb_pw_update_err")); return; }
+    setPwMsg(tr("tb_pw_updated"));
     setPw0(""); setPw1(""); setPw2("");
   }
 
@@ -613,14 +613,14 @@ function AccountSecurityModal({ onClose }) {
     noteSignOut(REASONS.EVERYWHERE);
     const { error } = await supabase.auth.signOut({ scope: "global" });
     setSigningOut(false);
-    if (error) setSignOutErr(error.message || "Couldn't sign out everywhere — try again.");
+    if (error) setSignOutErr(error.message || tr("tb_signout_all_err"));
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
         <div className="mb-4 flex items-start justify-between">
-          <h3 className="font-semibold text-slate-700">Account &amp; Security</h3>
+          <h3 className="font-semibold text-slate-700">{tr("tb_account_security")}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
 
@@ -634,40 +634,40 @@ function AccountSecurityModal({ onClose }) {
             be turned off. */}
         {verifiedFactor && (
         <div className="mb-4 rounded-lg border border-slate-200 p-4">
-          <p className="mb-1 text-sm font-semibold text-slate-700">Two-Factor Authentication</p>
-          <p className="mb-3 text-xs text-slate-400">Require a 6-digit code from an authenticator app in addition to your password.</p>
+          <p className="mb-1 text-sm font-semibold text-slate-700">{tr("tb_2fa_title")}</p>
+          <p className="mb-3 text-xs text-slate-400">{tr("tb_2fa_desc")}</p>
           {factors === null ? (
-            <p className="text-xs text-slate-400">Checking…</p>
+            <p className="text-xs text-slate-400">{tr("tb_checking")}</p>
           ) : loadErr ? (
             <p className="text-xs text-rose-600">{loadErr}</p>
           ) : enrolling ? (
             <div>
-              {enrolling.qrCode && <img src={enrolling.qrCode} alt="Scan with your authenticator app" className="mb-2 h-32 w-32 rounded border border-slate-200" />}
-              <p className="mb-2 text-[11px] text-slate-400">Can't scan? Enter this key manually: <span className="font-mono">{enrolling.secret}</span></p>
+              {enrolling.qrCode && <img src={enrolling.qrCode} alt={tr("tb_2fa_scan_alt")} className="mb-2 h-32 w-32 rounded border border-slate-200" />}
+              <p className="mb-2 text-[11px] text-slate-400">{tr("tb_2fa_manual")} <span className="font-mono">{enrolling.secret}</span></p>
               <input
-                value={code} onChange={(e) => setCode(e.target.value)} placeholder="6-digit code" maxLength={6}
+                value={code} onChange={(e) => setCode(e.target.value)} placeholder={tr("tb_2fa_code_ph")} maxLength={6}
                 className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
               />
               {mfaErr && <p className="mb-2 text-xs text-rose-600">{mfaErr}</p>}
               <div className="flex gap-2">
-                <button onClick={cancelEnroll} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 disabled:opacity-40">Cancel</button>
+                <button onClick={cancelEnroll} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 disabled:opacity-40">{tr("cancel")}</button>
                 <button onClick={confirmEnroll} disabled={busy || code.trim().length < 6} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
-                  {busy ? "Confirming…" : "Confirm & turn on"}
+                  {busy ? tr("tb_confirming") : tr("tb_2fa_confirm_on")}
                 </button>
               </div>
             </div>
           ) : verifiedFactor ? (
             <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700"><span className="h-1.5 w-1.5 rounded-full bg-brand-600" /> 2FA is on</span>
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700"><span className="h-1.5 w-1.5 rounded-full bg-brand-600" /> {tr("tb_2fa_is_on")}</span>
               <button onClick={turnOff} disabled={busy} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-50 disabled:opacity-40">
-                {busy ? "…" : "Turn off"}
+                {busy ? "…" : tr("tb_2fa_turn_off")}
               </button>
             </div>
           ) : (
             <div>
               {mfaErr && <p className="mb-2 text-xs text-rose-600">{mfaErr}</p>}
               <button onClick={startEnroll} disabled={busy} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
-                {busy ? "…" : "Turn on 2FA"}
+                {busy ? "…" : tr("tb_2fa_turn_on")}
               </button>
             </div>
           )}
@@ -676,32 +676,32 @@ function AccountSecurityModal({ onClose }) {
         )}
 
         <div className="mb-4 rounded-lg border border-slate-200 p-4">
-          <p className="mb-1 text-sm font-semibold text-slate-700">Sign Out Everywhere</p>
-          <p className="mb-3 text-xs text-slate-400">Ends every login for this account on every device at once — including this one, so you'll need to sign back in here too.</p>
+          <p className="mb-1 text-sm font-semibold text-slate-700">{tr("tb_signout_all_title")}</p>
+          <p className="mb-3 text-xs text-slate-400">{tr("tb_signout_all_desc")}</p>
           {signOutErr && <p className="mb-2 text-xs text-rose-600">{signOutErr}</p>}
           <button onClick={signOutEverywhere} disabled={signingOut} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40">
-            {signingOut ? "Signing out…" : "Sign out everywhere"}
+            {signingOut ? tr("tb_signing_out") : tr("tb_signout_all_btn")}
           </button>
         </div>
 
         <div className="rounded-lg border border-slate-200 p-4">
-          <p className="mb-2 text-sm font-semibold text-slate-700">Change Password</p>
+          <p className="mb-2 text-sm font-semibold text-slate-700">{tr("tb_change_pw")}</p>
           <input
-            type="password" value={pw0} onChange={(e) => setPw0(e.target.value)} placeholder="Current password" autoComplete="current-password"
+            type="password" value={pw0} onChange={(e) => setPw0(e.target.value)} placeholder={tr("tb_current_pw")} autoComplete="current-password"
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
           />
           <input
-            type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} placeholder="New password" autoComplete="new-password"
+            type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} placeholder={tr("usr_new_pw")} autoComplete="new-password"
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
           />
           <input
-            type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="Confirm new password" autoComplete="new-password"
+            type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder={tr("usr_confirm_new_pw")} autoComplete="new-password"
             className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
           />
           {pwErr && <p className="mb-2 text-xs text-rose-600">{pwErr}</p>}
           {pwMsg && <p className="mb-2 text-xs text-brand-700">{pwMsg}</p>}
           <button onClick={changePassword} disabled={busy || !pw0 || !pw1 || !pw2} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-40">
-            {busy ? "Saving…" : "Change Password"}
+            {busy ? tr("saving_label") : tr("tb_change_pw")}
           </button>
         </div>
         </>)}
@@ -742,13 +742,13 @@ function AccountMenu({ profile, t, logout }) {
               onClick={() => { setShowSecurity(true); setOpen(false); }}
               className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
             >
-              <ShieldCheck size={15} className="text-slate-400" /> Account &amp; Security
+              <ShieldCheck size={15} className="text-slate-400" /> {t("tb_account_security")}
             </button>
             <button
               onClick={logout}
               className="flex w-full items-center gap-2 border-t border-slate-100 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
             >
-              <LogOut size={15} className="text-slate-400" /> Sign out
+              <LogOut size={15} className="text-slate-400" /> {t("tb_sign_out")}
             </button>
           </div>
         )}

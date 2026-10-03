@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { X, Eye } from "lucide-react";
 import { api } from "../api.js";
 import { toLoginEmail, isRealAddress, LOGIN_DOMAIN } from "../loginName.js";
+import { useLanguage } from "../i18n.jsx";
 
 export default function AddUserModal({ roles, locations, isOwner, onClose, onCreated }) {
+  const { t } = useLanguage();
   const pickableRoles = isOwner ? roles : roles.filter((r) => r.scope === "own_location");
   const [mode, setMode] = useState("password"); // "password" | "invite"
   const [fullName, setFullName] = useState("");
@@ -44,7 +46,7 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
   async function submit(e) {
     e.preventDefault();
     if (!fullName.trim() || !email.trim()) {
-      setError("Fill in a full name and a login name.");
+      setError(t("au_err_name_login"));
       return;
     }
     // [2026-09-16] The login the database will actually store. A bare name
@@ -52,18 +54,18 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
     // exactly what Login.jsx will later produce from the same typing.
     const loginEmail = toLoginEmail(email);
     if (!loginEmail) {
-      setError("That login name has no letters or numbers in it.");
+      setError(t("au_err_login_nochars"));
       return;
     }
     if (mode === "password" && password.length < 6) {
-      setError("Fill in a full name, a login name, and a password of at least 6 characters.");
+      setError(t("au_err_need_pw"));
       return;
     }
     // An invite is a real email. Sending one to boss@paddytrade.local means
     // someone waits forever for a message that was never deliverable — so
     // this path, and only this path, insists on a genuine address.
     if (mode === "invite" && !isRealAddress(email)) {
-      setError("An invite needs a real email address. Use “Set a password now” for a login name.");
+      setError(t("au_err_invite_real"));
       return;
     }
     setSaving(true);
@@ -75,7 +77,7 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
         // now" below, just with a made-up password nobody uses -- see
         // api.inviteUserAccount for the full explanation.
         await api.inviteUserAccount({ email: loginEmail, fullName: fullName.trim(), roleId, locationId: locationForRole, viewOnly });
-        setNotice(`Invite sent to ${loginEmail}. They'll get an email with a link to set their own password and sign in.`);
+        setNotice(t("au_invite_sent", { email: loginEmail }));
         setTimeout(() => onCreated(), 3500);
         return;
       }
@@ -84,7 +86,7 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
         locationId: locationForRole, viewOnly,
       });
       if (!result.emailConfirmed) {
-        setNotice("Account created. Since this project may require email confirmation, if they can't log in right away, check Supabase → Authentication → Settings and turn off \"Confirm email\", or manually confirm them from Authentication → Users.");
+        setNotice(t("au_created_confirm_note"));
         setTimeout(() => onCreated(), 3500);
       } else {
         onCreated();
@@ -99,7 +101,7 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-700">Add User</h3>
+          <h3 className="font-semibold text-slate-700">{t("usr_add_user")}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
 
@@ -110,20 +112,20 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
             <div className="mb-3 flex rounded-lg bg-slate-100 p-1 text-xs font-medium">
               <button type="button" onClick={() => setMode("password")}
                 className={`flex-1 rounded-md py-1.5 ${mode === "password" ? "bg-white text-slate-700 shadow-sm" : "text-slate-500"}`}>
-                Set a password now
+                {t("au_mode_password")}
               </button>
               <button type="button" onClick={() => setMode("invite")}
                 className={`flex-1 rounded-md py-1.5 ${mode === "invite" ? "bg-white text-slate-700 shadow-sm" : "text-slate-500"}`}>
-                Email them an invite
+                {t("au_mode_invite")}
               </button>
             </div>
 
-            <label className="mb-1 block text-xs text-slate-500">Full name</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("au_full_name")}</label>
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} autoFocus
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
             <label className="mb-1 block text-xs text-slate-500">
-              {mode === "invite" ? "Email address" : "Login name"}
+              {mode === "invite" ? t("au_email_address") : t("au_login_name")}
             </label>
             {/* [2026-09-16] SISEN typed a phone number in here and asked
                 whether it had to be an email. It never did — boss@paddytrade.local
@@ -131,33 +133,33 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
                 stops refusing a bare name. Guarded by scripts-check-login.mjs. */}
             <input type="text" value={email} onChange={(e) => setEmail(e.target.value)}
               autoCapitalize="none" autoCorrect="off" spellCheck={false}
-              placeholder={mode === "invite" ? "them@gmail.com" : "boss, or 012934050"}
+              placeholder={mode === "invite" ? "them@gmail.com" : t("au_login_ph")}
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             {/* Shows the whole login being built as it is typed, so whoever
                 creates the account knows what to hand over — and can see that
                 a real address is being left alone. */}
             <p className="mb-3 mt-1 text-[11.5px] text-slate-400">
               {mode === "invite"
-                ? "They'll receive the invite here, so it has to be a real address."
+                ? t("au_invite_real_hint")
                 : email.trim()
-                  ? <>They sign in by typing <span className="font-medium text-slate-600">{email.trim()}</span>.{" "}
-                    {toLoginEmail(email) !== email.trim() && <>Stored as {toLoginEmail(email)}</>}</>
-                  : <>A name or a phone number is fine — no “@{LOGIN_DOMAIN}” to type.</>}
+                  ? <>{t("au_sign_in_by_typing")} <span className="font-medium text-slate-600">{email.trim()}</span>.{" "}
+                    {toLoginEmail(email) !== email.trim() && <>{t("au_stored_as", { login: toLoginEmail(email) })}</>}</>
+                  : <>{t("au_name_or_phone", { domain: LOGIN_DOMAIN })}</>}
             </p>
 
             {mode === "password" ? (
               <>
-                <label className="mb-1 block text-xs text-slate-500">Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters"
+                <label className="mb-1 block text-xs text-slate-500">{t("password")}</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("au_min6_ph")}
                   className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               </>
             ) : (
               <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-[11.5px] text-slate-500">
-                They'll get an email with a link to choose their own password — no password to hand them yourself.
+                {t("au_invite_note")}
               </p>
             )}
 
-            <label className="mb-1 block text-xs text-slate-500">Role</label>
+            <label className="mb-1 block text-xs text-slate-500">{t("usr_col_role")}</label>
             <select value={roleId} onChange={(e) => setRoleId(e.target.value)}
               className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
               {pickableRoles.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -165,10 +167,10 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
 
             {selectedRole?.scope !== "all" && (
               <>
-                <label className="mb-1 block text-xs text-slate-500">Location</label>
+                <label className="mb-1 block text-xs text-slate-500">{t("col_location")}</label>
                 <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
                   className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-                  <option value="">— none —</option>
+                  <option value="">{t("usr_none_option")}</option>
                   {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
               </>
@@ -179,8 +181,8 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
                 <div className="flex items-center gap-2 text-xs text-slate-600">
                   <Eye size={14} className="shrink-0 text-slate-400" />
                   <div>
-                    <p className="font-medium text-slate-700">View only</p>
-                    <p className="text-slate-400">Sees everything, can't change anything</p>
+                    <p className="font-medium text-slate-700">{t("role_view_only")}</p>
+                    <p className="text-slate-400">{t("au_viewonly_hint")}</p>
                   </div>
                 </div>
                 <button
@@ -198,9 +200,9 @@ export default function AddUserModal({ roles, locations, isOwner, onClose, onCre
             {error && <p className="mb-3 text-sm text-rose-500">{error}</p>}
 
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+              <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
               <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-                {saving ? (mode === "invite" ? "Sending..." : "Creating...") : (mode === "invite" ? "Send Invite" : "Add User")}
+                {saving ? (mode === "invite" ? t("au_sending") : t("au_creating")) : (mode === "invite" ? t("au_send_invite") : t("usr_add_user"))}
               </button>
             </div>
           </form>
