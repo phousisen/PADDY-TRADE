@@ -17,6 +17,7 @@ import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { dayWithWeekday, range, my } from "../dateFormat.js";
 import { buildDaysByStation, closingByStation, rollup, buildPeriods, isoWeek, cambodiaToday } from "../periodBook.js";
+import { getAccurateNow } from "../supabaseClient.js";
 import { statusOf, dayKey } from "../expenseReview.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
 
@@ -541,7 +542,7 @@ export default function DailyBook({ setPage } = {}) {
   const { isViewOnly, profile } = useAuth();
   // Full words + the banner only for whoever confirms expenses.
   const detailed = !isViewOnly && (!!profile?.isOwner || (Array.isArray(profile?.permissions) && profile.permissions.includes("confirm_expenses")));
-  const today = cambodiaToday();
+  const today = cambodiaToday(getAccurateNow());
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
   const [grain, setGrain] = useState("days");
@@ -620,7 +621,9 @@ export default function DailyBook({ setPage } = {}) {
     ])
       .then(([txs, payments, adjustments, priorTxs, priorAdj]) => {
         if (!alive) return;
-        const inYear = (a) => a.created_at && effectiveAdjDateStr(a) >= from;
+        // [2026-10-03] Both ends — a count made on 1 January after 04:00
+        // belongs to the NEXT year and must not appear here (full check S12).
+        const inYear = (a) => a.created_at && effectiveAdjDateStr(a) >= from && effectiveAdjDateStr(a) <= to;
         // [2026-09-29] Each station's own shed at the start of the year —
         // see buildDaysByStation in periodBook.js.
         const openingByLoc = closingByStation({

@@ -57,7 +57,7 @@ import {
   stationsOn, childGrain, daysInWindow, mergeByCategory, periodLabel, planDaySave,
 } from "../expenseBook.js";
 import { checkCommission, MAX_PER_TONNE } from "../commissionRule.js";
-import { dmyTime, weekday } from "../dateFormat.js";
+import { dmyTime, weekday, dmy } from "../dateFormat.js";
 import { useRefetchSignal } from "../useRefetchSignal.js";
 import ExpenseReview from "../components/ExpenseReview.jsx";
 import { buildReviewDays, confirmedShare, dayMark, lockedFor, dayKey } from "../expenseReview.js";
@@ -956,7 +956,7 @@ export default function Expenses() {
       const last = lastSeen[l.id];
       if (!last) continue;
       const gap = Math.round((Date.parse(today) - Date.parse(last)) / 86400000);
-      if (gap >= 5) out.push({ k: t("ex_alert_missing"), t: `${l.name} — ${t("ex_nothing_since")} ${last}`, day: last, locationId: l.id });
+      if (gap >= 5) out.push({ k: t("ex_alert_missing"), t: `${l.name} — ${t("ex_nothing_since")} ${dmy(last)}`, day: last, locationId: l.id });
     }
     const seen = new Map();
     for (const r of rows) {
@@ -973,7 +973,7 @@ export default function Expenses() {
         && String(r.pay_date).slice(0, 10) === d && r.location_id === locId);
       out.push({
         k: t("ex_alert_twice"),
-        t: `${cleanCategory(row?.category) || "—"} · ${riel(Number(amt))} · ${l?.name || "—"} · ${d} — ${t("ex_recorded_n_times").replace("{n}", n)}`,
+        t: `${cleanCategory(row?.category) || "—"} · ${riel(Number(amt))} · ${l?.name || "—"} · ${dmy(d)} — ${t("ex_recorded_n_times").replace("{n}", n)}`,
         day: d, locationId: locId,
       });
     }

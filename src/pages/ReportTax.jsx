@@ -5,6 +5,7 @@ import { api } from "../api.js";
 // whole tab threw a ReferenceError before it painted anything.
 import { queryRange, rangeKey } from "../reportQuery.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
+import { dmy } from "../dateFormat.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -80,7 +81,7 @@ export default function ReportTax({ selectedLocationIds = [], startDate = null, 
           <tbody>
             {sorted.map((t) => (
               <Tr key={t.id}>
-                <Td>{t.tx_date}</Td>
+                <Td>{dmy(t.tx_date)}</Td>
                 <Td name>{t.code}</Td>
                 <Td><span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${t.type === "BUY" ? "bg-brand-50 text-brand-700" : "bg-rose-50 text-rose-600"}`}>{t.type}</span></Td>
                 <Td>{t.partyName}</Td>

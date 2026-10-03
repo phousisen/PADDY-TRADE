@@ -2442,7 +2442,7 @@ export default function Transactions({ setPage }) {
                           that already have them, they are simply not shown,
                           compared, or asked for any more. */}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3 text-slate-500">{tx.tx_date}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-500">{dmy(tx.tx_date)}<div className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</div></td>
                     <td className="whitespace-nowrap px-3 py-3 text-slate-600"><div className="flex items-center gap-1"><MapPin size={12} className="text-slate-300" />{tx.stationName}</div></td>
                     <td className="min-w-[160px] px-3 py-3"><p className="font-medium text-slate-700">{tx.partyName}</p>{tx.partyIdNumber && <p className="text-xs text-slate-400">{tx.partyIdNumber}</p>}{(tx.car_plate || tx.driver_name) && <p className="whitespace-nowrap text-xs text-slate-400">🚚 {[tx.driver_name, tx.car_plate].filter(Boolean).join(" · ")}</p>}{tx.recorded_by_name && <p className="text-xs text-slate-400">{tx.type === "BUY" ? "Buyer" : "Seller"}: {tx.recorded_by_name}</p>}</td>
                     <td className="whitespace-nowrap px-3 py-3 text-slate-700">
@@ -2656,7 +2656,7 @@ export default function Transactions({ setPage }) {
                       {tx.paper_ticket_no && <p className="mt-0.5 text-xs text-slate-400">{tx.code}</p>}
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-xs text-slate-400">{tx.tx_date}</p>
+                      <p className="text-xs text-slate-400">{dmy(tx.tx_date)}</p>
                       <p className="text-xs text-slate-400">{fmtTime(tx.tx_time)}</p>
                     </div>
                   </button>
@@ -2838,8 +2838,8 @@ export default function Transactions({ setPage }) {
                 ? locations.find((l) => l.id === selectedLocationIds[0])?.name || t("st_allstations")
                 : t("st_allstations"),
             period:
-              startDate && endDate ? `${startDate} – ${endDate}`
-              : startDate ? t("st_period_from", { a: startDate })
+              startDate && endDate ? `${dmy(startDate)} – ${dmy(endDate)}`
+              : startDate ? t("st_period_from", { a: dmy(startDate) })
               : endDate ? t("st_period_upto", { b: endDate })
               : t("st_period_all"),
             printedBy: profile?.full_name || "",

@@ -5,6 +5,7 @@ import Receipt from "./Receipt.jsx";
 import { api } from "../api.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
 import { useLanguage } from "../i18n.jsx";
+import { dmy } from "../dateFormat.js";
 
 // The bill as the farmer or buyer sees it: including tax where there is any.
 const billOf = (tx) => Number(tx.total_with_tax ?? tx.amount) || 0;
@@ -292,7 +293,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                   title={hideAmounts ? undefined : t("party_click_receipt")}
                   className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${hideAmounts ? "" : "cursor-pointer"} ${r.isCancelled ? "opacity-50" : ""}`}
                 >
-                  <td className="px-5 py-3 text-slate-500">{r.tx_date}</td>
+                  <td className="px-5 py-3 text-slate-500">{dmy(r.tx_date)}</td>
                   <td className="px-5 py-3 font-medium text-slate-700">{r.code}</td>
                   <td className="px-5 py-3 text-slate-600">{r.stationName}</td>
                   <td className="px-5 py-3 text-slate-600">{r.productName}</td>
@@ -304,7 +305,7 @@ export default function PartyDetail({ partyId, kind, setPage, onBuyFor, onSellFo
                       {r.payStatus === "cancelled" ? t("hq_cancelled") : r.payStatus === "paid" ? (isSupplier ? t("paid") : t("card_received")) : r.payStatus === "partial" ? t("party_partial") : (isSupplier ? t("card_unpaid") : t("card_not_received"))}
                       {r.payStatus === "cancelled" && <div className="text-xs font-normal text-slate-400 no-underline">{t("party_not_counted")}</div>}
                       {r.payStatus === "partial" && <div className="text-xs font-normal text-slate-400">{t("party_of_amount", { paid: fmtRiel(r.paidSoFar), total: fmtRiel(billOf(r)) })}</div>}
-                      {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{r.paidDate}</div>}
+                      {r.payStatus !== "unpaid" && r.payStatus !== "cancelled" && r.paidDate && <div className="text-xs font-normal text-slate-400">{dmy(r.paidDate)}</div>}
                     </td>
                   )}
                 </tr>

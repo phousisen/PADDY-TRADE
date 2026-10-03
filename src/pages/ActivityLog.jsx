@@ -30,10 +30,13 @@ function cambodiaToday() {
 }
 // Opens on the last 7 days rather than the whole month: this page is read
 // when something has just happened, and a week is small enough to scan.
+// [2026-10-03] Worked out on the date itself, in UTC, so it is exactly six
+// days back. The old version went through a Cambodia-midnight timestamp and
+// read the UTC date, one day earlier — "last 7 days" showed 8 (full check U13).
 function weekAgo() {
-  const d = new Date(`${cambodiaToday()}T00:00:00+07:00`);
-  d.setDate(d.getDate() - 6);
-  return d.toISOString().slice(0, 10);
+  const [y, m, d] = cambodiaToday().split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d - 6));
+  return dt.toISOString().slice(0, 10);
 }
 
 export default function ActivityLog() {

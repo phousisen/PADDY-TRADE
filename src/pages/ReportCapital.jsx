@@ -264,27 +264,38 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
     .filter((e) => !startDate || e.entry_date >= startDate)
     .filter((e) => !endDate || e.entry_date <= endDate);
 
+  // [2026-10-03] Balances are AS AT the end date — everything up to it, not
+  // only what happened inside the period (full check M2). A loan drawn in
+  // July is still owed in October; the old totals said 0 outstanding, while
+  // the Finance Overview (which links here) said the full amount.
+  const capAsAt = capitalEntries
+    .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
+    .filter((e) => !endDate || e.entry_date <= endDate);
+  const loanAsAt = loanEntries
+    .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
+    .filter((e) => !endDate || e.entry_date <= endDate);
+
   const capByPartner = useMemo(() => {
     const map = {};
-    capRows.forEach((e) => {
+    capAsAt.forEach((e) => {
       const k = `${e.partner_id}`;
       if (!map[k]) map[k] = { name: e.partnerName, location: e.stationName, contributed: 0, withdrawn: 0 };
       if (e.type === "contribution") map[k].contributed += Number(e.amount);
       else map[k].withdrawn += Number(e.amount);
     });
     return Object.values(map).map((r) => ({ ...r, net: r.contributed - r.withdrawn })).sort((a, b) => b.net - a.net);
-  }, [capRows]);
+  }, [capAsAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loansByLender = useMemo(() => {
     const map = {};
-    loanRows.forEach((e) => {
+    loanAsAt.forEach((e) => {
       const k = `${e.lender_name}__${e.location_id}`;
       if (!map[k]) map[k] = { name: e.lender_name, location: e.stationName, borrowed: 0, repaid: 0 };
       if (e.type === "borrow") map[k].borrowed += Number(e.amount);
       else map[k].repaid += Number(e.amount);
     });
     return Object.values(map).map((r) => ({ ...r, outstanding: r.borrowed - r.repaid })).sort((a, b) => b.outstanding - a.outstanding);
-  }, [loanRows]);
+  }, [loanAsAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalCapital = capByPartner.reduce((s, r) => s + r.net, 0);
   const totalOutstandingLoans = loansByLender.reduce((s, r) => s + r.outstanding, 0);

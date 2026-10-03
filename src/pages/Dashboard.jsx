@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TrendingUp, TrendingDown, Warehouse, CalendarDays, Activity, ChevronRight } from "lucide-react";
 import { dmy } from "../dateFormat.js";
 import Topbar from "../components/Topbar.jsx";
@@ -141,7 +141,22 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
   const [loadError, setLoadError] = useState("");
   const refetch = useRefetchSignal();
 
+  // [2026-10-03] Only the NEWEST load may write to the screen (full check S6).
+  // Clicking Today → Yesterday quickly used to let a slow reply for the old
+  // period land last and sit on screen under the new period's date.
+  const loadSeq = useRef(0);
+  const lastRange = useRef("");
   async function load({ isRetry = false } = {}) {
+    const seq = ++loadSeq.current;
+    const mine = (fn) => (v) => { if (seq === loadSeq.current) fn(v); };
+    const rangeKey = `${rangeStart}|${rangeEnd}`;
+    if (lastRange.current !== rangeKey) {
+      // A different period: the old period's closing figures must not stay
+      // on screen under the new dates while the new ones load.
+      lastRange.current = rangeKey;
+      setCloseAtEnd(new Map());
+      setCloseBeforeStart(new Map());
+    }
     setLoading(true);
     setLoadError("");
     try {
@@ -180,7 +195,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
         .catch(() => {});
 
       api.getStockAdjustments({ startDate: rangeStart, endDate: rangeEnd })
-        .then(setAdjustments).catch(() => setAdjustments([]));
+        .then(mine(setAdjustments)).catch(() => mine(setAdjustments)([]));
 
       // Not affected by the period buttons — a station's smallest ticket is
       // a fact about its whole history, not about the days on screen. It
@@ -193,12 +208,13 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       // The two snapshots that make "On hand" mean the end of the period
       // you picked rather than right now.
       const dayBefore = addDays(rangeStart, -1);
-      api.getStockAtClose(rangeEnd).then(setCloseAtEnd).catch(() => setCloseAtEnd(new Map()));
-      api.getStockAtClose(dayBefore).then(setCloseBeforeStart).catch(() => setCloseBeforeStart(new Map()));
+      api.getStockAtClose(rangeEnd).then(mine(setCloseAtEnd)).catch(() => mine(setCloseAtEnd)(new Map()));
+      api.getStockAtClose(dayBefore).then(mine(setCloseBeforeStart)).catch(() => mine(setCloseBeforeStart)(new Map()));
 
       // The one the page genuinely has to wait for before it stops saying
       // "Loading…": the movements for the period on screen.
       const transactions = await api.getTransactions({ from: rangeStart, to: rangeEnd });
+      if (seq !== loadSeq.current) return;
       setTxs(transactions.filter((x) => (x.hq_status || "processing") !== "cancelled"));
     } catch (err) {
       // Without this, a failed/dropped request left the dashboard — the
@@ -223,7 +239,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
         raw.includes("timed out");
       setLoadError(isConnectionBlip ? t("dash_load_error") : (err.message || t("dash_load_error")));
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }
 
@@ -929,6 +945,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
         <SettleDifferenceModal
           station={settleLoc.loc}
           onHandKg={settleLoc.onHandKg}
+          forDate={rangeEnd}
           floor={ticketFloor.get(settleLoc.loc.id)}
           priceSuggestion={
             ticketFloor.get(settleLoc.loc.id)?.recentPrice != null
@@ -980,6 +997,7 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
           a loss is worth. */}
       {adjustLoc && (
         <AdjustStockModal
+          forDate={rangeEnd}
           // The ledger's On hand, not locations.current_stock_kg — the same
           // number the row that opened this is showing. A modal that quotes a
           // different figure from the table is how people stop trusting both.

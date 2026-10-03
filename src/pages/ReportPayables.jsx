@@ -6,6 +6,7 @@ import { queryRange, rangeKey } from "../reportQuery.js";
 import { getAccurateNow } from "../supabaseClient.js";
 import { cambodiaDateStr } from "../dailyLedger.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr, AgeBadge } from "../components/ReportUI.jsx";
+import { dmy } from "../dateFormat.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -258,7 +259,7 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
             <tbody>
               {outstanding.map((r) => (
                 <Tr key={r.id}>
-                  <Td>{r.tx_date}</Td>
+                  <Td>{dmy(r.tx_date)}</Td>
                   <Td name>{r.code}</Td>
                   <Td>{r.partyName}</Td>
                   <Td>{r.stationName}</Td>

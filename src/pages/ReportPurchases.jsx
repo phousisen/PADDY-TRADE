@@ -6,6 +6,7 @@ import { queryRange, rangeKey } from "../reportQuery.js";
 import { paidStatusMap } from "./ReportOverview.jsx";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr, Tfoot } from "../components/ReportUI.jsx";
 import { useLanguage } from "../i18n.jsx";
+import { dmy } from "../dateFormat.js";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -169,14 +170,14 @@ export default function ReportPurchases({ selectedLocationIds = [], startDate = 
                 <tbody>
                   {g.rows.map((r) => (
                     <Tr key={r.id}>
-                      <Td>{r.tx_date}</Td>
+                      <Td>{dmy(r.tx_date)}</Td>
                       <Td name>{r.code}</Td>
                       <Td>{r.note || "—"}</Td>
                       <Td>{r.driver_name || r.partyName}</Td>
                       <Td className={r.payStatus === "paid" ? "!text-brand-700 !font-semibold" : r.payStatus === "partial" ? "!text-amber-600 !font-semibold" : "!text-rose-600 !font-semibold"}>
                         {r.payStatus === "paid" ? "Paid" : r.payStatus === "partial" ? "Partial" : "Unpaid"}
                         {r.payStatus === "partial" && <div className="text-[11px] font-normal text-slate-400">{fmtRiel(r.paidSoFar)} paid</div>}
-                        {r.payStatus !== "unpaid" && r.paidDate && <div className="text-[11px] font-normal text-slate-400">{r.paidDate}</div>}
+                        {r.payStatus !== "unpaid" && r.paidDate && <div className="text-[11px] font-normal text-slate-400">{dmy(r.paidDate)}</div>}
                       </Td>
                       <Td num>{fmt2(r.quantity_kg)}</Td>
                       <Td num>{fmtRiel(r.price_per_kg)}</Td>
@@ -250,7 +251,7 @@ export default function ReportPurchases({ selectedLocationIds = [], startDate = 
             <tbody>
               {rows.map((r) => (
                 <Tr key={r.id}>
-                  <Td>{r.tx_date}</Td>
+                  <Td>{dmy(r.tx_date)}</Td>
                   <Td name>{r.code}</Td>
                   <Td>{r.partyName}</Td>
                   <Td>{r.driver_name || "—"}</Td>

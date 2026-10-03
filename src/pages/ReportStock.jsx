@@ -5,6 +5,7 @@ import { api } from "../api.js";
 import { queryRange, rangeKey } from "../reportQuery.js";
 import { effectiveAdjDateStr, cambodiaDateStr } from "../dailyLedger.js";
 import { useLanguage } from "../i18n.jsx";
+import { dmy } from "../dateFormat.js";
 import { TableCard, Table, Th, Td, Tr } from "../components/ReportUI.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -156,7 +157,8 @@ export default function ReportStock({ selectedLocationIds = [], startDate = null
             <tbody>
               {movements.map((m) => (
                 <Tr key={m.id}>
-                  <Td>{m.tx_date}</Td>
+                  {/* [2026-10-03] m.date (counts have no tx_date, so their rows were blank), as dd/mm/yyyy. */}
+                  <Td>{dmy(m.date)}</Td>
                   <Td name>{m.code}</Td>
                   <Td>{m.stationName}</Td>
                   <Td><span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${m.type === "BUY" ? "bg-brand-50 text-brand-700" : m.type === "ADJ" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-600"}`}>{m.type === "ADJ" ? tr("stk_mv_adj") : m.type}</span></Td>

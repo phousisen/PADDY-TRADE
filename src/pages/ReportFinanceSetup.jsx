@@ -19,6 +19,7 @@ import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { ReportCard, SectionLabel, TableCard } from "../components/ReportUI.jsx";
 import { cambodiaDateStr as cambodiaDateStrOf } from "../dailyLedger.js";
+import { dmy } from "../dateFormat.js";
 
 const fmt = (n) => (n === null || n === undefined || n === "" ? "—" : Number(n).toLocaleString("en-US"));
 // [2026-09-19] This page used to build "today" by formatting the time as
@@ -420,7 +421,7 @@ function AssetsCard({ locations, assets, userId, onChanged, onError }) {
                 <td className="px-3 py-2.5 text-slate-500">{a.stationName}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmt(a.cost)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">{a.useful_life_years} yr</td>
-                <td className="px-3 py-2.5 text-slate-500">{a.in_service_date}</td>
+                <td className="px-3 py-2.5 text-slate-500">{dmy(a.in_service_date)}</td>
                 <td className="px-3 py-2.5 text-right tabular-nums">{fmt(Math.round(Number(a.cost) / Number(a.useful_life_years)))}</td>
                 <td className="px-3 py-2.5 text-right">
                   <button onClick={() => remove(a)} title="Remove from the register"

@@ -4,6 +4,7 @@ import { Printer, ArrowLeft, AlertTriangle } from "lucide-react";
 import { useLanguage } from "../i18n.jsx";
 import { useAuth } from "../AuthContext.jsx";
 import { api } from "../api.js";
+import { getAccurateNow } from "../supabaseClient.js";
 import { isTransactionPendingSync, onSyncStatusChange, logAuditOffline } from "../offlineQueue.js";
 import { dmy, hm } from "../dateFormat.js";
 import { nextCopyNumber, fmtPrintedAt, PRINT_ACTION, printsOf } from "../printLog.js";
@@ -268,7 +269,7 @@ export default function Receipt({ tx, onDone, profileName = "", onPrinted }) {
   // moment the page was opened — someone can leave a receipt on screen for an
   // hour. `beforeprint` fires for the button AND for Ctrl+P, so the line
   // cannot be dodged by printing from the browser's own menu.
-  const [printedAt, setPrintedAt] = useState(() => new Date().toISOString());
+  const [printedAt, setPrintedAt] = useState(() => getAccurateNow().toISOString());
 
   // [2026-09-27] THE NUMBER HAS TO MOVE ON EVERY PRESS, NOT EVERY OPEN.
   //
@@ -290,7 +291,8 @@ export default function Receipt({ tx, onDone, profileName = "", onPrinted }) {
 
   useEffect(() => {
     const onBefore = () => {
-      const at = new Date().toISOString();
+      // Cambodia's corrected clock, not this PC's own (full check T11).
+      const at = getAccurateNow().toISOString();
       // flushSync, not a plain setState: `beforeprint` is the last moment the
       // page can be changed before the printer takes its picture, and React
       // would otherwise batch this update until after the sheet had already

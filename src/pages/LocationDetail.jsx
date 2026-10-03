@@ -196,10 +196,23 @@ export default function LocationDetail({ locationId, setPage }) {
   // tested against fixtures (scripts-check-shed.mjs) instead of being
   // trusted because it looks right. Read the comment at the top of that
   // file for why it anchors on the last stock count.
+  // [2026-10-03] The page loads lean transactions (no paddy type names) for
+  // speed, so every ticket landed in one "Untyped" tile (full check S7).
+  // The names are looked up here from the paddy type list instead.
+  const [productNames, setProductNames] = useState(() => new Map());
+  useEffect(() => {
+    let alive = true;
+    api.getProducts()
+      .then((rows) => { if (alive && Array.isArray(rows)) setProductNames(new Map(rows.map((r) => [r.id, r.name]))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const shed = useMemo(() => {
     if (isCombined || !location) return null;
-    return buildShed({ txs, adjustments, location, now: getAccurateNow() });
-  }, [txs, adjustments, location, isCombined]);
+    const named = txs.map((tx) => (tx.productName && tx.productName !== "—") || !productNames.has(tx.product_id)
+      ? tx : { ...tx, productName: productNames.get(tx.product_id) });
+    return buildShed({ txs: named, adjustments, location, now: getAccurateNow() });
+  }, [txs, adjustments, location, isCombined, productNames]);
 
   const combinedStock = useMemo(() => allLocations.reduce((s, l) => s + Number(l.current_stock_kg), 0), [allLocations]);
   const combinedCapacity = useMemo(() => allLocations.reduce((s, l) => s + Number(l.capacity_kg), 0), [allLocations]);
