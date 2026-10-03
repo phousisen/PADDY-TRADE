@@ -782,15 +782,23 @@ const rawApi = {
     // synced in between (audit #15). previousStockKg/userId are no longer
     // needed but kept in the signature so callers don't change.
     void previousStockKg; void userId;
+    const args = {
+      p_location_id: locationId,
+      p_new_stock_kg: newStockKg,
+      p_reason: reason,
+      p_note: note || null,
+      p_price_per_kg: pricePerKg ?? null,
+      p_effective_date: effectiveDate ?? null,
+    };
+    // [2026-10-03] A count for a PAST day is what the shed held at the end
+    // of that day, so the database measures it against that day's closing
+    // stock and keeps every trade after it (stock-dates-fix-2026-10-03.sql).
+    // Before, it was measured against today's stock, which wiped out every
+    // trade since that day. Only sent for a past day, so a normal "today"
+    // adjustment calls exactly what it always called.
+    if (effectiveDate) args.p_count_for_that_day = true;
     const { data, error } = await supabase
-      .rpc("record_stock_adjustment", {
-        p_location_id: locationId,
-        p_new_stock_kg: newStockKg,
-        p_reason: reason,
-        p_note: note || null,
-        p_price_per_kg: pricePerKg ?? null,
-        p_effective_date: effectiveDate ?? null,
-      })
+      .rpc("record_stock_adjustment", args)
       .single();
     if (error) throw error;
     return data;
