@@ -12,7 +12,12 @@
 // — but everything above them is real, computed from recorded transactions, and
 // hiding it behind three blanks would leave the page saying nothing at all.
 
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api.js";
 import { useStatements } from "../useStatements.js";
+// [2026-10-03] The Daily Book's "not confirmed yet" rule (full check M14).
+import { unconfirmedExpenses } from "../statements.js";
+import { rangeKey } from "../reportQuery.js";
 import { useLanguage } from "../i18n.jsx";
 import { ReportCard } from "../components/ReportUI.jsx";
 import { Explain, Line, StatementHead, StatementSummary, StationChips, ScopeBar, SetupNotice, fmt, fmtKg, isKnown } from "../components/StatementUI.jsx";
@@ -21,7 +26,26 @@ export default function ReportIncomeStatement({ selectedLocationIds = [], setSel
   const { t } = useLanguage();
   const { data, stations, raw, loading, error, setupMissing } = useStatements({ selectedLocationIds, startDate, endDate });
 
-  if (loading) return <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">{t("loading_label")}</div>;
+  // [2026-10-03] Expenses counted here that a manager has not confirmed yet
+  // (full check M14). The Daily Book and Expenses said so; this statement
+  // counted the same expenses with no word. Same source and same fallback as
+  // the Daily Book: unreadable or not set up → no line, nothing else changes.
+  const rk = rangeKey({ selectedLocationIds, startDate, endDate });
+  const [reviews, setReviews] = useState(undefined);
+  useEffect(() => {
+    let alive = true;
+    setReviews(undefined);
+    api.getExpenseReviews()
+      .then((r) => { if (alive) setReviews(r); })
+      .catch(() => { if (alive) setReviews(null); });
+    return () => { alive = false; };
+  }, [rk]);
+  const unconfirmed = useMemo(() => unconfirmedExpenses({
+    payments: raw.payments, reviews: reviews || null,
+    stationIds: stations.map((s) => s.id), startDate, endDate,
+  }), [raw.payments, reviews, stations, startDate, endDate]);
+
+  if (loading || reviews === undefined) return <div className="rounded-xl border border-slate-200 bg-white px-5 py-8 text-center text-[13px] text-slate-400">{t("loading_label")}</div>;
   if (error) return <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">{error}</div>;
 
   const i = data.income;
@@ -47,6 +71,13 @@ export default function ReportIncomeStatement({ selectedLocationIds = [], setSel
         { label: t("is_sum_pbdit"), value: i.profitBeforeUnknowns, sub: t("is_sum_pbdit_sub"), tone: "pos" },
       ]} />
       <SetupNotice missing={setupMissing} what={t("is_setup_what")} />
+      {/* [2026-10-03] Same words as the Daily Book (full check M14). */}
+      {unconfirmed > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-[12.5px] text-amber-900">
+          <i className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500 align-middle" />
+          {t("db_exp_unconfirmed", { amount: `${Math.round(unconfirmed).toLocaleString("en-US")} ៛` })}
+        </div>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <ReportCard>

@@ -5,6 +5,7 @@ import AddUserModal from "../components/AddUserModal.jsx";
 import { api } from "../api.js";
 import { useAuth } from "../AuthContext.jsx";
 import { supabase } from "../supabaseClient.js";
+import { useLanguage } from "../i18n.jsx";
 
 const SCOPE_STYLES = { all: "bg-brand-100 text-brand-700", own_location: "bg-slate-100 text-slate-600" };
 
@@ -19,19 +20,20 @@ function isOnline(u) {
   return Date.now() - new Date(u.last_seen_at).getTime() < ACTIVE_WINDOW_MS;
 }
 
-function relativeTime(dateStr) {
-  if (!dateStr) return "Never";
+function relativeTime(dateStr, t) {
+  if (!dateStr) return t("usr_never");
   const diffMs = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins} min ago`;
+  if (mins < 1) return t("time_just_now");
+  if (mins < 60) return t("usr_min_ago", { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} hr ago`;
+  if (hrs < 24) return t("usr_hr_ago", { n: hrs });
   const days = Math.floor(hrs / 24);
-  return `${days} day${days === 1 ? "" : "s"} ago`;
+  return days === 1 ? t("usr_day_ago", { n: days }) : t("usr_days_ago", { n: days });
 }
 
 function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
+  const { t } = useLanguage();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [ownPassword, setOwnPassword] = useState("");
@@ -42,8 +44,8 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
 
   async function submit() {
     setError("");
-    if (newPassword.length < 6) { setError("New password must be at least 6 characters."); return; }
-    if (newPassword !== confirmPassword) { setError("Passwords don't match."); return; }
+    if (newPassword.length < 6) { setError(t("usr_pw_min6")); return; }
+    if (newPassword !== confirmPassword) { setError(t("usr_pw_mismatch")); return; }
     setSaving(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: ownerEmail, password: ownPassword });
     if (authError) {
@@ -51,7 +53,7 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
       // "incorrect password" was previously shown even for unrelated
       // failures (e.g. a rate limit), which made a real problem look like
       // user error and impossible to debug.
-      setError(authError.message === "Invalid login credentials" ? "That password doesn't match your own login — not the new one you're setting below." : authError.message || "Your password was incorrect.");
+      setError(authError.message === "Invalid login credentials" ? t("usr_own_pw_wrong") : authError.message || t("usr_own_pw_incorrect"));
       setSaving(false);
       return;
     }
@@ -67,19 +69,19 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><KeyRound size={16} className="text-brand-600" /> Set New Password</h3>
-        <p className="mb-4 text-xs text-slate-400">For {user.full_name}. They won't be notified — let them know their new password directly.</p>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><KeyRound size={16} className="text-brand-600" /> {t("usr_set_new_pw_title")}</h3>
+        <p className="mb-4 text-xs text-slate-400">{t("usr_set_pw_for", { name: user.full_name })}</p>
 
-        <label className="mb-1 block text-xs text-slate-500">New password</label>
+        <label className="mb-1 block text-xs text-slate-500">{t("usr_new_pw")}</label>
         <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
-        <label className="mb-1 block text-xs text-slate-500">Confirm new password</label>
+        <label className="mb-1 block text-xs text-slate-500">{t("usr_confirm_new_pw")}</label>
         <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
 
         <div className="mb-3 border-t border-slate-100 pt-3">
-          <label className="mb-1 block text-xs text-slate-500">Your own login password (not the new one above) — to confirm it's really you</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("usr_own_pw_label")}</label>
           {/* autoComplete deliberately off: every account signs into this
               same web address, so Chrome/Safari can have several different
               saved logins for this one site and may offer to autofill the
@@ -92,10 +94,10 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
         {error && <p className="mb-3 text-xs text-rose-500">{error}</p>}
 
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">Cancel</button>
+          <button onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
           <button disabled={!canSubmit || saving} onClick={submit}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-            {saving ? "Saving..." : "Set Password"}
+            {saving ? t("saving_label") : t("usr_set_password")}
           </button>
         </div>
       </div>
@@ -105,6 +107,7 @@ function SetPasswordModal({ user, ownerEmail, onClose, onDone }) {
 
 export default function UsersPage() {
   const { profile: me, session, isViewOnly } = useAuth();
+  const { t } = useLanguage();
   const isOwner = !!me?.isOwner;
   // [2026-09-19] A view-only account is not shown controls it cannot use.
   // The API refuses the write anyway; this stops the button promising it
@@ -139,7 +142,7 @@ export default function UsersPage() {
     } catch (err) {
       // Without this, a failed/dropped request left this page stuck on
       // "Loading…" forever with no way to tell what went wrong or retry.
-      setLoadError(err.message || "Couldn't load users — check your connection and try again.");
+      setLoadError(err.message || t("usr_err_load"));
       setLoading(false);
       return;
     }
@@ -193,7 +196,7 @@ export default function UsersPage() {
       });
       load();
     } catch (err) {
-      setActionMessage({ type: "error", text: err.message || "Couldn't change this person's role — check your connection and try again." });
+      setActionMessage({ type: "error", text: err.message || t("usr_err_role") });
       setSavingId(null);
     }
   }
@@ -217,7 +220,7 @@ export default function UsersPage() {
       cancelEditName();
       load();
     } catch (err) {
-      setActionMessage({ type: "error", text: err.message || "Couldn't save this name — check your connection and try again." });
+      setActionMessage({ type: "error", text: err.message || t("usr_err_name") });
       setSavingId(null);
     }
   }
@@ -228,7 +231,7 @@ export default function UsersPage() {
       await api.updateProfileRole(u.id, { locationId: locationId || null });
       load();
     } catch (err) {
-      setActionMessage({ type: "error", text: err.message || "Couldn't change this person's location — check your connection and try again." });
+      setActionMessage({ type: "error", text: err.message || t("usr_err_location") });
       setSavingId(null);
     }
   }
@@ -243,7 +246,7 @@ export default function UsersPage() {
       await api.updateProfileRole(u.id, { viewOnly: !u.view_only });
       load();
     } catch (err) {
-      setActionMessage({ type: "error", text: err.message || "Couldn't change this person's view-only setting — check your connection and try again." });
+      setActionMessage({ type: "error", text: err.message || t("usr_err_viewonly") });
       setSavingId(null);
     }
   }
@@ -252,21 +255,21 @@ export default function UsersPage() {
 
   async function suspend(u) {
     if (!suspendedRole) return;
-    if (!window.confirm(`Suspend ${u.full_name}? They'll immediately lose all access until reassigned a role.`)) return;
+    if (!window.confirm(t("usr_confirm_suspend", { name: u.full_name }))) return;
     await changeRole(u, suspendedRole.id);
   }
 
   async function logOut(u) {
     const online = isOnline(u);
     const msg = online
-      ? `Log ${u.full_name} out right now? Their session will end within about 20 seconds.`
-      : `${u.full_name} isn't currently active, so this won't do anything immediately — it'll force them to log out the next time their browser reconnects (even if that's later). Continue?`;
+      ? t("usr_confirm_logout_online", { name: u.full_name })
+      : t("usr_confirm_logout_offline", { name: u.full_name });
     if (!window.confirm(msg)) return;
     try {
       await api.requestLogout(u.id);
-      setActionMessage({ type: "success", text: online ? `${u.full_name} will be signed out shortly.` : `${u.full_name} will be signed out next time they're active.` });
+      setActionMessage({ type: "success", text: online ? t("usr_signed_out_soon", { name: u.full_name }) : t("usr_signed_out_next", { name: u.full_name }) });
     } catch (err) {
-      setActionMessage({ type: "error", text: err.message || "Couldn't log this person out — check your connection and try again." });
+      setActionMessage({ type: "error", text: err.message || t("usr_err_logout") });
     }
   }
 
@@ -274,33 +277,33 @@ export default function UsersPage() {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Users" subtitle="Everyone with access to PaddyTrade" />
+      <Topbar title={t("nav_users")} subtitle={t("usr_subtitle")} />
       <main className="flex-1 overflow-y-auto p-6">
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
           </div>
         )}
         {actionMessage && (
           <div className={`mb-4 flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${actionMessage.type === "error" ? "border-rose-200 bg-rose-50 text-rose-600" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
             <span>{actionMessage.text}</span>
-            <button onClick={() => setActionMessage(null)} className="shrink-0 text-xs underline decoration-dotted opacity-70 hover:opacity-100">Dismiss</button>
+            <button onClick={() => setActionMessage(null)} className="shrink-0 text-xs underline decoration-dotted opacity-70 hover:opacity-100">{t("usr_dismiss")}</button>
           </div>
         )}
         {rolesMissing ? (
           <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <div>
-              <p className="font-medium">Roles aren't set up yet.</p>
-              <p className="mt-0.5 text-xs">Run the "paddytrade-schema-roles-owner.sql" migration in Supabase first — until then, roles can't be assigned here.</p>
+              <p className="font-medium">{t("usr_roles_missing_title")}</p>
+              <p className="mt-0.5 text-xs">{t("usr_roles_missing_body")}</p>
             </div>
           </div>
         ) : (
           <div className="mb-4 flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
-            <span>{!isOwner && "As HQ Admin, you can manage Manager/Staff-tier accounts; only Owner can change Owner or HQ Admin-level accounts."}</span>
+            <span>{!isOwner && t("usr_hq_admin_note")}</span>
             {writable && <button onClick={() => setAdding(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-700">
-              <Plus size={13} /> Add User
+              <Plus size={13} /> {t("usr_add_user")}
             </button>}
           </div>
         )}
@@ -309,12 +312,12 @@ export default function UsersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                <th className="px-5 py-3 font-medium">Name</th>
-                {isOwner && <th className="px-3 py-3 font-medium">Email</th>}
-                <th className="px-3 py-3 font-medium">Role</th>
-                <th className="px-3 py-3 font-medium">Location</th>
-                <th className="px-3 py-3 font-medium">Access</th>
-                <th className="px-3 py-3 font-medium">Activity</th>
+                <th className="px-5 py-3 font-medium">{t("col_name")}</th>
+                {isOwner && <th className="px-3 py-3 font-medium">{t("email")}</th>}
+                <th className="px-3 py-3 font-medium">{t("usr_col_role")}</th>
+                <th className="px-3 py-3 font-medium">{t("col_location")}</th>
+                <th className="px-3 py-3 font-medium">{t("usr_col_access")}</th>
+                <th className="px-3 py-3 font-medium">{t("usr_col_activity")}</th>
                 <th className="px-3 py-3"></th>
               </tr>
             </thead>
@@ -339,14 +342,14 @@ export default function UsersPage() {
                             }}
                             className="w-32 rounded-md border border-brand-300 px-2 py-1 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
                           />
-                          <button onClick={() => saveName(u)} disabled={savingId === u.id} className="text-emerald-600 hover:text-emerald-700" title="Save"><Check size={15} /></button>
-                          <button onClick={cancelEditName} disabled={savingId === u.id} className="text-slate-400 hover:text-slate-600" title="Cancel"><XIcon size={15} /></button>
+                          <button onClick={() => saveName(u)} disabled={savingId === u.id} className="text-emerald-600 hover:text-emerald-700" title={t("usr_save")}><Check size={15} /></button>
+                          <button onClick={cancelEditName} disabled={savingId === u.id} className="text-slate-400 hover:text-slate-600" title={t("cancel")}><XIcon size={15} /></button>
                         </div>
                       ) : (
                         <div className="group flex items-center gap-1.5">
                           {u.full_name}
                           {editable && (
-                            <button onClick={() => startEditName(u)} className="text-slate-300 opacity-0 hover:text-slate-500 group-hover:opacity-100" title="Rename">
+                            <button onClick={() => startEditName(u)} className="text-slate-300 opacity-0 hover:text-slate-500 group-hover:opacity-100" title={t("usr_rename")}>
                               <Pencil size={12} />
                             </button>
                           )}
@@ -374,11 +377,11 @@ export default function UsersPage() {
                       {editable && scope !== "all" ? (
                         <select value={u.location_id || ""} disabled={savingId === u.id} onChange={(e) => changeLocation(u, e.target.value)}
                           className="rounded-md border border-slate-200 px-2 py-1 text-xs outline-none focus:border-brand-400">
-                          <option value="">— none —</option>
+                          <option value="">{t("usr_none_option")}</option>
                           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </select>
                       ) : (
-                        <span className="text-slate-600">{scope === "all" ? "All Locations" : u.locationName}</span>
+                        <span className="text-slate-600">{scope === "all" ? t("all_locations") : u.locationName}</span>
                       )}
                     </td>
                     <td className="px-3 py-3">
@@ -404,12 +407,12 @@ export default function UsersPage() {
                           location-scoped Manager/Staff row shows just its
                           scope pill now, with no toggle underneath. */}
                       <div className="flex flex-col items-start gap-1.5">
-                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[scope]}`}>{scope === "all" ? "All Locations" : "Own Location"}</span>
+                        <span className={`rounded-full px-2 py-1 text-xs font-medium ${SCOPE_STYLES[scope]}`}>{scope === "all" ? t("all_locations") : t("usr_own_location")}</span>
                         {scope === "all" && editable && u.id !== me.id ? (
                           <button
                             onClick={() => toggleViewOnly(u)}
                             disabled={savingId === u.id}
-                            title={u.view_only ? "Can only look — click to allow editing again" : "Can edit — click to make view-only"}
+                            title={u.view_only ? t("usr_viewonly_on_title") : t("usr_viewonly_off_title")}
                             className="group flex items-center gap-1.5 disabled:opacity-50"
                           >
                             <span
@@ -420,21 +423,21 @@ export default function UsersPage() {
                               <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${u.view_only ? "translate-x-3.5" : "translate-x-0.5"}`} />
                             </span>
                             <span className={`text-[11px] font-medium ${u.view_only ? "text-brand-700" : "text-slate-400"}`}>
-                              {u.view_only ? "View only" : "Can edit"}
+                              {u.view_only ? t("role_view_only") : t("usr_can_edit")}
                             </span>
                           </button>
                         ) : (
-                          scope === "all" && u.view_only && <span className="text-[11px] font-medium text-brand-700">View only</span>
+                          scope === "all" && u.view_only && <span className="text-[11px] font-medium text-brand-700">{t("role_view_only")}</span>
                         )}
                       </div>
                     </td>
                     <td className="px-3 py-3">
                       <span className={`flex items-center gap-1.5 text-xs ${online ? "text-emerald-600" : "text-slate-400"}`}>
                         <Circle size={8} className={online ? "fill-emerald-500 text-emerald-500" : "fill-slate-300 text-slate-300"} />
-                        {online ? "Active now" : `Last seen ${relativeTime(u.last_seen_at)}`}
+                        {online ? t("usr_active_now") : t("usr_last_seen", { when: relativeTime(u.last_seen_at, t) })}
                       </span>
                       <p className="mt-0.5 text-[11px] text-slate-400">
-                        Login: {u.last_login_at ? relativeTime(u.last_login_at) : "Never"}
+                        {t("usr_login", { when: u.last_login_at ? relativeTime(u.last_login_at, t) : t("usr_never") })}
                         {u.last_login_device ? ` · ${u.last_login_device}` : ""}
                       </p>
                       {(u.last_login_ip || u.last_login_location) && (
@@ -447,31 +450,31 @@ export default function UsersPage() {
                       <div className="flex items-center justify-end gap-3">
                         {editable && u.id !== me.id && (
                           <button onClick={() => logOut(u)} className={`flex items-center gap-1 text-xs hover:text-slate-700 ${online ? "text-slate-500" : "text-slate-400"}`}>
-                            <LogOut size={12} /> Log Out
+                            <LogOut size={12} /> {t("usr_log_out")}
                           </button>
                         )}
                         {isOwner && writable && u.id !== me.id && (
                           <button onClick={() => setPasswordUser(u)} className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700">
-                            <KeyRound size={12} /> Set Password
+                            <KeyRound size={12} /> {t("usr_set_password")}
                           </button>
                         )}
                         {editable && u.roleObj?.name !== "Suspended" && u.id !== me.id && (
-                          <button onClick={() => suspend(u)} className="text-xs text-rose-500 hover:text-rose-700">Suspend</button>
+                          <button onClick={() => suspend(u)} className="text-xs text-rose-500 hover:text-rose-700">{t("usr_suspend")}</button>
                         )}
                       </div>
                     </td>
                   </tr>
                 );
               })}
-              {loading && users.length === 0 && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">Loading…</td></tr>}
-              {users.length === 0 && !loading && !loadError && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">No users found.</td></tr>}
+              {loading && users.length === 0 && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
+              {users.length === 0 && !loading && !loadError && <tr><td colSpan={isOwner ? 7 : 6} className="px-5 py-10 text-center text-sm text-slate-400">{t("usr_none_found")}</td></tr>}
             </tbody>
           </table>
         </div>
 
         {isOwner && (
           <p className="mt-3 text-xs text-slate-400">
-            Emails and password resets require the "admin-users" Edge Function to be deployed in Supabase — if the email column shows "—" for everyone, that step likely hasn't been done yet.
+            {t("usr_emails_note")}
           </p>
         )}
       </main>
@@ -491,7 +494,7 @@ export default function UsersPage() {
           user={passwordUser}
           ownerEmail={session?.user?.email}
           onClose={() => setPasswordUser(null)}
-          onDone={() => { setActionMessage({ type: "success", text: `Password updated for ${passwordUser.full_name}.` }); setPasswordUser(null); }}
+          onDone={() => { setActionMessage({ type: "success", text: t("usr_pw_updated", { name: passwordUser.full_name }) }); setPasswordUser(null); }}
         />
       )}
     </div>

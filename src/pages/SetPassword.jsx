@@ -14,11 +14,13 @@
 import { useState } from "react";
 import { noteSignOut, REASONS } from "../signOutReason.js";
 import { supabase } from "../supabaseClient.js";
+import { useLanguage } from "../i18n.jsx";
 
 const inputCls = "w-full rounded-lg border border-slate-300 px-4 py-3 text-base outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100";
 const labelCls = "mb-1.5 block text-sm font-medium text-slate-600";
 
 export default function SetPassword() {
+  const { t } = useLanguage();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [saving, setSaving] = useState(false);
@@ -28,11 +30,11 @@ export default function SetPassword() {
   async function submit(e) {
     e.preventDefault();
     if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+      setError(t("setpw_min6"));
       return;
     }
     if (password !== confirm) {
-      setError("Passwords don't match.");
+      setError(t("usr_pw_mismatch"));
       return;
     }
     setSaving(true);
@@ -56,8 +58,8 @@ export default function SetPassword() {
     } catch (err) {
       setError(
         err.message?.includes("session")
-          ? "This invite link has expired or was already used. Ask an Admin to send a new one."
-          : err.message || "Something went wrong. Please try again."
+          ? t("setpw_link_expired")
+          : err.message || t("setpw_err_generic")
       );
     } finally {
       setSaving(false);
@@ -69,10 +71,10 @@ export default function SetPassword() {
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
         <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-sm">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-600">✓</div>
-          <h1 className="mb-2 text-lg font-bold text-slate-800">Password set</h1>
-          <p className="text-sm leading-relaxed text-slate-500">You can now sign in with your new password.</p>
+          <h1 className="mb-2 text-lg font-bold text-slate-800">{t("setpw_done_title")}</h1>
+          <p className="text-sm leading-relaxed text-slate-500">{t("setpw_done_body")}</p>
           <a href="/" className="mt-4 inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
-            Go to sign in
+            {t("setpw_go_sign_in")}
           </a>
         </div>
       </div>
@@ -82,23 +84,23 @@ export default function SetPassword() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-sm">
-        <h1 className="mb-1 text-lg font-bold text-slate-800">Set your password</h1>
-        <p className="mb-5 text-sm text-slate-400">Choose a password for your PaddyTrade account.</p>
+        <h1 className="mb-1 text-lg font-bold text-slate-800">{t("setpw_title")}</h1>
+        <p className="mb-5 text-sm text-slate-400">{t("setpw_subtitle")}</p>
 
         <div className="mb-4">
-          <label className={labelCls}>New password</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 6 characters" className={inputCls} autoFocus />
+          <label className={labelCls}>{t("usr_new_pw")}</label>
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t("au_min6_ph")} className={inputCls} autoFocus />
         </div>
 
         <div className="mb-4">
-          <label className={labelCls}>Confirm password</label>
+          <label className={labelCls}>{t("setpw_confirm")}</label>
           <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className={inputCls} />
         </div>
 
         {error && <p className="mb-4 text-sm text-rose-500">{error}</p>}
 
         <button type="submit" disabled={saving} className="w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
-          {saving ? "Saving..." : "Set password"}
+          {saving ? t("saving_label") : t("setpw_submit")}
         </button>
       </form>
     </div>

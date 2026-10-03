@@ -319,22 +319,22 @@ function AddCategory({ existing, onAdd, onCancel }) {
       {match && (
         <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
           <p className="text-sm font-medium text-amber-800">
-            {match.exact ? <>“{match.name}” is already on the list.</> : <>Did you mean “{match.name}”?</>}
+            {match.exact ? <>{t("ex_cat_already", { name: match.name })}</> : <>{t("ex_cat_did_you_mean", { name: match.name })}</>}
           </p>
           <p className="mt-0.5 text-xs text-amber-700">
             {match.exact
-              ? "Use it from the list rather than adding it twice."
-              : "Two spellings of one category sit side by side on every report from then on."}
+              ? t("ex_cat_use_from_list")
+              : t("ex_cat_two_spellings")}
           </p>
           {!match.exact && (
             <div className="mt-2 flex flex-wrap gap-2">
               <button type="button" onClick={() => onAdd(match.name)}
                 className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">
-                Use “{match.name}”
+                {t("ex_cat_use_name", { name: match.name })}
               </button>
               <button type="button" onClick={() => setForced(true)}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                No, this is different
+                {t("ex_cat_is_different")}
               </button>
             </div>
           )}
@@ -435,7 +435,7 @@ function DaySheet({
           <div>
             <h3 className="font-semibold text-slate-800">{t("ex_enter_a_day")}</h3>
             <p className="text-xs text-slate-500">
-              One station's spending at a time — this sheet is {cur?.name || "—"}'s {day}.
+              {t("ex_sheet_for", { station: cur?.name || "—", day })}
             </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-white"><X size={16} /></button>
@@ -466,7 +466,7 @@ function DaySheet({
                     {l.name}{st !== "blank" && <Check size={12} className="ml-1 inline text-brand-600" />}
                   </span>
                   <span className={`block text-[11px] ${isCur ? "font-semibold text-brand-700" : "text-slate-400"}`}>
-                    {isCur ? "Entering now" : st === "spent" ? "Entered" : st === "nothing" ? "Nothing spent" : "Not yet"}
+                    {isCur ? t("ex_st_entering") : st === "spent" ? t("ex_st_entered") : st === "nothing" ? t("ex_st_nothing_spent") : t("ex_st_not_yet")}
                   </span>
                 </button>
               );
@@ -735,7 +735,7 @@ export default function Expenses() {
       setCatExtra(parseCategorySetting(settings?.[EXTRA_SETTING]));
       setCatHidden(parseCategorySetting(settings?.[HIDDEN_SETTING]));
     } catch (err) {
-      setLoadError(errText(null, err, "") || err.message || "Couldn't load expenses.");
+      setLoadError(errText(null, err, "") || err.message || t("ex_err_load"));
     } finally { setLoading(false); }
   }
   // [2026-09-16] `refetch` goes up when the app comes back to the foreground
@@ -874,7 +874,7 @@ export default function Expenses() {
       await api.updateSetting(key, serializeCategorySetting(names));
       apply();
     } catch (err) {
-      setCatError(errText(null, err, "") || err.message || "Could not save.");
+      setCatError(errText(null, err, "") || err.message || t("ex_err_save"));
       throw err;
     }
   }
@@ -934,7 +934,7 @@ export default function Expenses() {
       setCatExtra(nextExtra); setCatHidden(nextHidden);
       await load();
     } catch (err) {
-      setCatError(errText(null, err, "") || err.message || "Could not rename.");
+      setCatError(errText(null, err, "") || err.message || t("ex_err_rename"));
     } finally { setCatBusy(""); }
   }
 
@@ -1083,7 +1083,7 @@ export default function Expenses() {
       setJustSaved(true);
     } catch (err) {
       setSaveError(/EXPENSE_DAY_CONFIRMED/.test(err?.message || "") ? t("xr_locked_error")
-        : (errText(null, err, "") || err.message || "Could not save."));
+        : (errText(null, err, "") || err.message || t("ex_err_save")));
       // [2026-09-19] Show what DID land before the failure, so the sheet and
       // the next Save are working from the truth rather than the old figures.
       await load().catch(() => {});
@@ -1736,10 +1736,10 @@ function ConfirmPassword({ onCancel, onConfirmed, unlockOnly }) {
       // Re-authenticating in place, the same check used before a weight is
       // changed. Not a second login — the session is untouched.
       const { error: authErr } = await supabase.auth.signInWithPassword({ email: session.user.email, password });
-      if (authErr) { setError("That password is not right."); setBusy(false); return; }
+      if (authErr) { setError(t("ex_pw_wrong")); setBusy(false); return; }
       onConfirmed();
     } catch (err) {
-      setError(err.message || "Could not confirm."); setBusy(false);
+      setError(err.message || t("ex_err_confirm")); setBusy(false);
     }
   }
 

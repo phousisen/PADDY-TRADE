@@ -99,7 +99,9 @@ export default function Reports({ initialTab = "overview" }) {
         api.getStockAdjustments({ locationId: asAt.locationId, endDate: dayAfter(endDate) }).catch(onlyIfMissing),
       ]);
       const { downloadReportWorkbook, cambodiaTimestamp } = await import("../reportExport.js");
-      downloadReportWorkbook(
+      // [2026-10-03] awaited — the export now loads Finance Setup itself, so
+      // a failure there must reach the message below.
+      await downloadReportWorkbook(
         { txs, payments, adjustments, capitalEntries, loanEntries, stations: locations, selectedLocationIds, startDate, endDate },
         `PaddyTrade_Report_${cambodiaTimestamp()}.xlsx`
       );

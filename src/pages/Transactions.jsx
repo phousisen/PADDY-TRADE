@@ -36,11 +36,11 @@ function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
 function fmtTime(t) {
   if (!t) return "";
+  // [2026-10-03] full check U14 — 24-hour "16:12", the same as hm() in
+  // dateFormat.js and every other clock in the app (was "4:12 PM").
   const [hh, mm] = t.split(":");
-  let h = parseInt(hh, 10);
-  const period = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return `${h}:${mm} ${period}`;
+  const h = parseInt(hh, 10);
+  return `${String(h).padStart(2, "0")}:${mm}`;
 }
 // Short date+time for the expandable row detail below (gross_at/tare_at
 // are full timestamps, unlike tx_date/tx_time above) — always read as
@@ -224,10 +224,36 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
         carPlate: carPlate.trim() || null,
         driverName: driverName.trim() || null,
         note: note.trim() || null,
+        // [2026-10-03] full check T9. What each field said when this request
+        // was made, in the same shape as the proposal above. Approving
+        // (ChangeRequests.jsx) applies ONLY the fields where the proposal
+        // differs from this, so an edit made to the transaction while the
+        // request waited is no longer overwritten by values nobody asked to
+        // change. Extra key in the proposed_data json only — nothing else
+        // reads it.
+        _before: {
+          partyId: tx.party_id || null,
+          quantityKg: Number(tx.quantity_kg) || 0,
+          pricePerKg: Number(tx.price_per_kg) || 0,
+          grossKg: tx.gross_kg == null ? null : Number(tx.gross_kg),
+          tareKg: tx.tare_kg == null ? null : Number(tx.tare_kg),
+          qualityGrade: isBuy ? (tx.quality_grade || null) : null,
+          paymentStatus: tx.payment_status || null,
+          taxApplicable: !!tx.tax_applicable,
+          taxRate: tx.tax_applicable ? (Number(tx.tax_rate) || 0) : 0,
+          moisturePct: Number(tx.moisture_pct) || 0,
+          mixturePct: Number(tx.mixture_pct) || 0,
+          outthrowPct: Number(tx.outthrow_pct) || 0,
+          deductionKg: Number(tx.deduction_kg) || 0,
+          staffFee: isBuy ? (Number(tx.staff_fee) || 0) : 0,
+          carPlate: tx.car_plate || null,
+          driverName: tx.driver_name || null,
+          note: tx.note || null,
+        },
       };
       await onSubmit(reason.trim(), proposedData);
     } catch (err) {
-      setError(err.message || "Couldn't submit this request. Please try again.");
+      setError(err.message || t("tx_err_submit_request"));
       setSaving(false);
     }
   }
@@ -235,26 +261,26 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
-        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-amber-500" /> Redo This {isBuy ? "Buy" : "Sell"} Entry</h3>
+        <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><RotateCcw size={16} className="text-amber-500" /> {isBuy ? t("tx_redo_buy") : t("tx_redo_sell")}</h3>
         <p className="mb-3 text-xs text-slate-400">
-          {tx.code} · Current: {fmt2(tx.quantity_kg)} kg × {fmtRiel(tx.price_per_kg)}/kg = {fmtRiel(tx.amount)}
+          {tx.code} · {t("tx_current_label")} {fmt2(tx.quantity_kg)} kg × {fmtRiel(tx.price_per_kg)}/kg = {fmtRiel(tx.amount)}
         </p>
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          This does not change the saved transaction. It sends these corrected values to HQ as a pending request — nothing updates until an HQ Admin or Owner approves it.
+          {t("tx_redo_note")}
         </p>
 
         <div className="grid grid-cols-2 gap-3">
           <div className="relative col-span-2">
-            <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}</label>
+            <label className="mb-1 block text-xs text-slate-500">{isBuy ? t("tx_seller_farmer") : t("party_buyer")}</label>
             <input
               value={partyQuery}
               onChange={(e) => setPartyQuery(e.target.value)}
-              placeholder={isBuy ? "Farmer name" : "Buyer name"}
+              placeholder={isBuy ? t("tf_seller_name") : t("tf_buyer_name")}
               className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
             />
             {partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "").trim() && (
               <p className="mt-1 text-[11px] text-slate-400">
-                {isBuy ? "Farmer" : "Buyer"} will be matched to an existing one with this name, or added as new, once approved. You can browse existing names on the {isBuy ? "Farmers" : "Buyers"} page.
+                {isBuy ? t("tx_redo_party_note_buy") : t("tx_redo_party_note_sell")}
               </p>
             )}
           </div>
@@ -338,7 +364,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
             <p className="mb-2 text-xs font-medium text-amber-800">{t("tx_staff_fee_old")}</p>
             <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
               className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-            <p className="mt-1.5 text-[11px] text-amber-700">This transaction was recorded before the fee moved to Expenses, and this amount still comes off what the seller was paid. New transactions have no such fee — ថ្លៃកូនដៃ is typed on the Expenses screen instead.</p>
+            <p className="mt-1.5 text-[11px] text-amber-700">{t("tx_staff_fee_old_note")}</p>
           </div>
         )}
 
@@ -374,7 +400,7 @@ function RequestChangeModal({ tx, t, onClose, onSubmit }) {
 
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
-          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? "Submitting…" : t("submit_request")}</button>
+          <button disabled={!canSubmit} onClick={submit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40">{saving ? t("tx_submitting") : t("submit_request")}</button>
         </div>
       </div>
     </div>
@@ -406,7 +432,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
     } catch (err) {
       // Without this, a dropped connection left this button saying
       // "Saving..." forever with no way to know it failed or try again.
-      setError(err.message || "Couldn't save this payment — check your connection and try again.");
+      setError(err.message || t("tx_err_save_payment"));
       setSaving(false);
     }
   }
@@ -415,7 +441,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
         <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700">
-          <Wallet size={16} className="text-brand-600" /> {isBuy ? "Pay Supplier" : "Receive Payment"}
+          <Wallet size={16} className="text-brand-600" /> {isBuy ? t("tx_pay_supplier_title") : t("tx_receive_payment_title")}
         </h3>
         <p className="mb-3 text-xs text-slate-400">{tx.code} · {tx.partyName}</p>
 
@@ -458,7 +484,7 @@ function RecordPaymentModal({ tx, remaining, t, onClose, onSubmit }) {
             onClick={submit}
             className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-40"
           >
-            {saving ? "Saving..." : "Record Payment"}
+            {saving ? t("saving_label") : t("tx_record_payment")}
           </button>
         </div>
       </div>
@@ -627,7 +653,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
     setError("");
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     if (authError) {
-      setError(authError.message || "Incorrect password.");
+      setError(authError.message || t("adj_incorrect_password"));
       setSaving(false);
       return;
     }
@@ -677,7 +703,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
       });
       setDupWarning(null);
     } catch (err) {
-      setError(err.message || "Couldn't save these changes. Please try again.");
+      setError(err.message || t("tx_err_save_changes"));
       setSaving(false);
     }
   }
@@ -691,13 +717,13 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
         <form onSubmit={submit}>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Seller (Farmer)" : "Buyer"}</label>
+              <label className="mb-1 block text-xs text-slate-500">{isBuy ? t("tx_seller_farmer") : t("party_buyer")}</label>
               <input value={partyQuery} onChange={(e) => setPartyQuery(e.target.value)}
-                placeholder={isBuy ? "Farmer name" : "Buyer name"}
+                placeholder={isBuy ? t("tf_seller_name") : t("tf_buyer_name")}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
               {partyQuery.trim() && partyQuery.trim() !== (tx.partyName || "").trim() && (
                 <p className="mt-1 text-[11px] text-slate-400">
-                  Will be matched to an existing {isBuy ? "farmer" : "buyer"} with this name, or added as new, when saved.
+                  {isBuy ? t("tx_edit_party_note_buy") : t("tx_edit_party_note_sell")}
                 </p>
               )}
             </div>
@@ -723,7 +749,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
               </select>
               {productQuery.trim() && productQuery.trim() !== initialProductName.trim() && (
                 <p className="mt-1 text-[11px] text-slate-400">
-                  This transaction will move to {productQuery.trim()} when saved.
+                  {t("tx_move_to_product", { name: productQuery.trim() })}
                 </p>
               )}
             </div>
@@ -745,16 +771,16 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
               <label className="mb-1 block text-xs text-slate-500">{t("tx_paper_ticket_no")}</label>
               <input value={paperTicketNo} onChange={(e) => { setPaperTicketNo(e.target.value); setDupWarning(null); }} placeholder="e.g. CN000157"
                 className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-              <p className="mt-1 text-[11px] text-slate-500">The number printed on the physical quality ticket booklet. Leave blank if this transaction never had one.</p>
+              <p className="mt-1 text-[11px] text-slate-500">{t("tx_paper_no_help")}</p>
               {dupWarning && (
                 <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5">
                   <p className="text-xs text-amber-800">
-                    <strong>{t("tx_heads_up")}</strong> "{dupWarning.ticketNo}" is already recorded here{dupWarning.match?.party_name ? ` for ${dupWarning.match.party_name}` : ""}
-                    {dupWarning.match?.created_at ? ` · ${dmy(dupWarning.match.created_at)}` : ""}. Double-check the paper slip — if it's really the same number twice, you can still save; it'll be flagged for an admin to look into.
+                    <strong>{t("tx_heads_up")}</strong> {t("tx_dup_already_here", { no: dupWarning.ticketNo })}{dupWarning.match?.party_name ? ` ${t("tx_dup_for_party", { name: dupWarning.match.party_name })}` : ""}
+                    {dupWarning.match?.created_at ? ` · ${dmy(dupWarning.match.created_at)}` : ""}. {t("tx_dup_double_check")}
                   </p>
                   <button type="button" disabled={saving} onClick={doSave}
                     className="mt-2 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-60">
-                    {saving ? "Saving…" : "Save anyway"}
+                    {saving ? t("saving_label") : t("tx_save_anyway")}
                   </button>
                 </div>
               )}
@@ -762,20 +788,20 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
 
             <div>
               <label className="mb-1 block text-xs text-slate-500">
-                Quantity (kg) / Net Weight
-                {netIsDerived && <span className="ml-1 font-normal text-brand-600">(from Weigh In/Out below)</span>}
+                {t("tx_qty_net_label")}
+                {netIsDerived && <span className="ml-1 font-normal text-brand-600">{t("tx_from_weigh_below")}</span>}
               </label>
               <input type="number" min="0" step="0.01" value={quantityKg} onChange={(e) => setQuantityKg(e.target.value)}
                 readOnly={netIsDerived || !canEditWeights}
-                title={!canEditWeights ? t("lock_money_title") : netIsDerived ? "Calculated from Weigh-In and Weigh-Out below. Edit those two fields to change this, or clear one of them to type this in manually." : undefined}
+                title={!canEditWeights ? t("lock_money_title") : netIsDerived ? t("tx_net_derived_title") : undefined}
                 className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 ${netIsDerived || !canEditWeights ? "border-slate-200 bg-slate-50 text-slate-600" : "border-slate-200"}`} />
               {netIsDerived && (
-                <p className="mt-1 text-[11px] text-slate-400">Calculated automatically from Weigh-In and Weigh-Out below (Net Weight = {isBuy ? "Weigh-In − Weigh-Out" : "Weigh-Out − Weigh-In"}). Clear either weight field below to type this in manually instead.</p>
+                <p className="mt-1 text-[11px] text-slate-400">{isBuy ? t("tx_net_derived_help_buy") : t("tx_net_derived_help_sell")}</p>
               )}
             </div>
             <div>
               <label className="mb-1 flex items-center gap-1.5 text-xs text-slate-500">
-                Price per kg (៛)
+                {t("tx_price_per_kg_r")}
                 {!canEditWeights && <LockChip t={t} />}
               </label>
               <input type="number" min="0" step="0.01" value={pricePerKg} onChange={(e) => setPricePerKg(e.target.value)}
@@ -811,10 +837,10 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <div className="col-span-2">
-              <label className="mb-1 block text-xs text-slate-500">{isBuy ? "Buyer" : "Seller"} <span className="text-slate-400">(staff who recorded this)</span></label>
+              <label className="mb-1 block text-xs text-slate-500">{isBuy ? t("party_buyer") : t("tx_seller")} <span className="text-slate-400">{t("tx_staff_who_recorded")}</span></label>
               <input value={recordedByName} onChange={(e) => setRecordedByName(e.target.value)} placeholder={t("tx_staff_name")}
                 className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-              <p className="mt-1 text-[11px] text-slate-400">This is the name printed on the receipt's own "{isBuy ? "Buyer" : "Seller"}" line — not the {isBuy ? "farmer" : "buyer"} above.</p>
+              <p className="mt-1 text-[11px] text-slate-400">{isBuy ? t("tx_receipt_line_note_buy") : t("tx_receipt_line_note_sell")}</p>
             </div>
           </div>
 
@@ -830,7 +856,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
 
           <div className="mt-3 rounded-lg border border-slate-200 p-3">
             <p className="mb-2 flex items-center gap-1.5 text-xs font-medium text-slate-500">
-              Weigh In / Weigh Out (optional — for the printed receipt)
+              {t("tx_weigh_optional_title")}
               {!canEditWeights && <LockChip t={t} />}
             </p>
             {!canEditWeights && (
@@ -844,7 +870,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
                 )}
               </div>
             )}
-            <p className="mb-2 text-[11px] text-slate-400">Fill these in for a transaction that was typed in manually, so the receipt shows real dates, times, and weights instead of "—". Leave blank to leave the receipt as-is. Whenever both are filled in, Quantity/Net Weight above is calculated from them automatically — edit the weights here rather than Quantity directly, so they never disagree.</p>
+            <p className="mb-2 text-[11px] text-slate-400">{t("tx_weigh_optional_help")}</p>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="mb-1 block text-[11px] text-slate-400">{t("tx_weigh_in_kg")}</label>
@@ -878,7 +904,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
               <p className="mb-2 text-xs font-medium text-amber-800">{t("tx_staff_fee_old")}</p>
               <input type="number" min="0" step="0.01" value={staffFee} onChange={(e) => setStaffFee(e.target.value)} placeholder="0"
                 className="w-full max-w-[200px] rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
-              <p className="mt-1.5 text-[11px] text-amber-700">This transaction was recorded before the fee moved to Expenses, and this amount still comes off what the seller was paid. New transactions have no such fee — ថ្លៃកូនដៃ is typed on the Expenses screen instead.</p>
+              <p className="mt-1.5 text-[11px] text-amber-700">{t("tx_staff_fee_old_note")}</p>
             </div>
           )}
 
@@ -919,7 +945,7 @@ function EditTransactionModal({ tx, locations = [], userEmail, userId, t, canEdi
           <div className="flex justify-end gap-2">
             <button type="button" onClick={onClose} disabled={saving} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 disabled:opacity-40">{t("cancel")}</button>
             <button type="submit" disabled={!canSubmit} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-              {saving ? "Saving..." : "Save Changes"}
+              {saving ? t("saving_label") : t("tx_save_changes")}
             </button>
           </div>
         </form>
@@ -1026,13 +1052,15 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                 <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs text-slate-400">
                   <th className="px-3 py-2 font-medium">{t("tx_date")}</th>
                   <th className="px-3 py-2 font-medium">{t("tx_amount")}</th>
-                  <th className="px-3 py-2 font-medium">By</th>
+                  <th className="px-3 py-2 font-medium">{t("pl_who")}</th>
                   <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
                 {payments.map((p) => {
                   const voided = !!p.voided_at;
+                  // [2026-10-03] full check T6 — see the Undo void cell below.
+                  const txCancelled = (tx.hq_status || "") === "cancelled";
                   // A payment voided because its transaction was cancelled is
                   // the trigger's to own — it comes back by itself if the
                   // transaction is restored, so it must not be un-voided by
@@ -1060,6 +1088,13 @@ function PaymentsModal({ tx, userEmail, userId, t, onClose, onChanged }) {
                         {!mayCorrect ? null : voided ? (
                           byCancel ? (
                             <span className="text-[11px] text-slate-400">{t("tx_comes_back")}</span>
+                          ) : txCancelled ? (
+                            // [2026-10-03] full check T6: the database now
+                            // refuses to bring a payment back on a cancelled
+                            // transaction, so the button is not offered —
+                            // the reason is shown instead of an error after
+                            // the click.
+                            <span className="text-[11px] text-slate-400">{t("tx_undo_void_tx_cancelled")}</span>
                           ) : (
                             <button
                               onClick={() => {
@@ -1121,10 +1156,10 @@ function VoidPaymentModal({ payment, onClose, onSubmit }) {
 
   async function submit(e) {
     e.preventDefault();
-    if (!reason.trim()) { setError("Please say why — it is kept on the record."); return; }
+    if (!reason.trim()) { setError(t("tx_err_say_why")); return; }
     setBusy(true); setError("");
     try { await onSubmit(reason.trim()); }
-    catch (err) { setError(err.message || "Could not void this payment."); setBusy(false); }
+    catch (err) { setError(err.message || t("tx_err_void")); setBusy(false); }
   }
 
   return (
@@ -1137,10 +1172,9 @@ function VoidPaymentModal({ payment, onClose, onSubmit }) {
           {fmtRiel(payment.amount)} · {dmy(payment.pay_date)}
         </p>
         <div className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
-          It stops counting towards what has been paid, and leaves Cash Flow. It is not deleted —
-          it stays here with your reason, and you can undo it.
+          {t("tx_void_explain")}
           <span className="mt-1.5 block text-slate-500">
-            If the payment did happen and only the amount is wrong, use the pencil to correct it instead.
+            {t("tx_void_use_pencil")}
           </span>
         </div>
         <form onSubmit={submit}>
@@ -1154,7 +1188,7 @@ function VoidPaymentModal({ payment, onClose, onSubmit }) {
           <div className="mt-4 flex justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
             <button type="submit" disabled={busy || !reason.trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
-              {busy ? "Voiding…" : "Void payment"}
+              {busy ? t("tx_voiding") : t("tx_void_btn")}
             </button>
           </div>
         </form>
@@ -1215,7 +1249,7 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
     setSaving(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     if (authError) {
-      setError("Incorrect password.");
+      setError(t("adj_incorrect_password"));
       setSaving(false);
       return;
     }
@@ -1225,7 +1259,7 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
       // Same "stuck on Saving..." risk as recording a new payment — if the
       // save itself fails (e.g. connection drops right after the password
       // check succeeds), show why instead of freezing the button forever.
-      setError(err.message || "Couldn't save this correction — check your connection and try again.");
+      setError(err.message || t("tx_err_save_correction"));
       setSaving(false);
       return;
     }
@@ -1251,7 +1285,7 @@ function EditPaymentModal({ payment, userEmail, t, onClose, onSubmit }) {
           <div className="mt-2 flex justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
             <button type="submit" disabled={saving || !password || !amount} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-              {saving ? "Saving..." : "Confirm Correction"}
+              {saving ? t("saving_label") : t("tx_confirm_correction")}
             </button>
           </div>
         </form>
@@ -1311,7 +1345,7 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
     if (!file) return;
     setError(""); setResult(null); setFileName(file.name);
     if (!ready) {
-      setError("Still loading every transaction to check against — wait a moment and choose the file again.");
+      setError(t("tx_still_loading_all"));
       return;
     }
     try {
@@ -1368,7 +1402,7 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
         <div className="flex-1 overflow-y-auto p-5">
           <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center hover:border-brand-400 hover:bg-brand-50/40">
             <span className="text-sm font-semibold text-slate-700">{t("tx_choose_log_file")}</span>
-            <span className="mt-1 text-xs text-slate-500">{t("tx_on_station_pc")} <span className="font-mono">PaddyTrade_Logs</span> → <span className="font-mono">2026-09-07.csv</span> (one file per day)</span>
+            <span className="mt-1 text-xs text-slate-500">{t("tx_on_station_pc")} <span className="font-mono">PaddyTrade_Logs</span> → <span className="font-mono">2026-09-07.csv</span> {t("tx_one_file_per_day")}</span>
             {fileName && <span className="mt-2 rounded bg-white px-2 py-0.5 text-xs font-medium text-brand-700">{fileName}</span>}
             <input type="file" accept=".csv,text/csv" onChange={onFile} disabled={!ready} className="hidden" />
           </label>
@@ -1387,7 +1421,7 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
                 <div className={`rounded-lg p-2 ${result.doubled.length ? "bg-rose-50" : "bg-emerald-50"}`}><div className={`text-lg font-bold ${result.doubled.length ? "text-rose-700" : "text-emerald-700"}`}>{result.doubled.length}</div>{t("tx_doubled_in_system")}</div>
               </div>
               {result.missing.length === 0 && result.mismatch.length === 0 && result.doubled.length === 0 && (
-                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">Every ticket on this station's log is in the system with the same weight and amount, and none is doubled.</p>
+                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">{t("tx_check_all_good")}</p>
               )}
               {result.missing.length > 0 && (
                 <div>
@@ -1395,7 +1429,7 @@ function StationCheckModal({ allRows, loadError, locations, onClose }) {
                   <table className="w-full text-xs"><thead><tr className="text-left text-slate-400"><th className="py-1">{t("tx_time")}</th><th>{t("tx_paper_no")}</th><th>{t("tx_code")}</th><th>{t("tx_party")}</th><th className="text-right">{t("tx_net_kg")}</th><th className="text-right">{t("tx_amount")}</th><th>{t("tx_log_says")}</th></tr></thead><tbody>
                     {result.missing.map((r, i) => <tr key={i} className="border-t border-slate-100"><td className="py-1">{r.time}</td><td>{r.paper_ticket_no}</td><td className="font-mono">{r.transaction_code}</td><td>{r.party}</td><td className="text-right">{fmtKg(num(r.net_kg))}</td><td className="text-right">{fmtR(num(r.amount_riel))}</td><td>{r.status}</td></tr>)}
                   </tbody></table>
-                  <p className="mt-1 text-[11px] text-slate-500">If the log says "waiting", the station PC is still trying to send it — check it is on and online. If it says "confirmed", the transaction was later cancelled or edited in the system.</p>
+                  <p className="mt-1 text-[11px] text-slate-500">{t("tx_missing_log_hint")}</p>
                 </div>
               )}
               {result.mismatch.length > 0 && (
@@ -1448,14 +1482,14 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
     e.preventDefault();
     setError("");
     if (!reason.trim()) {
-      setError("Please say why this is being cancelled — it is kept on the record.");
+      setError(t("tx_err_say_why_cancel"));
       return;
     }
     setChecking(true);
     const { error: authError } = await supabase.auth.signInWithPassword({ email: userEmail, password });
     setChecking(false);
     if (authError) {
-      setError("Incorrect password.");
+      setError(t("adj_incorrect_password"));
       return;
     }
     onConfirm(reason.trim());
@@ -1469,10 +1503,7 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
 
         {alreadyPaid > 0.01 && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
-            {fmtRiel(alreadyPaid)} has already been recorded as paid against this transaction. Cancelling removes it from Cash Flow
-            as well, so this transaction comes to zero everywhere. The payment is not deleted — it stays on record, marked as
-            voided, and comes back if this transaction is ever restored. <b>If the money really did leave the business, get it back
-            or record it as an expense</b> — the books will no longer show it.
+            {t("tx_cancel_paid_a", { amount: fmtRiel(alreadyPaid) })} <b>{t("tx_cancel_paid_b")}</b> {t("tx_cancel_paid_c")}
           </div>
         )}
 
@@ -1496,7 +1527,7 @@ function ConfirmCancelModal({ tx, alreadyPaid, userEmail, t, onClose, onConfirm 
           <div className="mt-3 flex justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">{t("cancel")}</button>
             <button type="submit" disabled={checking || !password || !reason.trim()} className="rounded-lg bg-rose-600 px-3 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50">
-              {checking ? "Checking..." : "Confirm Cancellation"}
+              {checking ? t("tb_checking") : t("tx_confirm_cancel")}
             </button>
           </div>
         </form>
@@ -1926,7 +1957,7 @@ export default function Transactions({ setPage }) {
         `PaddyTrade_Ledger_${cambodiaTimestamp()}.xlsx`
       );
     } catch (err) {
-      setExportLedgerError(err.message || "Export failed — check your connection and try again.");
+      setExportLedgerError(err.message || t("tx_err_export"));
     } finally {
       setExportingLedger(false);
     }
@@ -2385,7 +2416,7 @@ export default function Transactions({ setPage }) {
                     className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""} ${
                       typedIn ? "outline outline-2 -outline-offset-2 outline-amber-300 bg-amber-50/40" : ""}`}>
                     <td className="px-2 py-3.5">
-                      <button onClick={() => toggleExpand(tx.id)} title={isExpanded ? "Hide details" : "Show weigh-in, weigh-out & price details"}
+                      <button onClick={() => toggleExpand(tx.id)} title={isExpanded ? t("tx_hide_details") : t("tx_show_details")}
                         className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-600">
                         <ChevronRight size={15} className={`transition-transform ${isExpanded ? "rotate-90 text-brand-600" : ""}`} />
                       </button>
@@ -2476,16 +2507,16 @@ export default function Transactions({ setPage }) {
                       ) : overpaidByTx[tx.id] ? (
                         <span
                           className="flex w-fit items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700"
-                          title={`${fmtRiel(overpaidByTx[tx.id])} more has been paid than this transaction is worth. Correct or void the payment in Payment History, or record the refund.`}
+                          title={t("tx_overpaid_title", { amount: fmtRiel(overpaidByTx[tx.id]) })}
                         >
-                          <AlertTriangle size={12} /> Overpaid {fmtRiel(overpaidByTx[tx.id])}
+                          <AlertTriangle size={12} /> {t("tx_overpaid_badge", { amount: fmtRiel(overpaidByTx[tx.id]) })}
                         </span>
                       ) : (
                         <span className="text-xs font-medium text-brand-600">{t("tx_settled")}</span>
                       )}
                     </td>
                     <td className="px-3 py-3">
-                      <span title={isCancelled ? "" : "Follows the Remaining balance automatically — Settled means Paid, anything owed means Processing."}
+                      <span title={isCancelled ? "" : t("tx_status_follows_title")}
                         className={`flex w-fit items-center rounded-md border px-2 py-1 text-xs font-medium ${HQ_STATUS_STYLES[hqStatus]}`}>
                         {t(`hq_${hqStatus}`)}
                       </span>
@@ -2547,7 +2578,7 @@ export default function Transactions({ setPage }) {
                             )}
                           </div>
                           <div>
-                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Weigh In {isBuy ? "(loaded)" : "(empty)"}</p>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{isBuy ? t("tx_x_weigh_in_loaded") : t("tx_x_weigh_in_empty")}</p>
                             {tx.gross_kg != null ? (
                               <>
                                 <p className="text-sm font-semibold text-slate-800">{fmt2(tx.gross_kg)} kg</p>
@@ -2558,7 +2589,7 @@ export default function Transactions({ setPage }) {
                             )}
                           </div>
                           <div>
-                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">Weigh Out {isBuy ? "(empty)" : "(loaded)"}</p>
+                            <p className="text-[10.5px] uppercase tracking-wide text-slate-400">{isBuy ? t("tx_x_weigh_out_empty") : t("tx_x_weigh_out_loaded")}</p>
                             {tx.tare_kg != null ? (
                               <>
                                 <p className="text-sm font-semibold text-slate-800">{fmt2(tx.tare_kg)} kg</p>
@@ -2606,7 +2637,7 @@ export default function Transactions({ setPage }) {
                 );
               })}
               {pagedRows.length === 0 && loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
-              {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{search.trim() ? `No matches for "${search.trim()}"` : (unpaidBuysOnly || notReceivedOnly) ? "Nothing matches — everything here is settled." : t("no_transactions")}</td></tr>}
+              {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{search.trim() ? t("tx_no_matches", { q: search.trim() }) : (unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2765,7 +2796,7 @@ export default function Transactions({ setPage }) {
             );
           })}
           {pagedRows.length === 0 && loading && <p className="py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
-          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{search.trim() ? `No matches for "${search.trim()}"` : (unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</p>}
+          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{search.trim() ? t("tx_no_matches", { q: search.trim() }) : (unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</p>}
         </div>
 
         {visibleRows.length > 0 && (

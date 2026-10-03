@@ -3,6 +3,7 @@ import { ShieldCheck, Search, AlertTriangle, History, RefreshCw, CheckCircle2 } 
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { dmyTime } from "../dateFormat.js";
+import { useLanguage } from "../i18n.jsx";
 
 // [2026-09-09] Data Check — the screen that would have caught CN 000261 on
 // the day instead of six days later.
@@ -37,21 +38,31 @@ import { dmyTime } from "../dateFormat.js";
 
 const REASON_META = {
   copy_differs: {
+    id: "copy_differs",
     label: "Transaction ≠ ticket",
     tone: "amber",
     plain: "Someone corrected one of these and not the other. The scale reading and the transaction no longer agree.",
   },
   station_weight_zero: {
+    id: "station_weight_zero",
     label: "Station weight is zero",
     tone: "rose",
     plain: "The ticket shows a real load but the station weight was saved as zero, so this station's stock is holding rice that already left.",
   },
   ticket_impossible: {
+    id: "ticket_impossible",
     label: "Ticket can't be true",
     tone: "rose",
     plain: "On a sale the truck must leave heavier than it arrived; on a purchase, lighter. This one doesn't. The two readings are almost certainly in the wrong boxes.",
   },
 };
+
+// [2026-10-03] full check U15 — the English above stays as the fallback; the
+// screen shows dc_r_<id>, dc_f_<column> and dc_tbl_<table> from i18n.jsx.
+function tOr(t, key, fallback) {
+  const s = t(key);
+  return s === key ? fallback : s;
+}
 
 const TONE = {
   rose: { chip: "bg-rose-100 text-rose-700", card: "border-rose-200 bg-rose-50/40" },
@@ -141,6 +152,7 @@ function describeRow(r) {
 }
 
 function MismatchCard({ row }) {
+  const { t } = useLanguage();
   const metas = describeRow(row);
   const worst = metas.some((m) => m.tone === "rose") ? "rose" : "amber";
   const isBuy = row.type === "BUY";
@@ -161,13 +173,13 @@ function MismatchCard({ row }) {
         </div>
         <div className="flex flex-wrap gap-1.5">
           {metas.map((m) => (
-            <span key={m.label} className={`rounded-full px-2.5 py-1 text-[10.5px] font-bold ${TONE[m.tone].chip}`}>{m.label}</span>
+            <span key={m.label} className={`rounded-full px-2.5 py-1 text-[10.5px] font-bold ${TONE[m.tone].chip}`}>{tOr(t, `dc_r_${m.id}`, m.label)}</span>
           ))}
         </div>
       </div>
 
       {metas.map((m) => (
-        <p key={m.label} className="mt-2 text-xs leading-relaxed text-slate-600">{m.plain}</p>
+        <p key={m.label} className="mt-2 text-xs leading-relaxed text-slate-600">{tOr(t, `dc_r_${m.id}_plain`, m.plain)}</p>
       ))}
 
       <div className="mt-3 overflow-x-auto">
@@ -175,27 +187,27 @@ function MismatchCard({ row }) {
           <thead>
             <tr className="text-[10.5px] uppercase tracking-wide text-slate-400">
               <th className="pb-1 text-left font-bold">&nbsp;</th>
-              <th className="pb-1 text-right font-bold">Weigh-in</th>
-              <th className="pb-1 text-right font-bold">Weigh-out</th>
-              <th className="pb-1 text-right font-bold">Net</th>
+              <th className="pb-1 text-right font-bold">{t("reg_weighin")}</th>
+              <th className="pb-1 text-right font-bold">{t("reg_weighout")}</th>
+              <th className="pb-1 text-right font-bold">{t("sl_net")}</th>
             </tr>
           </thead>
           <tbody className="font-medium tabular-nums text-slate-700">
             <tr className="border-t border-slate-200">
-              <td className="py-1.5 text-slate-500">Scale (ticket)</td>
+              <td className="py-1.5 text-slate-500">{t("dc_row_scale")}</td>
               <td className="py-1.5 text-right">{fmtNum(row.ticket_weigh_in_kg)}</td>
               <td className="py-1.5 text-right">{fmtNum(row.ticket_weigh_out_kg)}</td>
               <td className={`py-1.5 text-right ${Number(row.ticket_net_kg) <= 0 ? "font-bold text-rose-600" : ""}`}>{fmtNum(row.ticket_net_kg)}</td>
             </tr>
             <tr className="border-t border-slate-200">
-              <td className="py-1.5 text-slate-500">Transaction</td>
+              <td className="py-1.5 text-slate-500">{t("dc_row_tx")}</td>
               <td className={`py-1.5 text-right ${row.tx_weigh_in_kg !== row.ticket_weigh_in_kg ? "font-bold text-amber-700" : ""}`}>{fmtNum(row.tx_weigh_in_kg)}</td>
               <td className={`py-1.5 text-right ${row.tx_weigh_out_kg !== row.ticket_weigh_out_kg ? "font-bold text-amber-700" : ""}`}>{fmtNum(row.tx_weigh_out_kg)}</td>
               <td className="py-1.5 text-right">{fmtNum(row.tx_quantity_kg)}</td>
             </tr>
             {row.station_quantity_kg !== null && row.station_quantity_kg !== undefined && (
               <tr className="border-t border-slate-200">
-                <td className="py-1.5 text-slate-500">Station weight (drives stock)</td>
+                <td className="py-1.5 text-slate-500">{t("dc_row_station")}</td>
                 <td className="py-1.5 text-right text-slate-300">—</td>
                 <td className="py-1.5 text-right text-slate-300">—</td>
                 <td className={`py-1.5 text-right ${Number(row.station_quantity_kg) === 0 ? "font-bold text-rose-600" : ""}`}>{fmtNum(row.station_quantity_kg)}</td>
@@ -209,13 +221,14 @@ function MismatchCard({ row }) {
 }
 
 function HistoryCard({ entry }) {
+  const { t } = useLanguage();
   const fields = useMemo(() => diffFields(entry.old_data, entry.new_data), [entry.old_data, entry.new_data]);
   const snap = entry.new_data || entry.old_data || {};
   const ticket = snap.paper_ticket_no || snap.code || snap.name || entry.record_id?.slice(0, 8) || "—";
   const actionMeta = {
-    INSERT: { label: "Created", chip: "bg-brand-100 text-brand-700" },
-    UPDATE: { label: "Changed", chip: "bg-amber-100 text-amber-700" },
-    DELETE: { label: "Deleted", chip: "bg-rose-100 text-rose-700" },
+    INSERT: { label: t("dc_act_created"), chip: "bg-brand-100 text-brand-700" },
+    UPDATE: { label: t("dc_act_changed"), chip: "bg-amber-100 text-amber-700" },
+    DELETE: { label: t("dc_act_deleted"), chip: "bg-rose-100 text-rose-700" },
   }[entry.action] || { label: entry.action, chip: "bg-slate-100 text-slate-600" };
 
   return (
@@ -224,15 +237,15 @@ function HistoryCard({ entry }) {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full px-2.5 py-1 text-[10.5px] font-bold ${actionMeta.chip}`}>{actionMeta.label}</span>
-            <span className="text-xs font-semibold text-slate-500">{TABLE_LABELS[entry.table_name] || entry.table_name}</span>
+            <span className="text-xs font-semibold text-slate-500">{tOr(t, `dc_tbl_${entry.table_name}`, TABLE_LABELS[entry.table_name] || entry.table_name)}</span>
             <span className="font-bold text-slate-800">{ticket}</span>
           </div>
-          <div className="mt-1 text-[11px] text-slate-500">{fmtWhen(entry.changed_at)} · by {entry.userName}</div>
+          <div className="mt-1 text-[11px] text-slate-500">{t("dc_when_by", { when: fmtWhen(entry.changed_at), name: entry.userName })}</div>
         </div>
       </div>
 
       {entry.action === "UPDATE" && fields.length === 0 && (
-        <p className="mt-2 text-xs text-slate-400">No visible field changed.</p>
+        <p className="mt-2 text-xs text-slate-400">{t("dc_no_visible_change")}</p>
       )}
 
       {entry.action === "UPDATE" && fields.length > 0 && (
@@ -240,15 +253,15 @@ function HistoryCard({ entry }) {
           <table className="w-full min-w-[420px] text-xs">
             <thead>
               <tr className="text-[10.5px] uppercase tracking-wide text-slate-400">
-                <th className="pb-1 text-left font-bold">Field</th>
-                <th className="pb-1 text-left font-bold">Before</th>
-                <th className="pb-1 text-left font-bold">After</th>
+                <th className="pb-1 text-left font-bold">{t("dc_col_field")}</th>
+                <th className="pb-1 text-left font-bold">{t("cr_d_before")}</th>
+                <th className="pb-1 text-left font-bold">{t("cr_d_after")}</th>
               </tr>
             </thead>
             <tbody>
               {fields.map((f) => (
                 <tr key={f.key} className="border-t border-slate-100">
-                  <td className="py-1.5 pr-3 font-medium text-slate-600">{f.label}</td>
+                  <td className="py-1.5 pr-3 font-medium text-slate-600">{tOr(t, `dc_f_${f.key}`, f.label)}</td>
                   <td className="py-1.5 pr-3 tabular-nums text-slate-400 line-through">{fmtValue(f.from)}</td>
                   <td className="py-1.5 font-semibold tabular-nums text-slate-800">{fmtValue(f.to)}</td>
                 </tr>
@@ -260,7 +273,7 @@ function HistoryCard({ entry }) {
 
       {entry.action !== "UPDATE" && (
         <p className="mt-2 text-xs text-slate-500">
-          {entry.action === "INSERT" ? "This record was created." : "This record was deleted. Its full contents are kept in the history and can never be removed."}
+          {entry.action === "INSERT" ? t("dc_created_note") : t("dc_deleted_note")}
         </p>
       )}
     </div>
@@ -268,6 +281,7 @@ function HistoryCard({ entry }) {
 }
 
 export default function DataCheck() {
+  const { t } = useLanguage();
   const [tab, setTab] = useState("checks");
   const [mismatches, setMismatches] = useState(null);
   const [history, setHistory] = useState(null);
@@ -285,8 +299,8 @@ export default function DataCheck() {
       // PostgREST error nobody can act on.
       setError(
         /v_ticket_mismatches|does not exist|schema cache/i.test(e?.message || "")
-          ? "The ticket check hasn't been set up in the database yet. Ask your administrator to run ticket_mismatch_view_v2.sql."
-          : (e?.message || "Could not load the ticket checks.")
+          ? t("dc_err_checks_setup")
+          : (e?.message || t("dc_err_checks_load"))
       );
     } finally { setLoading(false); }
   }, []);
@@ -298,8 +312,8 @@ export default function DataCheck() {
     } catch (e) {
       setError(
         /row_history|does not exist|schema cache/i.test(e?.message || "")
-          ? "The change history hasn't been set up in the database yet. Ask your administrator to run row_history_2026-09-09.sql."
-          : (e?.message || "Could not load the change history.")
+          ? t("dc_err_history_setup")
+          : (e?.message || t("dc_err_history_load"))
       );
     } finally { setLoading(false); }
   }, []);
@@ -317,7 +331,7 @@ export default function DataCheck() {
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
-      <Topbar title="Data Check" subtitle="Where the paperwork and the scale disagree, and everything that has been changed" />
+      <Topbar title={t("nav_datacheck")} subtitle={t("dc_subtitle")} />
       <main className="flex-1 overflow-y-auto bg-paper p-6">
 
         <div className="mb-5 flex gap-2">
@@ -325,7 +339,7 @@ export default function DataCheck() {
             onClick={() => setTab("checks")}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold ${tab === "checks" ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
           >
-            <ShieldCheck size={15} /> Checks
+            <ShieldCheck size={15} /> {t("dc_tab_checks")}
             {Array.isArray(mismatches) && mismatches.length > 0 && (
               <span className="rounded-full bg-white/25 px-1.5 py-0.5 text-[10px] font-bold">{mismatches.length}</span>
             )}
@@ -334,14 +348,14 @@ export default function DataCheck() {
             onClick={() => setTab("history")}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold ${tab === "history" ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
           >
-            <History size={15} /> Change history
+            <History size={15} /> {t("dc_tab_history")}
           </button>
           <button
             onClick={() => (tab === "checks" ? loadChecks() : loadHistory(search))}
             disabled={loading}
             className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50"
           >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} /> Refresh
+            <RefreshCw size={12} className={loading ? "animate-spin" : ""} /> {t("dc_refresh")}
           </button>
         </div>
 
@@ -354,19 +368,17 @@ export default function DataCheck() {
             <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
               <AlertTriangle size={14} className="mt-0.5 shrink-0 text-slate-300" />
               <span>
-                The weighing ticket is what the scale actually read. The transaction is a copy of it, and the stock, receipts and reports
-                all run on the copy. Anything listed here means the two no longer tell the same story — check the paper ticket before
-                trusting either figure. An empty list is the normal state.
+                {t("dc_checks_intro")}
               </span>
             </div>
 
-            {loading && mismatches === null && <p className="px-1 py-10 text-center text-sm text-slate-400">Loading…</p>}
+            {loading && mismatches === null && <p className="px-1 py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
 
             {clean && (
               <div className="rounded-xl border border-brand-200 bg-brand-50/50 px-6 py-12 text-center">
                 <CheckCircle2 size={30} className="mx-auto mb-3 text-brand-600" />
-                <p className="text-sm font-bold text-slate-700">Every transaction agrees with its weighing ticket.</p>
-                <p className="mt-1 text-xs text-slate-500">Nothing needs looking at.</p>
+                <p className="text-sm font-bold text-slate-700">{t("dc_all_agree")}</p>
+                <p className="mt-1 text-xs text-slate-500">{t("dc_nothing_needed")}</p>
               </div>
             )}
 
@@ -389,18 +401,18 @@ export default function DataCheck() {
                 <input
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Paper ticket number — e.g. CN 000261"
+                  placeholder={t("dc_search_ph")}
                   className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm focus:border-brand-500 focus:outline-none"
                 />
               </div>
-              <button type="submit" className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">Search</button>
+              <button type="submit" className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700">{t("dc_search")}</button>
               {search && (
                 <button
                   type="button"
                   onClick={() => { setSearch(""); loadHistory(""); }}
                   className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50"
                 >
-                  Clear
+                  {t("clear_btn")}
                 </button>
               )}
             </form>
@@ -408,23 +420,21 @@ export default function DataCheck() {
             <div className="mb-4 flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
               <History size={14} className="mt-0.5 shrink-0 text-slate-300" />
               <span>
-                Every change to money, weight, stock and permissions is recorded here permanently, with what it was before and what it
-                became. The database writes this itself, so it also captures changes made outside the app — and nobody can edit or delete
-                it. Recording started on 9 September 2026; anything before that date is not here.
+                {t("dc_history_intro")}
               </span>
             </div>
 
-            {loading && history === null && <p className="px-1 py-10 text-center text-sm text-slate-400">Loading…</p>}
+            {loading && history === null && <p className="px-1 py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
 
             {Array.isArray(history) && history.length === 0 && (
               <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
                 <p className="text-sm font-semibold text-slate-600">
-                  {search ? `Nothing recorded for "${search}" yet.` : "Nothing recorded yet."}
+                  {search ? t("dc_nothing_for", { q: search }) : t("dc_nothing_yet")}
                 </p>
                 <p className="mt-1 text-xs text-slate-400">
                   {search
-                    ? "Either nothing has changed on that ticket since recording started, or the number is different — check the paper ticket."
-                    : "Changes will appear here as soon as anyone edits something."}
+                    ? t("dc_nothing_for_hint")
+                    : t("dc_nothing_yet_hint")}
                 </p>
               </div>
             )}

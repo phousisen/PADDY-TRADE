@@ -725,32 +725,99 @@ export default function ChangeRequests() {
     const now = await api.getChangeRequestState(req.id);
     if (!now || now.status !== "pending") throw new Error(t("cr_already_decided"));
     if (now.txCancelled) throw new Error(t("cr_tx_cancelled"));
-    const tx = req.transactions;
     const p = req.proposed_data;
+    // [2026-10-03] full check T9. Approving used to re-apply EVERY field of
+    // the stored proposal — and the proposal is a full copy of the edit
+    // form, so fields the requester never touched were written back too,
+    // undoing anything changed on the transaction after the request was made
+    // (a payment marked Paid, a price fixed by Edit). Now only the fields the
+    // request actually changes are applied; everything else is written back
+    // exactly as the transaction holds it right now.
+    //
+    // "Changes" = proposed value differs from the request's own record of
+    // what the field said when it was asked (proposed_data._before, saved by
+    // RequestChangeModal from today). An older request has no _before, so it
+    // is compared with the transaction as this page loaded it — the same
+    // "before" the reviewer was shown — and a field is applied only if it
+    // also still differs from the transaction as it is now.
+    //
+    // The transaction is re-read here, not taken from the list: the list may
+    // be minutes old, and writing its stale values back is the same bug.
+    const { data: fresh, error: freshErr } = await supabase
+      .from("transactions").select("*").eq("id", req.transaction_id || req.transactions?.id).single();
+    if (freshErr || !fresh) throw new Error(t("cr_tx_reload_failed"));
+    const tx = { ...(req.transactions || {}), ...fresh };
     const oldData = { ...tx };
+    const isBuyTx = tx.type === "BUY";
+    const asProposal = (row) => ({
+      partyId: row.party_id || null,
+      quantityKg: Number(row.quantity_kg) || 0,
+      pricePerKg: Number(row.price_per_kg) || 0,
+      grossKg: row.gross_kg == null ? null : Number(row.gross_kg),
+      tareKg: row.tare_kg == null ? null : Number(row.tare_kg),
+      qualityGrade: isBuyTx ? (row.quality_grade || null) : null,
+      paymentStatus: row.payment_status || null,
+      taxApplicable: !!row.tax_applicable,
+      taxRate: row.tax_applicable ? (Number(row.tax_rate) || 0) : 0,
+      moisturePct: Number(row.moisture_pct) || 0,
+      mixturePct: Number(row.mixture_pct) || 0,
+      outthrowPct: Number(row.outthrow_pct) || 0,
+      deductionKg: Number(row.deduction_kg) || 0,
+      staffFee: isBuyTx ? (Number(row.staff_fee) || 0) : 0,
+      carPlate: row.car_plate || null,
+      driverName: row.driver_name || null,
+      note: row.note || null,
+    });
+    const nowVals = asProposal(tx);
+    const beforeVals = p._before && typeof p._before === "object" ? p._before : asProposal(req.transactions || {});
+    const legacy = !(p._before && typeof p._before === "object");
+    const blank = (v) => v === undefined || v === null || v === "";
+    const same = (a, b) => {
+      if (blank(a) && blank(b)) return true;
+      if (blank(a) || blank(b)) return false;
+      if (typeof a === "boolean" || typeof b === "boolean") return !!a === !!b;
+      const na = Number(a), nb = Number(b);
+      if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(na - nb) < 0.005;
+      return String(a) === String(b);
+    };
+    const changes = (k) => p[k] !== undefined && !same(p[k], beforeVals[k]) && (!legacy || !same(p[k], nowVals[k]));
+    // Unchanged fields go back exactly as the row holds them now (raw — a
+    // Sell with no price yet keeps null, not 0).
+    const rawNow = {
+      quantityKg: tx.quantity_kg, pricePerKg: tx.price_per_kg, paymentStatus: tx.payment_status,
+      qualityGrade: tx.quality_grade, deductionKg: tx.deduction_kg, staffFee: tx.staff_fee,
+      moisturePct: tx.moisture_pct, mixturePct: tx.mixture_pct, outthrowPct: tx.outthrow_pct,
+      grossKg: tx.gross_kg, tareKg: tx.tare_kg,
+    };
+    const pick = (k) => (changes(k) ? p[k] : rawNow[k]);
+    // VAT is one setting in two fields: the rate only counts while VAT is on.
+    const taxChanged = changes("taxApplicable") || (!!p.taxApplicable && changes("taxRate"));
+    // Weights: only sent when the request changes one of them, and then as a
+    // pair together with the type, so api.updateTransaction re-derives the
+    // net weight from them (it needs `type` for that — it was never passed,
+    // so the re-derivation this comment used to promise never ran). A
+    // buyer-confirmed Sell keeps the buyer's quantity (audit #5).
+    const weightsChanged = changes("grossKg") || changes("tareKg");
     const updated = await api.updateTransaction(tx.id, {
-      quantityKg: p.quantityKg,
-      pricePerKg: p.pricePerKg,
-      paymentStatus: p.paymentStatus,
-      qualityGrade: p.qualityGrade,
-      taxApplicable: p.taxApplicable,
-      taxRate: p.taxRate,
-      deductionKg: p.deductionKg,
-      staffFee: p.staffFee,
-      moisturePct: p.moisturePct,
-      mixturePct: p.mixturePct,
-      outthrowPct: p.outthrowPct,
-      note: p.note,
-      carPlate: p.carPlate,
-      driverName: p.driverName,
-      partyId: p.partyId,
-      // [2026-09-15] The weighbridge readings. api.updateTransaction re-derives
-      // quantity from these when both are present, so passing them alongside
-      // quantityKg is not a contradiction — the weights win, which is the point
-      // of routing a weight fix through here. `undefined` for an older request
-      // that predates this field leaves the stored weights untouched.
-      grossKg: p.grossKg === undefined ? undefined : p.grossKg,
-      tareKg: p.tareKg === undefined ? undefined : p.tareKg,
+      quantityKg: pick("quantityKg"),
+      pricePerKg: pick("pricePerKg"),
+      paymentStatus: pick("paymentStatus"),
+      qualityGrade: pick("qualityGrade"),
+      taxApplicable: taxChanged ? !!p.taxApplicable : nowVals.taxApplicable,
+      taxRate: taxChanged ? p.taxRate : (Number(tx.tax_rate) || 0),
+      deductionKg: pick("deductionKg"),
+      staffFee: pick("staffFee"),
+      moisturePct: pick("moisturePct"),
+      mixturePct: pick("mixturePct"),
+      outthrowPct: pick("outthrowPct"),
+      note: changes("note") ? p.note : undefined,
+      carPlate: changes("carPlate") ? p.carPlate : undefined,
+      driverName: changes("driverName") ? p.driverName : undefined,
+      partyId: changes("partyId") ? p.partyId : undefined,
+      grossKg: weightsChanged ? pick("grossKg") : undefined,
+      tareKg: weightsChanged ? pick("tareKg") : undefined,
+      type: weightsChanged ? tx.type : undefined,
+      keepQuantity: tx.type === "SELL" && !!tx.buyer_confirmed_at,
     });
     // Same reasoning as the direct Edit Transaction flow: approving a
     // request that sets Payment Status to "Paid" should also make sure
@@ -815,6 +882,11 @@ export default function ChangeRequests() {
       newData: {
         code: req.transactionCode, partyName: req.currentPartyName,
         requested_reason: req.reason,
+        // [2026-10-03] full check W6: the column on change_requests is
+        // reject_reason, so the audit note now uses the same name.
+        // rejected_reason is still written alongside it for now, because
+        // changeRequestTrail.js (older Activity Log entries) reads that key.
+        reject_reason: rejectReason || null,
         rejected_reason: rejectReason || null,
       },
       userId: session.user.id,

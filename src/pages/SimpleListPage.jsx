@@ -19,22 +19,43 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
   const { t } = useLanguage();
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
+  // [2026-10-03] A failed load is said, not shown as a list (full check M11).
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
+    // [2026-10-03] Only the newest request may fill the page, as on the
+    // report pages (audit F12) — switching Farmers/Buyers quickly could let
+    // the older list land last.
+    let alive = true;
+    setLoadError("");
+    const fail = (e) => { if (alive) { setRows([]); setLoadError(e?.message || String(e)); } };
     if (kind === "stations") {
-      api.getLocations().then(setRows);
-      return;
+      api.getLocations().then((v) => { if (alive) setRows(v); }).catch(fail);
+      return () => { alive = false; };
     }
 
     const partyType = kind === "suppliers" ? "supplier" : "buyer";
     const txType = kind === "suppliers" ? "BUY" : "SELL";
     const payType = kind === "suppliers" ? "pay_supplier" : "receive_customer";
 
+    // [2026-10-03] full check M11. This was `.catch(() => [])`: a payments
+    // load that failed became "nobody was ever paid", and every farmer and
+    // buyer showed their whole bill as unpaid, with nothing on screen to say
+    // so. It now stops the list with the same message the report pages use
+    // (err_payments_load). The one exception is the Registrar view
+    // (hideAmounts), which shows no paid/unpaid figures at all — there a
+    // payments failure changes nothing on screen, so it is not a reason to
+    // hide the directory.
+    const paymentsLoad = api.getPayments({ type: payType }).catch((e) => {
+      if (hideAmounts) return [];
+      throw new Error(`${t("err_payments_load")} ${e?.message || e}`);
+    });
     Promise.all([
       api.getParties({ type: partyType }),
       api.getTransactions({ type: txType }),
-      api.getPayments({ type: payType }).catch(() => []),
+      paymentsLoad,
     ]).then(([parties, txs, payments]) => {
+      if (!alive) return;
       // Paid vs. still-owed is computed live from the real payments ledger
       // (same paidStatusMap used on the Transactions list and every
       // report), not from the transaction's own payment_status field —
@@ -53,7 +74,10 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
         if (!totalsByParty[tx.party_id]) totalsByParty[tx.party_id] = { count: 0, qty: 0, amount: 0, paid: 0, remaining: 0 };
         totalsByParty[tx.party_id].count += 1;
         totalsByParty[tx.party_id].qty += Number(tx.quantity_kg);
-        totalsByParty[tx.party_id].amount += Number(tx.amount);
+        // [2026-10-03] The bill INCLUDING tax, as paidStatusMap uses for
+        // paid / unpaid — Number(tx.amount) left the tax out, so a taxed
+        // bill's amount was less than its paid + unpaid (full check M11).
+        totalsByParty[tx.party_id].amount += Number(tx.total_with_tax ?? tx.amount) || 0;
         totalsByParty[tx.party_id].paid += paidMap[tx.id]?.paid || 0;
         totalsByParty[tx.party_id].remaining += paidMap[tx.id]?.remaining || 0;
       });
@@ -63,8 +87,9 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
           ...(totalsByParty[p.id] || { count: 0, qty: 0, amount: 0, paid: 0, remaining: 0 }),
         }))
       );
-    });
-  }, [kind]);
+    }).catch(fail);
+    return () => { alive = false; };
+  }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Search by name or phone number — lets HQ staff quickly find a farmer
   // or buyer they've talked to before instead of scrolling the whole list.
@@ -161,6 +186,13 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
             )}
           </div>
         )}
+        {/* [2026-10-03] full check M11 — the report pages' load-error box. */}
+        {loadError && (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-[13px] text-rose-800">
+            <p className="font-semibold">{t("err_report_load")}</p>
+            <p className="mt-2 rounded-md bg-white/70 px-3 py-2 font-mono text-[12px] text-rose-900">{loadError}</p>
+          </div>
+        )}
         {/* [2026-08-31] Phone-width card list — Farmers/Buyers only (the
             "stations" kind, unreachable from the real nav today anyway,
             keeps the table unconditionally so nothing here can end up with
@@ -168,7 +200,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
             was and is simply hidden below the `md` breakpoint instead;
             this card block is the phone-sized replacement for it, built
             from the same `filteredRows` data. */}
-        {kind !== "stations" && (
+        {kind !== "stations" && !loadError && (
           <div className="flex flex-col gap-2.5 md:hidden">
             {filteredRows.map((r) => (
               <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
@@ -226,7 +258,8 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
             )}
           </div>
         )}
-        <div className={`${kind !== "stations" ? "hidden md:block " : ""}rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto`}>
+        {/* [2026-10-03] Not drawn under a load error (full check M11). */}
+        {!loadError && <div className={`${kind !== "stations" ? "hidden md:block " : ""}rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto`}>
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
@@ -271,7 +304,7 @@ export default function SimpleListPage({ title, kind, onBuyFor, onSellFor, onOpe
               )}
             </tbody>
           </table>
-        </div>
+        </div>}
       </main>
     </div>
   );

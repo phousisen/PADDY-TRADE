@@ -7,6 +7,7 @@ import { getAccurateNow } from "../supabaseClient.js";
 import { cambodiaDateStr } from "../dailyLedger.js";
 import { SummaryStrip, SummaryCell, TableCard, Table, Th, Td, Tr, AgeBadge } from "../components/ReportUI.jsx";
 import { dmy } from "../dateFormat.js";
+import { useLanguage } from "../i18n.jsx";
 
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
 function fmtRiel(n) { return `${new Intl.NumberFormat("en-US").format(Math.round(n || 0))} ៛`; }
@@ -23,6 +24,7 @@ const PAY_TYPE = "pay_supplier";
 const PARTY_LABEL = "Supplier";
 
 export default function ReportPayables({ selectedLocationIds = [], startDate = null, endDate = null }) {
+  const { t } = useLanguage();
   const [allRows, setAllRows] = useState([]);
   const [payments, setPayments] = useState([]);
   const [view, setView] = useState("aging");
@@ -62,7 +64,7 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
         // Without this, a failed/dropped request silently showed "Nothing
         // outstanding" — as if every supplier had been paid in full —
         // instead of saying the load itself had failed.
-        setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
+        setLoadError(err.message || t("rcap_err_load"));
       })
       .finally(() => { if (live()) setLoading(false); });
   }
@@ -158,25 +160,25 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-[13.5px] text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
         </div>
       )}
 
       <SummaryStrip>
-        <SummaryCell label="Total Outstanding" value={fmtRiel(totalOutstanding)} tone="neg" />
+        <SummaryCell label={t("rpay_total_outstanding")} value={fmtRiel(totalOutstanding)} tone="neg" />
       </SummaryStrip>
 
       <div className="mb-4 flex flex-wrap gap-2">
-        {[{ v: "aging", l: "Aging Summary" }, { v: "party", l: `By ${PARTY_LABEL}` }, { v: "location", l: "By Location" }, { v: "product", l: "By Paddy Type" }, { v: "detail", l: "Detail" }].map((o) => (
+        {[{ v: "aging", l: t("rpay_aging") }, { v: "party", l: t("rpay_by_supplier") }, { v: "location", l: t("rpay_by_location") }, { v: "product", l: t("rpay_by_paddy") }, { v: "detail", l: t("rpay_detail") }].map((o) => (
           <button key={o.v} onClick={() => setView(o.v)} className={`rounded-lg border px-3 py-1.5 text-[13.5px] ${view === o.v ? "border-brand-500 bg-brand-50 text-brand-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{o.l}</button>
         ))}
       </div>
 
       {view === "aging" && (
-        <TableCard title="Aging Summary">
+        <TableCard title={t("rpay_aging")}>
           <Table>
             <thead>
-              <tr><Th>Age</Th><Th num>Transactions</Th><Th num>Amount Owed</Th></tr>
+              <tr><Th>{t("rpay_age")}</Th><Th num>{t("col_tx_count")}</Th><Th num>{t("rpay_amount_owed")}</Th></tr>
             </thead>
             <tbody>
               {byBucket.map((b) => (
@@ -191,10 +193,10 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
         </TableCard>
       )}
       {view === "party" && (
-        <TableCard title={`By ${PARTY_LABEL}`}>
+        <TableCard title={t("rpay_by_supplier")}>
           <Table>
             <thead>
-              <tr><Th>{PARTY_LABEL}</Th><Th num>Transactions</Th><Th num>Amount Owed</Th></tr>
+              <tr><Th>{t("rpay_supplier")}</Th><Th num>{t("col_tx_count")}</Th><Th num>{t("rpay_amount_owed")}</Th></tr>
             </thead>
             <tbody>
               {byParty.map((p) => (
@@ -204,17 +206,17 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
                   <Td num>{fmtRiel(p.amount)}</Td>
                 </Tr>
               ))}
-              {loading && byParty.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
-              {byParty.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Nothing outstanding.</td></Tr>}
+              {loading && byParty.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("loading_label")}</td></Tr>}
+              {byParty.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("rpay_nothing")}</td></Tr>}
             </tbody>
           </Table>
         </TableCard>
       )}
       {view === "location" && (
-        <TableCard title="By Location">
+        <TableCard title={t("rpay_by_location")}>
           <Table>
             <thead>
-              <tr><Th>Location</Th><Th num>Transactions</Th><Th num>Amount Owed</Th></tr>
+              <tr><Th>{t("col_location")}</Th><Th num>{t("col_tx_count")}</Th><Th num>{t("rpay_amount_owed")}</Th></tr>
             </thead>
             <tbody>
               {byLocation.map((p) => (
@@ -224,17 +226,17 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
                   <Td num>{fmtRiel(p.amount)}</Td>
                 </Tr>
               ))}
-              {loading && byLocation.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
-              {byLocation.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Nothing outstanding.</td></Tr>}
+              {loading && byLocation.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("loading_label")}</td></Tr>}
+              {byLocation.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("rpay_nothing")}</td></Tr>}
             </tbody>
           </Table>
         </TableCard>
       )}
       {view === "product" && (
-        <TableCard title="By Paddy Type">
+        <TableCard title={t("rpay_by_paddy")}>
           <Table>
             <thead>
-              <tr><Th>Paddy Type</Th><Th num>Transactions</Th><Th num>Amount Owed</Th></tr>
+              <tr><Th>{t("paddy_type_col")}</Th><Th num>{t("col_tx_count")}</Th><Th num>{t("rpay_amount_owed")}</Th></tr>
             </thead>
             <tbody>
               {byProduct.map((p) => (
@@ -244,17 +246,17 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
                   <Td num>{fmtRiel(p.amount)}</Td>
                 </Tr>
               ))}
-              {loading && byProduct.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
-              {byProduct.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Nothing outstanding.</td></Tr>}
+              {loading && byProduct.length === 0 && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("loading_label")}</td></Tr>}
+              {byProduct.length === 0 && !loading && !loadError && <Tr><td colSpan={3} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("rpay_nothing")}</td></Tr>}
             </tbody>
           </Table>
         </TableCard>
       )}
       {view === "detail" && (
-        <TableCard title="Detail">
+        <TableCard title={t("rpay_detail")}>
           <Table>
             <thead>
-              <tr><Th>Date</Th><Th>Receipt</Th><Th>{PARTY_LABEL}</Th><Th>Location</Th><Th>Age</Th><Th num>Amount Owed</Th></tr>
+              <tr><Th>{t("col_date")}</Th><Th>{t("tx_receipt")}</Th><Th>{t("rpay_supplier")}</Th><Th>{t("col_location")}</Th><Th>{t("rpay_age")}</Th><Th num>{t("rpay_amount_owed")}</Th></tr>
             </thead>
             <tbody>
               {outstanding.map((r) => (
@@ -265,13 +267,13 @@ export default function ReportPayables({ selectedLocationIds = [], startDate = n
                   <Td>{r.stationName}</Td>
                   <Td>
                     <AgeBadge bucket={r.bucket} />
-                    <span className="ml-1.5 text-[11.5px] text-slate-400">{r.days}d</span>
+                    <span className="ml-1.5 text-[11.5px] text-slate-400">{t("rpay_days_short", { n: r.days })}</span>
                   </Td>
                   <Td num>{fmtRiel(r.remaining)}</Td>
                 </Tr>
               ))}
-              {loading && outstanding.length === 0 && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
-              {outstanding.length === 0 && !loading && !loadError && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Nothing outstanding.</td></Tr>}
+              {loading && outstanding.length === 0 && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("loading_label")}</td></Tr>}
+              {outstanding.length === 0 && !loading && !loadError && <Tr><td colSpan={6} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("rpay_nothing")}</td></Tr>}
             </tbody>
           </Table>
         </TableCard>

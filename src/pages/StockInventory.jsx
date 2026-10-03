@@ -738,6 +738,10 @@ export default function StockInventory() {
                             >
                               <Scale size={12} /> {t("col_adjust")}
                             </button>
+                          ) : s.id !== profile?.location_id ? (
+                            // [2026-10-03] Only the station's OWN row can ask
+                            // (full check U7) — the database refuses the rest.
+                            <span className="text-xs text-slate-300">—</span>
                           ) : (
                             // A station with one already waiting gets the same
                             // button in amber — it opens the receipt instead of

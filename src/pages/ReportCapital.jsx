@@ -18,6 +18,7 @@ function cambodiaDateStr(d = getAccurateNow()) {
 }
 
 function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [locationId, setLocationId] = useState(locations[0]?.id || "");
   const [partnerId, setPartnerId] = useState("");
@@ -64,7 +65,7 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-        <Plus size={14} /> Add Capital Entry
+        <Plus size={14} /> {t("rcap_add_capital")}
       </button>
     );
   }
@@ -73,58 +74,58 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
     <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Location</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("col_location")}</label>
           <select value={locationId} onChange={(e) => { setLocationId(e.target.value); setPartnerId(""); }}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Partner</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("sh_col_partner")}</label>
           <select value={partnerId} onChange={(e) => setPartnerId(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-            <option value="">— new partner below —</option>
+            <option value="">{t("rcap_new_partner_below")}</option>
             {partnersForLocation.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
         {!partnerId && (
           <div>
-            <label className="mb-1 block text-xs text-slate-500">New partner name</label>
-            <input value={newPartnerName} onChange={(e) => setNewPartnerName(e.target.value)} placeholder="e.g. Mr. Sopheak"
+            <label className="mb-1 block text-xs text-slate-500">{t("rcap_new_partner_name")}</label>
+            <input value={newPartnerName} onChange={(e) => setNewPartnerName(e.target.value)} placeholder={t("rcap_partner_ph")}
               className="w-40 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
           </div>
         )}
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Type</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_type")}</label>
           <select value={type} onChange={(e) => setType(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-            <option value="contribution">Put capital in</option>
-            <option value="withdrawal">Take capital out</option>
+            <option value="contribution">{t("rcap_put_in")}</option>
+            <option value="withdrawal">{t("rcap_take_out")}</option>
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_amount_r")}</label>
           <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
             className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Date</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("col_date")}</label>
           <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div className="flex-1 min-w-[140px]">
-          <label className="mb-1 block text-xs text-slate-500">Note</label>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
+          <label className="mb-1 block text-xs text-slate-500">{t("col_note")}</label>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("tf_optional")}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         {formError && (
           <p className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{formError}</p>
         )}
         <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-          {saving ? "Saving..." : "Save"}
+          {saving ? t("saving_label") : t("ex_save")}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </form>
@@ -132,6 +133,7 @@ function AddCapitalEntryForm({ locations, partners, onAddPartner, onAdd }) {
 }
 
 function AddLoanEntryForm({ locations, onAdd }) {
+  const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   const [locationId, setLocationId] = useState(locations[0]?.id || "");
   const [lenderName, setLenderName] = useState("");
@@ -162,7 +164,7 @@ function AddLoanEntryForm({ locations, onAdd }) {
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700">
-        <Plus size={14} /> Add Loan Entry
+        <Plus size={14} /> {t("rcap_add_loan")}
       </button>
     );
   }
@@ -171,48 +173,48 @@ function AddLoanEntryForm({ locations, onAdd }) {
     <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Location</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("col_location")}</label>
           <select value={locationId} onChange={(e) => setLocationId(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
             {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Bank / Lender</label>
-          <input value={lenderName} onChange={(e) => setLenderName(e.target.value)} placeholder="e.g. ABA Bank"
+          <label className="mb-1 block text-xs text-slate-500">{t("rcap_lender")}</label>
+          <input value={lenderName} onChange={(e) => setLenderName(e.target.value)} placeholder={t("rcap_lender_ph")}
             className="w-36 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Type</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_type")}</label>
           <select value={type} onChange={(e) => setType(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-            <option value="borrow">Borrowed (money in)</option>
-            <option value="repay">Repaid (money out)</option>
+            <option value="borrow">{t("rcap_borrowed_in")}</option>
+            <option value="repay">{t("rcap_repaid_out")}</option>
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Amount (៛)</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("tx_amount_r")}</label>
           <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)}
             className="w-32 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-slate-500">Date</label>
+          <label className="mb-1 block text-xs text-slate-500">{t("col_date")}</label>
           <input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)}
             className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <div className="flex-1 min-w-[140px]">
-          <label className="mb-1 block text-xs text-slate-500">Note</label>
-          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional"
+          <label className="mb-1 block text-xs text-slate-500">{t("col_note")}</label>
+          <input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("tf_optional")}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         {formError && (
           <p className="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{formError}</p>
         )}
         <button type="submit" disabled={saving} className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50">
-          {saving ? "Saving..." : "Save"}
+          {saving ? t("saving_label") : t("ex_save")}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50">
-          Cancel
+          {t("cancel")}
         </button>
       </div>
     </form>
@@ -248,7 +250,7 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
       // Without this, a failed/dropped request silently showed empty
       // tables — as if there were no partners or loans on file at all —
       // instead of saying the load itself had failed.
-      setLoadError(err.message || "Couldn't load this report — check your connection and try again.");
+      setLoadError(err.message || t("rcap_err_load"));
     } finally {
       setLoading(false);
     }
@@ -346,13 +348,13 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
       {loadError && (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
           <span>{loadError}</span>
-          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+          <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
         </div>
       )}
 
       <SummaryStrip>
-        <SummaryCell label="Total Partner Capital" value={fmtRiel(totalCapital)} tone={totalCapital >= 0 ? "pos" : "neg"} />
-        <SummaryCell label="Total Bank Loans Outstanding" value={fmtRiel(totalOutstandingLoans)} tone={totalOutstandingLoans > 0 ? "neg" : "pos"} />
+        <SummaryCell label={t("rcap_total_capital")} value={fmtRiel(totalCapital)} tone={totalCapital >= 0 ? "pos" : "neg"} />
+        <SummaryCell label={t("rcap_total_loans")} value={fmtRiel(totalOutstandingLoans)} tone={totalOutstandingLoans > 0 ? "neg" : "pos"} />
       </SummaryStrip>
 
       <div className="mb-8">
@@ -360,15 +362,15 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
           {!isViewOnly && <AddCapitalEntryForm locations={locations} partners={partners} onAddPartner={addPartner} onAdd={addCapitalEntry} />}
         </div>
 
-        <TableCard title="Partner Capital">
+        <TableCard title={t("ov_capital")}>
           <Table>
             <thead>
               <tr>
-                <Th>Partner</Th>
-                <Th>Location</Th>
-                <Th num>Contributed</Th>
-                <Th num>Withdrawn</Th>
-                <Th num>Net Capital</Th>
+                <Th>{t("sh_col_partner")}</Th>
+                <Th>{t("col_location")}</Th>
+                <Th num>{t("sh_col_contributed")}</Th>
+                <Th num>{t("rcap_withdrawn")}</Th>
+                <Th num>{t("rcap_net_capital")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -381,8 +383,8 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
                   <Td num className="!font-semibold !text-slate-900">{fmtRiel(r.net)}</Td>
                 </Tr>
               ))}
-              {loading && capByPartner.length === 0 && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
-              {capByPartner.length === 0 && !loading && !loadError && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No partner capital recorded yet.</td></Tr>}
+              {loading && capByPartner.length === 0 && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("loading_label")}</td></Tr>}
+              {capByPartner.length === 0 && !loading && !loadError && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("rcap_no_capital")}</td></Tr>}
             </tbody>
           </Table>
         </TableCard>
@@ -393,15 +395,15 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
           {!isViewOnly && <AddLoanEntryForm locations={locations} onAdd={addLoanEntry} />}
         </div>
 
-        <TableCard title="Bank Loans">
+        <TableCard title={t("ov_loans")}>
           <Table>
             <thead>
               <tr>
-                <Th>Bank / Lender</Th>
-                <Th>Location</Th>
-                <Th num>Borrowed</Th>
-                <Th num>Repaid</Th>
-                <Th num>Outstanding</Th>
+                <Th>{t("rcap_lender")}</Th>
+                <Th>{t("col_location")}</Th>
+                <Th num>{t("rcap_borrowed")}</Th>
+                <Th num>{t("rcap_repaid")}</Th>
+                <Th num>{t("rcap_outstanding")}</Th>
               </tr>
             </thead>
             <tbody>
@@ -414,15 +416,15 @@ export default function ReportCapital({ selectedLocationIds = [], startDate = nu
                   <Td num className={r.outstanding > 0 ? "!text-rose-600 !font-semibold" : "!font-semibold !text-slate-900"}>{fmtRiel(r.outstanding)}</Td>
                 </Tr>
               ))}
-              {loading && loansByLender.length === 0 && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">Loading…</td></Tr>}
-              {loansByLender.length === 0 && !loading && !loadError && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">No bank loans recorded yet.</td></Tr>}
+              {loading && loansByLender.length === 0 && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("loading_label")}</td></Tr>}
+              {loansByLender.length === 0 && !loading && !loadError && <Tr><td colSpan={5} className="px-4 py-10 text-center text-[13.5px] text-slate-400">{t("rcap_no_loans")}</td></Tr>}
             </tbody>
           </Table>
         </TableCard>
       </div>
 
       <div className="mt-5 rounded-lg border border-slate-200 bg-white px-4 py-3 text-[11.5px] text-slate-400">
-        These totals feed directly into the Balance Sheet's Equity (Partner Capital) and Liabilities (Bank Loans) lines.
+        {t("rcap_footer")}
       </div>
     </div>
   );

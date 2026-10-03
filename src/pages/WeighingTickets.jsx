@@ -8,6 +8,7 @@ import WeightField from "../components/WeightField.jsx";
 import { api, normalizePaperTicketNo } from "../api.js";
 import { stockByType } from "../stockByType.js";
 import { getAccurateNow } from "../supabaseClient.js";
+import { scaleSnapshot } from "../scaleWatch.js";
 import { errText } from "../errText.js";
 import { useAuth } from "../AuthContext.jsx";
 import Receipt from "./Receipt.jsx";
@@ -347,6 +348,31 @@ function SanityWarningModal({ warning, onBack, onConfirm, confirming }) {
   );
 }
 
+// [2026-10-03] full check T10. Where a ticket weight came from — "scale"
+// (Capture This Weight) or "typed" (the admin's "Enter manually" box) — so
+// the transaction Finish creates is marked exactly like the manual Buy/Sell
+// form marks it (transactions.gross_source / tare_source). WeightField only
+// hands back the number, so this asks the scale watcher afterwards: its
+// Capture button records the captured weight (recordCapture) right after
+// handing it over, so a value that matches a capture made a moment ago came
+// off the scale, and anything else was typed. Checked on the next tick, in
+// order, so the last change always wins. Purely a label — it never blocks
+// or changes a weight.
+function noteWeightSource(locationId, value, setSource) {
+  setTimeout(() => {
+    if (value === "" || value === null || value === undefined) { setSource(null); return; }
+    let fromScale = false;
+    try {
+      const g = scaleSnapshot(locationId)?.guard;
+      fromScale = !!g && !!g.lastCaptureAt && Date.now() - g.lastCaptureAt < 3000 &&
+        g.lastCaptureKg != null && Number(g.lastCaptureKg) === Number(value);
+    } catch {
+      fromScale = false;
+    }
+    setSource(fromScale ? "scale" : "typed");
+  }, 0);
+}
+
 function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCreated, initialType }) {
   const [type] = useState(initialType || "BUY");
   const { lang, t } = useLanguage();
@@ -379,6 +405,8 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
   const [productName, setProductName] = useState("");
   const [paperTicketNo, setPaperTicketNo] = useState("");
   const [grossWeight, setGrossWeight] = useState("");
+  // [2026-10-03] full check T10 — "scale" | "typed" | null, see noteWeightSource.
+  const [grossSource, setGrossSource] = useState(null);
   const [saving, setSaving] = useState(false);
   // [2026-09-08] The duplicate-number check runs before doSave() sets
   // `saving`, so a second click inside that window used to create a second
@@ -810,6 +838,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         bankAccount: savedBank?.bankAccount || undefined,
         bankQrUrl: savedBank?.bankQrUrl || undefined,
         grossKg: kg,
+        grossSource: kg != null ? grossSource : undefined, // [2026-10-03] full check T10
       });
       setActiveWarning(null);
       onCreated(ticket);
@@ -1070,7 +1099,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
           label={isBuy ? "Gross Weight (kg)" : "Weight — empty truck (kg)"}
           labelKm={isBuy ? "ទម្ងន់សរុប (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)"}
           value={grossWeight}
-          onChange={setGrossWeight}
+          onChange={(v) => { setGrossWeight(v); noteWeightSource(locationId, v, setGrossSource); }}
           isAdmin={isAdmin}
         />
       </div>
@@ -1113,6 +1142,8 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
   const [productName, setProductName] = useState(ticket.product_name || "");
   const [paperTicketNo, setPaperTicketNo] = useState(ticket.paper_ticket_no || "");
   const [grossWeight, setGrossWeight] = useState(ticket.gross_kg != null ? String(ticket.gross_kg) : "");
+  // [2026-10-03] full check T10 — starts as whatever this device knew.
+  const [grossSource, setGrossSource] = useState(ticket.gross_source ?? null);
   const [saving, setSaving] = useState(false);
   // [2026-09-08] The duplicate-number check runs before doSave() sets
   // `saving`, so a second click inside that window used to create a second
@@ -1227,6 +1258,8 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
         // never change the weigh-in date).
         grossKg: (kg ?? null) !== (ticket.gross_kg == null ? null : Number(ticket.gross_kg)) ? kg : undefined,
         firstWeighIn: !ticket.gross_at && kg != null,
+        // [2026-10-03] full check T10: only travels with a changed weight.
+        grossSource,
         userId: session.user.id,
       });
       setActiveWarning(null);
@@ -1312,7 +1345,7 @@ function EditTicketModal({ ticket, isAdmin, onClose, onSaved }) {
           label={isBuy ? "Gross Weight — loaded truck (kg)" : "Weight — empty truck (kg)"}
           labelKm={isBuy ? "ទម្ងន់សរុប — រថយន្តដឹកទំនិញ (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)"}
           value={grossWeight}
-          onChange={setGrossWeight}
+          onChange={(v) => { setGrossWeight(v); noteWeightSource(ticket.location_id, v, setGrossSource); }}
           isAdmin={isAdmin}
         />
         <p className="mt-1 text-[11px] text-slate-400">To fix a wrong weight, put the truck back on the scale and press "Capture This Weight" again.</p>
@@ -1389,6 +1422,8 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
   const [taxRate, setTaxRate] = useState("10");
   const [priceNote, setPriceNote] = useState("");
   const [tareWeight, setTareWeight] = useState(ticket.tare_kg != null ? String(ticket.tare_kg) : "");
+  // [2026-10-03] full check T10 — "scale" | "typed" | null, see noteWeightSource.
+  const [tareSource, setTareSource] = useState(ticket.tare_kg != null ? (ticket.tare_source ?? null) : null);
   const [bankName, setBankName] = useState("");
   // [2026-09-08] Sell only: was the buyer's money received right here at
   // the scale? Default is NO (credit — still owed). Sells used to be saved
@@ -1606,7 +1641,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
         }
         if (Object.keys(patch).length > 0) updatePartyOffline(ticket.party_id, patch);
       }
-      const tareUpdated = setTicketTareOffline(ticket.id, { tareKg, userId: session.user.id });
+      const tareUpdated = setTicketTareOffline(ticket.id, { tareKg, tareSource, userId: session.user.id }); // [2026-10-03] full check T10: tareSource
       // No date picker here on purpose — this is finalized the moment the
       // truck is actually back and empty, so today's real date and the
       // exact time right now are always the correct answer.
@@ -1916,7 +1951,7 @@ function FinishTicketModal({ ticket, onClose, onFinalized, onDeclined, isAdmin }
           labelKm={isBuy ? "ទម្ងន់ — រថយន្តទទេ (គីឡូក្រាម)" : "ទម្ងន់ — រថយន្តដឹកទំនិញ (គីឡូក្រាម)"}
           scaleLabel={isBuy ? "Live Scale Weight (empty truck)" : "Live Scale Weight (loaded truck)"}
           value={tareWeight}
-          onChange={setTareWeight}
+          onChange={(v) => { setTareWeight(v); noteWeightSource(ticket.location_id, v, setTareSource); }}
           isAdmin={isAdmin}
         />
       </div>

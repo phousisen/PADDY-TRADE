@@ -132,7 +132,7 @@ export default function LocationDetail({ locationId, setPage }) {
     } catch (err) {
       // Without this, a failed/dropped request left this whole page stuck
       // showing "Loading…" forever with no error and no way to retry.
-      setLoadError(err.message || "Couldn't load this location — check your connection and try again.");
+      setLoadError(err.message || t("ld_err_load"));
     } finally {
       setLoading(false);
     }
@@ -313,19 +313,19 @@ export default function LocationDetail({ locationId, setPage }) {
   if (!isCombined && !location) {
     return (
       <div className="flex h-screen flex-1 flex-col overflow-hidden">
-        <Topbar title="Location" />
+        <Topbar title={t("col_location")} />
         <main className="flex flex-1 flex-col items-center justify-center gap-3 text-sm text-slate-400">
           {loadError ? (
             <>
               <p className="text-rose-500">{loadError}</p>
-              <button onClick={load} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Retry</button>
+              <button onClick={load} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">{t("retry_label")}</button>
             </>
           ) : loading ? (
-            "Loading…"
+            t("loading_label")
           ) : (
             <>
-              <p>This location couldn't be found.</p>
-              <button onClick={() => setPage("stations")} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Back to Locations</button>
+              <p>{t("ld_not_found")}</p>
+              <button onClick={() => setPage("stations")} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">{t("ld_back")}</button>
             </>
           )}
         </main>
@@ -339,7 +339,7 @@ export default function LocationDetail({ locationId, setPage }) {
   // this "Infinity%" (or "NaN%" at 0 stock) and drew a full progress bar on a
   // station that has never been given a capacity. See ReportStock.jsx.
   const pct = capacityKg > 0 ? Math.round((stockKg / capacityKg) * 100) : null;
-  const displayName = isCombined ? "All Locations Combined" : location.name;
+  const displayName = isCombined ? t("ld_all_combined") : location.name;
   const displayNameKh = isCombined ? "ទីតាំងទាំងអស់រួមគ្នា" : location.name_kh;
 
   return (
@@ -352,7 +352,7 @@ export default function LocationDetail({ locationId, setPage }) {
         {loadError && (
           <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">
             <span>{loadError}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">Retry</button>
+            <button onClick={load} className="shrink-0 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-100">{t("retry_label")}</button>
           </div>
         )}
         {/* [2026-08-31] Redesign, sample-approved: a proper hero (avatar +
@@ -360,7 +360,7 @@ export default function LocationDetail({ locationId, setPage }) {
             button on their own row — same information, no new
             functionality, just laid out to read as one clear header. */}
         <button onClick={() => setPage("stations")} className="mb-3 flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700">
-          <ArrowLeft size={15} /> Back to Locations
+          <ArrowLeft size={15} /> {t("ld_back")}
         </button>
         <div className="mb-5 flex flex-wrap items-center gap-4">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-400 to-brand-600 text-xl font-extrabold text-white shadow-sm">
@@ -382,7 +382,7 @@ export default function LocationDetail({ locationId, setPage }) {
           )}
           {!isCombined && canAdjustStock && (
             <button onClick={() => setAdjustOpen(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg border border-gold-100 bg-gold-50 px-3 py-2 text-sm font-medium text-gold-700 hover:bg-gold-100">
-              <Scale size={13} /> Adjust Stock
+              <Scale size={13} /> {t("ld_adjust_stock")}
             </button>
           )}
           {/* [2026-09-17] OWNER ONLY. SISEN:
@@ -399,7 +399,7 @@ export default function LocationDetail({ locationId, setPage }) {
               typed — see RenameLocationModal. */}
           {!isCombined && isOwner && (
             <button onClick={() => setEditing(true)} className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700">
-              <Pencil size={13} /> Rename
+              <Pencil size={13} /> {t("usr_rename")}
             </button>
           )}
         </div>
@@ -414,44 +414,44 @@ export default function LocationDetail({ locationId, setPage }) {
         <div className="mb-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600"><Warehouse size={15} /></div>
-            <div className="text-xs text-slate-400">{isCombined ? "Combined Stock" : "Current Stock"}</div>
+            <div className="text-xs text-slate-400">{isCombined ? t("ld_combined_stock") : t("ld_current_stock")}</div>
             <p className="mt-1 text-xl font-bold text-slate-800">{fmt2(stockKg)} kg</p>
             <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100"><div className="h-1.5 rounded-full bg-brand-500" style={{ width: `${pct == null ? 0 : Math.min(pct, 100)}%` }} /></div>
             <p className="mt-1 text-xs text-slate-400">
-              {pct == null ? "No capacity set for this location" : `${pct}% of ${fmt2(capacityKg)} kg capacity`}
+              {pct == null ? t("ld_no_capacity") : t("ld_pct_of_capacity", { pct, kg: fmt2(capacityKg) })}
             </p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-brand-100 text-brand-600"><TrendingUp size={15} /></div>
-            <div className="text-xs text-slate-400">Total Purchased</div>
+            <div className="text-xs text-slate-400">{t("ld_total_purchased")}</div>
             <p className="mt-1 text-xl font-bold text-slate-800">{fmt2(summary.buyKg)} kg</p>
             <p className="mt-1 text-xs text-slate-400">{fmtRiel(summary.totalBuy)}</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100 text-rose-600"><TrendingUp size={15} /></div>
-            <div className="text-xs text-slate-400">Total Sold</div>
+            <div className="text-xs text-slate-400">{t("card_total_sold")}</div>
             <p className="mt-1 text-xl font-bold text-slate-800">{fmt2(summary.sellKg)} kg</p>
             <p className="mt-1 text-xs text-slate-400">{fmtRiel(summary.totalSell)}</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-2.5 flex h-8 w-8 items-center justify-center rounded-lg bg-gold-100 text-gold-700"><Wallet size={15} /></div>
-            <div className="text-xs text-slate-400">Gross Profit</div>
+            <div className="text-xs text-slate-400">{t("gross_profit")}</div>
             <p className={`mt-1 text-xl font-bold ${summary.profit >= 0 ? "text-emerald-600" : "text-rose-600"}`}>{fmtRiel(summary.profit)}</p>
-            <p className="mt-1 text-xs text-slate-400">{summary.txCount} transactions total</p>
+            <p className="mt-1 text-xs text-slate-400">{t("ld_tx_total", { n: summary.txCount })}</p>
           </div>
         </div>
 
         {isCombined && allLocations.length > 0 && (
           <div className="mb-5 rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-5 py-4">
-              <h3 className="font-semibold text-slate-700">Stock by Location</h3>
+              <h3 className="font-semibold text-slate-700">{t("ld_stock_by_location")}</h3>
             </div>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs text-slate-400">
-                  <th className="px-5 py-2 font-medium">Location</th>
-                  <th className="px-5 py-2 font-medium">Stock (kg)</th>
-                  <th className="px-5 py-2 font-medium">Capacity (kg)</th>
+                  <th className="px-5 py-2 font-medium">{t("col_location")}</th>
+                  <th className="px-5 py-2 font-medium">{t("col_stock_kg")}</th>
+                  <th className="px-5 py-2 font-medium">{t("col_capacity_kg")}</th>
                 </tr>
               </thead>
               <tbody>
