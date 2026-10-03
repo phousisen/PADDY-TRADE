@@ -330,8 +330,11 @@ for (const good of ['<option value="A">A</option>', '<option value="B">B</option
       !/stock_adjustments"\)\s*\.select\([^)]*\)\s*\.order\(/.test(api)],
     ["reopening a ticket refuses a cancel that changed nothing",
       /The transaction for this ticket could not be cancelled/.test(api)],
-    ["a cash-ledger failure on capital/loans is reported, not swallowed",
-      (api.match(/cashLedgerError: linkErr\?\.message/g) || []).length === 2],
+    // [2026-10-03] Capital and loan entries are no longer copied into the
+    // payments table at all: the database refuses those types, and the
+    // statements read the entries directly (full check M16).
+    ["capital/loan entries are not copied into payments (the database refuses them)",
+      !/type: type === "contribution" \? "capital_in"/.test(api) && !/type: type === "borrow" \? "loan_in"/.test(api)],
     ["the write guard reads both view-only flags",
       /setViewOnlyMode\(!!profile\?\.view_only \|\| !!profile\?\.roles\?\.view_only\)/.test(auth)],
     ["a timeout never builds a profile without its roles",

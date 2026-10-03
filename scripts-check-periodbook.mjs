@@ -116,9 +116,10 @@ console.log("  days sum to weeks sum to months sum to the year");
 let prev = 0;
 for (const d of days) {
   ok(near(d.openingKg, prev, 0.01), `opening on ${d.date} is not yesterday's closing`, `${d.openingKg} vs ${prev}`);
-  const sold = Math.min(d.soldKg, prev + d.boughtKg);
-  const expect = prev + d.boughtKg - sold + d.lostKg;
-  ok(near(d.closingKg, Math.max(0, expect), 0.02), `stock chain broken on ${d.date}`, `${expect} vs ${d.closingKg}`);
+  // [2026-10-03] The kilos follow the stock ledger exactly, below zero too
+  // (only the cost pool stops at zero) — full check S3.
+  const expect = prev + d.boughtKg - d.soldKg + d.lostKg;
+  ok(near(d.closingKg, expect, 0.02), `stock chain broken on ${d.date}`, `${expect} vs ${d.closingKg}`);
   prev = d.closingKg;
 }
 console.log("  stock chain closes on all " + days.length + " days");
@@ -137,9 +138,10 @@ console.log("  closing stock is a level, not a total");
 // 4/5. the pool behaves ------------------------------------------------------
 let emptied = 0;
 for (const d of days) {
-  ok(d.closingKg >= -0.001, `negative stock on ${d.date}`, d.closingKg);
+  // [2026-10-03] The KILOS may go below zero now (they follow the ledger —
+  // the chain check above proves it); the VALUE never may.
   ok(d.closingValue >= -0.5, `negative stock value on ${d.date}`, d.closingValue);
-  if (d.closingKg === 0) {
+  if (d.closingKg <= 0) {
     emptied++;
     ok(d.closingValue === 0, `shed empty but value left behind on ${d.date}`, d.closingValue);
     ok(d.costPerKg === 0, `shed empty but a cost left behind on ${d.date}`, d.costPerKg);
@@ -197,7 +199,10 @@ const over = freeShip[1];
 ok(near(over.shortfallKg, 500, 0.01), "a sale beyond the shed was not recorded as a shortfall", over.shortfallKg);
 ok(near(over.cogs, 1500 * 850, 1), "only the available kilos were costed — the rest shipped free", over.cogs);
 ok(near(over.profit, 1350000 - 1500 * 850, 1), "profit inflated by uncosted paddy", over.profit);
-ok(over.closingKg === 0, "shed went negative", over.closingKg);
+// [2026-10-03] The 500 kg shipped beyond the shed now show as −500, the same
+// as the stock ledger — and the shed's VALUE is still empty.
+ok(near(over.closingKg, -500, 0.01), "the overshipped kilos do not match the ledger", over.closingKg);
+ok(over.closingValue === 0, "an overshipped shed kept a value", over.closingValue);
 console.log("  paddy shipped beyond the shed is costed and flagged, not free");
 
 // 8. vehicles add up ---------------------------------------------------------
