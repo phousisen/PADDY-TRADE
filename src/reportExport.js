@@ -88,6 +88,14 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
     .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
     .filter((e) => !startDate || e.entry_date >= startDate)
     .filter((e) => !endDate || e.entry_date <= endDate);
+  // [2026-10-03] Balances as at the end date (same as the Capital page);
+  // the entry-detail lists below still show only the period.
+  const capAsAt = capitalEntries
+    .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
+    .filter((e) => !endDate || e.entry_date <= endDate);
+  const loanAsAt = loanEntries
+    .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
+    .filter((e) => !endDate || e.entry_date <= endDate);
   // Same date-range/location filtering as activeTxs above, applied to the
   // "expense"-type rows in the payments ledger (see Expenses.jsx) — kept in
   // sync with the on-screen Overview/Balance Sheet so this export never
@@ -336,14 +344,14 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
 
   // ---------------- Capital & Loans ----------------
   const capByPartner = {};
-  capRows.forEach((e) => {
+  capAsAt.forEach((e) => {
     const k = e.partner_id;
     if (!capByPartner[k]) capByPartner[k] = { name: e.partnerName, location: e.stationName, contributed: 0, withdrawn: 0 };
     if (e.type === "contribution") capByPartner[k].contributed += Number(e.amount);
     else capByPartner[k].withdrawn += Number(e.amount);
   });
   const loansByLender = {};
-  loanRows.forEach((e) => {
+  loanAsAt.forEach((e) => {
     const k = `${e.lender_name}__${e.location_id}`;
     if (!loansByLender[k]) loansByLender[k] = { name: e.lender_name, location: e.stationName, borrowed: 0, repaid: 0 };
     if (e.type === "borrow") loansByLender[k].borrowed += Number(e.amount);

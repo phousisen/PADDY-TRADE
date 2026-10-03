@@ -99,7 +99,12 @@ export function buildDailyLedgerRows({ txs, adjustments, locationId }) {
         const a = ev.adj;
         const kg = Number(a.adjustment_kg);
         adjustedKg += kg;
-        cursor = Number(a.new_stock_kg);
+        // [2026-10-03] Add the change this adjustment made, the way the stock
+        // ledger does — not jump to the figure it set. Jumping lost anything
+        // added before it AFTER it was saved (a late paper ticket, an edit, a
+        // ticket moved in, an undo of an older count), so this page and the
+        // Dashboard disagreed (full check S2).
+        cursor += kg;
         if (kg < 0) valueLostToday += Number(a.value_lost) || 0;
       } else {
         cursor += ev.deltaKg;

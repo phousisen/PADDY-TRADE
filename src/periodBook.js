@@ -141,16 +141,47 @@ export function buildDays({ txs = [], payments = [], adjustments = [], locationI
   }
 
   // --- walk the days in order, carrying the pool ---------------------------
+  //
+  // [2026-10-03] THE SHED AND THE BOOKS NOW AGREE ON KILOS (full check S3).
+  //
+  // The cost pool below still never holds negative paddy — you cannot value
+  // paddy that is not there. But the kilos used to stop at zero too, so after
+  // a station sold more than the books showed, the Daily Book closed at 0
+  // while the stock ledger (Dashboard) closed below zero — and the paddy that
+  // later filled that gap (a late paper ticket, a settle) was then counted a
+  // second time, as stock "in the shed" that the ledger never had.
+  //
+  // `deficitKg` remembers how far below zero the books really are. Paddy that
+  // arrives while there is a deficit fills it first; only what is left over
+  // goes into the shed. The kilos shown (closingKg) are therefore always the
+  // ledger's figure — pool minus deficit — and at most one of the two is ever
+  // non-zero. The deficit was already charged to cost when it was sold (see
+  // the shortfall below), so filling it adds no second cost.
   const days = [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
-  let poolKg = num(openingKg);
-  let poolValue = num(openingValue);
+  let poolKg = Math.max(0, num(openingKg));
+  let poolValue = poolKg > 0 ? num(openingValue) : 0;
+  let deficitKg = Math.max(0, -num(openingKg));
+
+  // Paddy coming in (bought, or found by a count): fill the deficit first.
+  // The value of what fills it is booked as written off (`fillValue`): that
+  // paddy was already costed when it shipped (the shortfall), so it must not
+  // sit in the shed's value as well.
+  let fillValue = 0;
+  const takeIn = (kg) => {
+    const fill = Math.min(deficitKg, Math.max(0, kg));
+    deficitKg -= fill;
+    return kg - fill;            // what actually reaches the shed
+  };
 
   for (const d of days) {
-    d.openingKg = poolKg;
+    d.openingKg = poolKg - deficitKg;
     d.openingValue = poolValue;
 
-    poolKg += d.boughtKg;
-    poolValue += d.spent;
+    fillValue = 0;
+    const boughtIn = takeIn(d.boughtKg);
+    poolKg += boughtIn;
+    poolValue += d.boughtKg > 0 ? d.spent * (boughtIn / d.boughtKg) : 0;
+    fillValue += d.boughtKg > 0 ? d.spent * ((d.boughtKg - boughtIn) / d.boughtKg) : 0;
 
     const cost = poolKg > 0 ? poolValue / poolKg : 0;
 
@@ -162,26 +193,39 @@ export function buildDays({ txs = [], payments = [], adjustments = [], locationI
     // When a sale exceeds what the books say is in the shed, that is a data
     // problem — a missed purchase, a mistyped weight, a ticket entered at the
     // wrong station. It is recorded as a shortfall so the page can flag it,
-    // never swallowed.
+    // never swallowed — and now also carried as a deficit, so the kilos keep
+    // matching the ledger.
     const availableKg = poolKg;
     d.shortfallKg = Math.max(0, d.soldKg - availableKg);
     d.cogs = d.soldKg * cost;                 // the full quantity shipped
     d.shortfallValue = d.shortfallKg * cost;
     poolKg = Math.max(0, poolKg - d.soldKg);
     poolValue = Math.max(0, poolValue - (d.soldKg - d.shortfallKg) * cost);
+    deficitKg += d.shortfallKg;
 
+    // A count: a loss comes out of the shed (and below zero, into the
+    // deficit); a gain fills the deficit first, then the shed.
     d.lostValue = d.lostKg * cost;
-    poolKg += d.lostKg;
-    poolValue += d.lostValue;
+    if (d.lostKg >= 0) {
+      const gainIn = takeIn(d.lostKg);
+      poolKg += gainIn;
+      poolValue += gainIn * cost;
+      fillValue += (d.lostKg - gainIn) * cost;
+    } else {
+      const out = Math.min(poolKg, -d.lostKg);
+      poolKg -= out;
+      poolValue += d.lostValue;               // as before; an over-loss is written off below
+      deficitKg += -d.lostKg - out;
+    }
 
     // A shed that empties resets clean — no stale cost drifts into tomorrow.
     // Any value left behind when the kilos reach zero is stock that vanished
     // on paper: recorded, never silently discarded, so the money always
     // accounts for itself.
-    d.resetWriteOff = 0;
-    if (poolKg <= 0.001) { d.resetWriteOff = poolValue; poolKg = 0; poolValue = 0; }
+    d.resetWriteOff = fillValue;
+    if (poolKg <= 0.001) { d.resetWriteOff += poolValue; poolKg = 0; poolValue = 0; }
 
-    d.closingKg = poolKg;
+    d.closingKg = poolKg - deficitKg;
     d.closingValue = poolValue;
     d.costPerKg = poolKg > 0 ? poolValue / poolKg : 0;
     d.buyPricePerKg = d.boughtKg > 0 ? d.spent / d.boughtKg : 0;
@@ -350,4 +394,6 @@ export function buildPeriods(days, grain) {
 
 // Convenience for the page: today's date at the station, so "this month"
 // means the month it is in Cambodia and not wherever the browser thinks it is.
-export function cambodiaToday() { return cambodiaDateStr(new Date()); }
+// [2026-10-03] Callers pass the corrected clock (getAccurateNow), not the
+// PC's own — kept as a parameter so this file still runs without the app.
+export function cambodiaToday(now = new Date()) { return cambodiaDateStr(now); }
