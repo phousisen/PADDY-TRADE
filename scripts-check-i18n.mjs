@@ -28,29 +28,29 @@ import fs from "node:fs";
 import path from "node:path";
 
 const BASELINE = {
-  "src/pages/ReportCapital.jsx": 44,
+  "src/pages/ReportCapital.jsx": 0, // [2026-10-03] full check U15 (was 44)
   "src/pages/WeighingTickets.jsx": 40,
   "src/pages/TransactionForm.jsx": 0,
-  "src/pages/ReportFinanceSetup.jsx": 37,
+  "src/pages/ReportFinanceSetup.jsx": 1, // [2026-10-03] full check U15 (was 37)
   "src/pages/ReportPurchases.jsx": 31,
-  "src/pages/ReportPayables.jsx": 30,
+  "src/pages/ReportPayables.jsx": 0, // [2026-10-03] full check U15 (was 30)
   "src/pages/ReportSales.jsx": 30,
   "src/pages/ReportShrinkage.jsx": 28,
-  "src/pages/UsersPage.jsx": 26,
+  "src/pages/UsersPage.jsx": 0, // [2026-10-03] full check U15 (was 26)
   "src/pages/ReportReceivables.jsx": 24,
   "src/pages/ChangeRequests.jsx": 22,
-  "src/pages/RolesPage.jsx": 22,
-  "src/pages/DataCheck.jsx": 21,
+  "src/pages/RolesPage.jsx": 0, // [2026-10-03] full check U15 (was 22)
+  "src/pages/DataCheck.jsx": 0, // [2026-10-03] full check U15 (was 21)
   "src/pages/Receipt.jsx": 20,
   "src/pages/LocationsPage.jsx": 19,
-  "src/components/Topbar.jsx": 18,
-  "src/pages/LocationDetail.jsx": 15,
+  "src/components/Topbar.jsx": 0, // [2026-10-03] full check U15 (was 18)
+  "src/pages/LocationDetail.jsx": 0, // [2026-10-03] full check U15 (was 15)
   "src/pages/ReportStock.jsx": 14,
   "src/pages/ReportTax.jsx": 14,
-  "src/components/AddUserModal.jsx": 12,
+  "src/components/AddUserModal.jsx": 0, // [2026-10-03] full check U15 (was 12)
   "src/components/MonthlyClosePanel.jsx": 11,
   "src/pages/RegisterFarmer.jsx": 11,
-  "src/pages/SetPassword.jsx": 8,
+  "src/pages/SetPassword.jsx": 0, // [2026-10-03] full check U15 (was 8)
   "src/components/StationDaysReview.jsx": 7,
   "src/pages/ReportAuditLog.jsx": 0,
   "src/components/AddLocationModal.jsx": 5,
@@ -58,14 +58,14 @@ const BASELINE = {
   "src/components/DateRangeFilter.jsx": 0,
   "src/components/EditedBadge.jsx": 4,
   "src/pages/RegisterPartyStaff.jsx": 3,
-  "src/App.jsx": 2,
-  "src/components/MobileNav.jsx": 2,
+  "src/App.jsx": 0, // [2026-10-03] full check U15 (was 2)
+  "src/components/MobileNav.jsx": 1, // [2026-10-03] full check U15 (was 2)
   "src/components/WeightField.jsx": 2,
   "src/pages/Transactions.jsx": 2,
   "src/components/LiveWeightBox.jsx": 1,
-  "src/components/Sidebar.jsx": 1,
+  "src/components/Sidebar.jsx": 0, // [2026-10-03] full check U15 (was 1)
   "src/pages/DailyBook.jsx": 1,
-  "src/pages/Expenses.jsx": 1,
+  "src/pages/Expenses.jsx": 0, // [2026-10-03] full check U15 (was 1)
   "src/pages/ReceiptTemplateEditor.jsx": 1,
   "src/pages/StockInventory.jsx": 1,
 };

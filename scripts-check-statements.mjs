@@ -13,7 +13,9 @@
 //
 // Run: node scripts-check-statements.mjs
 
-import { computeStatements, classifyExpense, depreciationFor, accumulatedDepreciation, addKnown } from "./src/statements.js";
+import { computeStatements, classifyExpense, depreciationFor, accumulatedDepreciation, addKnown,
+         cashFlowLines, unconfirmedExpenses } from "./src/statements.js";
+import { readFileSync } from "node:fs";
 
 let failures = 0;
 const near = (a, b, tol = 1) => a !== null && b !== null && Math.abs(a - b) <= tol;
@@ -244,8 +246,20 @@ console.log(`  6. period figures move, balances are as at the end · shed ${mone
 // ===========================================================================
 // 5. Expense classification
 // ===========================================================================
-ok(classifyExpense("ចំណាយកូនដៃ") === "intermediary", "Khmer intermediary fee not recognised");
-ok(classifyExpense("Broker commission") === "intermediary", "broker commission not recognised");
+// [2026-10-03] full check M4: the intermediary line is now EXACTLY the Daily
+// Book's isCommission() (ថ្លៃកូនដៃ), not a keyword match — the two screens
+// showed two different commissions for the same month. Other spellings are
+// Other on every screen alike. And "tax" is a whole word: a Taxi is not tax.
+ok(classifyExpense("ថ្លៃកូនដៃ") === "intermediary", "ថ្លៃកូនដៃ not recognised");
+ok(classifyExpense("ថ្លៃកូនដៃ\u200b") === "intermediary", "ថ្លៃកូនដៃ with a zero-width character not recognised");
+ok(classifyExpense("ចំណាយកូនដៃ") === "other", "the Income Statement must use the Daily Book's exact commission rule");
+ok(classifyExpense("Broker commission") === "other", "the Income Statement must use the Daily Book's exact commission rule");
+ok(classifyExpense("Taxi") === "other", "a Taxi expense landed on the income-tax line");
+ok(classifyExpense("Taxation office rent") === "other", "'tax' matched inside another word");
+ok(classifyExpense("Tax") === "tax" && classifyExpense("Income tax") === "tax" && classifyExpense("Patent") === "tax",
+   "a real tax expense was not recognised");
+ok(classifyExpense("ពន្ធ") === "tax" && classifyExpense("បង់ពន្ធ") === "tax", "Khmer tax not recognised");
+ok(classifyExpense("សម្ពន្ធ") === "other", "ពន្ធ matched inside another Khmer word");
 ok(classifyExpense("Staff salary") === "wages", "salary not recognised");
 ok(classifyExpense("ប្រាក់ខែ") === "wages", "Khmer wages not recognised");
 ok(classifyExpense("Fuel") === "other", "an unknown category must fall to other, never be dropped");
@@ -335,7 +349,8 @@ console.log("  11. the inventory report and the balance sheet agree about the sh
 
   // All-កូនដៃ: the other line must be exactly zero, never a rounding crumb.
   const onlyInt = run([ST[0]], { payments: [
-    { id: "x1", location_id: "rk", type: "expense", category: "កូនដៃ", amount: 400000, pay_date: "2026-09-10" },
+    // [2026-10-03] ថ្លៃកូនដៃ, the one commission category (full check M4).
+    { id: "x1", location_id: "rk", type: "expense", category: "ថ្លៃកូនដៃ", amount: 400000, pay_date: "2026-09-10" },
   ] });
   ok(near(onlyInt.cashflow.expensesPaidOther, 0),
      "other expenses is not zero when every expense is កូនដៃ", onlyInt.cashflow.expensesPaidOther);
@@ -350,6 +365,93 @@ console.log("  11. the inventory report and the balance sheet agree about the sh
      "other expenses did not pick up the non-កូនដៃ expense", noInt.cashflow.expensesPaidOther);
 
   console.log(`  12. cash-flow expense lines are exhaustive · ${money(all.cashflow.expensesPaidIntermediary)} កូនដៃ + ${money(all.cashflow.expensesPaidOther)} other = ${money(all.cashflow.expensesPaid)} ៛`);
+}
+
+// ===========================================================================
+// 13. [2026-10-03] Tax is per station, then added (full check M7)
+// ===========================================================================
+// Reang Kesey makes a profit, Jomnoum a loss once a big expense is added.
+// The group's tax must be the two stations' taxes added — the loss must not
+// shrink Reang Kesey's tax — and a Taxi expense must not be taken as tax.
+{
+  const TAXSET = { rk: { tax_rate_pct: 20 }, jn: { tax_rate_pct: 20 }, pp: { tax_rate_pct: 10 } };
+  const extraPays = [...PAYS,
+    { id: "big", location_id: "jn", type: "expense", category: "Repairs", amount: 3000000, pay_date: "2026-09-16" },
+    { id: "taxi", location_id: "rk", type: "expense", category: "Taxi", amount: 50000, pay_date: "2026-09-16" }];
+  const noLoans = { assets: FULL_ASSETS, settings: TAXSET, payments: extraPays, loanEntries: [] };
+  const grp = run(ST, noLoans);
+  const each = ST.map((s) => run([s], noLoans));
+  ok(each.every((p) => p.income.tax !== null), "a station's tax went unknown with its rate entered");
+  ok(near(grp.income.tax, each.reduce((a, p) => a + p.income.tax, 0)),
+     "consolidated tax is not the stations' taxes added up", [grp.income.tax, each.map((p) => p.income.tax)]);
+  ok(near(grp.income.netProfit, each.reduce((a, p) => a + p.income.netProfit, 0)),
+     "consolidated net profit is not the stations' net profits added up");
+  const jnP = each[1].income.grossProfit;
+  ok(jnP < 0 && near(each[1].income.tax, 0), "a loss-making station was charged tax", [jnP, each[1].income.tax]);
+  ok(near(each[0].income.tax, Math.max(0, each[0].income.grossProfit) * 0.2),
+     "the Taxi expense replaced Reang Kesey's computed tax", each[0].income.tax);
+  // Different rates per station used to give no group figure at all.
+  ok(grp.income.tax !== null, "two different station rates left the group tax 'not entered'");
+  // One station with no rate leaves the group's tax unknown, not understated.
+  const partialRate = run(ST, { ...noLoans, settings: { rk: { tax_rate_pct: 20 }, jn: { tax_rate_pct: 20 } } });
+  ok(partialRate.income.tax === null, "a group tax was reported while one station had no rate");
+  console.log(`  13. tax per station · ${each.map((p) => money(p.income.tax)).join(" + ")} = ${money(grp.income.tax)} ៛`);
+}
+
+// ===========================================================================
+// 14. [2026-10-03] The Excel Cash Flow lines add up to the screen (full check M9)
+// ===========================================================================
+{
+  const cfPays = [
+    ...PAYS,
+    { id: "c1", transaction_id: "rk3", location_id: "rk", type: "receive_customer", amount: 4000000, pay_date: "2026-09-12" },
+    { id: "c2", transaction_id: "rk2", location_id: "rk", type: "pay_supplier", amount: 2000000, pay_date: "2026-09-06" },
+    // paid inside the period, for a sale dated after it: not this period's cash flow
+    { id: "c3", transaction_id: "late", location_id: "rk", type: "receive_customer", amount: 777000, pay_date: "2026-09-29" },
+    // outside the period
+    { id: "c4", transaction_id: "rk1", location_id: "rk", type: "pay_supplier", amount: 1000000, pay_date: "2026-08-20" },
+  ];
+  const cfTxs = [...TXS, tx({ id: "late", location_id: "rk", tx_date: "2026-10-02", type: "SELL", quantity_kg: 1000, amount: 777000 })];
+  const cfLoans = [...LOANS, { location_id: "rk", type: "repay", amount: 500000, entry_date: "2026-09-25" }];
+  const withSet = { assets: [...FULL_ASSETS, { location_id: "rk", cost: 2000000, useful_life_years: 5, in_service_date: "2026-09-18" }],
+    settings: { rk: { opening_cash: 20000000 }, jn: { opening_cash: 5000000 }, pp: { opening_cash: 3000000 } },
+    payments: cfPays, asAtTxs: cfTxs, loanEntries: cfLoans };
+  const r = run(ST, withSet);
+  const lines = cashFlowLines(r.cashflow);
+  const total = lines.reduce((a, l) => a + l.signed, 0);
+  ok(near(total, r.cashflow.cfNet), "the cash-flow lines do not add up to the screen's net movement", [total, r.cashflow.cfNet]);
+  ok(!lines.some((l) => l.row?.id === "c3"), "a payment for a sale dated after the period was listed");
+  ok(!lines.some((l) => l.row?.id === "c4"), "a payment outside the period was listed");
+  ok(lines.some((l) => l.kind === "drawing") && lines.some((l) => l.kind === "loanOut") && lines.some((l) => l.kind === "asset"),
+     "capital, loans or assets were not read from their own entries");
+  ok(near(r.cashflow.openingCash + total, r.cashflow.closingCash),
+     "opening cash plus the lines is not the closing cash");
+  // The export must take its figures from here, not build a ledger of its own.
+  const ex = readFileSync(new URL("./src/reportExport.js", import.meta.url), "utf8");
+  ok(/cashFlowLines\(/.test(ex) && /computeStatements\(/.test(ex) && !/computeFinancials\(/.test(ex),
+     "the Excel export does not read the same statements as the screens (full check M1/M9)");
+  ok(!/IS_INFLOW/.test(ex), "the Excel export still builds its own cash ledger from the payments table");
+  console.log(`  14. Excel cash-flow lines · ${lines.length} lines add to ${money(total)} ៛ = the screen's net movement`);
+}
+
+// ===========================================================================
+// 15. [2026-10-03] Expenses not yet confirmed (full check M14)
+// ===========================================================================
+{
+  const pays = [
+    { type: "expense", location_id: "rk", pay_date: "2026-09-10", amount: 100 },
+    { type: "expense", location_id: "rk", pay_date: "2026-09-11", amount: 200 },
+    { type: "expense", location_id: "jn", pay_date: "2026-09-11", amount: 400 },
+    { type: "expense", location_id: "rk", pay_date: "2026-08-30", amount: 800 },
+  ];
+  const reviews = [
+    { location_id: "rk", day: "2026-09-10", status: "confirmed", is_current: true },
+    { location_id: "jn", day: "2026-09-11", status: "sent_back", is_current: true },
+  ];
+  ok(unconfirmedExpenses({ payments: pays, reviews: null }) === null, "no confirmation set up must say nothing");
+  ok(unconfirmedExpenses({ payments: pays, reviews, ...SEP }) === 600, "unconfirmed total wrong (waiting + sent back, in the period)");
+  ok(unconfirmedExpenses({ payments: pays, reviews, stationIds: ["rk"], ...SEP }) === 200, "unconfirmed total ignores the station filter");
+  console.log("  15. unconfirmed expenses · waiting and sent-back days counted, confirmed days not");
 }
 
 console.log(failures === 0 ? "\nAll checks passed.\n" : `\n${failures} CHECK(S) FAILED\n`);
