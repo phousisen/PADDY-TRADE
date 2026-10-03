@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { TrendingUp, TrendingDown, Warehouse, MapPin, Activity, ChevronRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Warehouse, CalendarDays, Activity, ChevronRight } from "lucide-react";
+import { dmy } from "../dateFormat.js";
 import Topbar from "../components/Topbar.jsx";
 import SettleDifferenceModal, { canSettle } from "../components/SettleDifferenceModal.jsx";
 import { AdjustStockModal } from "../components/AdjustStockModal.jsx";
@@ -431,6 +432,12 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
       return { loc, openingKg, boughtKg, soldKg, adjustedKg, onHandKg, status, buyCount, sellCount };
     });
   }, [locations, periodTxs, adjustments, rangeStart, rangeEnd, closeAtEnd, closeBeforeStart]);
+  // [2026-10-03] Stock left at the end of the period on screen — the On hand
+  // column added up. Shown as "…" while a PAST day's figures are still on
+  // their way, rather than briefly passing today's stock off as that day's.
+  const stockLeftKg = (rangeEnd !== todayStr && closeAtEnd.size === 0)
+    ? null
+    : locationPerformance.reduce((sum, r) => sum + (Number(r.onHandKg) || 0), 0);
 
   // Its own bounded fetch — see load(). Sorting eight rows is free.
   const liveFeed = useMemo(() => {
@@ -526,28 +533,30 @@ export default function Dashboard({ setPage, setSelectedLocationId }) {
             />
           ) : (
             <>
+          {/* [2026-10-03] SISEN, looking at 15/08/2026: "i wasnt able to see
+              the total stock left instead it shows the total stock in current
+              time … remove that active location box because its not needed".
+              This box is now what the stations held at the END of the period
+              on screen — the same ledger figures as the On hand column below,
+              added up — and the box beside it keeps "right now". */}
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
-            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 lg:mb-3.5 lg:h-9 lg:w-9"><Warehouse size={15} /></div>
-            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_current_stock")}</p>
-            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(netStockKg)} kg</p>
-            {/* This is deliberately NOT "today's buy minus today's sell" —
-                it's the real running total built up over the location's
-                entire history. Sitting next to the two "Today" cards made
-                it look like it should equal them, which it never will
-                unless the location's stock happened to start today at
-                zero. Spelling that out here so it reads correctly at a
-                glance instead of looking like a math error. */}
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_on_hand", { n: locations.length })}</p>
+            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600 lg:mb-3.5 lg:h-9 lg:w-9"><CalendarDays size={15} /></div>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_stock_left", { date: dmy(rangeEnd) })}</p>
+            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">
+              {stockLeftKg == null ? "…" : `${fmt2(stockLeftKg)} kg`}
+            </p>
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_stock_left_note", { n: locations.length })}</p>
           </div>
             </>
           )}
           {!isStationView && (
             <>
           <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm lg:p-5">
-            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-gold-100 text-gold-700 lg:mb-3.5 lg:h-9 lg:w-9"><MapPin size={15} /></div>
-            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_active_locations")}</p>
-            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{locations.length}</p>
-            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_tx_count", { n: periodTxs.length, range: rangeLabel })}</p>
+            <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-gold-100 text-gold-700 lg:mb-3.5 lg:h-9 lg:w-9"><Warehouse size={15} /></div>
+            <p className="text-[10.5px] font-medium leading-tight text-slate-500 lg:text-xs">{t("dash_stock_now")}</p>
+            <p className="mt-1 text-lg font-extrabold tracking-tight text-slate-800 lg:mt-1.5 lg:text-2xl">{fmt2(netStockKg)} kg</p>
+            {/* The real running total, whatever period is on screen. */}
+            <p className="mt-0.5 text-[9.5px] leading-tight text-slate-400 lg:mt-1 lg:text-[11px]">{t("dash_on_hand", { n: locations.length })}</p>
           </div>
             </>
           )}
