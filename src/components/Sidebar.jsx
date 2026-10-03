@@ -41,13 +41,15 @@ export default function Sidebar({ page, setPage, pendingRequests, expenseBadge =
   const canSeeAdminNav = isAdmin && !isViewOnly;            // Station Health, still all admins
   const canApproveRequests = can("approve_change_requests") && !isViewOnly;
   const canManageLocations = can("manage_locations") && !isViewOnly;
-  const canManageUsers = can("manage_users") && !isViewOnly;
-  const canManageRoles = can("manage_roles") && !isViewOnly;
-  const canManageSettings = can("manage_settings") && !isViewOnly;
+  const canManageUsers = can("manage_users") && !isViewOnly && !isStaff;
+  const canManageRoles = can("manage_roles") && !isViewOnly && !isStaff;
+  const canManageSettings = can("manage_settings") && !isViewOnly && !isStaff;
   const canSeeSystemGroup = canManageLocations || canManageUsers || canManageRoles || canManageSettings || canSeeAdminNav;
   // A Staff account with "View Financial Reports" granted via Settings ->
   // Roles gets the Reports link too, same rule as App.jsx's canViewReports.
-  const canViewReports = !isStaff || hasPermission("view_reports");
+  // [2026-10-03] Roles ticks count (full check U1/U4/U5): a tick can only narrow
+  // what HQ already had; station roles never see HQ-only pages in the menu.
+  const canViewReports = (!isStaff && can("view_reports")) || hasPermission("view_reports");
 
   // [2026-09-01] Reorganized into labeled groups (Operations / Directory /
   // Inventory & Reports / System) instead of one long flat list, so the
@@ -133,7 +135,7 @@ export default function Sidebar({ page, setPage, pendingRequests, expenseBadge =
                 // a good choice o put acitvities log in finance". It is not —
                 // nothing in it is money. It answers "who did this, and when",
                 // the same kind of question as Station Health and Users.
-                ...(canSeeAdminNav ? [{ id: "activity-log", label: t("nav_activity_log"), icon: History }] : []),
+                ...(canSeeAdminNav && can("view_audit_log") ? [{ id: "activity-log", label: t("nav_activity_log"), icon: History }] : []),
                 ...(canManageUsers ? [{ id: "users", label: t("nav_users"), icon: UserCog }] : []),
                 ...(canManageRoles ? [{ id: "roles", label: t("nav_roles"), icon: ShieldCheck }] : []),
                 ...(canManageSettings ? [{ id: "settings", label: t("nav_settings"), icon: Settings }] : []),

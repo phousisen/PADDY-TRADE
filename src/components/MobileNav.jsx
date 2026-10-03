@@ -39,7 +39,9 @@ export default function MobileNav({ page, setPage, pendingRequests, expenseBadge
   // Same rule as App.jsx/Sidebar.jsx's canViewReports — a Staff account
   // granted "View Financial Reports" via Settings -> Roles should see
   // Reports/Expenses here too, not just on desktop.
-  const canViewReports = !isStaff || hasPermission("view_reports");
+  // [2026-10-03] Roles ticks count (full check U1/U4/U5): a tick can only narrow
+  // what HQ already had; station roles never see HQ-only pages in the menu.
+  const canViewReports = (!isStaff && can("view_reports")) || hasPermission("view_reports");
   // [2026-09-02] A view-only account now gets its own simplified menu —
   // see Sidebar.jsx's matching comment for the full reasoning. It no
   // longer counts as "admin nav" here either.
@@ -50,9 +52,9 @@ export default function MobileNav({ page, setPage, pendingRequests, expenseBadge
   const canSeeAdminNav = isAdmin && !isViewOnly;            // Station Health, still all admins
   const canApproveRequests = can("approve_change_requests") && !isViewOnly;
   const canManageLocations = can("manage_locations") && !isViewOnly;
-  const canManageUsers = can("manage_users") && !isViewOnly;
-  const canManageRoles = can("manage_roles") && !isViewOnly;
-  const canManageSettings = can("manage_settings") && !isViewOnly;
+  const canManageUsers = can("manage_users") && !isViewOnly && !isStaff;
+  const canManageRoles = can("manage_roles") && !isViewOnly && !isStaff;
+  const canManageSettings = can("manage_settings") && !isViewOnly && !isStaff;
   const canSeeSystemGroup = canManageLocations || canManageUsers || canManageRoles || canManageSettings || canSeeAdminNav;
 
   // [2026-09-03] For a view-only account, only the 3 screens used most
@@ -105,7 +107,7 @@ export default function MobileNav({ page, setPage, pendingRequests, expenseBadge
         ...(canManageLocations ? [{ id: "stations", label: t("nav_stations"), icon: MapPin }] : []),
         ...(canSeeAdminNav ? [{ id: "station-health", label: t("nav_station_health"), icon: Activity }] : []),
         // [2026-09-23] Moved out of Finance → Setup into SYSTEM (ActivityLog.jsx).
-        ...(canSeeAdminNav ? [{ id: "activity-log", label: t("nav_activity_log"), icon: History }] : []),
+        ...(canSeeAdminNav && can("view_audit_log") ? [{ id: "activity-log", label: t("nav_activity_log"), icon: History }] : []),
         ...(canManageUsers ? [{ id: "users", label: t("nav_users"), icon: UserCog }] : []),
         ...(canManageRoles ? [{ id: "roles", label: t("nav_roles"), icon: ShieldCheck }] : []),
         ...(canManageSettings ? [{ id: "settings", label: t("nav_settings"), icon: Settings }] : []),
