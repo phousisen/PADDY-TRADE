@@ -176,13 +176,13 @@ export default function App() {
     if (passwordRecovery) return <SetPassword />;
     return (
       <div className="flex h-screen w-full items-center justify-center bg-slate-50 p-6 text-center text-sm text-slate-500">
-        This link is only valid when opened from a password-reset or invite email. To change your own password, use the account menu at the top right.
+        {t("app_setpw_link_only")}
       </div>
     );
   }
 
   if (loading) {
-    return <div className="flex h-screen w-full items-center justify-center bg-slate-50 text-slate-400 text-sm">Loading…</div>;
+    return <div className="flex h-screen w-full items-center justify-center bg-slate-50 text-slate-400 text-sm">{t("loading_label")}</div>;
   }
 
   if (!session || !profile) {
@@ -302,8 +302,8 @@ export default function App() {
     // deleted outright.
     if (page === "receipt-template") return profile?.isOwner ? (
       <div className="p-8 text-center text-sm text-slate-500">
-        <p className="mb-1 text-base font-semibold text-slate-700">Receipt Template — no longer used</p>
-        <p>Printed receipts and weigh-in slips now use a fixed design (with the company logo and each location's own address/phone). Changing anything on this old page would no longer affect what gets printed.</p>
+        <p className="mb-1 text-base font-semibold text-slate-700">{t("app_receipt_tpl_title")}</p>
+        <p>{t("app_receipt_tpl_body")}</p>
       </div>
     ) : <PermissionDenied />;
     // [2026-08-31] Same screen the restricted "Registrar" role is dropped

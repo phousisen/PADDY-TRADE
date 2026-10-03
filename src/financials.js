@@ -1,6 +1,16 @@
 // The financial figures behind Reports → Overview, Balance Sheet and the
 // Excel export. One place, so those three can never disagree.
 //
+// [2026-10-03] NO SCREEN READS computeFinancials ANY MORE (full check M1).
+// The Overview and the Excel export now take every summary, P&L, balance and
+// cash-flow figure from computeStatements() in statements.js — the module the
+// Balance Sheet, Income Statement and Cash Flow already used — because the
+// two modules disagreed on cash (no opening balance here), VAT owed (missing
+// here) and net profit with a figure "not entered". paidStatusMap below is
+// still used by Purchases, Sales, PartyDetail, SimpleListPage and the export's
+// detail sheets; computeFinancials stays only for scripts-check-financials.mjs
+// and should not be wired back into a page.
+//
 // [2026-09-14] Replaces computeFinancials() in ReportOverview.jsx, which had
 // six defects. Each is named below where it is fixed, because the numbers this
 // file produces are DIFFERENT from what the app showed before — they are right

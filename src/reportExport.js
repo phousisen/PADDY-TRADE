@@ -5,7 +5,14 @@
 // Flow, Tax), using whatever Location/Date filters are currently active.
 import * as XLSX from "xlsx";
 import { getAccurateNow } from "./supabaseClient.js";
-import { computeFinancials, paidStatusMap } from "./financials.js";
+// [2026-10-03] The summary, P&L, balance and cash-flow figures come from
+// statements.js now — the module the Balance Sheet, Income Statement and
+// Cash Flow screens read — instead of financials.js, which disagreed with
+// them on cash, VAT owed and profit with a figure not entered (full check
+// M1). paidStatusMap is the same rule in both and stays for the detail sheets.
+import { paidStatusMap } from "./financials.js";
+import { computeStatements, cashFlowLines, unconfirmedExpenses } from "./statements.js";
+import { api } from "./api.js";
 import { effectiveAdjDateStr, cambodiaDateStr } from "./dailyLedger.js";
 
 // Cambodia's current date/time (independent of the viewing device's own
@@ -75,7 +82,12 @@ function sheet(rows) {
   return ws;
 }
 
-export function buildReportWorkbook({ txs, payments, adjustments = [], stations, capitalEntries = [], loanEntries = [], selectedLocationIds = [], startDate = null, endDate = null }) {
+// [2026-10-03] partners / assets / settings / reviews added (full check M1,
+// M14): the statements need the asset register and each station's opening
+// cash and tax rate, exactly as useStatements.js hands them to the screens.
+// `assets` null = no register (lines read "not entered"); `reviews` null =
+// expense confirmation not set up (no unconfirmed line).
+export function buildReportWorkbook({ txs, payments, adjustments = [], stations, capitalEntries = [], loanEntries = [], partners = [], assets = null, settings = {}, reviews = null, selectedLocationIds = [], startDate = null, endDate = null }) {
   const wb = XLSX.utils.book_new();
   const rangeLabel = `Date range: ${startDate || "All time"} to ${endDate || "All time"}`;
   const filteredStations = selectedLocationIds.length ? stations.filter((s) => selectedLocationIds.includes(s.id)) : stations;
@@ -96,32 +108,29 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
   const loanAsAt = loanEntries
     .filter((e) => !selectedLocationIds.length || selectedLocationIds.includes(e.location_id))
     .filter((e) => !endDate || e.entry_date <= endDate);
-  // Same date-range/location filtering as activeTxs above, applied to the
-  // "expense"-type rows in the payments ledger (see Expenses.jsx) — kept in
-  // sync with the on-screen Overview/Balance Sheet so this export never
-  // shows a different Cash/Net Profit figure than the app does.
-  const activeExpenses = payments
-    .filter((p) => p.type === "expense")
-    .filter((p) => !selectedLocationIds.length || selectedLocationIds.includes(p.location_id))
-    .filter((p) => !startDate || p.pay_date >= startDate)
-    .filter((p) => !endDate || p.pay_date <= endDate);
+  // [2026-10-03] The period's expense rows are taken inside computeStatements
+  // now, by the same rule as the screens (full check M1).
 
   // ---------------- Overview (P&L + Balance Sheet + By Location) ----------------
   // [2026-09-14] Same figures as the on-screen Overview/Balance Sheet, from
   // the same module — `txs`/`payments` here are AS AT the period end (Reports
-  // .jsx drops `from` for exactly this reason), and computeFinancials takes
-  // the period slice itself.
-  const calc = computeFinancials({
-    asAtTxs: txs, payments, adjustments, stations: filteredStations,
-    capitalEntries, loanEntries, startDate, endDate,
-  });
-  const byLocation = filteredStations.map((s) => ({
-    station: s,
-    ...computeFinancials({
-      asAtTxs: txs, payments, adjustments, stations: [s],
-      capitalEntries, loanEntries, startDate, endDate,
-    }),
-  }));
+  // .jsx drops `from` for exactly this reason), and computeStatements takes
+  // the period slice itself ([2026-10-03] was computeFinancials — full check M1).
+  // [2026-10-03] computeStatements, as the screens (full check M1).
+  const stmtArgs = { asAtTxs: txs, payments, adjustments, partners, capitalEntries, loanEntries, assets, settings, startDate, endDate };
+  const st = computeStatements({ ...stmtArgs, stations: filteredStations });
+  const byLocation = filteredStations.map((s) => ({ station: s, st: computeStatements({ ...stmtArgs, stations: [s] }) }));
+  const inc = st.income;
+  const bal = st.balance;
+  // A figure nobody has entered is written as the words, never as 0 — same
+  // rule as the screens (statements.js rule 2).
+  const val = (v) => (v === null || v === undefined ? "not entered" : round2(v));
+  const neg = (v) => (v === null || v === undefined ? null : -v);
+  // Sales less the cost of the paddy sold — the Overview's "Gross Profit";
+  // adds up across the by-location rows (full check M13).
+  const tradingGross = (i) => i.sales - i.costOfGoodsSold;
+  const unconfirmed = unconfirmedExpenses({
+    payments, reviews, stationIds: filteredStations.map((s) => s.id), startDate, endDate });
   // Buy/Sell counts, kg, and amounts per location for the summary table
   // below. Uses the same activeTxs already filtered to the selected
   // locations/date range — for a location-scoped account that's just their
@@ -155,37 +164,59 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
     [rangeLabel],
     [],
     ["Profit & Loss", "Amount (៛)"],
-    ["Total Sales (Revenue)", round2(calc.totalSell)],
+    // [2026-10-03] Line for line the Overview screen, from computeStatements
+    // (full check M1): other income, depreciation, interest and tax are
+    // their own lines, and Net Profit reads "not entered" while any of them
+    // is — as on the Income Statement — instead of a profit that ignores them.
+    ["Total Sales (Revenue)", round2(inc.sales)],
     // [2026-09-19] The cost of the paddy SOLD, as on screen — this row showed
     // everything bought, so the three rows did not add up. And the stock
     // written off, which Net Profit already includes, now has its own row.
-    ["Cost of paddy sold (COGS)", round2(-calc.costOfGoodsSold)],
-    ["Gross Profit", round2(calc.grossProfit)],
-    ["Operating Expenses", round2(-calc.totalExpenses)],
-    ["Stock written off", round2(calc.stockLossValue)],
-    ["Net Profit", round2(calc.netProfit)],
+    ["Cost of paddy sold (COGS)", round2(-inc.costOfGoodsSold)],
+    ["Gross Profit", round2(tradingGross(inc))],
+    ["Other income", round2(inc.otherIncome)],
+    ["Operating Expenses", round2(-inc.operatingExpenses)],
+    ["Stock written off", round2(inc.inventoryLost)],
+    ["Profit before depreciation, interest & tax", round2(inc.profitBeforeUnknowns)],
+    ["Depreciation", val(neg(inc.depreciation))],
+    ["Interest", val(neg(inc.interest))],
+    ["Tax", val(neg(inc.tax))],
+    ["Net Profit", val(inc.netProfit)],
+    // [2026-10-03] full check M14 — counted above, as on screen, but said.
+    ...(unconfirmed > 0 ? [["Expenses not yet confirmed (included above)", round2(unconfirmed)]] : []),
     [],
     ["Balance Sheet — Assets", "Amount (៛)"],
-    ["Inventory on hand", round2(calc.inventoryValue)],
-    ["Accounts Receivable", round2(calc.accountsReceivable)],
-    // [2026-09-19] As computed, negative included (as on screen) — flooring
-    // it at 0 made the assets listed not add up to Total Assets.
-    ["Cash (estimate)", round2(calc.cashEstimate)],
-    ["Total Assets", round2(calc.totalAssets)],
+    ["Inventory on hand", round2(bal.inventoryValue)],
+    ["Accounts Receivable", round2(bal.accountsReceivable)],
+    // [2026-10-03] The Balance Sheet's cash: the opening balance plus every
+    // movement since (full check M1). Without an opening balance it is "not
+    // entered", and the movement is on the next line.
+    ["Cash and bank", val(bal.cash)],
+    ["Cash movement since the system began", round2(bal.cashMovement)],
+    ["Current Assets", val(bal.currentAssets)],
+    ["Property and equipment, net", val(bal.fixedAssetsNet)],
+    ["Total Assets", val(bal.totalAssets)],
     [],
     ["Balance Sheet — Liabilities", "Amount (៛)"],
-    ["Accounts Payable", round2(calc.accountsPayable)],
-    ["Bank Loans Outstanding", round2(calc.bankLoansOutstanding)],
-    ["Total Liabilities", round2(calc.totalLiabilities)],
+    ["Accounts Payable", round2(bal.accountsPayable)],
+    ["Bank Loans Outstanding", round2(bal.loansOutstanding)],
+    ["VAT owed (net)", round2(bal.vatNet)],
+    ["Total Liabilities", round2(bal.totalLiabilities)],
     [],
     ["Balance Sheet — Equity", "Amount (៛)"],
-    ["Partner Capital", round2(calc.partnerCapital)],
-    ["Retained Earnings", round2(calc.retainedEarnings)],
-    ["Equity (net worth)", round2(calc.equity)],
+    ["Partner Capital", round2(bal.partnerCapital)],
+    ["Less: drawings", round2(-bal.drawings)],
+    ["Retained Earnings", round2(bal.retainedEarnings)],
+    ["Opening balance", round2(bal.openingEquity)],
+    ["Equity (net worth)", round2(bal.equity)],
+    ["Unexplained difference", val(bal.unreconciled)],
     [],
     ["By Location"],
-    ["Location", "Sales", "Purchases", "Profit", "Inventory", "Payable", "Bank Loans", "Partner Capital", "Equity"],
-    ...byLocation.map((r) => [r.station.name, round2(r.totalSell), round2(r.totalBuy), round2(r.grossProfit), round2(r.inventoryValue), round2(r.accountsPayable), round2(r.bankLoansOutstanding), round2(r.partnerCapital), round2(r.equity)]),
+    // [2026-10-03] "Gross Profit", not "Profit": it is sales less the cost of
+    // the paddy sold, before expenses, so the rows add to more than Net
+    // Profit and must not be read as it (full check M13).
+    ["Location", "Sales", "Purchases", "Gross Profit", "Inventory", "Payable", "Bank Loans", "Partner Capital", "Equity"],
+    ...byLocation.map(({ station, st: r }) => [station.name, round2(r.income.sales), round2(r.income.purchases), round2(tradingGross(r.income)), round2(r.balance.inventoryValue), round2(r.balance.accountsPayable), round2(r.balance.loansOutstanding), round2(r.balance.partnerCapital - r.balance.drawings), round2(r.balance.equity)]),
     [],
     ["Buy & Sell Summary by Location"],
     ["Location", "Buy Transactions", "Buy Qty In (kg)", "Total Buy Cost (៛)", "Sell Transactions", "Sell Qty Out (kg)", "Total Sales (៛)"],
@@ -300,46 +331,68 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
   ]), "Stock");
 
   // ---------------- Cash Flow ----------------
-  const cashPayments = payments
-    .filter((p) => !selectedLocationIds.length || selectedLocationIds.includes(p.location_id))
-    .filter((p) => !startDate || p.pay_date >= startDate)
-    .filter((p) => !endDate || p.pay_date <= endDate);
-  const sortedPayments = cashPayments.slice().sort((a, b) => (a.pay_date + a.created_at < b.pay_date + b.created_at ? -1 : 1));
-  const TYPE_LABELS = {
-    pay_supplier: "Paid to supplier",
-    receive_customer: "Received from customer",
+  // [2026-10-03] Rebuilt on the Cash Flow screen's own figures (full check
+  // M9). The old sheet was a ledger of the payments table with rules of its
+  // own: the balance restarted at 0 every period, payments for sales dated
+  // after the period were counted, and capital and loans were looked for as
+  // payment rows — which are no longer copied there, so they vanished. The
+  // totals are now st.cashflow (what the screen shows) and the lines are the
+  // very rows those totals add up (cashFlowLines), so they always agree.
+  const cf = st.cashflow;
+  const KIND_LABELS = {
+    collected: "Received from customer",
+    paidOut: "Paid to farmer",
     expense: "Expense",
-    transfer: "Fund transfer",
-    journal: "Journal entry",
-    capital_in: "Partner capital in",
-    capital_out: "Partner capital out",
-    loan_in: "Bank loan drawn",
-    loan_out: "Bank loan repaid",
+    capitalIn: "Partner capital in",
+    drawing: "Partner drawing",
+    loanIn: "Bank loan drawn",
+    loanOut: "Bank loan repaid",
+    asset: "Property / equipment bought",
   };
-  const IS_INFLOW = {
-    pay_supplier: false,
-    receive_customer: true,
-    expense: false,
-    transfer: false,
-    journal: null,
-    capital_in: true,
-    capital_out: false,
-    loan_in: true,
-    loan_out: false,
-  };
-  let bal = 0;
-  const ledger = sortedPayments.map((p) => {
-    const isInflow = IS_INFLOW[p.type] ?? false;
-    const signedAmount = isInflow ? Number(p.amount) : -Number(p.amount);
-    bal += signedAmount;
-    return { ...p, signedAmount, balance: bal };
-  }).reverse();
+  const stationNameOf = (id) => (stations.find((x) => x.id === id) || {}).name || "";
+  let cfBal = cf.openingCash === null ? 0 : cf.openingCash;
+  const cfLines = cashFlowLines(cf).map((l) => {
+    cfBal += l.signed;
+    const r = l.row || {};
+    const note = l.kind === "expense" ? [r.category, r.memo].filter(Boolean).join(" — ")
+      : l.kind === "capitalIn" || l.kind === "drawing" ? [r.partnerName, r.note].filter(Boolean).join(" — ")
+      : l.kind === "loanIn" || l.kind === "loanOut" ? [r.lender_name, r.note].filter(Boolean).join(" — ")
+      : l.kind === "asset" ? (r.name || "")
+      : (r.memo || "");
+    return [l.date, KIND_LABELS[l.kind] || l.kind, r.stationName || stationNameOf(r.location_id), note,
+            r.createdByName || "", round2(l.signed), round2(cfBal)];
+  });
   XLSX.utils.book_append_sheet(wb, sheet([
-    ["Cash Flow — Ledger"],
+    ["Cash Flow"],
     [rangeLabel],
     [],
-    ["Date", "Type", "Note", "Recorded by", "Amount (៛)", "Balance (៛)"],
-    ...ledger.map((p) => [p.pay_date, TYPE_LABELS[p.type] || p.type, p.memo || "", p.createdByName, round2(p.signedAmount), round2(p.balance)]),
+    ["Operating activities", "Amount (៛)"],
+    ["Cash received from customers", round2(cf.collected)],
+    ["Cash paid to farmers", round2(-cf.paidOut)],
+    ["Commission paid (ថ្លៃកូនដៃ)", round2(-cf.expensesPaidIntermediary)],
+    ["Other expenses paid", round2(-cf.expensesPaidOther)],
+    ["Net cash from operating activities", round2(cf.cfOperating)],
+    [],
+    ["Investing activities", "Amount (៛)"],
+    ["Property and equipment bought", val(neg(cf.assetsBought))],
+    ["Net cash from investing activities", val(cf.cfInvesting)],
+    [],
+    ["Financing activities", "Amount (៛)"],
+    ["Partner capital put in", round2(cf.capitalIn)],
+    ["Bank loans, net", round2(cf.loansIn)],
+    ["Partner drawings", round2(-cf.drawings)],
+    ["Net cash from financing activities", round2(cf.cfFinancing)],
+    [],
+    ["Net movement in cash", val(cf.cfNet)],
+    ["Opening cash", val(cf.openingCash)],
+    ["Closing cash", val(cf.closingCash)],
+    [],
+    ["Lines"],
+    [cf.openingCash === null
+      ? "Opening cash for this period is not known (a figure above is not entered), so the balance column starts from 0 and shows the movement only."
+      : "The balance column starts from the opening cash above."],
+    ["Date", "Type", "Location", "Note", "Recorded by", "Amount (៛)", "Balance (៛)"],
+    ...cfLines,
   ]), "Cash Flow");
 
   // ---------------- Capital & Loans ----------------
@@ -398,7 +451,27 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
   return wb;
 }
 
+// [2026-10-03] The statements need the asset register and Finance Setup
+// (opening cash, tax rate), and the unconfirmed-expenses line needs the
+// expense confirmations — none of which the Reports page fetches (full check
+// M1, M14). When the caller has not passed them they are fetched here with
+// exactly the fallbacks the screens use (useStatements.js `setup`, the Daily
+// Book's reviews): if one cannot be read, its lines read "not entered" on the
+// screen and in the workbook alike. A caller that passes all three keeps the
+// old synchronous behaviour. Either way a promise is returned — a caller
+// should `await` it so a failure reaches its error message.
 export function downloadReportWorkbook(data, filename) {
-  const wb = buildReportWorkbook(data);
-  XLSX.writeFile(wb, filename);
+  const has = (k) => Object.prototype.hasOwnProperty.call(data || {}, k);
+  if (has("assets") && has("settings") && has("reviews")) {
+    XLSX.writeFile(buildReportWorkbook(data), filename);
+    return Promise.resolve();
+  }
+  const soft = (p, fallback) => p.catch(() => fallback);
+  return Promise.all([
+    has("assets") ? data.assets : soft(api.getFixedAssets(), null),
+    has("settings") ? data.settings : soft(api.getFinanceSettings(), {}),
+    has("reviews") ? data.reviews : soft(api.getExpenseReviews(), null),
+  ]).then(([assets, settings, reviews]) => {
+    XLSX.writeFile(buildReportWorkbook({ ...data, assets, settings, reviews }), filename);
+  });
 }

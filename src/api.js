@@ -878,21 +878,25 @@ const rawApi = {
   // app that reaches a station before the migration does still opens.
   async getStockResetRequests({ status = null, locationId = null } = {}) {
     try {
-      let query = supabase
-        .from("stock_reset_requests")
-        .select("*, locations(name, name_kh), requester:profiles!stock_reset_requests_requested_by_fkey(full_name), resolver:profiles!stock_reset_requests_resolved_by_fkey(full_name)")
-        .order("requested_at", { ascending: false });
-      if (status) query = query.eq("status", status);
-      if (locationId) query = query.eq("location_id", locationId);
-      const { data, error } = await query;
+      // [2026-10-03] full check W8: paged with fetchAll. One plain read
+      // stopped at 1,000 rows, and this table only grows (every station's
+      // every request, decided ones included). No .order() inside the paged
+      // query — fetchAll pages by id; newest-first is applied after the walk
+      // (see the note in getStockAdjustments).
+      const makeQuery = () => {
+        let query = supabase
+          .from("stock_reset_requests")
+          .select("*, locations(name, name_kh), requester:profiles!stock_reset_requests_requested_by_fkey(full_name), resolver:profiles!stock_reset_requests_resolved_by_fkey(full_name)");
+        if (status) query = query.eq("status", status);
+        if (locationId) query = query.eq("location_id", locationId);
+        return query;
+      };
       // [2026-09-19] Only a table that does not exist yet means "none". Any
       // other failure — a lapsed login, a timeout — used to come back as an
       // empty list too, so HQ saw "nothing pending" while a station sat
-      // waiting on a stock reset that nobody knew about.
-      if (error) {
-        if (/relation .* does not exist|schema cache|could not find/i.test(error.message || "")) return [];
-        throw error;
-      }
+      // waiting on a stock reset that nobody knew about. (fetchAll throws;
+      // the catch below applies the same rule.)
+      const data = await fetchAll(makeQuery, { sort: desc("requested_at") });
       return (data || []).map((r) => ({
         ...r,
         stationName: r.locations?.name || "—",
@@ -935,9 +939,12 @@ const rawApi = {
   },
 
   async createLocation({ name, nameKh, capacityKg }) {
+    // [2026-10-03] full check W9: `updated_ago: "just now"` is gone from the
+    // insert — it stored the words "just now" as a permanent column value,
+    // which then read "just now" on Stock Inventory for ever.
     const { data, error } = await supabase
       .from("locations")
-      .insert({ name, name_kh: nameKh || "", capacity_kg: capacityKg || 0, current_stock_kg: 0, updated_ago: "just now" })
+      .insert({ name, name_kh: nameKh || "", capacity_kg: capacityKg || 0, current_stock_kg: 0 })
       .select()
       .single();
     if (error) throw error;
@@ -1741,7 +1748,7 @@ const rawApi = {
   // (first seen live at Jomnoum). Folding the weight into the same
   // request means a ticket that reaches the server always already has
   // one; there's no window where it can exist without it.
-  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg, note }) {
+  async createTicket({ id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg, grossAt, note }) {
     const hasGross = grossKg != null;
     const row = {
       ...(id ? { id } : {}),
@@ -1759,7 +1766,12 @@ const rawApi = {
       product_name: productName,
       stage: hasGross ? "weighed_in" : "arrived",
       gross_kg: hasGross ? grossKg : null,
-      gross_at: hasGross ? getAccurateNow().toISOString() : null,
+      // [2026-10-03] full check T4: the weigh-in time the DEVICE stamped when
+      // the weight was taken (grossAt, carried in the queued op), not the
+      // moment an offline station finally synced. Server time only for an
+      // op queued before this change, which carries none — same pattern as
+      // updateTicketInfo.
+      gross_at: hasGross ? (grossAt || getAccurateNow().toISOString()) : null,
       gross_by: hasGross ? userId : null,
       created_by: userId,
       paper_ticket_no: normalizePaperTicketNo(paperTicketNo),
@@ -1815,10 +1827,11 @@ const rawApi = {
     return data || null;
   },
 
-  async setTicketGross(id, { grossKg, userId }) {
+  async setTicketGross(id, { grossKg, grossAt, userId }) {
     const { data, error } = await supabase
       .from("weighing_tickets")
-      .update({ gross_kg: grossKg, gross_at: getAccurateNow().toISOString(), gross_by: userId, stage: "weighed_in" })
+      // [2026-10-03] full check T4: device-stamped grossAt when the op has one.
+      .update({ gross_kg: grossKg, gross_at: grossAt || getAccurateNow().toISOString(), gross_by: userId, stage: "weighed_in" })
       .eq("id", id)
       .select()
       .single();
@@ -1939,10 +1952,13 @@ const rawApi = {
     return data;
   },
 
-  async setTicketTare(id, { tareKg, userId }) {
+  async setTicketTare(id, { tareKg, tareAt, userId }) {
     const { data, error } = await supabase
       .from("weighing_tickets")
-      .update({ tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" })
+      // [2026-10-03] full check T4: the weigh-out time the device stamped when
+      // the weight was taken (tareAt, carried in the queued op), not the
+      // sync time. Server time only for an older op that carries none.
+      .update({ tare_kg: tareKg, tare_at: tareAt || getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" })
       .eq("id", id)
       // [2026-09-07] Never touch a ticket that is already finalized. A
       // re-pressed Finish Ticket (after the browser gave up on a save the
@@ -1974,7 +1990,7 @@ const rawApi = {
   // Turns a fully weighed-out, priced ticket into a real transaction —
   // reusing createTransaction above so every report/screen that already
   // reads the transactions table works without any changes.
-  async finalizeTicket(id, { userId, txDate, txTime, paymentStatus, transactionId, transactionCode, receiptPhotoUrl }) {
+  async finalizeTicket(id, { userId, txDate, txTime, paymentStatus, transactionId, transactionCode, receiptPhotoUrl, grossSource, tareSource }) {
     const { data: ticket, error: fetchErr } = await supabase.from("weighing_tickets").select("*").eq("id", id).single();
     if (fetchErr) {
       // Same reasoning as setTicketGross above: nothing to finalize if
@@ -2041,6 +2057,12 @@ const rawApi = {
       grossAt: ticket.gross_at,
       tareKg: ticket.tare_kg,
       tareAt: ticket.tare_at,
+      // [2026-10-03] full check T10: "scale" | "typed" as the station's copy
+      // of the ticket recorded it (weighing_tickets has no column for it, so
+      // it travels in the queued Finish). Anything else — including an op
+      // queued before this change — is null, as before.
+      grossSource: grossSource === "scale" || grossSource === "typed" ? grossSource : null,
+      tareSource: tareSource === "scale" || tareSource === "typed" ? tareSource : null,
       recordedByName: ticket.recorded_by_name,
     });
     // [2026-09-06] The two writes this used to do one after another —
@@ -2713,12 +2735,26 @@ const rawApi = {
   // it would need a category, and would then appear as a phantom line in
   // every category total.
   async getExpenseDayMarks({ from, to } = {}) {
-    let query = supabase.from("expense_day_marks").select("*");
-    if (from) query = query.gte("day", from);
-    if (to) query = query.lte("day", to);
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+    const makeQuery = () => {
+      let query = supabase.from("expense_day_marks").select("*");
+      if (from) query = query.gte("day", from);
+      if (to) query = query.lte("day", to);
+      return query;
+    };
+    // [2026-10-03] full check W8: paged with fetchAll — five stations × every
+    // day passes 1,000 marks within the year, and the read stopped there.
+    // The table's own key column is not in the repo (expense_day_marks.sql
+    // keys writes on location_id+day), so if it turns out to have no `id`
+    // column the read falls back to the one plain query it always was,
+    // rather than showing no marks at all.
+    try {
+      return await fetchAll(makeQuery, { sort: asc("day", "location_id") });
+    } catch (err) {
+      if (err?.code !== "42703" && !/column .*id.* does not exist/i.test(err?.message || "")) throw err;
+      const { data, error } = await makeQuery();
+      if (error) throw error;
+      return data || [];
+    }
   },
 
   async markExpenseDayEmpty({ locationId, day, userId }) {
@@ -2880,15 +2916,21 @@ const rawApi = {
   async getPrintCounts(transactionIds) {
     const ids = (transactionIds || []).filter(Boolean);
     if (ids.length === 0) return {};
-    const { data, error } = await supabase
-      .from("audit_logs")
-      .select("record_id")
-      .eq("action", "print_receipt")
-      .in("record_id", ids)
-      .limit(2000);
-    // Never fatal: the count is an extra mark on a row, and a list that
-    // cannot show it must still show the list.
-    if (error) return {};
+    // [2026-10-03] full check W8: .limit(2000) asked for more than the
+    // server's 1,000-row cap, so a busy page's counts could quietly stop at
+    // 1,000 prints. Paged with fetchAll instead (by the log row's own id).
+    let data;
+    try {
+      data = await fetchAll(() => supabase
+        .from("audit_logs")
+        .select("id, record_id")
+        .eq("action", "print_receipt")
+        .in("record_id", ids));
+    } catch {
+      // Never fatal: the count is an extra mark on a row, and a list that
+      // cannot show it must still show the list.
+      return {};
+    }
     const out = {};
     for (const r of data || []) out[r.record_id] = (out[r.record_id] || 0) + 1;
     return out;
@@ -2911,9 +2953,11 @@ const rawApi = {
     const fromKey = productKey(from || "");
     if (!fromKey) throw new Error("No category chosen.");
 
-    const { data, error } = await supabase
-      .from("payments").select("id, category").eq("type", "expense");
-    if (error) throw error;
+    // [2026-10-03] full check W8: paged with fetchAll. One plain read stops
+    // at 1,000 expense rows, so a rename past that point changed some rows
+    // and left the rest on the old name — two lines on every report.
+    const data = await fetchAll(() => supabase
+      .from("payments").select("id, category").eq("type", "expense"));
     const ids = (data || []).filter((r) => productKey(r.category) === fromKey).map((r) => r.id);
     if (!ids.length) return { renamed: 0 };
 
@@ -3372,6 +3416,35 @@ const rawApi = {
       } catch {
         // A failed lookup must never block a real payment — fall through
         // and insert, which is the behaviour that existed before this.
+      }
+    }
+    // [2026-10-03] full check T2. The guard above was skipped whenever an id
+    // was supplied — which is EVERY payment the offline queue sends, so two
+    // devices finishing the same truck (each with its own payment id) both
+    // paid the farmer. With an id, the server is still asked: is there
+    // already a live payment with this same id, or one on the same
+    // transaction, of the same type and amount, recorded in the last two
+    // minutes? If so that row is returned and nothing new is inserted. As
+    // above, a failed lookup never blocks the payment — it falls through to
+    // the insert exactly as before.
+    if (id && transactionId && amount != null) {
+      try {
+        const { data: sameId } = await supabase
+          .from("payments").select("*").eq("id", id).is("voided_at", null).limit(1);
+        if (sameId && sameId.length) return sameId[0];
+        const cutoff = new Date(getAccurateNow().getTime() - 2 * 60 * 1000).toISOString();
+        const { data: recent } = await supabase
+          .from("payments")
+          .select("*")
+          .eq("transaction_id", transactionId)
+          .eq("type", type)
+          .eq("amount", amount)
+          .is("voided_at", null)
+          .gte("created_at", cutoff)
+          .limit(1);
+        if (recent && recent.length) return recent[0];
+      } catch {
+        // Lookup failed — keep the old behaviour and insert.
       }
     }
     return insertOrFetchExisting("payments", row);

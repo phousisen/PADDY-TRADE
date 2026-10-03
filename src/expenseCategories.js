@@ -58,6 +58,50 @@ export function isCommission(category) {
   return categoryKey(category) === categoryKey(COMMISSION_CATEGORY);
 }
 
+// [2026-10-03] THE ONE CLASSIFIER for the Income Statement's expense lines
+// (full check M4). statements.js used to keep its own keyword list, so the
+// same month had two commission figures: the Daily Book and Expenses counted
+// ថ្លៃកូនដៃ by exact name (isCommission above), the Income Statement and Cash
+// Flow counted anything containing "commission", "broker", "កូនដៃ"… And the
+// tax keyword was a plain substring, so a "Taxi" expense landed on the
+// income-tax line and pushed out the tax worked from the rate.
+//
+// Now:
+//   intermediary  — exactly isCommission(), the same test as the Daily Book.
+//                   Another spelling ("Broker commission", "ចំណាយកូនដៃ") is
+//                   Other everywhere, and is folded into ថ្លៃកូនដៃ on the
+//                   Categories screen if that is what it is.
+//   wages / interest — the keyword lists as before (unchanged figures).
+//   tax           — whole words only: "Tax", "Income tax", "Patent", but not
+//                   "Taxi" or "Taxation office rent". Khmer ពន្ធ only where
+//                   it starts a syllable, so សម្ពន្ធ (where it is a subscript
+//                   cluster inside another word) does not match.
+const WAGE_KEYS = ["wage", "salary", "salaries", "staff", "payroll", "labour", "labor", "ប្រាក់ខែ", "កម្មករ"];
+const INTEREST_KEYS = ["interest", "loan interest", "ការប្រាក់"];
+const TAX_WORDS = ["tax", "taxes", "patent", "patents"];
+const TAX_KHMER = "ពន្ធ";
+const COENG = "្";
+
+function isTaxCategory(key) {
+  const words = key.split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+  if (words.some((w) => TAX_WORDS.includes(w))) return true;
+  for (let at = key.indexOf(TAX_KHMER); at !== -1; at = key.indexOf(TAX_KHMER, at + 1)) {
+    if (at === 0 || key[at - 1] !== COENG) return true;
+  }
+  return false;
+}
+
+/** An expense category → "intermediary" | "wages" | "interest" | "tax" | "other". */
+export function expenseLine(category) {
+  const c = categoryKey(category);
+  if (!c) return "other";
+  if (isCommission(c)) return "intermediary";
+  if (WAGE_KEYS.some((k) => c.includes(k))) return "wages";
+  if (INTEREST_KEYS.some((k) => c.includes(k))) return "interest";
+  if (isTaxCategory(c)) return "tax";
+  return "other";
+}
+
 // [2026-09-23] THE TWO THINGS THE LIST REMEMBERS.
 //
 // SISEN: "we need to be able to edit the category."

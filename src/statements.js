@@ -36,7 +36,9 @@
 
 import { buildDays, rollup, SUM_FIELDS } from "./periodBook.js";
 import { effectiveAdjDateStr } from "./dailyLedger.js";
-import { categoryKey } from "./expenseCategories.js";
+// [2026-10-03] expenseLine, not categoryKey: the classifier is shared now (full check M4).
+import { expenseLine } from "./expenseCategories.js";
+import { statusOf, dayKey } from "./expenseReview.js";
 
 const num = (v) => Number(v) || 0;
 const isActive = (t) => (t.hq_status || "processing") !== "cancelled";
@@ -61,25 +63,16 @@ export function addKnown(...xs) {
 // the Income Statement. It is deliberately generous, matches Khmer as well as
 // English, and anything it does not recognise falls into "other operating
 // expenses" — never silently dropped, which would quietly inflate profit.
-const INTERMEDIARY = ["intermediary", "broker", "commission", "middleman", "កូនដៃ", "ចំណាយកូនដៃ"];
-const WAGES = ["wage", "salary", "salaries", "staff", "payroll", "labour", "labor", "ប្រាក់ខែ", "កម្មករ"];
-const INTEREST = ["interest", "loan interest", "ការប្រាក់"];
-const TAXES = ["tax", "patent", "ពន្ធ"];
-
+//
+// [2026-10-03] The keyword lists that lived here are gone (full check M4).
+// The intermediary line used keyword matching while the Daily Book and
+// Expenses used the exact name, so the two screens showed two different
+// commissions for the same month; and "tax" as a substring put a Taxi
+// expense on the income-tax line. There is now ONE classifier, expenseLine()
+// in expenseCategories.js, and this name is kept so nothing that imports it
+// has to change. See the comment there for the rules.
 export function classifyExpense(category) {
-  // [2026-09-16] Was String(category).trim().toLowerCase(), which does not
-  // see the zero-width characters a Khmer keyboard inserts — so a ថ្លៃកូនដៃ
-  // carrying one failed `.includes("កូនដៃ")` and fell into "other operating
-  // expenses", off the intermediary line entirely. categoryKey() strips them,
-  // the same normalisation the products unique index uses.
-  const c = categoryKey(category);
-  if (!c) return "other";
-  const hit = (list) => list.some((k) => c.includes(k));
-  if (hit(INTERMEDIARY)) return "intermediary";
-  if (hit(WAGES)) return "wages";
-  if (hit(INTEREST)) return "interest";
-  if (hit(TAXES)) return "tax";
-  return "other";
+  return expenseLine(category);
 }
 
 // transaction id -> { paid, remaining }, from the payments ledger rather than
@@ -213,6 +206,8 @@ export function computeStatements({
     adjustments: scopedAdjustments.filter((a) => a.location_id === id),
     locationIds: [id],
   }));
+  // [2026-10-03] By id as well, for the per-station tax below (full check M7).
+  const daysByStationId = new Map([...stationIds].map((id, i) => [id, daysByStation[i]]));
   const period = mergeRollups(daysByStation.map((ds) => rollup(ds.filter((d) => inPeriod(d.date)))));
   const toDate = mergeRollups(daysByStation.map((ds) => rollup(ds)));
 
@@ -261,10 +256,42 @@ export function computeStatements({
   const grossProfit = addKnown(profitBeforeUnknowns, depreciation === null ? null : -depreciation,
                                interest === null ? null : -interest);
 
-  const taxRate = firstSetting(settings, stationIds, "tax_rate_pct");
-  const tax = expP.tax > 0 ? expP.tax
-            : (taxRate === null || grossProfit === null) ? null
-            : Math.max(0, grossProfit) * (num(taxRate) / 100);
+  // [2026-10-03] TAX IS WORKED OUT STATION BY STATION, THEN ADDED (full
+  // check M7). It used to be the group's profit × one shared rate, so
+  // "All stations" was not the stations added up: a station's loss
+  // cancelled another station's profit before the tax (a loss-making
+  // station pays no tax, it does not pay the others' tax), a tax expense
+  // recorded at ONE station replaced the computed tax of all the others,
+  // and two stations with different rates gave no figure at all. Each
+  // station's profit before tax here is exactly what that station's own
+  // Income Statement shows (same depreciation and interest rules), so the
+  // consolidated tax is always the sum of the per-station taxes, and stays
+  // "not entered" if any one of them is. Rule 1 at the top of this file.
+  const taxOfStation = (id) => {
+    const days = daysByStationId.get(id) || [];
+    const p = rollup(days.filter((d) => inPeriod(d.date)));
+    const sSales = periodTxs.filter((t) => t.location_id === id && t.type === "SELL")
+      .reduce((s, t) => s + num(t.amount), 0);
+    const sOther = scopedPays
+      .filter((x) => x.location_id === id && x.type === "other_income" && x.pay_date && inPeriod(x.pay_date))
+      .reduce((s, x) => s + num(x.amount), 0);
+    const sExp = bucket(expensesPeriod.filter((e) => e.location_id === id));
+    const sAssets = scopedAssets === null ? null : scopedAssets.filter((a) => a.location_id === id);
+    const sDep = depreciationFor(sAssets, startDate, endDate);
+    const sLoans = loanEntries
+      .filter((e) => e.location_id === id && notAfterEnd(e.entry_date))
+      .reduce((s, e) => s + (e.type === "borrow" ? num(e.amount) : -num(e.amount)), 0);
+    const sInterest = sExp.interest > 0 ? sExp.interest : (sLoans > 0 ? null : 0);
+    const sBefore = sSales + sOther - num(p.cogs) + num(p.lossValue) - (sExp.intermediary + sExp.wages + sExp.other);
+    const sProfit = addKnown(sBefore, sDep === null ? null : -sDep, sInterest === null ? null : -sInterest);
+    if (sExp.tax > 0) return sExp.tax;
+    const rate = settings?.[id]?.tax_rate_pct;
+    if (rate === null || rate === undefined || rate === "" || sProfit === null) return null;
+    return Math.max(0, sProfit) * (num(rate) / 100);
+  };
+  const tax = stationIds.size === 0
+    ? (expP.tax > 0 ? expP.tax : null)
+    : addKnown(...[...stationIds].map(taxOfStation));
   const netProfit = addKnown(grossProfit, tax === null ? null : -tax);
 
   // =========================================================================
@@ -355,21 +382,28 @@ export function computeStatements({
   // [2026-09-19] "receive_customer" is what a customer's payment is saved as.
   // The old list named types nothing ever saves, so cash collected always
   // read 0 on the Cash Flow.
-  const collected = sumPaymentsInPeriod(scopedPays, inPeriod, ["receive_customer"], sells);
-  const paidOut = sumPaymentsInPeriod(scopedPays, inPeriod, ["pay_supplier"], buys);
+  // [2026-10-03] Each total below is now the sum of a list of rows, and the
+  // lists are returned as cashflow.rows, so the Excel "Cash Flow" sheet
+  // prints the very rows this screen adds up instead of building its own
+  // ledger with its own rules (full check M9). Same filters, same figures.
+  const collectedRows = paymentsInPeriod(scopedPays, inPeriod, ["receive_customer"], sells);
+  const paidOutRows = paymentsInPeriod(scopedPays, inPeriod, ["pay_supplier"], buys);
+  const collected = sumAmounts(collectedRows);
+  const paidOut = sumAmounts(paidOutRows);
   const expensesPaidPeriod = expensesPeriod.reduce((s, e) => s + num(e.amount), 0);
-  const capitalInPeriod = scopedCapital
-    .filter((e) => e.entry_date && inPeriod(e.entry_date))
+  const capitalRows = scopedCapital.filter((e) => e.entry_date && inPeriod(e.entry_date));
+  const capitalInPeriod = capitalRows
     .reduce((s, e) => s + (e.type === "contribution" ? num(e.amount) : 0), 0);
-  const drawingsInPeriod = scopedCapital
-    .filter((e) => e.entry_date && inPeriod(e.entry_date) && e.type !== "contribution")
+  const drawingsInPeriod = capitalRows
+    .filter((e) => e.type !== "contribution")
     .reduce((s, e) => s + num(e.amount), 0);
-  const loansInPeriod = loanEntries
-    .filter((e) => inScope(e.location_id) && e.entry_date && inPeriod(e.entry_date))
+  const loanRows = loanEntries
+    .filter((e) => inScope(e.location_id) && e.entry_date && inPeriod(e.entry_date));
+  const loansInPeriod = loanRows
     .reduce((s, e) => s + (e.type === "borrow" ? num(e.amount) : -num(e.amount)), 0);
-  const assetsBoughtInPeriod = scopedAssets === null ? null
-    : scopedAssets.filter((a) => a.in_service_date && inPeriod(a.in_service_date))
-        .reduce((s, a) => s + num(a.cost), 0);
+  const assetRows = scopedAssets === null ? null
+    : scopedAssets.filter((a) => a.in_service_date && inPeriod(a.in_service_date));
+  const assetsBoughtInPeriod = assetRows === null ? null : assetRows.reduce((s, a) => s + num(a.cost), 0);
 
   const cfOperating = collected - paidOut - expensesPaidPeriod;
   const cfInvesting = assetsBoughtInPeriod === null ? null : -assetsBoughtInPeriod;
@@ -416,12 +450,83 @@ export function computeStatements({
       cfNet,
       openingCash: cash === null || cfNet === null ? null : cash - cfNet,
       closingCash: cash,
+      // [2026-10-03] The rows behind each total above (full check M9).
+      // References to the input rows, nothing copied.
+      rows: {
+        collected: collectedRows, paidOut: paidOutRows, expenses: expensesPeriod,
+        capital: capitalRows, loans: loanRows, assets: assetRows,
+      },
     },
 
     inventory: inventoryByStation({ stations, active, expensesAll, adjustments: scopedAdjustments, inPeriod }),
     shareholders: shareholders({ stations, partners, active, periodTxs, capitalEntries, notAfterEnd, adjustments: scopedAdjustments,
                                  inPeriod, expensesPeriod }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// [2026-10-03] The Cash Flow as a dated list of lines (full check M9)
+// ---------------------------------------------------------------------------
+// The Excel "Cash Flow" sheet used to build its own ledger from the payments
+// table: it restarted the balance at 0 every period, counted payments for
+// sales dated after the period, and looked for capital and loan rows in the
+// payments table, where they are no longer copied. This builds the lines from
+// cashflow.rows — the very rows the screen's totals are made of — so the
+// lines always add up to cashflow.cfNet, and the running balance starts from
+// the screen's opening cash (or from 0, said so, when that is not entered).
+//
+// Returns [{ date, kind, sign, amount, signed, row }], oldest first; `kind`
+// is one of collected · paidOut · expense · capitalIn · drawing · loanIn ·
+// loanOut · asset.
+export function cashFlowLines(cashflow) {
+  const r = cashflow?.rows;
+  if (!r) return [];
+  const out = [];
+  const push = (date, kind, sign, amount, row) =>
+    out.push({ date: date || "", kind, sign, amount: num(amount), signed: sign * num(amount), row });
+  for (const p of r.collected || []) push(p.pay_date, "collected", 1, p.amount, p);
+  for (const p of r.paidOut || []) push(p.pay_date, "paidOut", -1, p.amount, p);
+  for (const p of r.expenses || []) push(p.pay_date, "expense", -1, p.amount, p);
+  for (const e of r.capital || []) {
+    if (e.type === "contribution") push(e.entry_date, "capitalIn", 1, e.amount, e);
+    else push(e.entry_date, "drawing", -1, e.amount, e);
+  }
+  for (const e of r.loans || []) {
+    if (e.type === "borrow") push(e.entry_date, "loanIn", 1, e.amount, e);
+    else push(e.entry_date, "loanOut", -1, e.amount, e);
+  }
+  for (const a of r.assets || []) push(a.in_service_date, "asset", -1, a.cost, a);
+  out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1
+    : String(a.row?.created_at || "") < String(b.row?.created_at || "") ? -1 : 1));
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// [2026-10-03] Expenses counted but not yet confirmed (full check M14)
+// ---------------------------------------------------------------------------
+// The Daily Book and Expenses say "X ៛ of expenses here are not confirmed
+// yet"; the Overview, the Income Statement and the export counted the same
+// expenses with no word. This is the Daily Book's rule (DailyBook.jsx
+// `expDays`): a station-day of expenses is unconfirmed unless its review is
+// "confirmed" and still current — waiting and sent back both count.
+// `reviews` is api.getExpenseReviews(): null means confirmation is not set
+// up, and then there is nothing to say (null comes back).
+export function unconfirmedExpenses({ payments = [], reviews = null, stationIds = [], startDate = null, endDate = null } = {}) {
+  if (!reviews) return null;
+  const ids = new Set(stationIds);
+  const byKey = new Map(reviews.map((v) => [dayKey(v.location_id, String(v.day).slice(0, 10)), v]));
+  const status = new Map();
+  let total = 0;
+  for (const p of payments) {
+    if (p.type !== "expense" || p.voided_at || !p.location_id) continue;
+    if (ids.size && !ids.has(p.location_id)) continue;
+    const day = String(p.pay_date || "").slice(0, 10);
+    if (!day || (startDate && day < startDate) || (endDate && day > endDate)) continue;
+    const k = dayKey(p.location_id, day);
+    if (!status.has(k)) status.set(k, statusOf(byKey.get(k) || null).status === "confirmed");
+    if (!status.get(k)) total += num(p.amount);
+  }
+  return total;
 }
 
 // Add up per-station rollups into one. Flows (what was bought, sold, spent,
@@ -459,23 +564,19 @@ function sumSetting(settings, stationIds, key) {
   return total;
 }
 
-// A setting that is a RATE: never summed. Taken only when every station in
-// scope agrees on it, because there is no such thing as a consolidated tax
-// rate made by adding two rates together.
-function firstSetting(settings, stationIds, key) {
-  const vals = [...stationIds].map((id) => settings?.[id]?.[key]);
-  if (!vals.length || vals.some((v) => v === null || v === undefined || v === "")) return null;
-  const first = Number(vals[0]);
-  return vals.every((v) => Number(v) === first) ? first : null;
-}
+// [2026-10-03] firstSetting() — one tax rate for the whole group, only when
+// every station agreed — was removed: a RATE is applied station by station
+// now and the taxes added (full check M7, see taxOfStation above).
 
-function sumPaymentsInPeriod(pays, inPeriod, types, txs) {
+// [2026-10-03] Returns the ROWS, not just their sum, so the Excel Cash Flow
+// sheet can list exactly the payments this total is made of (full check M9).
+function paymentsInPeriod(pays, inPeriod, types, txs) {
   const ids = new Set(txs.map((t) => t.id));
   return pays
     .filter((p) => types.includes(p.type) && p.transaction_id && ids.has(p.transaction_id)
-                && p.pay_date && inPeriod(p.pay_date))
-    .reduce((s, p) => s + num(p.amount), 0);
+                && p.pay_date && inPeriod(p.pay_date));
 }
+const sumAmounts = (rows) => rows.reduce((s, r) => s + num(r.amount), 0);
 
 // ---------------------------------------------------------------------------
 // Inventory, one row per station plus a consolidated row

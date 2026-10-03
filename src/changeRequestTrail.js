@@ -58,7 +58,7 @@ export function matchDecisions(rows, logs, names = {}) {
       // "before" from the log. A rejected request changed nothing: the ticket
       // as it is now is what it was then.
       before: r.status === "approved" ? (log?.old_data || null) : null,
-      rejectReason: r.reject_reason || log?.new_data?.rejected_reason || null,
+      rejectReason: r.reject_reason || log?.new_data?.reject_reason || log?.new_data?.rejected_reason || null,
       found: !!log,
     });
   }

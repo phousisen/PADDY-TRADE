@@ -423,6 +423,34 @@ export function mergeServerTickets(serverTickets) {
   const carryLocalOnly = (serverRow, localRow) => {
     if (!localRow) return serverRow;
     const out = { ...serverRow };
+    // [2026-10-03] full check T10: gross_source / tare_source are local-only
+    // too (weighing_tickets has no column for them). Kept only while the
+    // server still shows the SAME weight this device recorded — a weight
+    // changed elsewhere, or a tare cleared by Reopen, drops the label.
+    const sameKg = (a, b) => a != null && b != null && Number(a) === Number(b);
+    if (localRow.gross_source && out.gross_source == null && sameKg(out.gross_kg, localRow.gross_kg)) out.gross_source = localRow.gross_source;
+    if (localRow.tare_source && out.tare_source == null && sameKg(out.tare_kg, localRow.tare_kg)) out.tare_source = localRow.tare_source;
+    // [2026-10-03] full check T1. A ticket the HQ admin Reopened from
+    // ANOTHER computer comes back from the server with transaction_id null
+    // and a not-finished stage, but this station's cached copy still
+    // remembered the old (now cancelled) pending_tx_id/code — so the next
+    // Finish here re-sent the cancelled transaction's id
+    // (forgetPendingTransaction only ever ran on the HQ computer that did
+    // the reopen). When this device last knew the ticket as FINISHED and
+    // the server now says it has NO transaction and is not finished, the
+    // remembered pair is dropped and the next Finish mints a fresh one.
+    // Deliberately narrower than "server has no transaction": a ticket SENT
+    // BACK on this device (discardStuckFinalize — local stage weighed_out,
+    // no transaction) keeps its pair, as the 09-11 note above promises,
+    // because the station relay may still deliver that first finish under
+    // the same id. This only runs for a ticket with NO queued work on this
+    // device (see `merged` below), so an unsynced Finish always keeps its id.
+    const localWasFinished = localRow.stage === "finalized" || !!localRow.transaction_id;
+    if (localWasFinished && !serverRow.transaction_id && serverRow.stage !== "finalized") {
+      delete out.pending_tx_id;
+      delete out.pending_tx_code;
+      return out;
+    }
     if (localRow.pending_tx_id && !out.pending_tx_id) out.pending_tx_id = localRow.pending_tx_id;
     if (localRow.pending_tx_code && !out.pending_tx_code) out.pending_tx_code = localRow.pending_tx_code;
     return out;
@@ -1051,6 +1079,9 @@ export function discardStuckFinalize(opId) {
   // pending_tx_id / pending_tx_code are deliberately LEFT on the cached
   // ticket, so a later Finish re-sends the same transaction id — the
   // server then returns the row it already has instead of a twin.
+  // [2026-10-03] full check T1: still true — carryLocalOnly in
+  // mergeServerTickets drops the pair only for a ticket this device knew as
+  // FINISHED that the server shows reopened, never for a sent-back one.
   if (op.ticketId) patchCachedTicket(op.ticketId, { stage: "weighed_out", transaction_id: null });
   return true;
 }
@@ -2084,6 +2115,17 @@ export function trySync() {
             // after the next successful full reload.
             if (result && op.type === "createPayment") {
               upsertCachedPayment(result);
+              // [2026-10-03] full check T2: api.createPayment may now hand
+              // back a twin that already existed on the server (another
+              // device paid the same truck) instead of inserting this one.
+              // This device's local preview of the payment, under its own
+              // id, is then taken out of the payment CACHE so the screen
+              // does not show the money twice. The queue itself is not
+              // touched here beyond the normal removeOp below.
+              const localPayId = op.payload?.id;
+              if (localPayId && result.id && result.id !== localPayId) {
+                writeJSON(PAYMENT_CACHE_KEY, getCachedPayments().filter((p) => p.id !== localPayId));
+              }
             }
             // [2026-09-18] If the op could not be taken OUT of the queue,
             // this pass has not progressed — carrying on would re-read the
@@ -2372,7 +2414,7 @@ export async function resolveProductIdOffline(typedName) {
 // apart from a ticket that was ever going to get one. Now there is only
 // ever one save, so a ticket either exists with its weight already on it,
 // or it doesn't exist yet at all.
-export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg, note }) {
+export function createTicketOffline({ type, locationId, locationName, locationAddress, locationPhone, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg, grossSource, note }) {
   assertNotViewOnly();
   const id = newId();
   const code = genLocalTicketCode();
@@ -2398,6 +2440,10 @@ export function createTicketOffline({ type, locationId, locationName, locationAd
     gross_kg: hasGross ? grossKg : null,
     gross_at: hasGross ? nowIso : null,
     gross_by: hasGross ? userId : null,
+    // [2026-10-03] full check T10: LOCAL-ONLY ("scale" | "typed" | null) —
+    // weighing_tickets has no column for it; it rides on this device's copy
+    // and is written onto the transaction at Finish (finalizeTicketOffline).
+    gross_source: hasGross ? (grossSource || null) : null,
     grossByName: null,
     quality_grade: null, moisture_pct: null, mixture_pct: null, outthrow_pct: null,
     deduction_kg: 0, price_per_kg: null, staff_fee: 0, tax_applicable: false, tax_rate: 10,
@@ -2411,7 +2457,11 @@ export function createTicketOffline({ type, locationId, locationName, locationAd
     created_by: userId, createdByName: null, created_at: nowIso,
   };
   upsertCachedTicket(ticket);
-  enqueueStrict({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg: hasGross ? grossKg : undefined, note: note || undefined } });
+  enqueueStrict({ type: "createTicket", ticketId: id, payload: { id, code, type, locationId, partyId, partyName, phone, bankName, bankAccount, carPlate, driverName, productId, productName, userId, paperTicketNo, bankQrUrl, recordedByName, grossKg: hasGross ? grossKg : undefined, grossAt: hasGross ? nowIso : undefined, note: note || undefined } });
+  // [2026-10-03] full check T4: grossAt (above) carries the weigh-in time
+  // stamped HERE, when the weight was taken, so a ticket weighed offline at
+  // 06:10 and synced at 09:40 still reads 06:10. api.createTicket falls
+  // back to server time for an op queued before this change.
   recordPaperTicketNo(locationId, paperTicketNo);
   trySync();
   return ticket;
@@ -2427,8 +2477,11 @@ function patchCachedTicket(id, patch) {
 
 export function setTicketGrossOffline(id, { grossKg, userId }) {
   assertNotViewOnly();
-  const updated = patchCachedTicket(id, { gross_kg: grossKg, gross_at: getAccurateNow().toISOString(), gross_by: userId, stage: "weighed_in" });
-  enqueueStrict({ type: "setTicketGross", ticketId: id, payload: { grossKg, userId } });
+  // [2026-10-03] full check T4: the weigh-in time is stamped once, here, and
+  // sent with the op — not re-stamped by the server at sync time.
+  const grossAt = getAccurateNow().toISOString();
+  const updated = patchCachedTicket(id, { gross_kg: grossKg, gross_at: grossAt, gross_by: userId, stage: "weighed_in" });
+  enqueueStrict({ type: "setTicketGross", ticketId: id, payload: { grossKg, grossAt, userId } });
   trySync();
   return updated;
 }
@@ -2441,7 +2494,7 @@ export function setTicketGrossOffline(id, { grossKg, userId }) {
 // is queued for whenever the connection allows it. Only the fields that
 // were actually passed in get patched — a caller that only changed the
 // plate number, say, doesn't need to also resend everything else.
-export function editTicketOffline(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, firstWeighIn = false, userId }) {
+export function editTicketOffline(id, { partyId, partyName, phone, carPlate, driverName, productId, productName, paperTicketNo, grossKg, grossSource, firstWeighIn = false, userId }) {
   assertNotViewOnly();
   const patch = {};
   if (partyId !== undefined) patch.party_id = partyId || null;
@@ -2457,6 +2510,8 @@ export function editTicketOffline(id, { partyId, partyName, phone, carPlate, dri
   let grossAt;
   if (grossKg !== undefined) {
     patch.gross_kg = grossKg;
+    // [2026-10-03] full check T10: local-only, see createTicketOffline.
+    patch.gross_source = grossKg == null ? null : (grossSource || null);
     if (firstWeighIn) {
       grossAt = getAccurateNow().toISOString();
       patch.gross_at = grossAt;
@@ -2516,10 +2571,15 @@ export function forgetPendingTransaction(ticketId) {
   patchCachedTicket(ticketId, { pending_tx_id: null, pending_tx_code: null });
 }
 
-export function setTicketTareOffline(id, { tareKg, userId }) {
+export function setTicketTareOffline(id, { tareKg, tareSource, userId }) {
   assertNotViewOnly();
-  const updated = patchCachedTicket(id, { tare_kg: tareKg, tare_at: getAccurateNow().toISOString(), tare_by: userId, stage: "weighed_out" });
-  enqueueStrict({ type: "setTicketTare", ticketId: id, payload: { tareKg, userId } });
+  // [2026-10-03] full check T4: the weigh-out time is stamped once, here,
+  // when the weight was taken, and sent with the op (api.setTicketTare uses
+  // it) — an offline station no longer gets the sync time as weigh-out time.
+  const tareAt = getAccurateNow().toISOString();
+  // [2026-10-03] full check T10: tare_source is local-only, like gross_source.
+  const updated = patchCachedTicket(id, { tare_kg: tareKg, tare_at: tareAt, tare_by: userId, tare_source: tareSource || null, stage: "weighed_out" });
+  enqueueStrict({ type: "setTicketTare", ticketId: id, payload: { tareKg, tareAt, userId } });
   trySync();
   return updated;
 }
@@ -2550,6 +2610,15 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   if (!remembered?.pending_tx_id || !remembered?.pending_tx_code) {
     patchCachedTicket(ticket.id, { pending_tx_id: transactionId, pending_tx_code: transactionCode });
   }
+  // [2026-10-03] full check T10. Whether each weight was captured off the
+  // scale or typed in ("Enter manually"), as this device recorded it on its
+  // copy of the ticket — written onto the transaction the same way the
+  // manual Buy/Sell form does. Only the two values the database's CHECK
+  // allows are ever sent; anything else (a ticket weighed on another PC,
+  // an older cached ticket) is null = "not known", exactly as before.
+  const okSource = (v) => (v === "scale" || v === "typed" ? v : null);
+  const grossSource = okSource(ticket.gross_source ?? remembered?.gross_source);
+  const tareSource = okSource(ticket.tare_source ?? remembered?.tare_source);
   // Same fix as api.js's finalizeTicket (kept in sync with it on purpose):
   // Buy is In minus Out (arrives loaded, leaves empty); Sell is the other
   // way, Out minus In (arrives empty, leaves loaded for delivery).
@@ -2600,7 +2669,7 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   } else {
     finalTransactionId = transactionId;
     finalTransactionCode = transactionCode;
-    const enqueued = enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, txTime, paymentStatus: paymentStatus || null, transactionId, transactionCode, receiptPhotoUrl } });
+    const enqueued = enqueue({ type: "finalizeTicket", ticketId: ticket.id, payload: { userId, txDate, txTime, paymentStatus: paymentStatus || null, transactionId, transactionCode, receiptPhotoUrl, grossSource, tareSource } });
     opId = enqueued.opId;
     persisted = enqueued.persisted;
   }
@@ -2652,6 +2721,8 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   // is untouched: it still prints immediately, with the on-screen
   // "not yet synced" warning, and syncs when the connection returns.
   let needsVerification = false;
+  // [2026-10-03] full check T2: the server's own row, when it confirmed one.
+  let serverTxRow = null;
   if (navigator.onLine) {
     const deadline = Date.now() + FINISH_SYNC_TIMEOUT_MS;
     let confirmed = !isOpQueued(opId); // e.g. a previous attempt already got it synced between attempts
@@ -2701,6 +2772,7 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
     if (serverTx) {
       finalTransactionId = serverTx.id;
       finalTransactionCode = serverTx.code || finalTransactionCode;
+      serverTxRow = serverTx;
     }
   } else {
     trySync();
@@ -2712,6 +2784,36 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
   tx.needs_verification = needsVerification;
   tx.id = finalTransactionId;
   tx.code = finalTransactionCode;
+  // [2026-10-03] full check T2. When the server answered with a transaction
+  // that ALREADY existed (another device finished the same truck, or an
+  // earlier attempt completed), only the id/code used to be taken from it —
+  // the receipt and the cash payment WeighingTickets.jsx records right after
+  // this still used THIS device's weights, price and amount. Everything the
+  // money is worked out from now comes from the server row too. The amounts
+  // the raw row does not carry (payable/tax/total) are re-worked from the
+  // server's own numbers with the same formula as above. Display-only names
+  // still come from the local copy (the raw row has none).
+  if (serverTxRow) {
+    const SERVER_FIELDS = [
+      "tx_date", "tx_time", "location_id", "party_id", "product_id",
+      "gross_kg", "gross_at", "tare_kg", "tare_at", "gross_source", "tare_source",
+      "quantity_kg", "station_quantity_kg", "station_price_per_kg",
+      "quality_grade", "moisture_pct", "mixture_pct", "outthrow_pct", "deduction_kg",
+      "price_per_kg", "staff_fee", "tax_applicable", "tax_rate", "amount",
+      "payment_status", "status", "hq_status", "paper_ticket_no", "created_by",
+    ];
+    for (const k of SERVER_FIELDS) {
+      if (serverTxRow[k] !== undefined) tx[k] = serverTxRow[k];
+    }
+    if (serverTxRow.amount !== undefined && serverTxRow.amount !== null) {
+      const sAmount = Number(serverTxRow.amount) || 0;
+      const sTax = tx.tax_applicable ? Math.round(sAmount * (Number(tx.tax_rate) || 0)) / 100 : 0;
+      tx.amount = sAmount;
+      tx.payable_kg = Math.max(0, (Number(tx.quantity_kg) || 0) - (Number(tx.deduction_kg) || 0));
+      tx.tax_amount = serverTxRow.tax_amount ?? sTax;
+      tx.total_with_tax = serverTxRow.total_with_tax ?? (sAmount + (Number(tx.tax_amount) || 0));
+    }
+  }
   upsertCachedTransaction(tx);
   return tx;
 
@@ -2747,6 +2849,8 @@ export async function finalizeTicketOffline(ticket, { userId, txDate, receiptPho
     gross_at: ticket.gross_at,
     tare_kg: ticket.tare_kg,
     tare_at: ticket.tare_at,
+    gross_source: grossSource, // [2026-10-03] full check T10
+    tare_source: tareSource,
     quantity_kg: netKg,
     // Sell-only snapshot of the truck's own weigh-out weight/price at the
     // moment this ticket was finished — mirrors api.js's createTransaction,

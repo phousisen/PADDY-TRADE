@@ -351,7 +351,7 @@ export function AuthProvider({ children }) {
         await supabase.rpc("touch_last_seen");
         const { data } = await supabase
           .from("profiles")
-          .select("logout_requested_at, role_id, view_only, location_id")
+          .select("logout_requested_at, role_id, view_only, location_id, roles(scope, permissions, view_only)")
           .eq("id", session.user.id)
           .single();
         // [2026-09-19] Picks up a change of role, station or view-only within
@@ -362,7 +362,13 @@ export function AuthProvider({ children }) {
         if (!cancelled && data && (!cur ||
             (cur.role_id ?? null) !== (data.role_id ?? null) ||
             !!cur.view_only !== !!data.view_only ||
-            (cur.location_id ?? null) !== (data.location_id ?? null))) {
+            (cur.location_id ?? null) !== (data.location_id ?? null) ||
+            // [2026-10-03] The ROLE itself changing — its ticks, its
+            // view-only switch or its station access — now reaches people
+            // already signed in within 20 s too (full check U2).
+            !!cur.roles?.view_only !== !!data.roles?.view_only ||
+            (cur.roles?.scope ?? null) !== (data.roles?.scope ?? null) ||
+            [...(cur.permissions || [])].sort().join(",") !== [...(data.roles?.permissions || [])].sort().join(","))) {
           loadProfile(session.user.id).catch(() => {});
         }
         if (!cancelled && data?.logout_requested_at && new Date(data.logout_requested_at) > openedAtRef.current) {

@@ -31,7 +31,9 @@ export function isViewOnlyMode() {
 
 export class ViewOnlyError extends Error {
   constructor() {
-    super("This account is set to view-only — it can look at everything, but can't save any changes.");
+    // [2026-10-03] full check U15 — thrown far from React, so it carries both
+    // languages in one string, like the database's own error messages.
+    super("This account is set to view-only — it can look at everything, but can't save any changes. / គណនីនេះកំណត់ឲ្យមើលបានតែប៉ុណ្ណោះ — អាចមើលអ្វីៗទាំងអស់ ប៉ុន្តែមិនអាចរក្សាទុកការកែប្រែណាមួយបានទេ។");
     this.name = "ViewOnlyError";
   }
 }
