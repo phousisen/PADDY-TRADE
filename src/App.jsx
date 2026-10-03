@@ -228,7 +228,9 @@ export default function App() {
   // a Staff account with the "View Financial Reports" permission (granted
   // via Settings -> Roles) is allowed in, scoped to their own location by
   // Supabase RLS. See canViewReports below.
-  const canViewReports = !isStaff || hasPermission("view_reports");
+  // [2026-10-03] full check U5: an HQ role without "View Financial Reports"
+  // ticked no longer sees them (every current HQ role is ticked).
+  const canViewReports = (!isStaff && can("view_reports")) || hasPermission("view_reports");
   // [2026-09-15] Hiding a nav row is not access control — these are the route
   // gates, so typing the address in does nothing either. Same capability
   // helper as the sidebar, so the two can never disagree.
@@ -280,7 +282,7 @@ export default function App() {
     // [2026-09-23] Moved out of Finance → Setup into SYSTEM, where it belongs:
     // nothing in it is money. Same audience as before — HQ admins and the
     // view-only account, who could already reach it through Finance.
-    if (page === "activity-log") return (isAdmin || isViewOnly) ? <ActivityLog /> : <PermissionDenied />;
+    if (page === "activity-log") return (isAdmin || isViewOnly) && can("view_audit_log") ? <ActivityLog /> : <PermissionDenied />;
     // [2026-09-09] Data Check — same permission as Financial Reports, since
     // it is the screen finance uses to trust the stock and weight figures
     // before anything else is believed. See DataCheck.jsx for the CN 000261
