@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Warehouse, Scale, Eye, EyeOff, X, Lock } from "lucide-react";
 import { api } from "../api.js";
+import { getAccurateNow } from "../supabaseClient.js";
 import { describeReset } from "../stockReset.js";
 import { dmy, dmyTime } from "../dateFormat.js";
 import StockCountModal from "./StockCountModal.jsx";
@@ -71,10 +72,25 @@ export default function StationStockCard({ station, adjustments = [], priceSugge
 
   // The last count that actually changed the stock — that is what a count
   // leaves behind, whether it applied itself or HQ approved it.
-  const lastCount = adjustments
+  //
+  // [2026-10-03] Looked up for this station on its own (last 60 days). The
+  // Dashboard only hands this card the counts of the period on screen —
+  // Today by default — so yesterday's count read "No stock count recorded
+  // yet" (full check S8).
+  const [ownCounts, setOwnCounts] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    const since = new Date(getAccurateNow().getTime() - 60 * 86400000).toISOString().slice(0, 10);
+    api.getStockAdjustments({ locationId: stationId, startDate: since })
+      .then((rows) => { if (alive) setOwnCounts(rows || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [stationId, adjustments]);
+  const lastCount = [...adjustments, ...ownCounts]
     .filter((a) => a.location_id === stationId && a.created_at)
     .reduce((latest, a) => (!latest || a.created_at > latest.created_at ? a : latest), null);
-  const countedToday = lastCount && dmy(lastCount.created_at) === dmy(new Date().toISOString());
+  // Cambodia's corrected clock, not the PC's own (full check U12).
+  const countedToday = lastCount && dmy(lastCount.created_at) === dmy(getAccurateNow().toISOString());
 
   async function withdrawFromCard() {
     if (!pending) return;

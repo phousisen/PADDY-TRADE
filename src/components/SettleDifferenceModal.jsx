@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Scale, AlertTriangle, BookOpen } from "lucide-react";
 import { supabase } from "../supabaseClient.js";
 import { useAuth } from "../AuthContext.jsx";
+import { api } from "../api.js";
+import { dmy } from "../dateFormat.js";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -73,7 +75,7 @@ function khDaysAgo(n) { return khDate(new Date(Date.now() - n * 86400000)); }
 // The rule is unchanged, in other words; only the dead end is gone.
 const OVERRIDE_MIN_REASON = 15;
 
-export default function SettleDifferenceModal({ station, onHandKg, floor, priceSuggestion, t, onClose, onSubmit }) {
+export default function SettleDifferenceModal({ station, onHandKg, forDate, floor, priceSuggestion, t, onClose, onSubmit }) {
   const { session, profile, isViewOnly } = useAuth();
   const mayOverride = !isViewOnly && (!!profile?.isOwner || profile?.role === "admin");
   const [ovReason, setOvReason] = useState("");
@@ -82,11 +84,9 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
   const shortBy = Math.max(0, OVERRIDE_MIN_REASON - ovReason.trim().length);
   const today = khDate();
   const yesterday = khDaysAgo(1);
-  const oldestAllowed = khDaysAgo(7);
-  const previous = Number(onHandKg) || 0;
-  const gapKg = Math.abs(previous);           // what has to appear to reach 0
-  const allowed = canSettle(previous, floor);
-
+  // [2026-10-03] The Owner may settle any day (the database allows it for
+  // the Owner only); everyone else keeps the last seven days.
+  const oldestAllowed = profile?.isOwner ? "" : khDaysAgo(7);
   const [reason, setReason] = useState("moisture");
   const [note, setNote] = useState("");
   // [2026-09-12] WHICH DAY THIS COUNTS AGAINST.
@@ -104,9 +104,31 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
   // Bounded to the last week and never the future: this moves which day a
   // number lands on, so it must not be able to reach back into a month
   // that has been closed and reported.
-  const [effectiveDate, setEffectiveDate] = useState(today);
+  //
+  // [2026-10-03] It starts on the DAY BEING LOOKED AT (forDate — the last day
+  // of the Dashboard period), not on today. Starting on today meant that
+  // settling Yesterday's −300 from the Dashboard wrote the stock off against
+  // today, wiping whatever today had bought (full check S1).
+  const [effectiveDate, setEffectiveDate] = useState(forDate && forDate <= today ? forDate : today);
+  // The closing stock of the chosen day, from the stock ledger — the same
+  // figure the Dashboard row shows. Re-read whenever the day changes, so the
+  // gap on screen is always the gap of the day it will be booked on.
+  const [dayStock, setDayStock] = useState({ date: forDate || today, kg: Number(onHandKg) || 0 });
+  useEffect(() => {
+    if (dayStock.date === effectiveDate) return;
+    let alive = true;
+    api.getStockAtClose(effectiveDate)
+      .then((m) => { if (alive) setDayStock({ date: effectiveDate, kg: m.has(station.id) ? m.get(station.id) : null }); })
+      .catch(() => { if (alive) setDayStock({ date: effectiveDate, kg: null }); });
+    return () => { alive = false; };
+  }, [effectiveDate, station.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dayKnown = dayStock.date === effectiveDate && dayStock.kg != null;
+  const previous = dayKnown ? Number(dayStock.kg) || 0 : 0;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const gapKg = Math.abs(previous);           // what has to appear to reach 0
+  const allowed = dayKnown && canSettle(previous, floor);
 
   const price = priceSuggestion != null ? Number(priceSuggestion.price) : null;
   const valueRiel = price != null && Number.isFinite(price) ? gapKg * price : null;
@@ -118,6 +140,7 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
   const pctOfFloor = floor && floor.floorKg > 0 ? Math.round((gapKg / floor.floorKg) * 100) : null;
 
   async function submit() {
+    if (!dayKnown) return;
     setError("");
     setSaving(true);
     try {
@@ -139,7 +162,7 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
   }
 
   async function submitOverride() {
-    if (shortBy > 0 || !ovPassword || ovBusy) return;
+    if (shortBy > 0 || !ovPassword || ovBusy || !dayKnown) return;
     setError("");
     setOvBusy(true);
     try {
@@ -171,8 +194,8 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
 
         <div className="mb-3 rounded-lg border border-slate-200 px-3 py-1 text-sm">
           <div className="flex justify-between border-b border-slate-100 py-2">
-            <span className="text-slate-500">{t("adj_system_shows")}</span>
-            <span className="font-semibold tabular-nums text-rose-600">−{fmt2(gapKg)} kg</span>
+            <span className="text-slate-500">{effectiveDate !== today ? t("adj_stock_at_close", { date: dmy(effectiveDate) }) : t("adj_system_shows")}</span>
+            <span className="font-semibold tabular-nums text-rose-600">{dayKnown ? `${previous < 0 ? "−" : ""}${fmt2(gapKg)} kg` : t("loading_label")}</span>
           </div>
           <div className="flex justify-between border-b border-slate-100 py-2">
             <span className="text-slate-500">{t("adj_setting_to")}</span>
@@ -186,7 +209,7 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
           </div>
         </div>
 
-        {allowed ? (
+        {!dayKnown ? null : allowed ? (
           <>
             {/* The money, which the old modal never showed for a gain — a
                 heavier weigh-out than weigh-in is real value in your favour
@@ -224,12 +247,12 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
                 className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${effectiveDate === yesterday ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                 {t("settle_date_yesterday")}
               </button>
-              <input type="date" value={effectiveDate} min={oldestAllowed} max={today}
-                onChange={(e) => { if (e.target.value >= oldestAllowed && e.target.value <= today) setEffectiveDate(e.target.value); }}
+              <input type="date" value={effectiveDate} min={oldestAllowed || undefined} max={today}
+                onChange={(e) => { if (e.target.value && e.target.value >= oldestAllowed && e.target.value <= today) setEffectiveDate(e.target.value); }}
                 className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
             </div>
             <p className="mb-3 text-[11.5px] leading-relaxed text-slate-400">
-              {effectiveDate === today ? t("settle_date_help_today") : t("settle_date_help_past", { date: effectiveDate })}
+              {effectiveDate === today ? t("settle_date_help_today") : t("settle_date_help_past", { date: dmy(effectiveDate) })}
             </p>
 
             <label className="mb-1 block text-xs font-medium text-slate-500">{t("settle_note_label")}</label>
@@ -256,7 +279,7 @@ export default function SettleDifferenceModal({ station, onHandKg, floor, priceS
           </div>
         )}
 
-        {!allowed && mayOverride && (
+        {dayKnown && !allowed && mayOverride && (
           <div className="mb-3 rounded-lg border border-gold-300 bg-gold-50 px-3 py-3">
             <p className="text-[12.5px] font-bold text-gold-700">{t("settle_ov_title")}</p>
             <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-600">{t("settle_ov_body", { kg: fmt(gapKg) })}</p>

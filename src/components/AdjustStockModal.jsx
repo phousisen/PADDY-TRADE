@@ -70,7 +70,7 @@ export function reasonLabel(t, value) {
 // press "Capture This Weight" while the scale is live. Admin/Owner logins
 // still get a small emergency "Enter manually" override if the scale
 // itself is down.
-export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEmail, onClose, onSubmit }) {
+export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEmail, onClose, onSubmit, forDate }) {
   const { profile } = useAuth();
   const [{ khToday, khYesterday, khWeekAgo }] = useState(() => ({
     khToday: khDate(), khYesterday: khDaysAgo(1), khWeekAgo: khDaysAgo(7),
@@ -105,7 +105,10 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
   // was passing one. Seven days back is the same limit the settle screen
   // uses — far enough for "we did it the next morning", short enough that
   // nobody quietly re-writes last month.
-  const [effectiveDate, setEffectiveDate] = useState(khToday);
+  // [2026-10-03] Opened from a Dashboard row for a past day, it starts on
+  // that day — the figure the row showed — rather than on today.
+  const [effectiveDate, setEffectiveDate] = useState(
+    forDate && forDate < khToday && (!khOldestAllowed || forDate >= khOldestAllowed) ? forDate : khToday);
   // [2026-10-03] WHAT THE BOOKS SAID AT THE END OF THE CHOSEN DAY.
   //
   // A count for a past day is compared with that day's closing stock, not
