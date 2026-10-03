@@ -1567,6 +1567,14 @@ export default function Transactions({ setPage }) {
   // Pay, Edit, Cancel, Restore and Confirm Sale were gated on isAdmin only,
   // which is also true for the view-only "boss" login (audit).
   const canAct = isAdmin && !isViewOnly;
+  // [2026-10-03] The Roles page ticks now count (full check U1). They can
+  // only NARROW what an HQ login could already do — a tick never gives a
+  // station a button it did not have. Every current HQ role is ticked for
+  // all three, so nobody loses anything today.
+  const canPay = canAct && can("record_payments");
+  const canEditTx = canAct && can("edit_transactions");
+  const canCancelTx = canAct && can("cancel_transactions");
+  const canRequestChange = !isViewOnly && can("request_changes");
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
   // [2026-09-09] { transactionId: { edit_count, last_changed_at } } for the
@@ -2495,7 +2503,7 @@ export default function Transactions({ setPage }) {
                       ) : isUnpriced ? (
                         <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700" title="Finished without an agreed price — set the price in Edit, then the amount owed appears here.">{t("tx_no_price_yet")}</span>
                       ) : remaining > 0.01 ? (
-                        canAct ? (
+                        canPay ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </button>
@@ -2541,16 +2549,16 @@ export default function Transactions({ setPage }) {
                             </button>
                           )}
                         </div>
-                        {isViewOnly ? null : isAdmin ? (
+                        {isViewOnly ? null : canEditTx ? (
                           <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-brand-300 hover:text-brand-700">
                             <Pencil size={12} /> {t("tx_edit")}
                           </button>
-                        ) : (
+                        ) : !canRequestChange ? null : (
                           <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-amber-300 hover:text-amber-600">
                             <Flag size={12} /> {t("request_change")}
                           </button>
                         )}
-                        {canAct && (
+                        {canCancelTx && (
                           isCancelled ? (
                             <button onClick={() => restoreTransaction(tx)} title={t("tx_t_uncancel")} className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-500 hover:border-emerald-300 hover:text-emerald-700">
                               <Undo2 size={12} /> {t("tx_restore")}
@@ -2722,7 +2730,7 @@ export default function Transactions({ setPage }) {
                       ) : isUnpriced ? (
                         <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700">{t("hq_unpriced")}</span>
                       ) : remaining > 0.01 ? (
-                        canAct ? (
+                        canPay ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {t("tx_due", { amount: fmtRiel(remaining) })}
                           </button>
@@ -2778,12 +2786,12 @@ export default function Transactions({ setPage }) {
                     </div>
                     <button onClick={() => setPhotosTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Camera size={12} /> {t("btn_photos")} ({photoCount})</button>
                     <button onClick={() => setViewPaymentsTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Wallet size={12} /> {t("btn_payments")}</button>
-                    {isViewOnly ? null : isAdmin ? (
+                    {isViewOnly ? null : canEditTx ? (
                       <button onClick={() => setEditTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Pencil size={12} /> {t("btn_edit")}</button>
-                    ) : (
+                    ) : !canRequestChange ? null : (
                       <button onClick={() => setRequestTx(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Flag size={12} /> {t("request_change")}</button>
                     )}
-                    {canAct && (
+                    {canCancelTx && (
                       isCancelled ? (
                         <button onClick={() => restoreTransaction(tx)} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-slate-500"><Undo2 size={12} /> {t("btn_restore")}</button>
                       ) : (
