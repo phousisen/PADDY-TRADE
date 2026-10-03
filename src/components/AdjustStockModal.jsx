@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Scale, RotateCcw, AlertTriangle } from "lucide-react";
 import WeightField from "./WeightField.jsx";
 import { supabase } from "../supabaseClient.js";
+import { api } from "../api.js";
+import { useAuth } from "../AuthContext.jsx";
+import { dmy } from "../dateFormat.js";
 
 function fmt(n) { return new Intl.NumberFormat("en-US").format(Math.round(n || 0)); }
 function fmt2(n) { return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n || 0); }
@@ -16,9 +19,10 @@ function khDate(d = new Date()) {
   return `${p.year}-${p.month}-${p.day}`;
 }
 function khDaysAgo(n) { return khDate(new Date(Date.now() - n * 86400000)); }
-const khToday = khDate();
-const khYesterday = khDaysAgo(1);
-const khOldestAllowed = khDaysAgo(7);
+// [2026-10-03] Today / Yesterday / the oldest day are worked out when the
+// screen OPENS, inside the component. They used to be worked out once when
+// the app loaded, so a tab left open for days still said "Today 30/09" on
+// 3 Oct and the oldest pickable day crept out of date (daily check #11).
 
 // [2026-08-31] Pulled out of StockInventory.jsx (unchanged behavior) so
 // LocationDetail.jsx can reuse the exact same modal instead of duplicating
@@ -67,7 +71,17 @@ export function reasonLabel(t, value) {
 // still get a small emergency "Enter manually" override if the scale
 // itself is down.
 export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEmail, onClose, onSubmit }) {
-  const previous = Number(station.current_stock_kg) || 0;
+  const { profile } = useAuth();
+  const [{ khToday, khYesterday, khWeekAgo }] = useState(() => ({
+    khToday: khDate(), khYesterday: khDaysAgo(1), khWeekAgo: khDaysAgo(7),
+  }));
+  // [2026-10-03] SISEN: "i wanted to select on 15th of september reset
+  // because those are the time those station didnt use our system so we
+  // typed in each transaction". The Owner may date a count to any day —
+  // the database allows it for the Owner only. Everyone else keeps the
+  // seven days this screen has always had.
+  const isOwner = !!profile?.isOwner;
+  const khOldestAllowed = isOwner ? "" : khWeekAgo;
   // [2026-09-01] Starts blank, not prefilled with the old stock number —
   // this has to be a fresh reading someone actually captured off the
   // scale, not a number that happens to already be sitting in the box.
@@ -92,6 +106,31 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
   // uses — far enough for "we did it the next morning", short enough that
   // nobody quietly re-writes last month.
   const [effectiveDate, setEffectiveDate] = useState(khToday);
+  // [2026-10-03] WHAT THE BOOKS SAID AT THE END OF THE CHOSEN DAY.
+  //
+  // A count for a past day is compared with that day's closing stock, not
+  // with today's (the database does the same — see api.recordStockAdjustment).
+  // Read from the stock ledger, the same figure the Dashboard's On hand
+  // shows for that day. For today it is simply the stock right now.
+  const [dayStock, setDayStock] = useState({ date: null, kg: null, failed: false });
+  useEffect(() => {
+    let alive = true;
+    setDayStock({ date: null, kg: null, failed: false });
+    api.getStockAtClose(effectiveDate)
+      .then((m) => {
+        if (!alive) return;
+        if (m.has(station.id)) setDayStock({ date: effectiveDate, kg: m.get(station.id), failed: false });
+        else setDayStock({ date: effectiveDate, kg: null, failed: true });
+      })
+      .catch(() => { if (alive) setDayStock({ date: effectiveDate, kg: null, failed: true }); });
+    return () => { alive = false; };
+  }, [effectiveDate, station.id]);
+  const isPastDay = effectiveDate !== khToday;
+  const dayReady = dayStock.date === effectiveDate && dayStock.kg != null;
+  // Today falls back to the figure the screen was opened with; a past day
+  // has no fallback — saving waits until its real closing figure is known.
+  const previous = dayReady ? dayStock.kg : (isPastDay ? 0 : (Number(station.current_stock_kg) || 0));
+  const dayUnknown = isPastDay && !dayReady;
   // Defaults to "moisture" — this is the overnight-drying case (paddy left
   // in stock overnight loses weight before it's re-weighed the next
   // morning), still fully editable to "reset" (nothing physically left —
@@ -123,7 +162,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
   const price = parseFloat(priceInput);
   const hasPrice = priceInput.trim() !== "" && Number.isFinite(price) && price >= 0;
   const valueLost = isLoss && hasPrice ? Math.abs(delta) * price : null;
-  const canSubmit = !saving && hasValidNext;
+  const canSubmit = !saving && hasValidNext && !dayUnknown;
 
   // One tap for the daily habit this was built for: today's leftover stock
   // becomes 0, reason defaults to the dedicated "reset" option, and the
@@ -185,7 +224,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
           <p className="mb-4 text-xs text-slate-400">{t("adj_reason_prefix", { reason: reasonLabel(t, "reset") })}</p>
 
           <div className="mb-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
-            <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">{t("adj_system_shows")}</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
+            <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">{isPastDay ? t("adj_stock_at_close", { date: dmy(effectiveDate) }) : t("adj_system_shows")}</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
             <div className="flex justify-between pt-2"><span className="text-slate-500">{t("adj_setting_to")}</span><span className="font-medium text-slate-700">{fmt2(next)} kg</span></div>
           </div>
 
@@ -226,8 +265,13 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
         <p className="mb-4 text-xs text-slate-400">{t("adj_subtitle")}</p>
 
         <div className="mb-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5 text-sm">
-          <div><span className="text-slate-500">{t("adj_system_shows")}</span> <span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
-          {previous > 0 && (
+          <div>
+            <span className="text-slate-500">{isPastDay ? t("adj_stock_at_close", { date: dmy(effectiveDate) }) : t("adj_system_shows")}</span>{" "}
+            <span className="font-medium text-slate-700">
+              {dayUnknown ? (dayStock.failed ? t("adj_day_unknown") : t("loading_label")) : `${fmt2(previous)} kg`}
+            </span>
+          </div>
+          {!dayUnknown && previous > 0 && (
             <button type="button" onClick={useResetToZero} className="flex items-center gap-1 rounded-md border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">
               <RotateCcw size={11} /> {t("adj_reset_to_zero")}
             </button>
@@ -247,7 +291,8 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
 
         {/* [2026-09-24] Which day it counts against. Two buttons for the case
             that actually happens — "we closed it the next morning" — and a
-            date box for anything else, seven days back at most. */}
+            date box for anything else — seven days back, or any day for the
+            Owner. */}
         <label className="mb-1 block text-xs text-slate-500">{t("settle_date_label")}</label>
         <div className="mb-1 flex flex-wrap gap-2">
           <button type="button" onClick={() => setEffectiveDate(khToday)}
@@ -258,12 +303,12 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
             className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${effectiveDate === khYesterday ? "border-brand-600 bg-brand-50 text-brand-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
             {t("settle_date_yesterday")}
           </button>
-          <input type="date" value={effectiveDate} min={khOldestAllowed} max={khToday}
-            onChange={(e) => { if (e.target.value >= khOldestAllowed && e.target.value <= khToday) setEffectiveDate(e.target.value); }}
+          <input type="date" value={effectiveDate} min={khOldestAllowed || undefined} max={khToday}
+            onChange={(e) => { if (e.target.value && e.target.value >= khOldestAllowed && e.target.value <= khToday) setEffectiveDate(e.target.value); }}
             className="rounded-lg border border-slate-200 px-2 py-1.5 text-xs outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
         </div>
         <p className="mb-3 text-[11.5px] leading-relaxed text-slate-400">
-          {effectiveDate === khToday ? t("settle_date_help_today") : t("settle_date_help_past", { date: effectiveDate })}
+          {effectiveDate === khToday ? t("settle_date_help_today") : t("adj_date_help_past", { date: dmy(effectiveDate) })}
         </p>
 
         {hasValidNext && (
