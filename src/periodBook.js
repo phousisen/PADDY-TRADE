@@ -40,7 +40,7 @@ export const SUM_FIELDS = [
   "boughtKg", "spent",
   "sellLoads", "soldKg", "received", "cogs",
   "commission", "otherExp", "expenses",
-  "lostKg", "lostValue",
+  "lostKg", "lostValue", "startKg",
   "shortfallKg", "shortfallValue", "resetWriteOff",
 ];
 
@@ -137,6 +137,11 @@ export function buildDays({ txs = [], payments = [], adjustments = [], locationI
     if (!inScope(a.location_id) || !a.created_at) continue;
     const b = bucket(effectiveAdjDateStr(a));
     b.lostKg += num(a.adjustment_kg);
+    // [2026-10-03] A "starting count" (reason "opening") sets the real figure
+    // after old records were typed in by hand. The kilos move like any count,
+    // but it is NOT paddy lost or found, so it carries no value and never
+    // touches profit — see `startKg` in the walk below.
+    if (a.reason === "opening") b.startKg += num(a.adjustment_kg);
     b.counted = true;
   }
 
@@ -205,17 +210,34 @@ export function buildDays({ txs = [], payments = [], adjustments = [], locationI
 
     // A count: a loss comes out of the shed (and below zero, into the
     // deficit); a gain fills the deficit first, then the shed.
-    d.lostValue = d.lostKg * cost;
-    if (d.lostKg >= 0) {
-      const gainIn = takeIn(d.lostKg);
+    // Real counts (losses/gains) are valued; a starting count is not.
+    const countKg = d.lostKg - d.startKg;
+    d.lostValue = countKg * cost;
+    if (countKg >= 0) {
+      const gainIn = takeIn(countKg);
       poolKg += gainIn;
       poolValue += gainIn * cost;
-      fillValue += (d.lostKg - gainIn) * cost;
+      fillValue += (countKg - gainIn) * cost;
     } else {
-      const out = Math.min(poolKg, -d.lostKg);
+      const out = Math.min(poolKg, -countKg);
       poolKg -= out;
       poolValue += d.lostValue;               // as before; an over-loss is written off below
-      deficitKg += -d.lostKg - out;
+      deficitKg += -countKg - out;
+    }
+    // The starting count: kilos only. Paddy it removes leaves the shed's value
+    // as a write-off (not a loss, not in profit); paddy it adds comes in at
+    // the day's cost and is balanced the same way, so the money still ties out.
+    if (d.startKg < 0) {
+      const out = Math.min(poolKg, -d.startKg);
+      fillValue += out * cost;
+      poolKg -= out;
+      poolValue -= out * cost;
+      deficitKg += -d.startKg - out;
+    } else if (d.startKg > 0) {
+      const inKg = takeIn(d.startKg);
+      poolKg += inKg;
+      poolValue += inKg * cost;
+      fillValue -= inKg * cost;
     }
 
     // A shed that empties resets clean — no stale cost drifts into tomorrow.

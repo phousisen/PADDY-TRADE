@@ -188,6 +188,7 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
     ["Balance Sheet — Assets", "Amount (៛)"],
     ["Inventory on hand", round2(bal.inventoryValue)],
     ["Accounts Receivable", round2(bal.accountsReceivable)],
+    ...((bal.overpaidToFarmers || 0) > 0.5 ? [["Overpaid to farmers (to get back)", round2(bal.overpaidToFarmers)]] : []),
     // [2026-10-03] The Balance Sheet's cash: the opening balance plus every
     // movement since (full check M1). Without an opening balance it is "not
     // entered", and the movement is on the next line.
@@ -199,6 +200,7 @@ export function buildReportWorkbook({ txs, payments, adjustments = [], stations,
     [],
     ["Balance Sheet — Liabilities", "Amount (៛)"],
     ["Accounts Payable", round2(bal.accountsPayable)],
+    ...((bal.overpaidByBuyers || 0) > 0.5 ? [["Overpaid by buyers (to give back)", round2(bal.overpaidByBuyers)]] : []),
     ["Bank Loans Outstanding", round2(bal.loansOutstanding)],
     ["VAT owed (net)", round2(bal.vatNet)],
     ["Total Liabilities", round2(bal.totalLiabilities)],

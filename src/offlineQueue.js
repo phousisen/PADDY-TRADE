@@ -1168,6 +1168,16 @@ function dropOpsForGoneTransaction(txId) {
       if (op.payload?.tableName === "payments" && doomedPaymentIds.has(op.payload?.recordId)) doomed.add(op._id);
     }
   }
+  // [2026-10-06] Daily check #34. The payment's QUEUED copy went, but its
+  // copy in this device's payment cache stayed. Finish again (a sent-back
+  // ticket re-uses the same purchase id) then found that leftover copy in
+  // createPaymentOffline's twin check, took it for the payment, and saved
+  // nothing — the farmer was paid cash but showed as still owed. The cached
+  // copy now goes with the queued one. Any payment the server really has is
+  // still found there: api.createPayment asks the server before inserting.
+  const cachedPays = getCachedPayments();
+  const keptPays = cachedPays.filter((p) => !doomedPaymentIds.has(p.id) && p.transaction_id !== txId);
+  if (keptPays.length !== cachedPays.length) writeJSON(PAYMENT_CACHE_KEY, keptPays);
   if (!doomed.size) return;
   mutateQueue((q) => q.filter((o) => !doomed.has(o._id)));
   for (const id of doomed) stuckOps.delete(id);
@@ -2305,14 +2315,31 @@ export async function resolvePartyIdOffline(typedName, type, locationId, extra =
   // buyer/seller already on file at a different location would silently
   // get reused here, quietly attaching this station's ticket to another
   // station's party record (and its bank details, phone, history, etc).
-  const cachedMatch = getCachedParties().find(
-    (p) => p.type === type && (!locationId || p.location_id === locationId) && (p.name || "").trim().toLowerCase() === trimmed.toLowerCase()
-  );
+  // [2026-10-06] Daily check #35 (8 Sep audit #8): the same NAME is not the
+  // same PERSON. Two farmers can share a name at one station, and matching
+  // on the name alone joined a new "Sok Chea" with a different phone onto
+  // the old one — his loads, his bank account, his money. When a phone is
+  // typed it now decides: the same name with the same phone is him; the
+  // same name with no phone on file is still taken to be him (nothing says
+  // otherwise); the same name with a DIFFERENT phone is someone else.
+  const digits = (v) => String(v || "").replace(/\D/g, "");
+  const typedPhone = digits(extra.phone);
+  const pickSamePerson = (cands) => {
+    if (!cands.length) return null;
+    if (typedPhone.length < 6) return cands[0];
+    return cands.find((p) => digits(p.phone) === typedPhone)
+      || cands.find((p) => !digits(p.phone))
+      || null;
+  };
+  const sameName = (p) => (p.name || "").trim().toLowerCase() === trimmed.toLowerCase();
+  const cachedMatch = pickSamePerson(getCachedParties().filter(
+    (p) => p.type === type && (!locationId || p.location_id === locationId) && sameName(p)
+  ));
   if (cachedMatch) return cachedMatch.id;
 
   if (navigator.onLine) {
     const matches = await withTimeout(api.getParties({ type, q: trimmed, locationId }).catch(() => null), ONLINE_LOOKUP_TIMEOUT_MS, null);
-    const exact = matches && matches.find((p) => p.name.trim().toLowerCase() === trimmed.toLowerCase());
+    const exact = matches ? pickSamePerson(matches.filter(sameName)) : null;
     if (exact) {
       addCachedParty(exact);
       return exact.id;

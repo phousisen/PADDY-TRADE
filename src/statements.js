@@ -89,7 +89,11 @@ export function paidStatusMap(txs, payments) {
   for (const t of txs) {
     const total = billOf(t);
     const paid = Math.min(total, paidById[t.id] || 0);
-    out[t.id] = { paid, remaining: Math.max(0, total - paid) };
+    // [2026-10-06] Daily check #37. What was paid OVER the bill. "paid" stays
+    // capped at the bill (what settles it), but the extra money really moved,
+    // so cash has to count it — see the balance sheet below.
+    const overpaid = Math.max(0, (paidById[t.id] || 0) - total);
+    out[t.id] = { paid, remaining: Math.max(0, total - paid), overpaid };
   }
   return out;
 }
@@ -304,6 +308,15 @@ export function computeStatements({
   const accountsReceivable = sells.reduce((s, t) => s + (paidMap[t.id]?.remaining || 0), 0);
   const paidBuy = buys.reduce((s, t) => s + (paidMap[t.id]?.paid || 0), 0);
   const paidSell = sells.reduce((s, t) => s + (paidMap[t.id]?.paid || 0), 0);
+  // [2026-10-06] Daily check #37. Money paid over the bill. Cash used to
+  // count only "paid" — capped at the bill — so a farmer overpaid by
+  // 100,000 ៛ left cash 100,000 ៛ too HIGH, while the Cash Flow listed the
+  // full payment and still ended on the same cash. Now cash counts every
+  // riel that moved, and the extra is shown for what it is: a farmer we
+  // overpaid owes it back (an asset), a buyer who overpaid is owed it back
+  // (a liability). Both lines appear only when there is something on them.
+  const overpaidToFarmers = buys.reduce((s, t) => s + (paidMap[t.id]?.overpaid || 0), 0);
+  const overpaidByBuyers = sells.reduce((s, t) => s + (paidMap[t.id]?.overpaid || 0), 0);
 
   const inventoryValue = toDate.closingValue;
   const inventoryKg = toDate.closingKg;
@@ -340,14 +353,14 @@ export function computeStatements({
   // Cash MOVED since the system began. Adding the opening balance turns it
   // into cash HELD; without one it is a movement, and saying so is the point.
   // [2026-09-19] Less what was spent on fixed assets, as the Cash Flow does.
-  const cashMovement = paidSell - paidBuy + capitalNet + loansOutstanding - expAllToDate - assetsBoughtToDate;
+  const cashMovement = (paidSell + overpaidByBuyers) - (paidBuy + overpaidToFarmers) + capitalNet + loansOutstanding - expAllToDate - assetsBoughtToDate;
   const cash = addKnown(openingCash, cashMovement);
 
   // Current assets are always knowable — cash movement, debts and the shed all
   // come from recorded activity. Total assets waits on the asset register, so
   // the page can still show a real subtotal while fixed assets read as not
   // entered, instead of the whole sheet going blank.
-  const currentAssets = addKnown(cash, accountsReceivable, inventoryValue);
+  const currentAssets = addKnown(cash, accountsReceivable, overpaidToFarmers, inventoryValue);
   const totalAssets = addKnown(currentAssets, fixedAssetsNet);
   const accrued = 0;   // no accruals ledger yet — see the note on the page
   // [2026-09-19] VAT: what customers paid on top of the price, less what was
@@ -355,7 +368,7 @@ export function computeStatements({
   // but was never in sales or costs, so it widened the "unexplained" gap.
   const vatOf = (t) => num(t.total_with_tax ?? t.amount) - num(t.amount);
   const vatNet = sells.reduce((s, t) => s + vatOf(t), 0) - buys.reduce((s, t) => s + vatOf(t), 0);
-  const totalLiabilities = accountsPayable + loansOutstanding + accrued + vatNet;
+  const totalLiabilities = accountsPayable + overpaidByBuyers + loansOutstanding + accrued + vatNet;
 
   // Retained earnings is EARNED, never the figure required to make the sheet
   // balance. Accumulated profit since the system began, computed exactly the
@@ -425,9 +438,9 @@ export function computeStatements({
 
     balance: {
       cash, cashMovement, openingCash,
-      accountsReceivable, inventoryValue, inventoryKg, inventoryCostPerKg,
+      accountsReceivable, overpaidToFarmers, inventoryValue, inventoryKg, inventoryCostPerKg,
       currentAssets, assetCost, accumDep, fixedAssetsNet, totalAssets,
-      accountsPayable, loansOutstanding, accrued, vatNet, totalLiabilities,
+      accountsPayable, overpaidByBuyers, loansOutstanding, accrued, vatNet, totalLiabilities,
       partnerCapital, drawings, retainedEarnings, openingEquity, equity,
       unreconciled,
     },

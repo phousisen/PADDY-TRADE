@@ -3432,15 +3432,23 @@ const rawApi = {
         const { data: sameId } = await supabase
           .from("payments").select("*").eq("id", id).is("voided_at", null).limit(1);
         if (sameId && sameId.length) return sameId[0];
-        const cutoff = new Date(getAccurateNow().getTime() - 2 * 60 * 1000).toISOString();
+        // [2026-10-06] Daily check #27. The two-minute window let a second
+        // PC that pressed Finish on the same truck MORE than two minutes
+        // later pay the farmer a second time. A payment with an id comes
+        // only from the offline queue's "paid in full when the truck was
+        // finished / the ticket was saved" (createPaymentOffline) — one
+        // such payment per load is the most that can ever be right. So any
+        // live payment of the same kind already on this load, at any time
+        // and for any amount (a re-weighed truck differs by a few kg), is
+        // that payment, and nothing new is written. Part-payments made
+        // later from Transactions send no id and are not affected.
         const { data: recent } = await supabase
           .from("payments")
           .select("*")
           .eq("transaction_id", transactionId)
           .eq("type", type)
-          .eq("amount", amount)
           .is("voided_at", null)
-          .gte("created_at", cutoff)
+          .order("created_at", { ascending: true })
           .limit(1);
         if (recent && recent.length) return recent[0];
       } catch {
