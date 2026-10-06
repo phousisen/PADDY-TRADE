@@ -39,6 +39,8 @@ function addDays(iso, n) {
 function kindOf(a) {
   if (a.reverses_adjustment_id) return "rev";
   if (a.reversed_at) return "gone";
+  // [2026-10-03] A starting count is neither lost nor found paddy.
+  if (a.reason === "opening") return "start";
   return num(a.adjustment_kg) < 0 ? "loss" : "gain";
 }
 /** A Settle from the Dashboard: marked since 21/09, and recognisable before
@@ -49,6 +51,7 @@ function isSettle(a) {
 }
 /** Riel for one row: the recorded loss value when there is one, else kg × price. */
 function valueOf(a) {
+  if (a.reason === "opening") return null;   // never worth anything: not a loss
   const kg = num(a.adjustment_kg);
   if (kg < 0 && a.value_lost != null) return -num(a.value_lost);
   if (a.price_per_kg == null) return null;
@@ -149,7 +152,7 @@ export default function StockAdjustmentsLedger({ txs = [], stations = [], isOwne
 
   const canUndo = (a) => {
     if (!isOwner || isViewOnly) return false;
-    if (kindOf(a) !== "loss" && kindOf(a) !== "gain") return false;
+    if (kindOf(a) !== "loss" && kindOf(a) !== "gain" && kindOf(a) !== "start") return false;
     if (num(a.adjustment_kg) === 0) return false;
     return effectiveAdjDateStr(a) >= addDays(today, -UNDO_DAYS);
   };
@@ -158,6 +161,7 @@ export default function StockAdjustmentsLedger({ txs = [], stations = [], isOwne
     const k = kindOf(a);
     if (k !== "rev" && isSettle(a)) return <span className="inline-flex whitespace-nowrap rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11.5px] font-semibold text-blue-700">{t("sl_tag_settle")}</span>;
     if (k === "rev") return <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11.5px] font-semibold text-violet-700"><Undo2 size={11} /> {t("sl_tag_rev")}</span>;
+    if (k === "start") return <span className="inline-flex whitespace-nowrap rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11.5px] font-semibold text-amber-700">{t("sl_tag_start")}</span>;
     if (num(a.adjustment_kg) < 0) {
       return a.reason === "reset"
         ? <span className="inline-flex whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11.5px] font-semibold text-slate-600">{t("sl_tag_reset")}</span>
@@ -237,7 +241,7 @@ export default function StockAdjustmentsLedger({ txs = [], stations = [], isOwne
               const k = kindOf(a), kg = num(a.adjustment_kg), v = valueOf(a);
               const gone = k === "gone";
               const by = gone ? reverserOf[a.id] : null;
-              const kgCls = gone ? "text-slate-400 line-through" : k === "rev" ? "text-violet-700" : kg < 0 ? "text-rose-600" : "text-brand-700";
+              const kgCls = gone ? "text-slate-400 line-through" : k === "rev" ? "text-violet-700" : k === "start" ? "text-amber-700" : kg < 0 ? "text-rose-600" : "text-brand-700";
               return (
                 <tr key={a.id} className={`border-b border-slate-50 last:border-0 ${gone ? "bg-slate-50/40" : "hover:bg-slate-50/60"}`}>
                   <td className={`whitespace-nowrap px-5 py-3 ${gone ? "text-slate-400" : "text-slate-500"}`}>{dmy(effectiveAdjDateStr(a))}</td>

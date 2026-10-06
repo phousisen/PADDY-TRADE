@@ -37,6 +37,10 @@ export const ADJUSTMENT_REASONS = [
   { value: "spillage", labelKey: "adj_reason_spillage" },
   { value: "recount", labelKey: "adj_reason_recount" },
   { value: "other", labelKey: "adj_reason_other" },
+  // [2026-10-03] Owner only. The real figure to start from after old records
+  // were typed in by hand — moves the kilos, but is NOT a loss or a gain, so
+  // it carries no value and never touches profit (periodBook.js `startKg`).
+  { value: "opening", labelKey: "adj_reason_opening", ownerOnly: true },
 ];
 
 export function reasonLabel(t, value) {
@@ -164,7 +168,8 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
   const isLoss = hasValidNext && delta < -0.005;
   const price = parseFloat(priceInput);
   const hasPrice = priceInput.trim() !== "" && Number.isFinite(price) && price >= 0;
-  const valueLost = isLoss && hasPrice ? Math.abs(delta) * price : null;
+  const isStart = reason === "opening";
+  const valueLost = isLoss && hasPrice && !isStart ? Math.abs(delta) * price : null;
   const canSubmit = !saving && hasValidNext && !dayUnknown;
 
   // One tap for the daily habit this was built for: today's leftover stock
@@ -181,7 +186,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
     try {
       await onSubmit({
         newStockKg: next, reason, note: note.trim() || null,
-        pricePerKg: isLoss && hasPrice ? price : null,
+        pricePerKg: isLoss && hasPrice && !isStart ? price : null,
         // null for today, so a normal adjustment behaves exactly as before.
         effectiveDate: effectiveDate !== khToday ? effectiveDate : null,
       });
@@ -198,7 +203,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
   // proves someone deliberately meant it, every time, no matter who's
   // logged in.
   function submit() {
-    if (reason === "reset") {
+    if (reason === "reset" || reason === "opening") {
       setError("");
       setConfirmingReset(true);
       return;
@@ -224,13 +229,19 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
           <h3 className="mb-1 flex items-center gap-2 font-semibold text-slate-700"><Scale size={16} className="text-brand-600" /> {t("adj_title", { station: station.name })}</h3>
-          <p className="mb-4 text-xs text-slate-400">{t("adj_reason_prefix", { reason: reasonLabel(t, "reset") })}</p>
+          <p className="mb-4 text-xs text-slate-400">{t("adj_reason_prefix", { reason: reasonLabel(t, isStart ? "opening" : "reset") })}</p>
 
           <div className="mb-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm">
             <div className="flex justify-between border-b border-slate-100 pb-2"><span className="text-slate-500">{isPastDay ? t("adj_stock_at_close", { date: dmy(effectiveDate) }) : t("adj_system_shows")}</span><span className="font-medium text-slate-700">{fmt2(previous)} kg</span></div>
             <div className="flex justify-between pt-2"><span className="text-slate-500">{t("adj_setting_to")}</span><span className="font-medium text-slate-700">{fmt2(next)} kg</span></div>
           </div>
 
+          {isStart ? (
+            <div className="mb-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+              <span>{t("adj_start_note")}</span>
+            </div>
+          ) : (
           <div className="mb-3 flex gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-700">
             <AlertTriangle size={15} className="mt-0.5 shrink-0" />
             <span>
@@ -240,6 +251,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
               {t("adj_confirm_warning_body")}
             </span>
           </div>
+          )}
 
           <form onSubmit={confirmResetWithPassword}>
             <label className="mb-1 block text-xs text-slate-500">{t("adj_confirm_password_label")}</label>
@@ -314,13 +326,22 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
           {effectiveDate === khToday ? t("settle_date_help_today") : t("adj_date_help_past", { date: dmy(effectiveDate) })}
         </p>
 
-        {hasValidNext && (
+        {hasValidNext && isStart && (
+          <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+            {t("adj_start_change", { kg: `${delta < 0 ? "−" : "+"}${fmt2(Math.abs(delta))}` })}
+          </div>
+        )}
+        {hasValidNext && !isStart && (
           <div className={`mb-3 rounded-lg px-3 py-2.5 text-sm ${delta < -0.005 ? "bg-rose-50 text-rose-700" : delta > 0.005 ? "bg-emerald-50 text-emerald-700" : "bg-slate-50 text-slate-500"}`}>
             {Math.abs(delta) < 0.005 ? t("adj_no_change") : t(delta < 0 ? "adj_loss_of" : "adj_gain_of", { kg: fmt2(Math.abs(delta)) })}
           </div>
         )}
 
-        {isLoss && (
+        {isStart && hasValidNext && (
+          <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11.5px] leading-relaxed text-amber-800">{t("adj_start_note")}</p>
+        )}
+
+        {isLoss && !isStart && (
           <>
             <label className="mb-1 block text-xs text-slate-500">{t("adj_price_label")}</label>
             <input type="number" min="0" step="1" value={priceInput} onChange={(e) => setPriceInput(e.target.value)}
@@ -345,7 +366,7 @@ export function AdjustStockModal({ station, priceSuggestion, t, isAdmin, userEma
         <label className="mb-1 block text-xs text-slate-500">{t("adj_reason_label")}</label>
         <select value={reason} onChange={(e) => setReason(e.target.value)}
           className="mb-3 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100">
-          {ADJUSTMENT_REASONS.map((r) => <option key={r.value} value={r.value}>{t(r.labelKey)}</option>)}
+          {ADJUSTMENT_REASONS.filter((r) => !r.ownerOnly || isOwner).map((r) => <option key={r.value} value={r.value}>{t(r.labelKey)}</option>)}
         </select>
 
         <label className="mb-1 block text-xs text-slate-500">{t("adj_note_label")}</label>
