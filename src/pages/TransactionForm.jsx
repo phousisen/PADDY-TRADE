@@ -273,11 +273,19 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const weighInKg = parseFloat(grossKg) || 0;
   const weighOutKg = parseFloat(tareKg) || 0;
   const rawNetKg = isBuy ? weighInKg - weighOutKg : weighOutKg - weighInKg;
-  const netKg = Math.max(0, rawNetKg);
+  // [2026-10-06] Daily check #33. ONE box typed and the other left empty
+  // used to read the empty one as 0, so the whole truck (truck + paddy) was
+  // saved as paddy — that is how INV-375736778-B got 36,560 kg. Now the net
+  // stays 0 and Save is refused until both weights are typed, the same rule
+  // the weighing board has had since 30 Sep.
+  const inTyped = String(grossKg).trim() !== "";
+  const outTyped = String(tareKg).trim() !== "";
+  const oneWeightMissing = inTyped !== outTyped;
+  const netKg = oneWeightMissing ? 0 : Math.max(0, rawNetKg);
   // Both weighs entered but the wrong way round. Previously this silently
   // became a 0 kg, 0 ៛ transaction — the clamp above hid it and Save went
   // through. Now it is said out loud, on screen and at Save.
-  const bothWeighed = String(grossKg).trim() !== "" && String(tareKg).trim() !== "";
+  const bothWeighed = inTyped && outTyped;
   const weightsReversed = bothWeighed && rawNetKg <= 0;
   const reversedMessage = t(isBuy ? "tf_reversed_buy" : "tf_reversed_sell");
   // A capture instant is only sent if it lands on the day this transaction
@@ -303,6 +311,23 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   const hasBreakdown = taxApplicable;
   const myStation = stations.find((s) => s.id === (isAdmin ? stationId : profile?.location_id));
   const effectiveLocationId = isAdmin ? stationId : profile?.location_id;
+
+  // [2026-10-06] Daily check #35. Changing the phone or the name after
+  // picking a farmer used to forget WHO was picked but keep HIS bank
+  // details on the form — and Save then wrote that bank account onto the
+  // farmer found by the new phone. Now everything the pick filled in goes
+  // with it, so nobody's bank can be carried over onto someone else.
+  function unpickParty() {
+    if (!selectedParty) return;
+    setSelectedParty(null);
+    setPartyIdNumber("");
+    setBankName("");
+    setBankIsOther(false);
+    setBankAccount("");
+    setBankQrUrl(null);
+    setCompany("");
+    setDestination("dest_hq");
+  }
 
   function selectParty(p) {
     setSelectedParty(p);
@@ -369,6 +394,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
     // reversed pair of weights says what is actually wrong instead of
     // pointing at a form that looks completely filled in.
     if (weightsReversed) { setError(`${reversedMessage} ${t("tf_check_weights")}`); return; }
+    if (oneWeightMissing) { setError(t("tf_need_both_weights")); return; }
     if (!partyQuery.trim() || !effectiveStationId || !productQuery.trim() || netKg <= 0 || (isBuy && !pricePerKg)) { setError(t("required_fields")); return; }
     if (!txDate) { setError(t("err_need_tx_date")); return; }
     // [2026-09-22] The signature. SISEN: "we will need a proper password for
@@ -693,16 +719,10 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
   // the screen for now ("for now we dont need 8 and 9 yet"); the values they
   // set still travel with a save, at their empty defaults, so nothing that
   // reads a transaction had to change.
-  const Step = ({ n, title, hint, children }) => (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2.5 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
-        <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-brand-100 bg-brand-50 text-[12px] font-bold text-brand-700">{n}</span>
-        <b className="text-[13.5px] font-semibold text-slate-800">{title}</b>
-        {hint && <span className="ml-auto text-[11.5px] text-slate-400">{hint}</span>}
-      </div>
-      <div className="px-4 py-4">{children}</div>
-    </section>
-  );
+  // [2026-10-06] Step now lives OUTSIDE this function (bottom of the file).
+  // Defined in here, it was a brand-new component on every render, so React
+  // threw away every box inside it and built it again after each key — the
+  // box lost the cursor after every digit (daily check #32).
 
   return (
     <div className="flex h-screen flex-1 flex-col overflow-hidden">
@@ -763,7 +783,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 <div className="relative">
                   <label className={labelCls}>{t("phone")}</label>
                   <Search size={15} className="pointer-events-none absolute left-3 top-[30px] text-slate-400" />
-                  <input value={partyPhone} onChange={(e) => { setPartyPhone(e.target.value); setSelectedParty(null); }} placeholder={t("tf_search_by_phone")}
+                  <input value={partyPhone} onChange={(e) => { setPartyPhone(e.target.value); unpickParty(); }} placeholder={t("tf_search_by_phone")}
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100" />
                   {partyPhone && !selectedParty && parties.length > 0 && (
                     <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg">
@@ -778,7 +798,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                 </div>
                 <div>
                   <label className={labelCls}>{t(isBuy ? "tf_seller_name" : "tf_buyer_name")}</label>
-                  <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); setSelectedParty(null); }} placeholder={t("tf_type_name")} className={inputCls} />
+                  <input value={partyQuery} onChange={(e) => { setPartyQuery(e.target.value); unpickParty(); }} placeholder={t("tf_type_name")} className={inputCls} />
                 </div>
               </div>
             </Step>
@@ -810,17 +830,22 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                   source={tareSource}
                 />
               </div>
-              <div className={`mt-4 flex items-baseline justify-between rounded-xl border px-4 py-3 ${weightsReversed ? "border-rose-200 bg-rose-50" : "border-brand-100 bg-brand-50"}`}>
-                <p className={`text-[12.5px] font-semibold ${weightsReversed ? "text-rose-700/80" : "text-brand-700"}`}>
+              <div className={`mt-4 flex items-baseline justify-between rounded-xl border px-4 py-3 ${(weightsReversed || oneWeightMissing) ? "border-rose-200 bg-rose-50" : "border-brand-100 bg-brand-50"}`}>
+                <p className={`text-[12.5px] font-semibold ${(weightsReversed || oneWeightMissing) ? "text-rose-700/80" : "text-brand-700"}`}>
                   {t("net_weight")} — {t(isBuy ? "tf_what_bought" : "tf_what_sold")}
                 </p>
-                <p className={`text-2xl font-bold tabular-nums ${weightsReversed ? "text-rose-700" : "text-brand-800"}`}>
-                  {fmt2(netKg)} <span className={`text-base font-medium ${weightsReversed ? "text-rose-600" : "text-brand-600"}`}>KG</span>
+                <p className={`text-2xl font-bold tabular-nums ${(weightsReversed || oneWeightMissing) ? "text-rose-700" : "text-brand-800"}`}>
+                  {fmt2(netKg)} <span className={`text-base font-medium ${(weightsReversed || oneWeightMissing) ? "text-rose-600" : "text-brand-600"}`}>KG</span>
                 </p>
               </div>
               {typedIn && !weightsReversed && (
                 <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-900">
                   {t("tf_typed_copy")}
+                </p>
+              )}
+              {oneWeightMissing && (
+                <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[11.5px] leading-relaxed text-rose-700">
+                  <b>{t("tf_one_weight_missing")}</b> {t("tf_need_both_weights")}
                 </p>
               )}
               {weightsReversed && (
@@ -986,7 +1011,7 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
                     placeholder={t("xr_password")} autoComplete="current-password"
                     className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-gold-500 focus:ring-2 focus:ring-gold-100" />
                 </div>
-                <button type="submit" disabled={saving || !signPassword} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+                <button type="submit" disabled={saving || !signPassword || oneWeightMissing || weightsReversed} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 py-3 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
                   <Save size={16} /> {saving ? "..." : t("save_transaction")}
                 </button>
                 <button type="button" onClick={() => setPage("transactions")} className="mt-2 w-full rounded-lg py-2 text-xs text-slate-400 hover:text-slate-600">← {t("back")}</button>
@@ -996,5 +1021,22 @@ export default function TransactionForm({ type, setPage, prefillParty, clearPref
         </form>
       </main>
     </div>
+  );
+}
+
+// [2026-10-06] Daily check #32. One card per step of the form. It MUST stay
+// out here at the top level of the file: made inside TransactionForm it was a
+// new component on every key press, and every box in it lost the cursor.
+// Guarded in scripts-check-fullcheck-1006.mjs.
+function Step({ n, title, hint, children }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2.5 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5">
+        <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full border border-brand-100 bg-brand-50 text-[12px] font-bold text-brand-700">{n}</span>
+        <b className="text-[13.5px] font-semibold text-slate-800">{title}</b>
+        {hint && <span className="ml-auto text-[11.5px] text-slate-400">{hint}</span>}
+      </div>
+      <div className="px-4 py-4">{children}</div>
+    </section>
   );
 }

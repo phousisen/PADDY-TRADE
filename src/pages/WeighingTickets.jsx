@@ -549,6 +549,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     if (!effectivePreviousParty) return;
     setPartyName(effectivePreviousParty.name || "");
     setPhone(effectivePreviousParty.phone || "");
+    nameFillRef.current = { key: (effectivePreviousParty.name || "").trim().toLowerCase(), phone: effectivePreviousParty.phone || "" };
     setPhoneLookupMsg(effectivePreviousParty.phone ? `Filled in: ${effectivePreviousParty.name}` : "");
     setSavedBank(
       effectivePreviousParty.bankName || effectivePreviousParty.bankAccount || effectivePreviousParty.bankQrUrl
@@ -593,12 +594,32 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
     [partyOptions]
   );
 
+  // [2026-10-06] Daily check #35 (8 Sep audit #8). What the NAME filled in
+  // — whose name it was, and the phone it put in the box. Typing "Sok Chea"
+  // passes "Sok" on the way: Sok's phone and bank filled in and then STAYED
+  // when the name went on to "Sok Chea", so Sok's bank account was saved
+  // onto Sok Chea's ticket and paid to Sok. Now, the moment the name stops
+  // being the one that filled them, they are taken back out.
+  const nameFillRef = useRef(null);
+  function clearNameFill(nextKey) {
+    const f = nameFillRef.current;
+    if (!f || f.key === nextKey) return;
+    nameFillRef.current = null;
+    setSavedBank(null);
+    setPhoneLookupMsg("");
+    // Only the phone the name put there — never one staff typed themselves.
+    setPhone((cur) => (cur === f.phone ? "" : cur));
+  }
+
   function handlePartyNameChange(value) {
     setPartyName(value);
     const trimmed = value.trim();
+    const key = trimmed.toLowerCase();
+    const match = trimmed ? partyByName.get(key) : null;
+    if (!match) clearNameFill(key);
     if (!trimmed) return;
-    const match = partyByName.get(trimmed.toLowerCase());
     if (match) {
+      nameFillRef.current = { key, phone: match.phone || "" };
       setPhone(match.phone || "");
       setPhoneLookupMsg(match.phone ? t("wt_filled_in", { name: match.name }) : "");
       setSavedBank(
@@ -705,6 +726,7 @@ function NewTicketModal({ locations, defaultLocationId, isAdmin, onClose, onCrea
         // and then leave that person's bank details alone too.
         if (partyNameRef.current !== nameBeforeLookup) { setPhoneLookupMsg(""); return; }
         setPartyName(p.name || "");
+        nameFillRef.current = null;   // found by PHONE — the phone is who this is
         setPhoneLookupMsg(t("wt_phone_found", { name: p.name }));
         setSavedBank(
           p.bank_name || p.bank_account || p.bank_qr_url

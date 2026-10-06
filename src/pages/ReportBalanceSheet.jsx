@@ -68,6 +68,7 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], setSelect
             indent
           />
           <Line label={t("st_ar")} hint={t("bs_ar_hint")} value={b.accountsReceivable} indent />
+          {(b.overpaidToFarmers || 0) > 0.5 && <Line label={t("bs_overpaid_farmers")} hint={t("bs_overpaid_farmers_hint")} value={b.overpaidToFarmers} indent />}
           <Line
             label={t("st_invline")}
             hint={t("bs_inv_hint", { kg: fmtKg(b.inventoryKg), rate: fmt(b.inventoryCostPerKg) })}
@@ -91,6 +92,7 @@ export default function ReportBalanceSheet({ selectedLocationIds = [], setSelect
         <div className="space-y-5">
           <ReportCard title={t("st_liabilities")}>
             <Line label={t("st_ap")} hint={t("bs_ap_hint")} value={b.accountsPayable} indent />
+            {(b.overpaidByBuyers || 0) > 0.5 && <Line label={t("bs_overpaid_buyers")} hint={t("bs_overpaid_buyers_hint")} value={b.overpaidByBuyers} indent />}
             <Line label={t("bs_loans")} value={b.loansOutstanding} indent />
             <Line label={t("st_accrued")} hint={t("bs_accrued_hint")} value={b.accrued} indent />
             {Math.abs(b.vatNet || 0) > 0.5 && <Line label={t("bs_vat")} hint={t("bs_vat_hint")} value={b.vatNet} indent signed />}

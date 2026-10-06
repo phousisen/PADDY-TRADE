@@ -121,6 +121,8 @@ export default function ReportShrinkage({ selectedLocationIds = [], startDate = 
     return allAdjustments
       .filter((a) => !selectedLocationIds.length || selectedLocationIds.includes(a.location_id))
       .filter((a) => a.created_at)
+      // [2026-10-03] A starting count is not shrinkage (not lost or found).
+      .filter((a) => a.reason !== "opening")
       .filter((a) => !startDate || effectiveAdjDateStr(a) >= startDate)
       .filter((a) => !endDate || effectiveAdjDateStr(a) <= endDate);
   }, [allAdjustments, selectedLocationIds, startDate, endDate]);
