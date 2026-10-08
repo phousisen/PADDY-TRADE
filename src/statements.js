@@ -237,10 +237,11 @@ export function computeStatements({
   const grossIncome = sales + otherIncome;
 
   const costOfGoodsSold = period.cogs;
-  // A counted SHORTAGE is a real cost. A counted SURPLUS is not income —
-  // paddy is not sold by being found — so only the negative side is taken.
-  // [2026-09-19] Summed loss by loss (see rollup.lossValue): a surplus on
-  // one day or at one station used to cancel a loss elsewhere.
+  // A counted SHORTAGE is a real cost. A counted SURPLUS is never a sale.
+  // [2026-10-08] It is valued at cost on this same line, so paddy found after
+  // a wrong count cancels the loss that count booked; leaving it out charged
+  // that paddy twice (periodBook.js, "THE BOOKS NOW FOLLOW THE SHED THROUGH
+  // ZERO"). The line is therefore lost minus found, station by station.
   const inventoryLost = num(period.lossValue);
 
   const depreciation = depreciationFor(scopedAssets, startDate, endDate);

@@ -42,6 +42,7 @@ export const SUM_FIELDS = [
   "commission", "otherExp", "expenses",
   "lostKg", "lostValue", "startKg",
   "shortfallKg", "shortfallValue", "resetWriteOff",
+  "lateCost",          // [2026-10-08] part of cogs: see buildDays
 ];
 
 function emptyTotals() {
@@ -65,7 +66,206 @@ function emptyTotals() {
 // average and the day's price are the same number, which is most days at most
 // stations. On a day stock carries over, the average is the only figure that
 // exists at all.
-export function buildDays({ txs = [], payments = [], adjustments = [], locationIds = [], openingKg = 0, openingValue = 0 }) {
+// [2026-10-08] THE BOOKS NOW FOLLOW THE SHED THROUGH ZERO (profit check).
+//
+// The finance manager said profit was wrong. Most of it was her own sheet and
+// stock counts typed by hand, but replaying the live data through this file
+// found two cases it got wrong, both around a shed that the books show as
+// empty or below zero:
+//
+//   1. A sale that meets an empty shed in the books (the purchase that supplied
+//      it was saved later, or dated the next day) was costed at 0 ៛, so the
+//      whole sale showed as profit; when the purchase arrived it only filled
+//      the gap and its cost went to the write-off, never to profit.
+//   2. A wrong count corrected on a later day: the loss was charged, the
+//      paddy "found" the next day gave nothing back, and it was charged AGAIN
+//      when it was sold. Profit fell twice for paddy that never left.
+//
+// The fix is one idea: the pool keeps its value when it goes below zero. A
+// sale beyond the shed is charged at the last cost the shed had, and the pool
+// then owes those kilos at that cost. When paddy arrives it settles what is
+// owed first: a purchase that costs more or less than was charged puts only
+// the difference into cost of goods sold (`lateCost`); a starting count
+// settles it without touching profit, as it always has.
+//
+// Found paddy now cancels lost paddy, at the same cost — the way stock
+// overs and shorts are booked against each other in any perpetual
+// inventory. It is not a sale and never appears as one: it lives only on the
+// "stock lost / found" line, so a month's figure there is lost minus found.
+// (The 19 Sep rule "a surplus must never cancel a loss" is what charged a
+// corrected count twice; scripts-check-financials.mjs says so now too.)
+//
+// On correct data — purchases saved before the sales they supply, and no
+// count corrected later — every figure is exactly what the old walk gave:
+// buildDaysLegacy below is the old walk, kept unchanged, and
+// scripts-check-profit-gaps-1008.mjs compares the two on random data, checks
+// the money identity on random messy data, and checks that over a station's
+// whole life every riel paid for paddy ends up as cost of goods sold, a loss
+// or a starting-count write-off — exactly once.
+//
+// What is NOT changed here: a sale still leaves the shed at the buyer's
+// weight (quantity_kg) while the stock ledger takes the station's weight.
+// Booking that gap as "lost on the road" needs its own line on the Daily Book
+// and is a separate change.
+export function buildDays({ txs = [], payments = [], adjustments = [], locationIds = [],
+  openingKg = 0, openingValue = 0, openingCost = null }) {
+  const wanted = locationIds.length ? new Set(locationIds) : null;
+  const inScope = (locId) => !wanted || wanted.has(locId);
+
+  const byDate = new Map();
+  const bucket = (date) => {
+    if (!byDate.has(date)) byDate.set(date, { date, ...emptyTotals(), lateCost: 0 });
+    return byDate.get(date);
+  };
+  for (const tx of txs) {
+    if (!tx.tx_date || !inScope(tx.location_id)) continue;
+    if ((tx.hq_status || "processing") === "cancelled") continue;
+    const b = bucket(tx.tx_date);
+    const kg = num(tx.quantity_kg);
+    const riel = num(tx.amount);
+    if (tx.type === "BUY") {
+      b.buyLoads += 1;
+      b.boughtKg += kg;
+      b.spent += riel;
+      const v = vehicleTypeOf(tx.car_plate);
+      if (v === "truck") b.truck += 1;
+      else if (v === "koyun") b.koyun += 1;
+      else if (v === "tractor") b.tractor += 1;
+      else b.otherVeh += 1;
+    } else {
+      b.sellLoads += 1;
+      b.soldKg += kg;
+      b.received += riel;
+    }
+  }
+  for (const p of payments) {
+    if (p.type !== "expense" || !p.pay_date || !inScope(p.location_id)) continue;
+    const b = bucket(p.pay_date);
+    const amt = num(p.amount);
+    if (isCommission(p.category)) b.commission += amt;
+    else b.otherExp += amt;
+    b.expenses += amt;
+  }
+  for (const a of adjustments) {
+    if (!inScope(a.location_id) || !a.created_at) continue;
+    const b = bucket(effectiveAdjDateStr(a));
+    b.lostKg += num(a.adjustment_kg);
+    if (a.reason === "opening") b.startKg += num(a.adjustment_kg);
+    b.counted = true;
+  }
+
+  const days = [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const EPS = 0.001;
+
+  // The pool. `kg` is the books' stock and may be below zero; `value` is what
+  // it is worth — below zero, it is the cost already charged for the kilos
+  // the books owe. Opening below zero with no value given (an old caller)
+  // owes those kilos at no charge, which is what the old walk assumed.
+  let kg = num(openingKg);
+  let value = kg > EPS ? num(openingValue) : (kg < -EPS ? Math.min(0, num(openingValue)) : 0);
+  let lastCost = openingCost != null ? num(openingCost) : (kg > EPS ? value / kg : 0);
+
+  // What one kilo costs right now: the average of the shed; below zero, what
+  // was charged for the kilos owed; at zero, the last cost the shed had.
+  const unitCost = () => (kg > EPS ? value / kg : kg < -EPS ? value / kg : lastCost);
+
+  for (const d of days) {
+    d.openingKg = kg;
+    d.openingValue = Math.max(0, value);
+    d.lateCost = 0;
+    let writeOff = 0;              // value leaving the books outside profit (starting counts)
+    let sellCogs = 0;
+
+    // Paddy in. `kind`: "buy" (riel actually paid), "found" (valued at cost),
+    // "start" (a starting count — kilos only, never profit).
+    const takeIn = (q, riel, kind) => {
+      if (q <= 0) {
+        // Money paid with no kilos (a ticket missing its weight) is still a
+        // cost: it cannot sit in a shed that holds nothing.
+        if (kind === "buy" && riel) d.lateCost += riel;
+        return 0;
+      }
+      let rest = q, added = 0;
+      if (kg < -EPS) {
+        const fill = Math.min(rest, -kg);
+        const charged = (value / kg) * fill;          // what was charged for these kilos
+        const paid = kind === "buy" ? riel * (fill / q) : charged;
+        if (kind === "buy") d.lateCost += paid - charged;
+        if (kind === "start") writeOff -= charged;
+        kg += fill;
+        value += charged;
+        added += charged;
+        rest -= fill;
+      }
+      if (rest > 0) {
+        const worth = kind === "buy" ? riel * (rest / q) : rest * unitCost();
+        if (kind === "start") writeOff -= worth;
+        kg += rest;
+        value += worth;
+        added += worth;
+      }
+      return added;
+    };
+    // Paddy out, at today's cost. Beyond the shed, the pool goes below zero
+    // and owes those kilos at that same cost.
+    const takeOut = (q) => {
+      if (q <= 0) return 0;
+      const c = kg > EPS ? value / kg : lastCost;
+      kg -= q;
+      value -= q * c;
+      return q * c;
+    };
+
+    takeIn(d.boughtKg, d.spent, "buy");
+    if (kg > EPS) lastCost = value / kg;
+
+    const heldBeforeSale = Math.max(0, kg);
+    const saleCost = d.soldKg > 0 ? (kg > EPS ? value / kg : lastCost) : 0;
+    d.shortfallKg = Math.max(0, d.soldKg - heldBeforeSale);
+    d.shortfallValue = d.shortfallKg * saleCost;
+    sellCogs = takeOut(d.soldKg);
+
+    // Counts: a loss at today's cost, and found paddy at the same cost, so
+    // one cancels the other. A starting count moves kilos only.
+    const countKg = d.lostKg - d.startKg;
+    if (countKg > 0) {
+      d.lostValue = takeIn(countKg, 0, "found");   // exactly the value it brings in
+    } else if (countKg < 0) {
+      d.lostValue = -takeOut(-countKg);
+    } else {
+      d.lostValue = 0;
+    }
+    if (d.startKg < 0) writeOff += takeOut(-d.startKg);
+    else if (d.startKg > 0) takeIn(d.startKg, 0, "start");
+
+    // A shed that ends exactly empty resets clean: no stale value drifts on.
+    if (Math.abs(kg) <= EPS) { writeOff += value; kg = 0; value = 0; }
+    if (kg > EPS) lastCost = value / kg;
+
+    d.cogs = sellCogs + d.lateCost;
+    d.closingKg = kg;
+    d.closingValue = Math.max(0, value);
+    d.carryValue = value;          // with the owed value, for next year's opening
+    d.carryCost = lastCost;
+    d.costPerKg = kg > EPS ? value / kg : 0;
+    d.buyPricePerKg = d.boughtKg > 0 ? d.spent / d.boughtKg : 0;
+    // Everything that left the books' value without passing through profit:
+    // starting counts, and the cost moved between the shed and what it owes.
+    // Kept so the long-standing identity still reads true:
+    //   closing = opening + spent − cogs + shortfall + lost − written off
+    d.resetWriteOff = d.openingValue + d.spent - d.cogs + d.shortfallValue + d.lostValue - d.closingValue;
+    d.startWriteOff = writeOff;
+    d.lossValue = d.lostValue;
+    d.profit = d.received - d.cogs - d.expenses + d.lossValue;
+    d.cash = d.received - d.spent - d.expenses;
+  }
+  return days;
+}
+
+// The walk as it was until 8 Oct 2026, unchanged. Not used by any screen —
+// kept so scripts-check-profit-gaps-1008.mjs can show the new walk gives
+// exactly the same figures on correct data.
+export function buildDaysLegacy({ txs = [], payments = [], adjustments = [], locationIds = [], openingKg = 0, openingValue = 0 }) {
   const wanted = locationIds.length ? new Set(locationIds) : null;
   const inScope = (locId) => !wanted || wanted.has(locId);
 
@@ -293,6 +493,7 @@ function daysForStation(id, { txs = [], payments = [], adjustments = [], opening
   return buildDays({
     txs: txs.filter(pick), payments: payments.filter(pick), adjustments: adjustments.filter(pick),
     locationIds: [], openingKg: num(opening.kg), openingValue: num(opening.value),
+    openingCost: opening.cost ?? null,
   });
 }
 
@@ -302,7 +503,12 @@ export function closingByStation({ txs = [], adjustments = [], locationIds = [] 
   for (const id of stationIdsOf({ txs, adjustments, locationIds })) {
     const days = daysForStation(id, { txs, adjustments });
     const last = days[days.length - 1];
-    out[id] = { kg: last ? last.closingKg : 0, value: last ? last.closingValue : 0 };
+    // [2026-10-08] The value carried is the pool's own (below zero: what was
+    // charged for the kilos owed) and the last cost, so a year that ends owing
+    // paddy is settled in January at the same cost it was charged in December.
+    out[id] = last
+      ? { kg: last.closingKg, value: last.carryValue ?? last.closingValue, cost: last.carryCost ?? null }
+      : { kg: 0, value: 0, cost: null };
   }
   return out;
 }
@@ -318,7 +524,7 @@ export function buildDaysByStation({ txs = [], payments = [], adjustments = [], 
   const dates = [...new Set(per.flatMap((p) => p.days.map((d) => d.date)))].sort();
   const at = per.map(() => 0);
   const lastKg = per.map((p) => num(p.opening.kg));
-  const lastVal = per.map((p) => num(p.opening.value));
+  const lastVal = per.map((p) => Math.max(0, num(p.opening.value)));
   return dates.map((date) => {
     const row = { date, ...emptyTotals(), openingKg: 0, openingValue: 0, closingKg: 0, closingValue: 0,
       profit: 0, cash: 0, lossValue: 0, counted: false };
@@ -329,7 +535,7 @@ export function buildDaysByStation({ txs = [], payments = [], adjustments = [], 
         row.openingKg += num(d.openingKg); row.openingValue += num(d.openingValue);
         row.closingKg += num(d.closingKg); row.closingValue += num(d.closingValue);
         row.profit += num(d.profit); row.cash += num(d.cash);
-        row.lossValue += Math.min(0, num(d.lostValue));
+        row.lossValue += d.lossValue != null ? num(d.lossValue) : Math.min(0, num(d.lostValue));
         row.counted = row.counted || !!d.counted;
         lastKg[i] = num(d.closingKg); lastVal[i] = num(d.closingValue);
         at[i] += 1;
@@ -355,11 +561,9 @@ export function rollup(days) {
   }
   o.profit = days.reduce((a, d) => a + num(d.profit), 0);
   o.cash = days.reduce((a, d) => a + num(d.cash), 0);
-  // [2026-09-19] Losses only, day by day. lostValue nets a surplus on one day
-  // against a loss on another; a surplus is not income, so it must never
-  // cancel a loss (the Daily Book already takes each day on its own).
-  // A merged all-stations day (buildDaysByStation) carries its own
-  // lossValue, already taken station by station.
+  // [2026-10-08] Each day's own lossValue: lost minus found (see buildDays,
+  // "THE BOOKS NOW FOLLOW THE SHED THROUGH ZERO"). Days from the old walk
+  // (buildDaysLegacy) have none and keep the old rule, losses only.
   o.lossValue = days.reduce((a, d) => a + (d.lossValue != null ? num(d.lossValue) : Math.min(0, num(d.lostValue))), 0);
 
   // Levels, not totals — take them from the last day, never the sum.
