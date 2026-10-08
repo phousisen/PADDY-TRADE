@@ -193,8 +193,9 @@ export default function ReportOverview({ selectedLocationIds = [], startDate = n
               this card ends on the same net profit (full check M1). */}
           {inc.otherIncome !== 0 && <Row label={t("st_otherincome")} value={`${fmt(inc.otherIncome)} ៛`} />}
           <Row label={t("ov_opex")} value={`${fmt(-inc.operatingExpenses)} ៛`} />
-          {inc.inventoryLost < 0 && (
-            <Row label={t("ov_stockloss")} value={`${fmt(inc.inventoryLost)} ៛`} tone="neg" />
+          {/* [2026-10-08] Lost minus found, so it can be either sign. */}
+          {Math.abs(inc.inventoryLost || 0) >= 0.5 && (
+            <Row label={t("ov_stockloss")} value={`${fmt(inc.inventoryLost)} ៛`} tone={inc.inventoryLost < 0 ? "neg" : "pos"} />
           )}
           <TotalBox><Row label={t("is_sum_pbdit")} value={`${fmt(inc.profitBeforeUnknowns)} ៛`} bold tone={toneOf(inc.profitBeforeUnknowns)} /></TotalBox>
           <Row label={t("st_depreciation")} value={money(isKnown(inc.depreciation) ? -inc.depreciation : null)} indent />

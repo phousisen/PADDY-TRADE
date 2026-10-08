@@ -381,9 +381,15 @@ function SimpleDay({ day, t }) {
       <Block title={t("db_profit_from")}>
         <Line label={t("db_sales")} value={`+${money(day.received)}`} tone="g" />
         <Line label={t("db_cogs_short")} value={`−${money(day.cogs)}`} tone="r" />
+        {Math.abs(day.lateCost || 0) >= 1 && (
+          <p className="px-1 pb-1 text-[11px] leading-snug text-slate-400">{t("db_late_cost", { v: `${day.lateCost < 0 ? "−" : ""}${money(day.lateCost)}` })}</p>
+        )}
         <Line label="ថ្លៃកូនដៃ" value={day.commission ? `−${money(day.commission)}` : "—"} tone={day.commission ? "r" : "n"} />
         <Line label={t("db_other_expenses")} value={day.otherExp ? `−${money(day.otherExp)}` : "—"} tone={day.otherExp ? "r" : "n"} />
-        <Line label={t("db_stock_lost")} value={day.lostValue < 0 ? `−${money(-day.lostValue)}` : "—"} tone={day.lostValue < 0 ? "r" : "n"} />
+        {/* [2026-10-08] Found paddy now cancels lost paddy in the profit
+            (periodBook.js), so a find is shown here too, or the lines above the
+            profit would not add up to it. */}
+        <Line label={t("db_stock_lost")} value={day.lostValue ? `${day.lostValue < 0 ? "−" : "+"}${money(Math.abs(day.lostValue))}` : "—"} tone={day.lostValue < 0 ? "r" : day.lostValue > 0 ? "g" : "n"} />
         <Line label={t("db_profit")} value={`${day.profit >= 0 ? "+" : "−"}${money(day.profit)} ៛`} strong="win" />
       </Block>
     </div>
@@ -503,9 +509,14 @@ function DayDrawer({ day, txs, payments }) {
         <Mini title={t("db_profit_and_cash")}>
           <Line label={t("db_sales")} a={<>+ <Riel v={day.received} /> ៛</>} tone="g" />
           <Line label={t("db_cogs")} a={<>− <Riel v={day.cogs} /> ៛</>} tone="r" />
+          {/* [2026-10-08] The cost of paddy sold on an earlier day, before its
+              purchase was saved, settled now that the purchase is in. */}
+          {Math.abs(day.lateCost || 0) >= 1 && (
+            <p className="px-4 pb-1.5 text-[11.5px] leading-snug text-slate-400">{t("db_late_cost", { v: `${day.lateCost < 0 ? "−" : ""}${Math.abs(Math.round(day.lateCost)).toLocaleString("en-US")}` })}</p>
+          )}
           <Line label="ថ្លៃកូនដៃ" a={day.commission ? <>− <Riel v={day.commission} /> ៛</> : "—"} tone={day.commission ? "r" : ""} />
           <Line label={t("db_other_expenses")} a={day.otherExp ? <>− <Riel v={day.otherExp} /> ៛</> : "—"} tone={day.otherExp ? "r" : ""} />
-          <Line label={t("db_stock_lost")} a={day.lostValue < 0 ? <>− <Riel v={-day.lostValue} /> ៛</> : "—"} tone={day.lostValue < 0 ? "r" : ""} />
+          <Line label={t("db_stock_lost")} a={day.lostValue ? <>{day.lostValue < 0 ? "−" : "+"} <Riel v={Math.abs(day.lostValue)} /> ៛</> : "—"} tone={day.lostValue < 0 ? "r" : day.lostValue > 0 ? "g" : ""} />
           <div className="flex items-center gap-3 bg-brand-700 px-4 py-2.5 text-[13px] text-white">
             <span className="flex-1 font-semibold">{t("db_profit")}</span>
             <span className="tabular-nums font-semibold">{day.profit >= 0 ? "+" : "−"} {Math.abs(Math.round(day.profit)).toLocaleString("en-US")} ៛</span>

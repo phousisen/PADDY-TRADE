@@ -46,7 +46,7 @@ export default function ReportInventory({ selectedLocationIds = [], setSelectedL
         { label: t("inv_sum_val"), value: total.closingValue, sub: t("inv_sum_val_sub", { rate: fmt(total.costPerKg) }) },
         { label: t("is_bought"), value: total.boughtKg, riel: false, sub: t("inv_sum_bought_sub") },
         { label: t("is_shipped"), value: total.soldKg, riel: false, sub: t("inv_sum_sold_sub") },
-        { label: t("inv_sum_lost"), value: total.lostValue, sub: t("inv_sum_lost_sub", { kg: fmtKg(total.lostKg) }), tone: "neg" },
+        { label: t("inv_sum_lost"), value: total.lostValue, sub: t("inv_sum_lost_sub", { kg: fmtKg(total.lostKg) }), tone: total.lostValue > 0 ? "pos" : "neg" },
       ]} />
 
       <TableCard

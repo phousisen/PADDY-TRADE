@@ -67,7 +67,7 @@ export default function ReportIncomeStatement({ selectedLocationIds = [], setSel
         { label: t("is_sum_sales"), value: i.sales, sub: t("is_sum_sales_sub", { kg: fmtKg(i.soldKg) }) },
         { label: t("is_sum_cogs"), value: i.costOfGoodsSold, sub: t("is_sum_cogs_sub") },
         { label: t("st_opex"), value: i.operatingExpenses, sub: t("is_sum_opex_sub") },
-        { label: t("st_invlost"), value: i.inventoryLost, sub: t("is_sum_lost_sub"), tone: "neg" },
+        { label: t("st_invlost"), value: i.inventoryLost, sub: t("is_sum_lost_sub"), tone: i.inventoryLost > 0 ? "pos" : "neg" },
         { label: t("is_sum_pbdit"), value: i.profitBeforeUnknowns, sub: t("is_sum_pbdit_sub"), tone: "pos" },
       ]} />
       <SetupNotice missing={setupMissing} what={t("is_setup_what")} />
