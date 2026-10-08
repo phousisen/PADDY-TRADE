@@ -95,12 +95,24 @@ ok(near(withLoss.netProfit, withLoss.grossProfit - withLoss.totalExpenses + with
 ok(withLoss.netProfit < f.netProfit, "losing 1,000 kg did not reduce profit");
 console.log(`  6. stock loss     ${money(withLoss.stockLossValue)} taken to profit   (the old code ignored it)`);
 
-// A found surplus is NOT income — paddy is not sold by being found.
+// A found surplus is NOT a sale — it never touches sales. [2026-10-08] It is
+// booked on the stock line at cost, so found paddy cancels lost paddy: the
+// old rule (a surplus is worth nothing) charged a count corrected the next
+// day twice. See periodBook.js, "THE BOOKS NOW FOLLOW THE SHED THROUGH ZERO".
 const withGain = computeFinancials({
   asAtTxs, payments, stations, ...SEP,
   adjustments: [{ location_id: LOC, created_at: "2026-09-20T16:00:00+07:00", adjustment_kg: 1000 }],
 });
-ok(withGain.stockLossValue === 0, "a counted surplus was taken as income", withGain.stockLossValue);
+ok(withGain.totalSell === f.totalSell, "a counted surplus changed sales", withGain.totalSell);
+ok(withGain.stockLossValue > 0, "a counted surplus must be valued on the stock line", withGain.stockLossValue);
+const lostThenFound = computeFinancials({
+  asAtTxs, payments, stations, ...SEP,
+  adjustments: [
+    { location_id: LOC, created_at: "2026-09-20T16:00:00+07:00", adjustment_kg: -1000 },
+    { location_id: LOC, created_at: "2026-09-21T16:00:00+07:00", adjustment_kg: 1000 },
+  ],
+});
+ok(near(lostThenFound.netProfit, f.netProfit), "a count corrected the next day must leave profit unchanged", [lostThenFound.netProfit, f.netProfit]);
 
 // --- the sheet accounts for itself -----------------------------------------
 // Nothing is plugged, so the two sides can differ — and the gap must be
