@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ShieldCheck, Search, AlertTriangle, History, RefreshCw, CheckCircle2 } from "lucide-react";
+import { ShieldCheck, Search, AlertTriangle, History, RefreshCw, CheckCircle2, Banknote } from "lucide-react";
 import Topbar from "../components/Topbar.jsx";
 import { api } from "../api.js";
 import { dmyTime } from "../dateFormat.js";
 import { useLanguage } from "../i18n.jsx";
+import MoneyCheck from "../components/MoneyCheck.jsx";
 
 // [2026-09-09] Data Check — the screen that would have caught CN 000261 on
 // the day instead of six days later.
@@ -280,9 +281,15 @@ function HistoryCard({ entry }) {
   );
 }
 
-export default function DataCheck() {
+export default function DataCheck({ setPage }) {
   const { t } = useLanguage();
-  const [tab, setTab] = useState("checks");
+  // [2026-10-19] Opens on Money — the list finance works through every day.
+  // Refresh asks it to load again; it reports when it is busy, so the
+  // button cannot start a second download on top of the first.
+  const [tab, setTab] = useState("money");
+  const [moneyCount, setMoneyCount] = useState(null);
+  const [moneyRefresh, setMoneyRefresh] = useState(0);
+  const [moneyLoading, setMoneyLoading] = useState(false);
   const [mismatches, setMismatches] = useState(null);
   const [history, setHistory] = useState(null);
   const [search, setSearch] = useState("");
@@ -334,7 +341,16 @@ export default function DataCheck() {
       <Topbar title={t("nav_datacheck")} subtitle={t("dc_subtitle")} />
       <main className="flex-1 overflow-y-auto bg-paper p-6">
 
-        <div className="mb-5 flex gap-2">
+        <div className="mb-5 flex flex-wrap gap-2">
+          <button
+            onClick={() => setTab("money")}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold ${tab === "money" ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+          >
+            <Banknote size={15} /> {t("dc_tab_money")}
+            {moneyCount > 0 && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${tab === "money" ? "bg-white/25" : "bg-rose-100 text-rose-700"}`}>{moneyCount}</span>
+            )}
+          </button>
           <button
             onClick={() => setTab("checks")}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold ${tab === "checks" ? "bg-brand-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
@@ -351,17 +367,23 @@ export default function DataCheck() {
             <History size={15} /> {t("dc_tab_history")}
           </button>
           <button
-            onClick={() => (tab === "checks" ? loadChecks() : loadHistory(search))}
-            disabled={loading}
+            onClick={() => (tab === "money" ? setMoneyRefresh((k) => k + 1) : tab === "checks" ? loadChecks() : loadHistory(search))}
+            disabled={tab === "money" ? moneyLoading : loading}
             className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50 disabled:opacity-50"
           >
-            <RefreshCw size={12} className={loading ? "animate-spin" : ""} /> {t("dc_refresh")}
+            <RefreshCw size={12} className={(tab === "money" ? moneyLoading : loading) ? "animate-spin" : ""} /> {t("dc_refresh")}
           </button>
         </div>
 
-        {error && (
+        {error && tab !== "money" && (
           <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">{error}</div>
         )}
+
+        {/* Kept mounted while another tab is open, so switching back does not
+            download every ticket again. */}
+        <div className={tab === "money" ? "" : "hidden"}>
+          <MoneyCheck setPage={setPage} onCount={setMoneyCount} onLoading={setMoneyLoading} refreshSignal={moneyRefresh} />
+        </div>
 
         {tab === "checks" && (
           <>

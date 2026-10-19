@@ -1597,13 +1597,25 @@ export default function Transactions({ setPage }) {
   // filters. Same fields/approach as Weighing Tickets' own search: ticket
   // code, party name, car plate, and the paper Quality Ticket No. — the
   // things someone actually has in hand when looking a transaction up.
-  const [search, setSearch] = useState("");
+  // [2026-10-19] Data Check → Money "Open in Transactions" leaves the ticket
+  // code here, so the list opens already filtered to that one ticket. Read
+  // here, cleared just after (not inside the initializer, which React may run
+  // twice), so the next visit opens on the full list as before.
+  const [search, setSearch] = useState(() => {
+    try { return sessionStorage.getItem("paddytrade_tx_search") || ""; } catch { return ""; }
+  });
+  useEffect(() => {
+    try { sessionStorage.removeItem("paddytrade_tx_search"); } catch { /* nothing to clear */ }
+  }, []);
   // Kept as two separate toggles rather than one combined "unpaid" flag —
   // "Unpaid" only ever means money owed to a farmer on a Buy, "Not
   // Received" only ever means money not yet collected from a buyer on a
   // Sell. Mixing them together made the single button ambiguous.
   const [unpaidBuysOnly, setUnpaidBuysOnly] = useState(false);
   const [notReceivedOnly, setNotReceivedOnly] = useState(false);
+  // [2026-10-19] "Paid too much" as its own filter, reached from the
+  // money-still-open boxes above the list.
+  const [overpaidOnly, setOverpaidOnly] = useState(false);
   const [locations, setLocations] = useState([]);
   const [selectedLocationIds, setSelectedLocationIds] = useState([]);
   // Date range filter (defaults to "All Time" — null/null) — filtered
@@ -1854,17 +1866,24 @@ export default function Transactions({ setPage }) {
   // Applies the Unpaid/Not Received toggles (each scoped to its own
   // transaction type) and the location picker on top of whatever the
   // All/Buy/Sell filter already loaded from the server.
+  const moneyFilterOn = unpaidBuysOnly || notReceivedOnly || overpaidOnly;
   const visibleRows = useMemo(() => {
     let out = rows;
-    if (unpaidBuysOnly || notReceivedOnly) {
+    if (unpaidBuysOnly || notReceivedOnly || overpaidOnly) {
       out = out.filter((tx) => {
         // [2026-09-19] A cancelled bill is owed by nobody (its payments are
         // voided, so it used to read as fully unpaid and pad this list).
         if ((tx.hq_status || "processing") === "cancelled") return false;
+        if (overpaidOnly && overpaidByTx[tx.id]) return true;
         const owed = (remainingByTx[tx.id] || 0) > 0.01;
         if (!owed) return false;
         return tx.type === "BUY" ? unpaidBuysOnly : notReceivedOnly;
       });
+      // [2026-10-19] Money still open is worked through OLDEST FIRST — the
+      // ticket that has waited longest is the first one on page 1, not the
+      // last one on page 9.
+      out = [...out].sort((a, b) => String(a.tx_date || "").localeCompare(String(b.tx_date || ""))
+        || String(a.created_at || "").localeCompare(String(b.created_at || "")));
     }
     if (selectedLocationIds.length) {
       out = out.filter((tx) => selectedLocationIds.includes(tx.location_id));
@@ -1881,7 +1900,66 @@ export default function Transactions({ setPage }) {
       );
     }
     return out;
-  }, [rows, unpaidBuysOnly, notReceivedOnly, remainingByTx, selectedLocationIds, startDate, endDate, search]);
+  }, [rows, unpaidBuysOnly, notReceivedOnly, overpaidOnly, remainingByTx, overpaidByTx, selectedLocationIds, startDate, endDate, search]);
+
+  // [2026-10-19] MONEY STILL OPEN, always on screen.
+  //
+  // SISEN, 19/10: "it only shows new and new transaction ... when it went to
+  // new pages, the finance or anyone else wont even know which or how many
+  // transaction are not paid or received." The Unpaid / Not received filters
+  // existed, but inside the Filters pop-up, and the list is newest first, 20
+  // to a page — a farmer owed money for a month sat on page 9 where nobody
+  // looked (the 12/10 finance check found 18 such tickets, the oldest 31
+  // days). These boxes count them on every visit, for the station(s) picked,
+  // whatever page is showing; a tap lists them oldest first.
+  const todayKh = cambodiaDateStr();
+  const ageOf = (tx) => Math.max(0, Math.round((Date.parse(`${todayKh}T00:00:00Z`) - Date.parse(`${String(tx.tx_date || todayKh).slice(0, 10)}T00:00:00Z`)) / 86400000));
+  const isLate = (tx, kind) => kind === "overpaid" || ageOf(tx) > (tx.type === "BUY" ? 2 : 7);
+  const openMoney = useMemo(() => {
+    // late: past the promise (farmer 2 days, buyer 7 days; paid too much is
+    // always late). byStation: which station each box's tickets belong to,
+    // so HQ sees WHO is behind, not just how much.
+    const box = () => ({ n: 0, riel: 0, oldest: 0, late: 0, byStation: {} });
+    const out = { farmers: box(), buyers: box(), overpaid: box() };
+    for (const tx of rows) {
+      if ((tx.hq_status || "processing") === "cancelled") continue;
+      if (selectedLocationIds.length && !selectedLocationIds.includes(tx.location_id)) continue;
+      const owed = remainingByTx[tx.id] || 0;
+      const k = overpaidByTx[tx.id] ? "overpaid" : owed > 0.01 ? (tx.type === "BUY" ? "farmers" : "buyers") : null;
+      if (!k) continue;
+      out[k].n += 1;
+      out[k].riel += k === "overpaid" ? overpaidByTx[tx.id] : owed;
+      out[k].oldest = Math.max(out[k].oldest, ageOf(tx));
+      if (isLate(tx, k)) out[k].late += 1;
+      const st = tx.stationName || "—";
+      out[k].byStation[st] = (out[k].byStation[st] || 0) + 1;
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, remainingByTx, overpaidByTx, selectedLocationIds, todayKh]);
+  const showMoney = (kind) => {
+    const on = !(kind === "farmers" ? unpaidBuysOnly && !notReceivedOnly && !overpaidOnly
+      : kind === "buyers" ? notReceivedOnly && !unpaidBuysOnly && !overpaidOnly
+      : overpaidOnly && !unpaidBuysOnly && !notReceivedOnly);
+    setUnpaidBuysOnly(on && kind === "farmers");
+    setNotReceivedOnly(on && kind === "buyers");
+    setOverpaidOnly(on && kind === "overpaid");
+    if (on) { setSearch(""); setStartDate(null); setEndDate(null); }
+  };
+
+  // Each row wears its money state on its left edge, so an unpaid ticket
+  // stands out in the normal newest-first list too, not only after a box
+  // is tapped: gold = still owed, red = owed too long or paid too much.
+  const moneyTone = (tx, remaining) => {
+    if ((tx.hq_status || "processing") === "cancelled" || isUnpricedTx(tx)) return { row: "", edge: "", card: "border-slate-200" };
+    if (overpaidByTx[tx.id]) return { row: "bg-rose-50/40", edge: "border-l-4 border-l-rose-500", card: "border-rose-300" };
+    if (remaining > 0.01) {
+      return isLate(tx, tx.type === "BUY" ? "farmers" : "buyers")
+        ? { row: "bg-rose-50/40", edge: "border-l-4 border-l-rose-500", card: "border-rose-300" }
+        : { row: "bg-gold-50/40", edge: "border-l-4 border-l-gold-500", card: "border-gold-300" };
+    }
+    return { row: "", edge: "border-l-4 border-l-transparent", card: "border-slate-200" };
+  };
 
   const totalPages = Math.max(1, Math.ceil(visibleRows.length / PAGE_SIZE));
   // Jump back to page 1 whenever the underlying filter set changes — a
@@ -1889,7 +1967,7 @@ export default function Transactions({ setPage }) {
   // meaningful for the next one.
   useEffect(() => {
     setPageNum(1);
-  }, [type, unpaidBuysOnly, notReceivedOnly, selectedLocationIds, startDate, endDate, search]);
+  }, [type, unpaidBuysOnly, notReceivedOnly, overpaidOnly, selectedLocationIds, startDate, endDate, search]);
   // Safety net for the case above missing something (e.g. a background
   // reload after a sync shrinks the list while someone's sitting on the
   // last page) — never leave pageNum pointing past the real last page.
@@ -2168,7 +2246,7 @@ export default function Transactions({ setPage }) {
   // Only counts what's actually inside the Filters popover now — Date
   // Range and Location are their own visible controls again, so they're
   // not part of this badge.
-  const activeFilterCount = (unpaidBuysOnly ? 1 : 0) + (notReceivedOnly ? 1 : 0);
+  const activeFilterCount = (unpaidBuysOnly ? 1 : 0) + (notReceivedOnly ? 1 : 0) + (overpaidOnly ? 1 : 0);
 
   // Page numbers to show in the pagination bar: always first, last, the
   // current page and its immediate neighbors, with "…" filling any gap —
@@ -2262,9 +2340,9 @@ export default function Transactions({ setPage }) {
                     <button onClick={() => setUnpaidBuysOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${unpaidBuysOnly ? "border-rose-400 bg-rose-50 text-rose-600" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{t("filter_unpaid_buys")}</button>
                     <button onClick={() => setNotReceivedOnly((v) => !v)} className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${notReceivedOnly ? "border-gold-300 bg-gold-50 text-gold-700" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}>{t("filter_not_received")}</button>
                   </div>
-                  {(unpaidBuysOnly || notReceivedOnly) && (
+                  {(unpaidBuysOnly || notReceivedOnly || overpaidOnly) && (
                     <button
-                      onClick={() => { setUnpaidBuysOnly(false); setNotReceivedOnly(false); }}
+                      onClick={() => { setUnpaidBuysOnly(false); setNotReceivedOnly(false); setOverpaidOnly(false); }}
                       className="mt-2 text-xs font-medium text-slate-400 hover:text-slate-600"
                     >
                       {t("clear_btn")}
@@ -2353,6 +2431,68 @@ export default function Transactions({ setPage }) {
           </div>
         )}
 
+        {/* [2026-10-19] Money still open — see openMoney above. Always shown,
+            on every page of the list, for the station(s) picked. */}
+        {!loading || rows.length ? (
+          <div className="mb-4">
+            {openMoney.farmers.n + openMoney.buyers.n + openMoney.overpaid.n === 0 ? (
+              <div className="flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-sm font-medium text-brand-700">
+                <CheckCircle2 size={15} /> {t("tx_om_all_settled")}
+              </div>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-3">
+                {[
+                  { k: "farmers", label: t("tx_om_farmers"), on: unpaidBuysOnly, tone: "border-gold-300 bg-gold-50 text-gold-700", ring: "ring-gold-500" },
+                  { k: "buyers", label: t("tx_om_buyers"), on: notReceivedOnly, tone: "border-amber-300 bg-amber-50 text-amber-800", ring: "ring-amber-500" },
+                  { k: "overpaid", label: t("tx_om_over"), on: overpaidOnly, tone: "border-rose-300 bg-rose-50 text-rose-700", ring: "ring-rose-500" },
+                ].map((b) => {
+                  const m = openMoney[b.k];
+                  return (
+                    <button key={b.k} onClick={() => m.n && showMoney(b.k)} disabled={!m.n}
+                      className={`rounded-xl border px-3 py-2 text-left sm:px-4 sm:py-2.5 ${m.n ? b.tone : "border-slate-200 bg-white text-slate-400"} ${b.on ? `ring-2 ${b.ring}` : ""} disabled:cursor-default`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[13px] font-bold">{b.label}</span>
+                        {m.n > 0 && <span className="text-[12px] font-semibold opacity-80">{b.on ? t("tx_om_tap_close") : t("tx_om_tap_open")}</span>}
+                      </div>
+                      <div className="mt-0.5 text-base font-bold tabular-nums sm:text-lg">{fmtRiel(m.riel)}</div>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] opacity-90">
+                        <span>{t("tx_om_tickets", { n: m.n })}{m.n > 0 ? ` · ${t("tx_om_oldest", { n: m.oldest })}` : ""}</span>
+                        {m.late > 0 && b.k !== "overpaid" && (
+                          <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white">{t("tx_om_late", { n: m.late })}</span>
+                        )}
+                      </div>
+                      {m.n > 0 && (() => {
+                        const st = Object.entries(m.byStation).sort((a, c) => c[1] - a[1] || a[0].localeCompare(c[0]));
+                        const shown = st.slice(0, 3).map(([name, n]) => `${name} ${n}`).join(" · ");
+                        return (
+                          <div className="mt-1 border-t border-black/10 pt-1 text-[11.5px] font-medium opacity-80">
+                            {shown}{st.length > 3 ? ` · ${t("tx_om_more", { n: st.length - 3 })}` : ""}
+                          </div>
+                        );
+                      })()}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {(startDate || endDate) && openMoney.farmers.n + openMoney.buyers.n + openMoney.overpaid.n > 0 && (
+              <p className="mt-1.5 text-[12px] text-slate-500">{t("tx_om_in_range")}</p>
+            )}
+            {moneyFilterOn && (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-800 px-4 py-2 text-[13px] text-white">
+                <span>
+                  {t("tx_om_showing", {
+                    what: overpaidOnly ? t("tx_om_over") : unpaidBuysOnly && notReceivedOnly ? `${t("tx_om_farmers")} + ${t("tx_om_buyers")}` : unpaidBuysOnly ? t("tx_om_farmers") : t("tx_om_buyers"),
+                    n: visibleRows.length,
+                  })}
+                </span>
+                <button onClick={() => { setUnpaidBuysOnly(false); setNotReceivedOnly(false); setOverpaidOnly(false); }}
+                  className="rounded-md bg-white/15 px-3 py-1 text-[12px] font-semibold hover:bg-white/25">{t("tx_om_show_all")}</button>
+              </div>
+            )}
+          </div>
+        ) : null}
+
         {/* [2026-08-31] This "scroll with these" hint and the table itself
             are both desktop-only now (hidden md:hidden below) — a phone
             gets its own card list instead (md:hidden block right after the
@@ -2422,8 +2562,8 @@ export default function Transactions({ setPage }) {
                   <Fragment key={tx.id}>
                   <tr title={typedIn ? t("tx_t_typed_in") : undefined}
                     className={`border-b border-slate-50 last:border-0 hover:bg-slate-50/60 ${isCancelled ? "opacity-50" : ""} ${
-                      typedIn ? "outline outline-2 -outline-offset-2 outline-amber-300 bg-amber-50/40" : ""}`}>
-                    <td className="px-2 py-3.5">
+                      typedIn ? "outline outline-2 -outline-offset-2 outline-amber-300 bg-amber-50/40" : moneyTone(tx, remaining).row}`}>
+                    <td className={`px-2 py-3.5 ${moneyTone(tx, remaining).edge}`}>
                       <button onClick={() => toggleExpand(tx.id)} title={isExpanded ? t("tx_hide_details") : t("tx_show_details")}
                         className="flex h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-slate-100 hover:text-brand-600">
                         <ChevronRight size={15} className={`transition-transform ${isExpanded ? "rotate-90 text-brand-600" : ""}`} />
@@ -2503,7 +2643,9 @@ export default function Transactions({ setPage }) {
                       ) : isUnpriced ? (
                         <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700" title="Finished without an agreed price — set the price in Edit, then the amount owed appears here.">{t("tx_no_price_yet")}</span>
                       ) : remaining > 0.01 ? (
-                        canPay ? (
+                        <>
+                        <span className={`mb-1 block text-[11px] font-bold ${ageOf(tx) > (isBuy ? 2 : 7) ? "text-rose-600" : "text-gold-700"}`}>{isBuy ? t("tx_om_not_paid") : t("tx_om_not_received")}</span>
+                        {canPay ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </button>
@@ -2511,7 +2653,9 @@ export default function Transactions({ setPage }) {
                           <span className="flex items-center gap-1 rounded-md border border-gold-100 bg-gold-50/60 px-2 py-1 text-xs font-medium text-gold-700" title={t("tx_t_only_hq_pay")}>
                             <Wallet size={12} /> {fmtRiel(remaining)}
                           </span>
-                        )
+                        )}
+                        <span className={`mt-1 block text-[11px] font-semibold ${ageOf(tx) > (isBuy ? 2 : 7) ? "text-rose-600" : "text-slate-400"}`}>{t("tx_om_days", { n: ageOf(tx) })}</span>
+                        </>
                       ) : overpaidByTx[tx.id] ? (
                         <span
                           className="flex w-fit items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700"
@@ -2520,7 +2664,7 @@ export default function Transactions({ setPage }) {
                           <AlertTriangle size={12} /> {t("tx_overpaid_badge", { amount: fmtRiel(overpaidByTx[tx.id]) })}
                         </span>
                       ) : (
-                        <span className="text-xs font-medium text-brand-600">{t("tx_settled")}</span>
+                        <span className="flex w-fit items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700"><CheckCircle2 size={12} /> {tx.type === "BUY" ? t("tx_om_paid_full") : t("tx_om_received_full")}</span>
                       )}
                     </td>
                     <td className="px-3 py-3">
@@ -2645,7 +2789,7 @@ export default function Transactions({ setPage }) {
                 );
               })}
               {pagedRows.length === 0 && loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{t("loading_label")}</td></tr>}
-              {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{search.trim() ? t("tx_no_matches", { q: search.trim() }) : (unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</td></tr>}
+              {pagedRows.length === 0 && !loading && <tr><td colSpan={13} className="px-5 py-10 text-center text-sm text-slate-400">{search.trim() ? t("tx_no_matches", { q: search.trim() }) : moneyFilterOn ? t("tx_nothing_settled") : t("no_transactions")}</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2671,7 +2815,7 @@ export default function Transactions({ setPage }) {
             return (
               <div key={`card-${tx.id}`} title={typedInCard ? t("tx_t_typed_in") : undefined}
                 className={`relative overflow-hidden rounded-2xl border bg-white p-4 shadow-sm ${isCancelled ? "opacity-50" : ""} ${
-                  typedInCard ? "border-amber-300 bg-amber-50/40 ring-1 ring-amber-200" : "border-slate-200"}`}>
+                  typedInCard ? "border-amber-300 bg-amber-50/40 ring-1 ring-amber-200" : moneyTone(tx, remaining).card}`}>
                 <div className={`absolute inset-y-4 left-0 w-1 rounded-full ${isBuy ? "bg-brand-500" : "bg-rose-400"}`} />
                 <div className="pl-3">
                   <button onClick={() => toggleExpand(tx.id)} className="flex w-full items-start justify-between gap-2 text-left">
@@ -2730,7 +2874,9 @@ export default function Transactions({ setPage }) {
                       ) : isUnpriced ? (
                         <span className="rounded-md border border-orange-300 bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700">{t("hq_unpriced")}</span>
                       ) : remaining > 0.01 ? (
-                        canPay ? (
+                        <>
+                        <span className={`mb-1 block text-[11px] font-bold ${ageOf(tx) > (isBuy ? 2 : 7) ? "text-rose-600" : "text-gold-700"}`}>{isBuy ? t("tx_om_not_paid") : t("tx_om_not_received")}</span>
+                        {canPay ? (
                           <button onClick={() => setPayTx(tx)} className="flex items-center gap-1 rounded-md border border-gold-300 bg-gold-50 px-2 py-1 text-xs font-medium text-gold-700 hover:bg-gold-100">
                             <Wallet size={12} /> {t("tx_due", { amount: fmtRiel(remaining) })}
                           </button>
@@ -2738,13 +2884,15 @@ export default function Transactions({ setPage }) {
                           <span className="flex items-center gap-1 rounded-md border border-gold-100 bg-gold-50/60 px-2 py-1 text-xs font-medium text-gold-700">
                             <Wallet size={12} /> {t("tx_due", { amount: fmtRiel(remaining) })}
                           </span>
-                        )
+                        )}
+                        <span className={`mt-1 block text-[11px] font-semibold ${ageOf(tx) > (tx.type === "BUY" ? 2 : 7) ? "text-rose-600" : "text-slate-400"}`}>{t("tx_om_days", { n: ageOf(tx) })}</span>
+                        </>
                       ) : overpaidByTx[tx.id] ? (
                         <span className="flex w-fit items-center gap-1 rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-medium text-rose-700">
                           <AlertTriangle size={12} /> {t("tx_overpaid", { amount: fmtRiel(overpaidByTx[tx.id]) })}
                         </span>
                       ) : (
-                        <span className="text-xs font-medium text-brand-600">{t("tx_settled")}</span>
+                        <span className="flex w-fit items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-semibold text-brand-700"><CheckCircle2 size={12} /> {tx.type === "BUY" ? t("tx_om_paid_full") : t("tx_om_received_full")}</span>
                       )}
                     </div>
                     <div className="text-right">
@@ -2804,7 +2952,7 @@ export default function Transactions({ setPage }) {
             );
           })}
           {pagedRows.length === 0 && loading && <p className="py-10 text-center text-sm text-slate-400">{t("loading_label")}</p>}
-          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{search.trim() ? t("tx_no_matches", { q: search.trim() }) : (unpaidBuysOnly || notReceivedOnly) ? t("tx_nothing_settled") : t("no_transactions")}</p>}
+          {pagedRows.length === 0 && !loading && <p className="py-10 text-center text-sm text-slate-400">{search.trim() ? t("tx_no_matches", { q: search.trim() }) : moneyFilterOn ? t("tx_nothing_settled") : t("no_transactions")}</p>}
         </div>
 
         {visibleRows.length > 0 && (
