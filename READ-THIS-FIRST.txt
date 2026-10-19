@@ -1,58 +1,50 @@
-10 BUG FIXES — 29 September 2026
-================================
+PADDYTRADE - 19 October 2026
+============================
+Money check page + "money still open" boxes on Transactions.
 
-Upload these 8 files to GitHub, keeping the same folders.
-No SQL. Nothing to run in Supabase. Nothing to install on station PCs.
+STEP 1 - SUPABASE (do this FIRST)
+  Run FOR-SUPABASE-money-check-notes-2026-10-19.sql once in the
+  Supabase SQL Editor. It only adds a new table for the Explain notes.
+  No ticket, payment or stock is changed.
+  At the end it shows: table_ready = 1, policies = 3, triggers = 2.
 
-  src/i18n.jsx
-  src/periodBook.js
-  src/pages/DailyBook.jsx
-  src/pages/Expenses.jsx
-  src/pages/Receipt.jsx
-  src/pages/TransactionForm.jsx
-  src/pages/Transactions.jsx
-  src/pages/WeighingTickets.jsx
+STEP 2 - GITHUB
+  Upload these 8 files, each to the SAME path it has in this folder:
+
+    src/moneyCheck.js                 (new)
+    src/components/MoneyCheck.jsx     (new)
+    src/pages/DataCheck.jsx           (changed)
+    src/pages/Transactions.jsx        (changed)
+    src/App.jsx                       (changed)
+    src/api.js                        (changed)
+    src/i18n.jsx                      (changed)
+    scripts-check-money.mjs           (new - checker, root folder)
+
+  Delete nothing. Nothing to install on station PCs.
 
 
-WHAT CHANGES
+WHAT YOU GET
 
-MONEY AND STOCK
-1. Sell saved as the whole truck — FIXED
-   A ticket with no weigh-in can no longer be finished. Staff see:
-   "This ticket has no weigh-in weight. Fix it with Edit Ticket first,
-   then finish."
+1. TRANSACTIONS - money still open
+   - 3 boxes on top of every page: Farmers not paid yet, Buyers not paid
+     yet, Paid too much. Each shows the amount, how many tickets, the
+     oldest, how many are late (red), and which stations.
+   - Tap a box: only those tickets, oldest first. "Show all
+     transactions" goes back.
+   - Every row shows its money state: gold edge + "Not paid yet" /
+     "Not received yet", red when late, green "Paid in full".
+   - Late = farmer owed more than 2 days, buyer more than 7 days.
 
-2. Daily Book profit for "All stations" — FIXED
-   Each station's stock and cost are now worked out on their own, then
-   added up — the same way the Income Statement does it. The two now
-   agree. Single-station views are unchanged.
-
-3. Record Payment, paying too much — FIXED
-   Typing more than is owed now shows a red message straight away and
-   the Record Payment button is greyed out. The false "someone recorded
-   a payment" message only appears when someone really did.
-
-STAFF CAN'T WORK
-4. "Wrong password" with no internet — FIXED
-   The message now says there is no internet, not that the password is
-   wrong. The password rule itself is unchanged: no internet, no save.
-
-WRONG OR MISSING INFORMATION
-5. Daily Book "Year total" — FIXED. Shows the whole year, not one month.
-6. Printed expense sheet — FIXED. Uses only the printed station's
-   "nothing spent" marks. For all stations, a day counts as "nothing
-   spent" only when every station marked it.
-7. Expense print at "Year" — FIXED. No longer empty.
-8. ×N on the Receipt button — FIXED. Goes up as soon as you print.
-
-SMALL
-9.  Payment dates — FIXED. Shown as 29/09/2026 in payment history,
-    void and correct payment. "Was: … on …" is now in Khmer too.
-10. "Check the two weights." — now in Khmer too.
+2. DATA CHECK - new "Money" tab (first tab)
+   - Lists every money problem: no price, paid twice, paid too much,
+     farmer/buyer not paid, payment typed in long after its date.
+   - HQ can explain an owed ticket (with a reason). Only the owner's OK
+     takes it off the list. Excel download.
 
 
 CHECK AFTER UPLOADING
-  1. Transactions → any unpaid Buy → Pay. Type more than owed:
-     red message, button greyed out.
-  2. Daily Book → All stations → Year total: shows the whole year.
-  3. Print a receipt, close it: the ×N goes up without reloading.
+  1. Transactions: the 3 boxes are on top. Today: Farmers 0, Buyers 0,
+     Paid too much 2.
+  2. Tap "Paid too much": INV-206089-B and INV-867397366-B show.
+  3. Data Check -> Money tab opens first. It lists the same 2, plus
+     the 2 Ping Pong tickets that have no price yet.
