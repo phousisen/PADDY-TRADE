@@ -287,7 +287,7 @@ export default function App() {
     // it is the screen finance uses to trust the stock and weight figures
     // before anything else is believed. See DataCheck.jsx for the CN 000261
     // story it exists for.
-    if (page === "data-check") return canViewReports ? <DataCheck /> : <PermissionDenied />;
+    if (page === "data-check") return canViewReports ? <DataCheck setPage={setPage} /> : <PermissionDenied />;
     if (page === "reports") return canViewReports ? <Reports /> : <PermissionDenied />;
     if (page === "payments") return canViewReports ? <Reports initialTab="cashflow" /> : <PermissionDenied />;
     if (page === "expenses") return canViewReports ? <Expenses /> : <PermissionDenied />;

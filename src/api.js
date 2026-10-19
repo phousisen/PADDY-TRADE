@@ -3191,6 +3191,78 @@ const rawApi = {
     return data || [];
   },
 
+  // [2026-10-19] Data Check → Money (components/MoneyCheck.jsx, moneyCheck.js).
+  // Lean on purpose: every ticket ever, but only the columns the check needs
+  // and no joined names — names are fetched afterwards for the few tickets
+  // that end up listed. Payments: only the two kinds that settle a ticket
+  // plus anything else attached to a ticket (the "wrong kind" check), never
+  // expenses or capital.
+  async getMoneyCheckData() {
+    const [txs, payments] = await Promise.all([
+      fetchAll(() => supabase.from("transactions")
+        .select("id, code, type, location_id, party_id, quantity_kg, deduction_kg, price_per_kg, amount, total_with_tax, hq_status, tx_date, paper_ticket_no, created_by, created_at")
+        .or("hq_status.is.null,hq_status.neq.cancelled")),
+      fetchAll(() => supabase.from("payments")
+        .select("id, transaction_id, type, amount, method, pay_date, memo, created_by, created_at")
+        .not("transaction_id", "is", null)
+        .is("voided_at", null)),
+    ]);
+    return { txs: txs || [], payments: payments || [] };
+  },
+
+  async getPartyNames(ids) {
+    const uniq = [...new Set((ids || []).filter(Boolean))];
+    if (!uniq.length) return {};
+    const out = {};
+    for (let i = 0; i < uniq.length; i += 200) {
+      const { data, error } = await supabase.from("parties").select("id, name").in("id", uniq.slice(i, i + 200));
+      if (error) return out;
+      for (const p of data || []) out[p.id] = p.name || "";
+    }
+    return out;
+  },
+
+  // The notes behind "Explain" (FOR-SUPABASE-money-check-notes-2026-10-19.sql).
+  // Who may write what is decided by the database; these only ask.
+  async getMoneyCheckNotes() {
+    return (await fetchAll(() => supabase.from("money_check_notes").select("*"), { sort: desc("created_at") })) || [];
+  },
+
+  // One note per problem, saved together. The database stamps who and when,
+  // and holds anything over the limit for the owner's OK.
+  async addMoneyCheckNotes({ transactionId, items, reason, note }) {
+    const text = String(note || "").trim();
+    const rows = (items || []).map(({ problem, gap }) => ({ transaction_id: transactionId, problem, gap, reason, note: text }));
+    if (!rows.length) return [];
+    const { data, error } = await supabase.from("money_check_notes").insert(rows).select();
+    if (error) throw error;
+    return data || [];
+  },
+
+  // The owner's OK (owner only — the database refuses anyone else).
+  async approveMoneyCheckNotes(ids) {
+    const list = (ids || []).filter(Boolean);
+    if (!list.length) return [];
+    const { data, error } = await supabase.from("money_check_notes")
+      .update({ approved_at: new Date().toISOString() }).in("id", list).is("approved_at", null).select();
+    if (error) throw error;
+    if (!data || !data.length) throw new Error("NOTHING_CHANGED");
+    return data;
+  },
+
+  // "Put back on the list": every live note for those problems on this
+  // ticket, not just the newest, so an older note can never come back to
+  // hide it later.
+  async reopenMoneyCheckNotes({ transactionId, problems }) {
+    if (!transactionId || !(problems || []).length) return [];
+    const { data, error } = await supabase.from("money_check_notes")
+      .update({ reopened_at: new Date().toISOString() })
+      .eq("transaction_id", transactionId).in("problem", problems).is("reopened_at", null).select();
+    if (error) throw error;
+    if (!data || !data.length) throw new Error("NOTHING_CHANGED");
+    return data;
+  },
+
   // row_history (row_history_2026-09-09.sql) is the database's own record
   // of every insert/update/delete on the 15 tables that hold money, weight,
   // stock and permissions. It is written by a trigger rather than by this
